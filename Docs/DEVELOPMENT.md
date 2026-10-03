@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**已获授权推进 M2；插件管理和真实剪贴板插件代码已实现，运行验收待执行，M3–M5 未开始。** 用户在 E15 后反馈“测试一圈没发现啥问题，可以继续开发”。这是现有版本的人工反馈和推进授权，不补造逐项用例结果。本轮仍只做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或接管 Windows UI。
+**当前收敛 M2：已补充 ZIP 拖入安装、启停滑块，以及剪贴板 1.1.0 的分栏预览、再次复制和系统事件刷新；新版运行验收待用户执行，M3–M5 未开始。** 用户本轮截图显示旧版历史列表能够出现，但非文本占位、缺少复制和布局问题妨碍使用，不能视作 A08 通过。代理仅做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或读取真实剪贴板。最新证据见 [E17](#evidence-clipboard-ux)。
 
 ### 1.1 代码事实
 
@@ -25,11 +25,11 @@
 | Review 与彩色图标 | 修复重复初始化造成入口重复、插件页加载/目录失败时状态矛盾；导航和卡片接入 Fluent Emoji PNG，操作仍用单色符号。图片由宿主缓存并在窗口关闭后释放；静态复审完成，最新运行回归未执行，见 [E09](#evidence-icons-review) |
 | 设置与主题 | 浅色、深色、跟随系统及四种主题色、动画选择后即时应用并自动保存；正常保存不显示常驻说明，失败提示重试。新增主要表面的 220 ms 颜色过渡，遵循动画开关。保存队列见 [E12](#evidence-appearance-review)，最新编译及待验范围见 [E13](#evidence-theme-transition) |
 | 生命周期 | 普通关闭隐藏到托盘；托盘不可用时保持窗口；恢复事件与实例锁统一路径规范化；退出禁用新保存/页面操作，有界等待已有保存和插件清理，Stop/后台活动/取消回调结束后才 Dispose |
-| 测试 | 核心程序新增 15 项管理检查；独立剪贴板模型程序 8 项；沿用已发布宿主的 Headless 集成工程，均仅编译，未新增测试框架 |
+| 测试 | 核心 15 项管理检查沿用；剪贴板模型扩展为 19 项；发布 SDK 的 Headless 工程增加 7 项管理 UI 检查，最新均仅编译，未新增测试框架 |
 | 发布验证 | [Publish-Host.ps1](../scripts/Publish-Host.ps1)、[Verify-M1.ps1](../scripts/Verify-M1.ps1)，win-x64 自包含目录发布，禁用 AOT/裁剪/单文件 |
 | 产品版本与图标 | `Directory.Build.props` → 程序集元数据 → AppInfo → 关于页/日志；PNG/多尺寸 ICO 由同一透明多功能工具母版导出，见 [E06](#evidence-version) |
 | 绑定与 VS Code 预览 | 已修正字符串可见性、设置错误区域无 DataContext 默认显示及旧代码残留，见 [E14](#evidence-settings-cleanup)；E15 默认 Debug 已重新构建成功，先前占用不再阻塞这次构建，预览显示仍需刷新确认 |
-| 正式剪贴板 | [独立工程](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj)，真实 Windows 历史 API、文本/其他类型占位、加载/刷新/取消；未实际调用 Windows API，不能写为功能验收通过 |
+| 正式剪贴板 | [独立工程](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 1.1.0：列表/预览分栏、文本/图片等预览、系统原项复制、系统事件与窗口激活刷新、保留选择/取消/资源清理；格式界限见 [插件文档](Plugins/ClipboardHistory.md)，新代码未实际调用 Windows API |
 | 版本管理 | 本地 Git `main`，M1 基线 `fc18c20`；本轮 M2 独立保存为后续本地提交，无远程；构建产物/测试数据不入库 |
 | 尚未实现 | M3 包管理/进程服务；M4 视频、有限任务队列；M5 数据目录迁移、恢复完善、CI/安装器；当前 M2 的真实管理及剪贴板运行证据仍缺 |
 
@@ -37,16 +37,16 @@
 
 ### 1.2 最近证据与限制
 
-最新实现 M2 的本地插件管理与 Windows 剪贴板插件，并按用户指示建立 Git。两个 GPT-6.1-Sol + high 子代理分别复审管理和剪贴板代码；已修复发现的问题，最终静态复审没有新的确定 P1/P2。这不等于运行结果或全仓库无缺陷。完整证据见 [E16](#evidence-m2)。
+最新一轮按用户截图改进管理交互和剪贴板可用性。GPT-6.1-Sol + high 子代理复审实现及回归源码，修复确定问题后未发现新的确定 P1/P2；这不等于运行结果或全仓库无缺陷。完整证据见 [E17](#evidence-clipboard-ux)，管理事务初始交付及 Git 建立记录保留在 [E16](#evidence-m2)。
 
 | 层级 | 最近事实 | 证据 |
 | --- | --- | --- |
-| 静态检查 | M2 管理/平台边界与错误恢复复审完成；文档、XML、脚本和插件包文件核对见 E16 | [E16](#evidence-m2) |
-| 构建 | 默认 Debug 解决方案、独立剪贴板插件、剪贴板模型/现有集成检查编译均 0 警告/0 错误；宿主自包含发布成功 | [E16](#evidence-m2) |
-| 发布准备 | 新 `artifacts/m2-ready/host` 发布后才构建并放入剪贴板插件；234 个原有宿主文件 SHA256 全部不变；未加载该 DLL | [E16](#evidence-m2) |
-| 自动化 | 首轮旧核心 33/33 通过；M2 新 15 项管理和 8 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E16](#evidence-m2) |
-| 集成/Headless | 首轮旧 UI 21/21 通过；后续用例及本轮管理/真实插件集成均未执行 | [E01](#evidence-baseline)、[E16](#evidence-m2) |
-| 真实 Windows UI | 用户对 E15 后现有版本反馈未发现问题并允许继续，未列逐项结果；本轮 M2 管理/剪贴板均未运行，未读取真实历史 | [E16](#evidence-m2) |
+| 静态检查 | 事件/预览生命周期、启停拖动和安装入口经复审；文档、XML、包和差异见 E17 | [E17](#evidence-clipboard-ux) |
+| 构建 | 最终 Release 宿主发布、独立插件及模型/集成检查成功；最后默认 Debug 被正在运行的 TractorTool PID 49588 占用，10 警告/2 错误，未终止用户进程 | [E17](#evidence-clipboard-ux) |
+| 发布准备 | `artifacts/m2-clipboard-final/host` 发布后独立构建 1.1.0 ZIP，234 个原有宿主文件 SHA256 不变；宿主未预装插件，供用户拖入验收 | [E17](#evidence-clipboard-ux) |
+| 自动化 | 历史旧核心 33/33 不覆盖当前改动；19 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E17](#evidence-clipboard-ux) |
+| 集成/Headless | 历史旧 UI 21/21 不覆盖当前改动；新增 7 项管理 UI 检查仅编译，原生拖放未验证 | [E01](#evidence-baseline)、[E17](#evidence-clipboard-ux) |
+| 真实 Windows UI | 用户截图提供旧版显示/选择缺陷的证据；新版 WinRT、多格式粘贴、系统事件、分栏及原生拖放均待用户验收 | [E17](#evidence-clipboard-ux) |
 
 证据保留：早前整个 artifacts 曾在外部被清理，旧发布、日志和修改前快照已不可读取；历史记录仍保留，但不表示对应文件尚在。version-icon-final 和 E06/E07 证据在清理后重建，历史测试未重跑。历史成功不能自动覆盖后续代码。
 
@@ -81,7 +81,7 @@ dotnet run --project .\tests\TractorTool.Checks -c Release
 
 不带 `--profile-root` 时使用产品默认 `%LOCALAPPDATA%\TractorTool`。该参数仅用于隔离开发/验收，不是数据迁移功能；路径必须为绝对路径。固定启动文件是 `<ProfileRoot>/bootstrap.json`，默认与数据根相同。已存在的有效 `dataRoot` 指针受支持，目录不存在时拒绝启动并保留指针。应用内数据迁移仍在 M5。
 
-最新副本为 `artifacts/m2-ready/host`，已放入独立构建的剪贴板插件；ZIP 位于 `artifacts/m2-ready/clipboard`。隔离启动与本轮准确命令见 [E16](#evidence-m2)，未经新指示不代用户启动。旧 theme-transition-ready/settings-cleanup-build 等副本不含 M2。完整 M1 机制回归仍由 Verify-M1.ps1 生成其自己的隔离副本和测试插件，不能直接用只有剪贴板插件的宿主冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确的 profile 命令。
+最新副本为 `artifacts/m2-clipboard-final/host`，未预装插件；将同级 `clipboard/TractorTool.ClipboardHistory-1.1.0.zip` 拖入插件页并重启。隔离启动与准确命令见 [E17](#evidence-clipboard-ux)，未经新指示不代用户启动。旧 m2-ready 含 1.0.0；中间 m2-clipboard-ux 不作为交付。完整 M1 机制回归仍由 Verify-M1.ps1 生成自己的副本和测试插件，不能将空宿主或正式剪贴板插件冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确 profile。
 
 VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Previewer**；必要时执行 `Developer: Reload Window`。当前 DLL 的版本及可见性属性已核对，但尚未代用户刷新预览。
 
@@ -163,7 +163,7 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 未完成：仅常驻活动切页/隐藏继续的 Headless 检查通过；真实视频任务及托盘待验证 |
 | A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | 部分通过：默认/自定义指针、路径分离、不可用目录保护；迁移/恢复在 M5 |
 | A07 | 外部包事务 | 哈希错误/中断不成就绪，重试成功，多版本共存，使用中不可删 | 集成 | 未验证 |
-| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 真实读取/刷新，空/关闭/拒绝等状态明确，无自建历史库 | 集成、UI | 真实 API 插件已独立构建，8 项模型检查仅编译；Windows API、系统状态及页面均未运行验证 |
+| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | 用户截图显示旧版列表但暴露功能/布局不足；1.1.0 及 19 项模型检查已编译，新的 Windows 行为仍未运行验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 未验证 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
 | A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | 未验证 |
@@ -239,7 +239,7 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 
 ## 6. 下一步与维护
 
-下一步由用户按 [E16](#evidence-m2) 使用隔离副本验证剪贴板真实加载/刷新/系统状态，及安装/更新/启停/卸载/回退重启闭环。先解决新出现的错误，再决定进入 M3 的包/进程服务和真实媒体链路。未经新测试指示不代用户执行检查程序或 UI；数据目录迁移仍留 M5，未借本轮扩张范围。
+下一步由用户按 [E17](#evidence-clipboard-ux) 验证原生 ZIP 拖放、开关点击/拖动、重启变更，以及剪贴板预览/原项粘贴/事件与焦点刷新；旧版更新到 1.1.0 后再判断效果。先处理本阶段反馈，再决定进入 M3。未经新测试指示不代用户运行检查或 UI；数据目录迁移仍留 M5。
 
 后续有实质性进展时更新第 1 节当前状态、第 3 节里程碑和第 4 节验收结果。必要的真实命令和结果追加到下方附录，不用新流水账挤占当前摘要；同步 PROJECT_CONTEXT.md 的精简交接。文档归属按 README.md 维护。
 
@@ -249,9 +249,66 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 
 以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
 
-<a id="evidence-m2"></a>
+<a id="evidence-clipboard-ux"></a>
 
 <details open>
+<summary>E17 · ZIP 拖放、启停开关与剪贴板重做（2026-10-04）</summary>
+
+用户截图显示旧版历史列表存在非文本占位、缺少再次复制、选择与文本选区混杂、滚动区域不合理。按最新要求增加拖入安装、开关启停，并以“找回 → 预览 → 再次复制”为剪贴板主流程。本轮仍是 M2，不进入媒体包/视频/迁移阶段。
+
+已实现：
+
+- 插件面板接受一个本地 ZIP，合法拖入时显示目标提示；目录、多文件、非 ZIP、非本地来源不作为安装请求。复用文件选择入口的确认、校验、串行排队和退出保护。
+- 启停改为 ToggleSwitch。点击和拖动滑块通过 IsCheckedChanged 排队；显示待重启目标，另列实际加载状态。未执行的启停可反向取消，写入失败恢复原值。
+- 剪贴板左右分栏、紧凑历史行及各自边缘滚动；文本选区只在右侧。文本/图片等预览界限、原项复制和资源控制归 [插件设计](Plugins/ClipboardHistory.md)。
+- 页面监听系统历史/开关事件，在 UI 线程合并刷新，窗口激活补刷，保留选择和已有预览。复制使用系统原历史项，不复制摘要或截断预览，不建立历史库。
+- 独立插件从 1.0.0 升至 **1.1.0**，满足不可覆盖同版本的更新规则；宿主/Contracts/UI 版本及依赖未改。
+
+GPT-6.1-Sol + high 子代理只读复审实现和回归源码。修复：刷新不重试相同项的失败预览；读取异常丢失排队事件；双击列表空白误复制；拖滑块绕过 Click/Command 只改外观；迟到预览检查未等待 VM 处理完成的误报。最终复核未发现新的确定 P1/P2，不等于运行通过或全仓库无缺陷。开关核对 [Avalonia 12.1.2 源码](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Controls/ToggleSwitch.cs)；拖放、Windows API 和 Apple 布局参考见 [架构](ARCHITECTURE.md#24-安装更新禁用和卸载) / 插件设计。
+
+| 层级 | 本轮实际结果 |
+| --- | --- |
+| 静态 | 文档链接/片段、XML、脚本语法、ZIP/许可/共享 DLL 和哈希核对，见 `artifacts/evidence/clipboard-ux-static.json` |
+| 构建 | win-x64 自包含最终宿主发布成功；独立 1.1.0 插件、模型与 Headless 检查工程均 0 警告/0 错误。最后默认 Debug EXE 被用户运行中的进程占用，见下文 |
+| 自动化 | 剪贴板模型 19 项：系统/复制结果、事件合并、异常补刷、选择保留、原项 Id、迟到预览/离页和错误脱敏；**仅编译，未执行** |
+| 集成 | 新增 7 项管理 UI 检查：确认/非法路径/并发退出、开关两个方向及写入失败恢复；**仅编译，未执行**。InstallArchiveAsync 用例证明的是共享 VM 流程，不证明原生 Drop 路由 |
+| 发布文件 | 宿主发布后独立打包，234 个原有宿主文件 SHA256 不变；宿主未预装插件，供用户拖入验收；**未加载插件 DLL** |
+| Windows UI/API | **未执行**；前台访问、图片解码、多格式粘贴、事件/焦点返回、原生拖放、开关拖动和分栏尺寸均待用户验收；没有读取/清空/写入真实剪贴板 |
+
+失败记录：初次 AutomationProperties.Name 的占位符 StringFormat 触发 AVLN2000（类型 0 无法解析），改为直接名称绑定及工具提示后发布成功。一次 Debug AXAML 编译遇到 `obj/Debug/net10.0/TractorTool.dll` 被其他进程占用（AVLN9999），随后默认重建曾成功。最终补正“失败状态仍读取管理记录的启用设置”后，默认重建又被用户运行中的 TractorTool PID 49588 占用 EXE，报 MSB3026/3027/3021（10 警告/2 错误）；未停止用户进程，不能写为最后一次 Debug 成功。最终隔离 Release 发布及检查编译均成功。环境仍为 VS Code / Windows / .NET SDK 10.0.401。
+
+实际最终命令（输出目录当时为空；仅编译/发布/静态核对）：
+
+```powershell
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-clipboard-final/host
+./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/m2-clipboard-final/host -Output H:/ProjH/TractorTool/artifacts/m2-clipboard-final/clipboard
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-clipboard-final/host -o artifacts/m2-clipboard-final/integration-checks
+dotnet build tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-clipboard-final/host -p:PluginBuildDir=H:/ProjH/TractorTool/artifacts/m2-clipboard-final/clipboard/files -o artifacts/m2-clipboard-final/clipboard-checks
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./artifacts/evidence/Inspect-ClipboardUx.ps1
+```
+
+中间 `artifacts/m2-clipboard-ux` / `m2-clipboard-ready` 不作为交付。最终日志为 `artifacts/evidence/clipboard-ux-*.txt`：publish-final、plugin-package-final、integration-reviewed、model-reviewed、debug-reviewed（最后一次占用失败）；中间记录仍保留。构建前宿主清单 `clipboard-ux-host-before-plugin-final.json`，核对报告 `clipboard-ux-static.json`。ZIP SHA256：`E258399B5FC57977FE033EBDA8D2350476B26B37B664FDF093423454E01460C4`，另附 `.sha256`。编译时 HEAD 为 `8daab60`，产物包含本轮未提交源码；Git 元数据不单独代表二进制来源，按包哈希和本轮提交追溯。
+
+以下供用户验收，**代理未执行**：
+
+```powershell
+& .\artifacts\m2-clipboard-final\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\clipboard-ux-manual-profile
+# 可选模型检查，只用替身，不读取真实剪贴板
+dotnet .\artifacts\m2-clipboard-final\clipboard-checks\TractorTool.ClipboardChecks.dll
+```
+
+1. 将 `artifacts/m2-clipboard-final/clipboard/TractorTool.ClipboardHistory-1.1.0.zip` 拖入插件页，确认后从托盘或设置**显式退出再启动**；关闭窗口只隐藏。现有调试安装也需更新 ZIP，仅重建宿主不会替换已安装的 1.0.0。
+2. 以临时文字/截图验收左右分栏和预览；复制后粘贴到适合的应用核对完整内容。长文本复制应完整，列表空白/滚动条双击不改剪贴板。
+3. 在其他应用复制临时内容后返回，确认刷新并保持原选择；快速选择图片/文字、手动刷新和切页，检查无迟到预览覆盖。
+4. 点击/拖动启停开关，检查待重启提示、反向取消、重启后的启停；多文件/目录/非 ZIP 拖入拒绝，确认取消不安装。
+5. 补充关闭/空/拒绝/项目失效、最窄窗口/高 DPI/深浅色记录。先处理 M2 反馈，不自动进入 M3。
+
+</details>
+
+<a id="evidence-m2"></a>
+
+<details>
 <summary>E16 · 本地 Git、插件管理与剪贴板插件（2026-10-04）</summary>
 
 用户在 E15 后反馈“目前测试一圈没发现啥问题，可以继续开发”，据此推进 M2；没有收到逐项测试记录，未将历史缺证条目批量标为通过。随后用户要求先初始化本地 Git。已建立 `main`、提交 M1 基线 `fc18c20`（95 个文件），未配置远程。当时已经开始的 PluginFiles 新文件和清单 ValidateVersion 提取没有混入基线：用修改前快照恢复这一个文件的暂存版本，工作区改动保留。后续 M2 改动单独形成本地提交，以 `git log` 为准。快照 `artifacts/m2-before-20261004/`、构建产物和测试数据由现有 `.gitignore` 排除。
@@ -461,7 +518,7 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 - 每个插件独立取消、共享幂等清理任务；按初始化完成 → Stop → Background/取消回调完成 → Dispose 的顺序清理。取消回调异常不跳过其他实例，超时不并发释放仍在运行的对象；晚于退出快照完成构造/初始化的实例仍纳入清理且不注册 UI。内部统一等待 9 秒，超时继续观察迟到结束。
 - PageHost 用同步 presenter 回报成功/取消/异常；成功后才提交标题/选择并清理旧页，取消保留旧页，失败换掉内部状态可能受损的 Frame 后显示错误页。拒绝已有父级的候选页面，阻止导航重入和退出后工厂调用；保留 FAFrame 过渡。FANavigationView 自行选中的项目也恢复到实际已提交的选择。
 
-新增 6 项路径回归、5 项生命周期/设置/标题栏检查和 5 项导航检查（均为源码用例）。生命周期夹具仍单独构建成真实插件 DLL，只依赖 Contracts/UI，通过每例隔离插件数据目录中的标记控制延迟，失败后也释放等待条件。**没有执行这些检查，不把已编译写成已通过测试。**
+新增 7 项路径回归、5 项生命周期/设置/标题栏检查和 5 项导航检查（均为源码用例）。生命周期夹具仍单独构建成真实插件 DLL，只依赖 Contracts/UI，通过每例隔离插件数据目录中的标记控制延迟，失败后也释放等待条件。**没有执行这些检查，不把已编译写成已通过测试。**
 
 | 检查层级 | 本轮事实 |
 | --- | --- |

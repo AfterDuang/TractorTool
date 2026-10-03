@@ -435,5 +435,6 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
 AppearanceChecks.Run(Check, Pump, output);
 NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
+PluginManagementUiChecks.Run(Check, Pump, output);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; publishedHost={published}; evidence={output}");
 return failed == 0 ? 0 : 1;

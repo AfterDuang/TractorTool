@@ -19,11 +19,12 @@ public sealed record PluginCard(string Name, string Version, string Description,
     public string PendingText { get; init; } = "";
     public bool HasPending => PendingText.Length != 0;
     public IRelayCommand? ToggleCommand { get; init; }
-    public string ToggleText { get; init; } = "禁用";
+    public bool RequestedEnabled { get; init; }
+    public bool CanToggle => ToggleCommand is not null;
     public IRelayCommand? UninstallCommand { get; init; }
     public IRelayCommand? RollbackCommand { get; init; }
     public IRelayCommand? CancelChangeCommand { get; init; }
-    public bool CanManage => ToggleCommand is not null;
+    public bool CanManage => UninstallCommand is not null;
     public bool CanRollback => RollbackCommand is not null;
     public bool CanCancelChange => CancelChangeCommand is not null;
 }
@@ -99,6 +100,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     {
         if (!ManagementAvailable || manager is null || id is null || !valid) return card;
         var pending = item?.Pending;
+        var enabled = item?.Enabled ?? !disabled;
         var text = pending?.Kind switch {
             PluginChangeKind.Activate => "重启后安装 " + pending.Version, PluginChangeKind.Enable => "重启后启用",
             PluginChangeKind.Disable => "重启后禁用", PluginChangeKind.Uninstall => "重启后卸载（保留数据）",
@@ -106,19 +108,17 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         if (!string.IsNullOrEmpty(item?.Error)) text += (text.Length == 0 ? "" : "\n") + item.Error;
         return card with {
             PendingText = text,
-            ToggleText = disabled ? "启用" : "禁用",
-            ToggleCommand = pending is null && (item is null || item.ActiveVersion is not null)
-                ? new AsyncRelayCommand(() => ChangeAsync(id, disabled ? PluginChangeKind.Enable : PluginChangeKind.Disable)) : null,
+            RequestedEnabled = pending?.Kind == PluginChangeKind.Enable || (pending?.Kind != PluginChangeKind.Disable && enabled),
+            ToggleCommand = pending?.Kind is PluginChangeKind.Enable or PluginChangeKind.Disable && item!.Error.Length == 0
+                ? new AsyncRelayCommand(() => CancelChangeAsync(id))
+                : pending is null && (item is null || item.ActiveVersion is not null)
+                    ? new AsyncRelayCommand(() => ChangeAsync(id, enabled ? PluginChangeKind.Disable : PluginChangeKind.Enable)) : null,
             UninstallCommand = pending is null && (item is null || item.ActiveVersion is not null)
                 ? new AsyncRelayCommand(() => ChangeAsync(id, PluginChangeKind.Uninstall)) : null,
             RollbackCommand = pending is null && item?.Recovery is not null
                 ? new AsyncRelayCommand(() => ChangeAsync(id, PluginChangeKind.Rollback)) : null,
             CancelChangeCommand = pending is not null && (item!.Error.Length == 0 || pending.Kind == PluginChangeKind.Activate)
-                ? new AsyncRelayCommand(() => RunOperationAsync(async () =>
-                {
-                    await Task.Run(() => manager.CancelPending(id));
-                    OperationStatus = "变更已取消；已有版本将在重启后继续使用。";
-                })) : null
+                ? new AsyncRelayCommand(() => CancelChangeAsync(id)) : null
         };
     }
 
@@ -127,10 +127,27 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     {
         var file = PickArchiveAsync is null ? null : await PickArchiveAsync();
         if (file is null || _stopping) return;
+        await QueueArchiveAsync(file);
+    });
+
+    // Picker and native drop share the same trust confirmation, serialization and validation.
+    public Task InstallArchiveAsync(string file) => CanInstall
+        ? RunOperationAsync(() => QueueArchiveAsync(file)) : Task.CompletedTask;
+
+    private async Task QueueArchiveAsync(string file)
+    {
+        if (!Path.IsPathFullyQualified(file) || !string.Equals(Path.GetExtension(file), ".zip", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("请选择一个本地 ZIP 插件包。");
         if (ConfirmAsync is null || !await ConfirmAsync("安装或更新此插件包？插件将在重启后执行，请仅选择可信来源。")) return;
         if (_stopping) return;
         await Task.Run(() => manager!.QueueInstall(file, host.Records));
         OperationStatus = "插件包已校验，退出并重新打开软件后生效。";
+    }
+
+    private Task CancelChangeAsync(string id) => RunOperationAsync(async () =>
+    {
+        await Task.Run(() => manager!.CancelPending(id));
+        OperationStatus = "变更已取消；已有版本将在重启后继续使用。";
     });
 
     private Task ChangeAsync(string id, PluginChangeKind kind) => RunOperationAsync(async () =>

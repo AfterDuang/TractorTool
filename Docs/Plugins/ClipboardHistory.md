@@ -2,58 +2,71 @@
 
 ## 1. 范围与依据
 
-本文集中维护首版剪贴板插件的业务需求、平台设计和验收方法，对应 [产品需求](../TractorTool.md) R08、R09。公共接入规则见 [插件开发规范](../PLUGIN_DEVELOPMENT.md)，宿主机制见 [软件架构](../ARCHITECTURE.md)。实施阶段为 M2；实际完成情况及 A08 验收结果只记录在 [开发与验收](../DEVELOPMENT.md#acceptance)。
+本文维护首版剪贴板插件的需求、Windows 适配、交互和验收方法，对应 [产品需求](../TractorTool.md) R08、R09。公共接入规则见 [插件开发规范](../PLUGIN_DEVELOPMENT.md)，宿主机制见 [软件架构](../ARCHITECTURE.md)。实施阶段为 M2；实际验收结果只记录在 [开发与验收](../DEVELOPMENT.md#acceptance)。
 
 ## 2. 已确认行为
 
-首版读取 Windows 自带的剪贴板历史，进入页面时加载，支持手动刷新和基本列表展示。系统历史关闭、访问被拒绝、内容为空、项目已失效时分别给出明确状态。
+用户的主要流程是：找到曾复制的内容 → 选择并预览 → 再次复制 → 粘贴到目标应用。只展示历史文本和占位卡片不能满足此流程。
 
-内容类型按系统 API 实际返回情况处理，无法展示的项目提供占位说明，不能导致整个页面失败。具体支持的展示类型在实现与验收时记录。
+- **左侧历史、右侧预览**：左侧紧凑列表显示类型、文本摘要和时间；单击选择，右侧显示可选文本或图片。两侧分别滚动，滚动条在各自面板边缘，不给每条记录再套滚动卡片。
+- **再次复制**：右侧“复制”按钮、历史行双击、列表聚焦时 Enter / Ctrl+C，均复制选中的系统原历史项。右侧文本选区的 Ctrl+C 继续复制所选文字。复制不自动粘贴或切换外部应用。
+- **系统事件刷新**：打开页面加载；页面存续期间订阅系统历史变化/历史开关事件，合并刷新请求；窗口重新获得焦点时补刷。保留手动刷新，支持重试暂时失败的预览。
+- **保留上下文**：刷新成功时按系统 Id 更新列表，尽量保留当前选择和已生成的预览；所选项被系统移除才选择其他项。访问暂时被拒绝不立即清空已有列表。
+- **原内容独立于预览**：预览被截断、图片太大或类型无法展示时，仍可请求 Windows 复制完整原内容；系统拒绝或该项已删除要明确反馈，不能显示虚假成功。
+- **系统拥有历史**：不监听当前剪贴板来建立自己的数据库，不保存历史正文或图片到应用数据/日志。离页解绑系统事件并释放预览，不增加常驻服务。
 
-该插件用于验证 Windows 专属能力、按需页面、插件导航与错误状态。系统 API 调用留在 Windows 插件内部，不能让宿主核心依赖 Windows 剪贴板 API。
-
-- 只查看系统已有历史，不建立自己的历史库，不增加常驻监听来代替系统历史。
-- 默认先完成文本展示，再根据系统实际返回能力增加图片或其他类型；最终支持范围以实际结果记录。
-- 页面采用宿主共享主题与控件，导航由插件注册，不能把剪贴板业务硬编码到宿主。
+交互参考 [Apple 分栏视图](https://developer.apple.com/design/human-interface-guidelines/split-views) 与 [滚动视图](https://developer.apple.com/design/human-interface-guidelines/scroll-views) 的相邻列表/详情、区域独立滚动原则。保留 Windows 和 Avalonia 的控件与输入行为，不照搬 macOS 外观。具体视觉和缩放结果需在真实窗口验收。
 
 ## 3. 平台与内部设计
 
-剪贴板插件使用 Windows 历史 API，区分成功、访问被拒绝和系统历史未启用。切换页面后可以释放显示资源；刷新取消令牌只作用于该次加载，不影响视频任务。[Windows API 状态](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboardhistoryitemsresultstatus?view=winrt-26100)
-
-插件采用 `net10.0-windows10.0.19041.0`，最低支持版本声明为 Windows 10 build 19041，固定 Windows SDK 投影包 `10.0.19041.57`。API 自 build 17763 引入，但本插件采用更高的编译/支持基线；这不是最低系统实机测试结论。清单排除非 Windows，入口再次检查版本。[系统 API](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.gethistoryitemsasync?view=winrt-26100)、[桌面应用使用 WinRT](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-apis-desktop-apps)
-
-当前源码位于 [TractorTool.Plugins.ClipboardHistory](../../Plugins/TractorTool.Plugins.ClipboardHistory)，只正式引用已发布的 Contracts/UI，宿主没有对此插件的静态项目引用。职责如下：
+插件采用 `net10.0-windows10.0.19041.0`，最低支持 Windows 10 build 19041，固定 Windows SDK 投影包 `10.0.19041.57`。历史 API 自 build 17763 引入，插件使用更高编译基线；这不是最低系统实机测试结论。清单排除非 Windows，入口再次检查系统版本。[历史读取 API](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.gethistoryitemsasync?view=winrt-26100)、[桌面应用使用 WinRT](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-apis-desktop-apps)
 
 | 部分 | 责任 |
 | --- | --- |
-| [ClipboardPlugin](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardPlugin.cs) | 注册导航及页面工厂；每次创建页面使用新的 VM |
-| [WindowsClipboardHistory](../../Plugins/TractorTool.Plugins.ClipboardHistory/WindowsClipboardHistory.cs) | 调用系统 API，保留系统状态和单项读取错误；不使用 Task.Run 将访问转移到任意后台线程 |
-| [ClipboardHistoryViewModel](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryViewModel.cs) | 页面首次进入时加载、手动刷新、维护加载/空/失败状态；取消和迟到返回保护 |
-| [ClipboardHistoryView](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryView.axaml) | 共享主题下的列表、可选中文本、状态说明和刷新入口 |
+| [ClipboardPlugin](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardPlugin.cs) | 页面工厂和导航注册，传入宿主停止令牌及 UI 派发函数 |
+| [WindowsClipboardHistory](../../Plugins/TractorTool.Plugins.ClipboardHistory/WindowsClipboardHistory.cs) | 读取系统快照、保留原生历史项、事件订阅、按需预览、复制原项；不使用 Task.Run 转移 WinRT 剪贴板访问 |
+| [ClipboardHistoryViewModel](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryViewModel.cs) | 事件合并、Id/选择保留、状态、预览取消和迟到结果保护、复制反馈及离页清理 |
+| [ClipboardHistoryView](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryView.axaml) | 分栏与共享主题、各自滚动、双击/键盘交互和窗口激活补刷 |
 
-系统历史由 Windows 拥有，宿主只提供页面、设置、目录和日志等公共能力。当前仅展示文本，每项显示最多 20,000 字符；不支持的图片/文件等内容显示占位，失效或读取失败的单项不影响其他项。页面加载和手动刷新由 Avalonia UI 线程发起，保留 WinRT 剪贴板访问所需线程/前台上下文；实际权限、窗口焦点和系统策略差异需在 Windows 运行验证。
+`HistoryChanged` / `HistoryEnabledChanged` 回调只发出刷新通知，页面将通知派发到 Avalonia UI 线程再调用 `GetHistoryItemsAsync`。读取进行中收到多个事件时，合并为随后一次读取；本次异常也继续消费已排队的通知。项目按原始 `Timestamp` 倒序排列，不按本地时间字符串排序。[系统历史事件](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.historychanged?view=winrt-26100)
 
-插件没有私有设置页或后台监听，无需为演示而增加开关或历史数据库。独立版本 `1.0.0` 在清单中维护，打包脚本将其作为程序集产品版本。私有的 MVVM、Windows SDK 投影及 WinRT 运行库随包提供；许可来源与文件见 [NOTICE.md](../../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)。
+复制调用 `Clipboard.SetHistoryItemAsContent`，传入保留的原 `ClipboardHistoryItem`；结果区分 Success、AccessDenied、ItemDeleted 和异常。未知预览格式不会被转换成文本再复制。系统焦点/策略或内容已失效时仍可能失败；Windows 并不保证任意文件或自定义格式都会进入系统历史。[复制原历史项](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.sethistoryitemascontent?view=winrt-26100)
+
+当前预览范围（代码能力，实际系统格式待验）：
+
+| 系统提供的内容 | 预览方式与界限 |
+| --- | --- |
+| 文本 | 左侧摘要最多 180 字符；右侧最多 20,000 字符并提示截断；复制使用原项 |
+| Bitmap | 只为当前选中项异步读取/解码；输入流最多 32 MiB、源图最多 1 亿像素、预览长边最多 1600 像素；超限提示并保留复制入口 |
+| HTML / RTF（没有可用普通文本时） | 以惰性纯文本展示源码；不执行 HTML、不获取远程资源，复制保留原格式 |
+| StorageItems（系统确实返回时） | 展示文件名，不打开或读取文件内容 |
+| 其他格式 | 显示类型说明；允许请求复制原项，不能保证目标应用支持粘贴 |
+
+图像通过 Windows `BitmapDecoder` 缩放解码为 BGRA 预乘像素，再创建 Avalonia 位图；替换预览前解除旧绑定再释放，离页或迟到结果也释放资源。[缩放像素读取 API](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.imaging.bitmapdecoder.getpixeldataasync?view=winrt-26100)
+
+正式构建只引用已发布 Contracts/UI，宿主没有插件静态项目引用。独立版本 **1.1.0** 在清单维护，打包脚本派生程序集产品版本；已有 1.0.0 应走更高版本更新，不能覆盖同版本 DLL。私有 MVVM、SDK 投影与 WinRT 库随包提供，许可见 [NOTICE.md](../../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)。不增加专属设置页或历史数据库。
 
 ## 4. 生命周期、错误与数据
 
-- 进入页面时加载，离页可以取消本次读取、释放显示资源和订阅；取消令牌不得影响其他插件、任务或插件宿主生命周期。
-- 区分系统历史关闭、访问拒绝、没有内容、单项已失效和类型无法展示。单项失败保留其占位说明，不让整个列表失败。
-- Windows 专属代码留在插件内，非支持平台在加载前被清单过滤；不模拟其他系统的 Windows 历史接口。
-- 不把历史正文复制到应用数据库或运行日志；若以后确需展示偏好，使用宿主提供的插件设置存储，不以此保存历史内容。
-- 调试和验收不擅自清空剪贴板、修改系统历史设置或记录真实敏感正文。
+- 页面离开先停止接收事件，再取消读取/预览。迟到结果和已经排队的 UI 回调不能重建离页内容；所有异步操作结束后再释放生命周期取消源。
+- 选中项变化取消旧预览；旧结果不能覆盖新项，也不能提前结束新项的加载状态。只保留一个当前预览，不缓存全部图片。
+- 临时访问拒绝保留已有列表；成功读取为空或历史已关闭时清空选择/预览。系统状态、预览失败与复制结果分别提示。
+- 页面操作不影响其他插件的有限任务或常驻服务。Windows 专属实现只留在插件内。
+- 不记录真实剪贴板正文，不擅自清空历史、改动系统历史开关或删除用户内容；运行验收由用户用临时内容执行。
 
 ## 5. 验收方法
 
-以下是待执行方法，不是通过记录。统一结果位置为 [开发验收 A08](../DEVELOPMENT.md#acceptance)，同时关联 A02/A03 的独立加载和兼容性要求。
+下表是待执行方法，不是通过记录；完整结果集中在 [开发验收 A08](../DEVELOPMENT.md#acceptance) / [E17](../DEVELOPMENT.md#evidence-clipboard-ux)。
 
 | 场景 | 判定与证据 |
 | --- | --- |
-| 真实历史读取 | 独立构建的插件在已发布宿主中加载；进入页面显示系统实际返回的内容 |
-| 手动刷新 | 更新的是系统当前历史；切页再返回仍可加载，未启动自建历史监听 |
-| 系统状态 | 历史关闭、访问拒绝、空列表分别有明确说明，不能全部归为“没有内容” |
-| 单项异常 | 已失效或不支持的内容有占位，其他项目继续显示 |
-| 生命周期 | 离页/刷新取消只影响该次读取；不停止其他任务或常驻服务 |
-| 平台与 UI | 在目标 Windows/SDK 环境真实调用；记录内容类型清单、主题和长内容展示结果 |
+| 独立更新 | 将 1.1.0 ZIP 拖入已发布宿主插件页，确认后显式退出重启；版本更新且宿主文件未替换 |
+| 分栏与选择 | 窄/宽窗口、浅/深色、长文本、空列表；左右独立滚动，选中行无多层卡片高亮，文本选区仅在预览区域 |
+| 再次复制 | 临时文本、截图、超长文本；复制后粘贴到适合的目标应用，核对原内容；双击空白/滚动条不复制 |
+| 自动刷新 | 页面打开时在其他应用复制临时内容，返回后刷新；快速连续复制不并发读写，也不不断重置选择 |
+| 预览竞争 | 快速切换图片/文本、刷新时继续切换；最后选中的内容正确，旧请求不遮盖当前预览 |
+| 系统状态 | 历史关闭、空、拒绝、系统移除选中项、暂时无法预览时分别有反馈；手动刷新可重试预览 |
+| 生命周期 | 多次切页/返回、隐藏/恢复后刷新正常；离页不再响应历史事件，应用退出无资源异常 |
+| 格式界限 | 记录 Windows 实际返回的格式和目标应用粘贴结果；不能将模型替身或文件存在当作 WinRT 成功 |
 
-另有 [ClipboardChecks](../../tests/TractorTool.ClipboardChecks/Program.cs) 使用可控读取器覆盖状态、初始化一次/手动刷新、离页迟到结果、异常脱敏和应用取消。它不能证明 Windows API 已调用；本轮仅编译，未执行。真实 Windows 结果与这些模型检查及构建结果分开记录。
+[ClipboardChecks](../../tests/TractorTool.ClipboardChecks/Program.cs) 使用明确替身覆盖上述状态机、事件合并、选择保留、原项 Id 复制、迟到预览/离页及错误脱敏，未调用 Windows API。构建、模型运行和真实 UI 三类结果分开记账；用户接手运行验收后，代理未自行执行这些检查。

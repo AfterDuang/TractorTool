@@ -81,6 +81,8 @@ M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundServic
 
 ### 2.4 安装、更新、禁用和卸载
 
+宿主插件页使用 Avalonia `IDataTransfer` 原生文件拖放，只接受一个本地 ZIP；拖入与文件选择共用确认、校验、串行排队及退出保护，不另造安装路径。启停使用 `ToggleSwitch.IsCheckedChanged`，覆盖点击和拖动滑块；初始绑定不产生管理请求。开关显示待生效目标，卡片另列当前加载状态和“重启后”提示；未执行的启停请求可反向切换取消，保存失败后恢复原状态。[Avalonia 拖放](https://docs.avaloniaui.net/docs/how-to/drag-and-drop-how-to)
+
 当前实现在 [PluginManager](../TractorTool.Core/Plugins/PluginManager.cs)、[PluginFiles](../TractorTool.Core/Plugins/PluginFiles.cs) 和 [管理状态](../TractorTool.Core/Plugins/PluginManagementState.cs)。操作串行写入 `<PluginRoot>/.management/state.json`，沿用带版本 JSON 原子替换和备份；活动版本与待处理请求独立，UI 同时显示当前生效状态和重启后状态。此状态属于具体软件安装，不存入可迁移的外观配置。
 
 安装/更新在 `.management/staging/<Token>` 解压并校验路径、链接、大小、清单兼容性、共享程序集副本和入口 PE 元数据；此时不执行 DLL。文件摘要保存到待处理请求。版本目录不可覆盖，普通更新只接受更高版本；下次启动重新校验摘要后移动到最终目录，再提交活动选择。忽略 `.management`，从不把暂存包当作候选插件。

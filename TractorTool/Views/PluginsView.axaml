@@ -1,9 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
-             x:Class="TractorTool.Views.PluginsView" x:DataType="vm:PluginsViewModel">
+             x:Class="TractorTool.Views.PluginsView" x:DataType="vm:PluginsViewModel"
+             Background="Transparent" DragDrop.AllowDrop="True">
+  <Grid>
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="20">
-      <ui:SettingRow Header="本地插件" Description="从可信 ZIP 安装或更新插件，变更在重启后生效。" Icon="Folder">
+      <ui:SettingRow Header="本地插件" Description="拖入 ZIP 或选择文件安装，变更在重启后生效。" Icon="Folder">
         <WrapPanel>
           <Button Content="安装 / 更新" Command="{Binding InstallCommand}" Classes="accent" Margin="0,0,8,0" />
           <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" />
@@ -50,6 +52,9 @@
                   <TextBlock Text="{Binding Version, StringFormat='版本 {0}'}" Classes="caption" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Spacing="10" Margin="12,0,0,0" MinWidth="76">
+                  <ToggleSwitch IsChecked="{Binding RequestedEnabled, Mode=OneWay}" IsCheckedChanged="OnPluginEnabledChanged"
+                                IsEnabled="{Binding CanToggle}" OnContent="启用" OffContent="禁用"
+                                AutomationProperties.Name="{Binding Name}" ToolTip.Tip="启用状态（重启后生效）" />
                   <TextBlock Text="{Binding State}" TextAlignment="Right" Classes="caption" />
                   <Button Content="打开工具" Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}" />
                 </StackPanel>
@@ -57,7 +62,6 @@
                 <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Spacing="10" Margin="0,14,0,0">
                   <TextBlock Text="{Binding PendingText}" IsVisible="{Binding HasPending}" Classes="caption" />
                   <WrapPanel>
-                    <Button Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
                     <Button Content="卸载" Command="{Binding UninstallCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
                     <Button Content="回退版本" Command="{Binding RollbackCommand}" IsVisible="{Binding CanRollback}" Margin="0,0,8,0" />
                     <Button Content="取消变更" Command="{Binding CancelChangeCommand}" IsVisible="{Binding CanCancelChange}" />
@@ -70,4 +74,14 @@
       </ItemsControl>
     </StackPanel>
   </ScrollViewer>
+    <Border x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False" Margin="8"
+            Background="{DynamicResource AppCardBrush}" Opacity="0.96" BorderThickness="2"
+            BorderBrush="{DynamicResource SystemAccentColor}" CornerRadius="10">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+        <ui:ToolIcon Kind="Tools" FontSize="44" HorizontalAlignment="Center" />
+        <TextBlock Text="松开以安装插件" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock Text="仅安装你信任的 ZIP 插件包" Classes="caption" TextAlignment="Center" />
+      </StackPanel>
+    </Border>
+  </Grid>
 </UserControl>

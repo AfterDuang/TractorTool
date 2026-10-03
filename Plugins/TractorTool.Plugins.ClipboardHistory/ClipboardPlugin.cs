@@ -1,5 +1,6 @@
 using TractorTool.Contracts;
 using TractorTool.UI;
+using Avalonia.Threading;
 
 namespace TractorTool.Plugins.ClipboardHistory;
 
@@ -18,8 +19,9 @@ public sealed class ClipboardPlugin : IPlugin, IPluginUiModule
     {
         var context = _context ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("history", "剪贴板历史",
-            () => new ClipboardHistoryView { DataContext = new ClipboardHistoryViewModel(new WindowsClipboardHistory(), context.ApplicationStopping) },
-            new PluginPageOptions(ToolIconKind.Clipboard, "查看 Windows 保存的历史，随时手动刷新。"));
+            () => new ClipboardHistoryView { DataContext = new ClipboardHistoryViewModel(new WindowsClipboardHistory(), context.ApplicationStopping,
+                action => Dispatcher.UIThread.Post(action)) },
+            new PluginPageOptions(ToolIconKind.Clipboard, "找回复制过的内容，预览并再次使用。"));
     }
     public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
     public ValueTask DisposeAsync() { _context = null; return ValueTask.CompletedTask; }

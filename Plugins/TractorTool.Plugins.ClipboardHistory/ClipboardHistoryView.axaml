@@ -1,28 +1,81 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:TractorTool.Plugins.ClipboardHistory"
              x:Class="TractorTool.Plugins.ClipboardHistory.ClipboardHistoryView" x:DataType="local:ClipboardHistoryViewModel">
-  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="16">
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
     <Grid ColumnDefinitions="*,Auto">
-      <TextBlock Text="{Binding Status}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,16,0" />
+      <StackPanel Spacing="4" VerticalAlignment="Center" Margin="0,0,12,0">
+        <TextBlock Text="{Binding Status}" Classes="muted" />
+        <TextBlock Text="{Binding WatchError}" Classes="caption" IsVisible="{Binding HasWatchError}" />
+      </StackPanel>
       <Button Grid.Column="1" Content="刷新" Command="{Binding RefreshCommand}" />
     </Grid>
     <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsLoading}" Height="3" />
-    <ListBox Grid.Row="2" ItemsSource="{Binding Items}" Background="Transparent" BorderThickness="0"
-             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-      <ListBox.Styles>
-        <Style Selector="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style>
-      </ListBox.Styles>
-      <ListBox.ItemTemplate>
-        <DataTemplate x:DataType="local:HistoryEntry">
-          <Border Classes="card" Margin="0,0,8,8">
-            <StackPanel Spacing="10">
-              <TextBlock Text="{Binding Timestamp}" Classes="caption" />
-              <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-              <TextBlock Text="{Binding Detail}" Classes="caption" />
-            </StackPanel>
-          </Border>
-        </DataTemplate>
-      </ListBox.ItemTemplate>
-    </ListBox>
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="2*" MinWidth="180" MaxWidth="380" />
+        <ColumnDefinition Width="12" />
+        <ColumnDefinition Width="3*" MinWidth="240" />
+      </Grid.ColumnDefinitions>
+      <Border Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*">
+          <TextBlock Text="历史记录" Classes="sectionTitle" Margin="16,14" />
+          <ListBox x:Name="HistoryList" Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedEntry}"
+                   Background="Transparent" BorderThickness="0" Padding="0" AutomationProperties.Name="剪贴板历史记录"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="12" />
+                <Setter Property="Margin" Value="4,2,8,2" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="local:HistoryEntry">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding TypeName}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Summary}" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Timestamp}" Classes="caption" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+      <Border Grid.Column="2" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+        <Grid>
+          <TextBlock Text="在左侧选择一条历史记录" Classes="muted" HorizontalAlignment="Center"
+                     VerticalAlignment="Center" Margin="20" IsVisible="{Binding !HasSelection}" />
+          <Grid RowDefinitions="Auto,Auto,*,Auto" IsVisible="{Binding HasSelection}">
+            <Grid ColumnDefinitions="*,Auto" Margin="18,14">
+              <StackPanel Spacing="4" VerticalAlignment="Center" Margin="0,0,12,0">
+                <TextBlock Text="{Binding SelectedEntry.TypeName}" Classes="sectionTitle" />
+                <TextBlock Text="{Binding SelectedEntry.Timestamp}" Classes="caption" />
+              </StackPanel>
+              <Button Grid.Column="1" Content="复制" Command="{Binding CopyCommand}" Classes="accent"
+                      VerticalAlignment="Center" AutomationProperties.Name="复制选中的原内容" />
+            </Grid>
+            <ProgressBar Grid.Row="1" IsIndeterminate="True" IsVisible="{Binding IsPreviewLoading}" Height="3" />
+            <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          HorizontalContentAlignment="Stretch">
+              <ContentControl Content="{Binding Preview}" HorizontalContentAlignment="Stretch" Margin="18,8,18,18">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate x:DataType="local:HistoryPreview">
+                    <StackPanel Spacing="14">
+                      <Image Source="{Binding Image}" IsVisible="{Binding HasImage}" Stretch="Uniform"
+                             HorizontalAlignment="Stretch" AutomationProperties.Name="剪贴板图片预览" />
+                      <SelectableTextBlock Text="{Binding Text}" IsVisible="{Binding HasText}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" Classes="caption" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
+            </ScrollViewer>
+            <TextBlock Grid.Row="3" Text="{Binding CopyStatus}" IsVisible="{Binding HasCopyStatus}" Classes="caption" Margin="18,8,18,14" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
   </Grid>
 </UserControl>

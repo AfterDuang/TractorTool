@@ -136,7 +136,7 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -c Release "-p:H
 ./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/manual-publish -Output H:/ProjH/TractorTool/artifacts/manual-clipboard
 ```
 
-输出必须是新空目录。通过宿主“插件 → 安装 / 更新”选择 ZIP、确认可信来源后，显式退出并重新启动，不能只关闭到托盘。插件及其检查工程不加入宿主日常构建链，VS Code 设计时引用仅用于补全；发布后独立构建才是正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
+输出必须是新空目录。将单个本地 ZIP 拖到宿主插件面板，或通过“插件 → 安装 / 更新”选择 ZIP；两者共用可信来源确认及校验流程。确认后显式退出并重新启动，不能只关闭到托盘。插件及其检查工程不加入宿主日常构建链，VS Code 设计时引用仅用于补全；发布后独立构建才是正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
 
 ## 7. 插件交付要求
 
