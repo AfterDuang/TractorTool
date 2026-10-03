@@ -23,6 +23,27 @@ foreach (var status in new[] { HistoryStatus.Disabled, HistoryStatus.Denied, His
         vm.OnNavigatedFrom();
     });
 
+await Check("Preview header remains bindable through empty, selected, cleared and departed states", async () =>
+{
+    var service = new Service(_ => Task.FromResult(Snapshot(Entry("one"))));
+    var vm = Model(service);
+    var notifications = new HashSet<string?>();
+    vm.PropertyChanged += (_, e) => notifications.Add(e.PropertyName);
+    Assert(vm.SelectedTypeName == "" && vm.SelectedTimestamp == "");
+    await vm.InitializeAsync();
+    Assert(vm.SelectedTypeName == "文本" && vm.SelectedTimestamp == "fixture time");
+    Assert(notifications.Contains(nameof(vm.SelectedTypeName)) && notifications.Contains(nameof(vm.SelectedTimestamp)));
+    notifications.Clear();
+    service.Read = _ => Task.FromResult(Snapshot());
+    await vm.RequestRefreshAsync();
+    Assert(!vm.HasSelection && vm.SelectedTypeName == "" && vm.SelectedTimestamp == "");
+    Assert(notifications.Contains(nameof(vm.SelectedTypeName)) && notifications.Contains(nameof(vm.SelectedTimestamp)));
+    service.Read = _ => Task.FromResult(Snapshot(Entry("image", HistoryKind.Image)));
+    await vm.RequestRefreshAsync();
+    Assert(vm.SelectedTypeName == "图片");
+    vm.OnNavigatedFrom();
+    Assert(vm.SelectedTypeName == "" && vm.SelectedTimestamp == "");
+});
 await Check("Initialization subscribes once; manual refresh retries the current preview", async () =>
 {
     var service = new Service(_ => Task.FromResult(Snapshot(Entry("one"))));

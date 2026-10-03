@@ -27,6 +27,7 @@ public sealed record PluginCard(string Name, string Version, string Description,
     public bool CanManage => UninstallCommand is not null;
     public bool CanRollback => RollbackCommand is not null;
     public bool CanCancelChange => CancelChangeCommand is not null;
+    public bool HasActions => CanOpen || CanManage || CanRollback || CanCancelChange;
 }
 
 public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCommand showLogsCommand, PluginManager? manager = null, IAppLog? log = null) : ViewModelBase

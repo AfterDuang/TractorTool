@@ -31,10 +31,12 @@ public partial class ClipboardHistoryViewModel : ObservableObject, IPluginPageLi
     [ObservableProperty] private string _status = "正在读取系统剪贴板历史…";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasWatchError))] private string _watchError = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasCopyStatus))] private string _copyStatus = "";
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSelection)), NotifyCanExecuteChangedFor(nameof(CopyCommand))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSelection), nameof(SelectedTypeName), nameof(SelectedTimestamp)), NotifyCanExecuteChangedFor(nameof(CopyCommand))]
     private HistoryEntry? _selectedEntry;
     [ObservableProperty] private HistoryPreview? _preview;
     public bool HasSelection => SelectedEntry is not null;
+    public string SelectedTypeName => SelectedEntry?.TypeName ?? "";
+    public string SelectedTimestamp => SelectedEntry?.Timestamp ?? "";
     public bool HasWatchError => WatchError.Length != 0;
     public bool HasCopyStatus => CopyStatus.Length != 0;
     public bool CanRefresh => !_left && !_token.IsCancellationRequested && !IsLoading;

@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**当前收敛 M2：已补充 ZIP 拖入安装、启停滑块，以及剪贴板 1.1.0 的分栏预览、再次复制和系统事件刷新；新版运行验收待用户执行，M3–M5 未开始。** 用户本轮截图显示旧版历史列表能够出现，但非文本占位、缺少复制和布局问题妨碍使用，不能视作 A08 通过。代理仅做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或读取真实剪贴板。最新证据见 [E17](#evidence-clipboard-ux)。
+**当前收敛 M2：已修正拖放提示框边界、插件卡片布局及剪贴板空选择绑定，交付插件 1.1.1；新版运行验收待用户执行，M3–M5 未开始。** 用户截图证实 1.1.0 已加载，但暴露布局与绑定缺陷，不代表 A08 全部通过。代理仅做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或读取真实剪贴板。最新证据见 [E18](#evidence-ui-fixes)。
 
 ### 1.1 代码事实
 
@@ -25,11 +25,11 @@
 | Review 与彩色图标 | 修复重复初始化造成入口重复、插件页加载/目录失败时状态矛盾；导航和卡片接入 Fluent Emoji PNG，操作仍用单色符号。图片由宿主缓存并在窗口关闭后释放；静态复审完成，最新运行回归未执行，见 [E09](#evidence-icons-review) |
 | 设置与主题 | 浅色、深色、跟随系统及四种主题色、动画选择后即时应用并自动保存；正常保存不显示常驻说明，失败提示重试。新增主要表面的 220 ms 颜色过渡，遵循动画开关。保存队列见 [E12](#evidence-appearance-review)，最新编译及待验范围见 [E13](#evidence-theme-transition) |
 | 生命周期 | 普通关闭隐藏到托盘；托盘不可用时保持窗口；恢复事件与实例锁统一路径规范化；退出禁用新保存/页面操作，有界等待已有保存和插件清理，Stop/后台活动/取消回调结束后才 Dispose |
-| 测试 | 核心 15 项管理检查沿用；剪贴板模型扩展为 19 项；发布 SDK 的 Headless 工程增加 7 项管理 UI 检查，最新均仅编译，未新增测试框架 |
+| 测试 | 核心 15 项管理检查沿用；剪贴板模型扩展为 20 项，包含空选择标题通知；发布 SDK 的 Headless 工程有 7 项管理 UI 检查，最新均仅编译，未新增测试框架 |
 | 发布验证 | [Publish-Host.ps1](../scripts/Publish-Host.ps1)、[Verify-M1.ps1](../scripts/Verify-M1.ps1)，win-x64 自包含目录发布，禁用 AOT/裁剪/单文件 |
 | 产品版本与图标 | `Directory.Build.props` → 程序集元数据 → AppInfo → 关于页/日志；PNG/多尺寸 ICO 由同一透明多功能工具母版导出，见 [E06](#evidence-version) |
 | 绑定与 VS Code 预览 | 已修正字符串可见性、设置错误区域无 DataContext 默认显示及旧代码残留，见 [E14](#evidence-settings-cleanup)；E15 默认 Debug 已重新构建成功，先前占用不再阻塞这次构建，预览显示仍需刷新确认 |
-| 正式剪贴板 | [独立工程](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 1.1.0：列表/预览分栏、文本/图片等预览、系统原项复制、系统事件与窗口激活刷新、保留选择/取消/资源清理；格式界限见 [插件文档](Plugins/ClipboardHistory.md)，新代码未实际调用 Windows API |
+| 正式剪贴板 | [独立工程](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 1.1.1：修正右侧预览标题的空选择绑定；保留分栏、按需图片预览、系统原项复制、事件/焦点补刷，没有定时轮询；格式界限见 [插件文档](Plugins/ClipboardHistory.md)，代理未实际调用 Windows API |
 | 版本管理 | 本地 Git `main`，M1 基线 `fc18c20`；本轮 M2 独立保存为后续本地提交，无远程；构建产物/测试数据不入库 |
 | 尚未实现 | M3 包管理/进程服务；M4 视频、有限任务队列；M5 数据目录迁移、恢复完善、CI/安装器；当前 M2 的真实管理及剪贴板运行证据仍缺 |
 
@@ -37,16 +37,16 @@
 
 ### 1.2 最近证据与限制
 
-最新一轮按用户截图改进管理交互和剪贴板可用性。GPT-6.1-Sol + high 子代理复审实现及回归源码，修复确定问题后未发现新的确定 P1/P2；这不等于运行结果或全仓库无缺陷。完整证据见 [E17](#evidence-clipboard-ux)，管理事务初始交付及 Git 建立记录保留在 [E16](#evidence-m2)。
+最新一轮按用户截图修复拖放遮罩、插件卡片及空选择绑定。GPT-6.1-Sol + high 子代理只读复审本次差异及相关生命周期，未发现新的确定缺陷；这不等于运行结果或全仓库无缺陷。完整证据见 [E18](#evidence-ui-fixes)，交互初版及管理事务记录保留在 E17/E16。
 
 | 层级 | 最近事实 | 证据 |
 | --- | --- | --- |
-| 静态检查 | 事件/预览生命周期、启停拖动和安装入口经复审；文档、XML、包和差异见 E17 | [E17](#evidence-clipboard-ux) |
-| 构建 | 最终 Release 宿主发布、独立插件及模型/集成检查成功；最后默认 Debug 被正在运行的 TractorTool PID 49588 占用，10 警告/2 错误，未终止用户进程 | [E17](#evidence-clipboard-ux) |
-| 发布准备 | `artifacts/m2-clipboard-final/host` 发布后独立构建 1.1.0 ZIP，234 个原有宿主文件 SHA256 不变；宿主未预装插件，供用户拖入验收 | [E17](#evidence-clipboard-ux) |
-| 自动化 | 历史旧核心 33/33 不覆盖当前改动；19 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E17](#evidence-clipboard-ux) |
-| 集成/Headless | 历史旧 UI 21/21 不覆盖当前改动；新增 7 项管理 UI 检查仅编译，原生拖放未验证 | [E01](#evidence-baseline)、[E17](#evidence-clipboard-ux) |
-| 真实 Windows UI | 用户截图提供旧版显示/选择缺陷的证据；新版 WinRT、多格式粘贴、系统事件、分栏及原生拖放均待用户验收 | [E17](#evidence-clipboard-ux) |
+| 静态检查 | 遮罩有效边距、卡片换行、派生属性通知与资源生命周期经复审；文档/XML/ZIP/差异文件核对 | [E18](#evidence-ui-fixes) |
+| 构建 | 最终默认 Debug、独立插件及模型/集成检查均 0 警告/0 错误，Release 发布成功；初次 AXAML 格式化错误已修正 | [E18](#evidence-ui-fixes) |
+| 发布准备 | `artifacts/m2-ui-fixes/host` 发布后独立构建 1.1.1 ZIP，234 个原有宿主文件 SHA256 不变；宿主未预装插件 | [E18](#evidence-ui-fixes) |
+| 自动化 | 历史旧核心 33/33 不覆盖当前改动；20 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E18](#evidence-ui-fixes) |
+| 集成/Headless | 历史旧 UI 21/21 不覆盖当前改动；7 项管理 UI 检查仅编译，原生拖放未验证 | [E01](#evidence-baseline)、[E18](#evidence-ui-fixes) |
+| 真实 Windows UI | 用户截图证实 1.1.0 加载并暴露本次三处缺陷；1.1.1 及新宿主修正效果待用户验收 | [E18](#evidence-ui-fixes) |
 
 证据保留：早前整个 artifacts 曾在外部被清理，旧发布、日志和修改前快照已不可读取；历史记录仍保留，但不表示对应文件尚在。version-icon-final 和 E06/E07 证据在清理后重建，历史测试未重跑。历史成功不能自动覆盖后续代码。
 
@@ -81,7 +81,7 @@ dotnet run --project .\tests\TractorTool.Checks -c Release
 
 不带 `--profile-root` 时使用产品默认 `%LOCALAPPDATA%\TractorTool`。该参数仅用于隔离开发/验收，不是数据迁移功能；路径必须为绝对路径。固定启动文件是 `<ProfileRoot>/bootstrap.json`，默认与数据根相同。已存在的有效 `dataRoot` 指针受支持，目录不存在时拒绝启动并保留指针。应用内数据迁移仍在 M5。
 
-最新副本为 `artifacts/m2-clipboard-final/host`，未预装插件；将同级 `clipboard/TractorTool.ClipboardHistory-1.1.0.zip` 拖入插件页并重启。隔离启动与准确命令见 [E17](#evidence-clipboard-ux)，未经新指示不代用户启动。旧 m2-ready 含 1.0.0；中间 m2-clipboard-ux 不作为交付。完整 M1 机制回归仍由 Verify-M1.ps1 生成自己的副本和测试插件，不能将空宿主或正式剪贴板插件冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确 profile。
+最新副本为 `artifacts/m2-ui-fixes/host`，未预装插件；将同级 `clipboard/TractorTool.ClipboardHistory-1.1.1.zip` 拖入插件页并重启。隔离启动与准确命令见 [E18](#evidence-ui-fixes)，未经新指示不代用户启动。旧 m2-ready / m2-clipboard-final 不包含本次修正。完整 M1 机制回归仍由 Verify-M1.ps1 生成自己的副本和测试插件，不能将空宿主或正式剪贴板插件冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确 profile。
 
 VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Previewer**；必要时执行 `Developer: Reload Window`。当前 DLL 的版本及可见性属性已核对，但尚未代用户刷新预览。
 
@@ -128,7 +128,7 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 
 独立交付 [剪贴板插件](Plugins/ClipboardHistory.md)，真实 Windows 历史读取/刷新及状态显示符合该文档。阶段出口是管理闭环和 A08 的真实系统证据，不接受自建历史库替代。
 
-当前代码与打包已落实上述范围，15 项管理和 8 项模型用例仅编译。变更生效、快照回退、ACL/占用、真实系统读取等仍待运行验收，暂不宣称 M2 全部通过。
+当前代码与打包已落实上述范围，15 项核心管理、20 项剪贴板模型及 7 项管理 UI 用例仅编译。最新 1.1.1 修复空选择绑定及宿主布局；变更生效、快照回退、ACL/占用、真实系统读取等仍待运行验收，暂不宣称 M2 全部通过。
 
 ### M3：公共依赖服务与媒体验证
 
@@ -163,7 +163,7 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 未完成：仅常驻活动切页/隐藏继续的 Headless 检查通过；真实视频任务及托盘待验证 |
 | A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | 部分通过：默认/自定义指针、路径分离、不可用目录保护；迁移/恢复在 M5 |
 | A07 | 外部包事务 | 哈希错误/中断不成就绪，重试成功，多版本共存，使用中不可删 | 集成 | 未验证 |
-| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | 用户截图显示旧版列表但暴露功能/布局不足；1.1.0 及 19 项模型检查已编译，新的 Windows 行为仍未运行验收 |
+| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | 用户截图证实 1.1.0 加载但有空选择绑定错误；1.1.1 及 20 项模型检查已编译，Windows 完整行为及修复效果仍待验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 未验证 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
 | A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | 未验证 |
@@ -239,7 +239,7 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 
 ## 6. 下一步与维护
 
-下一步由用户按 [E17](#evidence-clipboard-ux) 验证原生 ZIP 拖放、开关点击/拖动、重启变更，以及剪贴板预览/原项粘贴/事件与焦点刷新；旧版更新到 1.1.0 后再判断效果。先处理本阶段反馈，再决定进入 M3。未经新测试指示不代用户运行检查或 UI；数据目录迁移仍留 M5。
+下一步由用户按 [E18](#evidence-ui-fixes) 验证拖放边框对齐、卡片紧凑布局和空选择时的控制台，再完成 E17 的原生拖放/启停/重启、预览/粘贴/事件刷新闭环。已安装的 1.1.0 需要更新到 1.1.1；仅重建宿主不更新插件。先处理本阶段反馈，再决定进入 M3。未经新测试指示不代用户运行检查或 UI；数据目录迁移仍留 M5。
 
 后续有实质性进展时更新第 1 节当前状态、第 3 节里程碑和第 4 节验收结果。必要的真实命令和结果追加到下方附录，不用新流水账挤占当前摘要；同步 PROJECT_CONTEXT.md 的精简交接。文档归属按 README.md 维护。
 
@@ -248,6 +248,55 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 ## 附录：历史实施与验收记录
 
 以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
+
+<a id="evidence-ui-fixes"></a>
+
+<details open>
+<summary>E18 · 拖放边界、卡片布局与空选择绑定修复（2026-10-04）</summary>
+
+用户截图指出：拖放遮罩偏离正文边缘且内容透底；剪贴板 `SelectedEntry.TypeName/Timestamp` 在空选择时输出绑定错误；插件卡片右侧纵列撑高整体，卸载孤立在左下角。三处均有源码对应，不将黄色模块加载信息误记为异常。
+
+- `PluginsView` 的 DropOverlay 直接绑定命名正文 PageBody 的有效 Margin，遵循 shell 的右边距与页面底部留白；移除整体 Opacity，提示保持不透明。覆盖层不命中测试，父页仍接收拖放；缩放/滚动后的原生坐标待用户验证。
+- 卡片图标与标题顶对齐，版本/当前状态同行，右侧保留启停开关，打开/卸载/回退/取消集中在可换行的操作行；无可用操作不保留空行。重启生效及待变更语义保持。
+- 剪贴板 VM 提供非空 SelectedTypeName/SelectedTimestamp 及选择变化通知；避免在隐藏区求值空对象链。新增模型用例覆盖初始空、选择、历史清空、再次选择及离页。插件升至 **1.1.1**，不覆盖已安装 1.1.0 DLL。
+- 核查刷新为系统 HistoryChanged/HistoryEnabledChanged、首次进入、窗口激活和手动刷新，没有定时器或持续轮询；图片为当前选择按需缩放预览，复制仍恢复原历史项。业务细节只维护在 [插件文档](Plugins/ClipboardHistory.md#3-平台与内部设计)。
+
+GPT-6.1-Sol + high 子代理只读复审最终差异、空值通知、有效边距与操作换行、事件合并和预览释放，未发现新的确定缺陷。该结论不替代运行验收。环境仍为 Windows / .NET SDK 10.0.401 / VS Code，依赖、SDK 和宿主产品版本未改。
+
+| 层级 | 实际结果 |
+| --- | --- |
+| 静态 | 文档本地链接/锚点、AXAML/项目 XML、脚本语法、ZIP 内容/许可/哈希和差异核对，见 `artifacts/evidence/ui-fixes-static.json` |
+| 构建 | 最终默认 Debug、独立 1.1.1、20 项模型用例工程、7 项管理 UI 检查工程均 0 警告/0 错误；win-x64 自包含 Release 发布成功 |
+| 发布准备 | 全新空宿主 `artifacts/m2-ui-fixes/host`；发布后独立构建 ZIP，234 个宿主文件 SHA256 未变；未加载插件 |
+| 自动化 / 集成 / Headless | 未执行；本次只新增并编译空选择标题/通知用例，没有用固定尺寸断言冒充视觉验证 |
+| 真实 Windows UI / WinRT | 未执行；用户自行验收。没有启动应用、读写真实剪贴板、修改已有安装/profile 或终止用户进程 |
+
+首次 Debug 失败为新增无障碍名称 StringFormat 以 `{0}` 开头被 AXAML 解析为类型（AVLN2000，0 警告/1 错误）；改为文字开头的格式后成功。初次/最终记录分别在 `ui-fixes-debug.txt` / `ui-fixes-debug-final.txt`，未隐藏失败。其余日志为 `ui-fixes-publish.txt`、`ui-fixes-plugin.txt`、`ui-fixes-clipboard-checks.txt`、`ui-fixes-integration-checks.txt`。均位于 `artifacts/evidence`。
+
+真实执行的构建/文件核对命令（检查程序均未运行）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-ui-fixes/host
+# 发布后、构建插件前：Get-ChildItem -Recurse -File + Get-FileHash 保存到 ui-fixes-host-before-plugin.json
+./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/m2-ui-fixes/host -Output H:/ProjH/TractorTool/artifacts/m2-ui-fixes/clipboard
+dotnet build tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-ui-fixes/host -p:PluginBuildDir=H:/ProjH/TractorTool/artifacts/m2-ui-fixes/clipboard/files -o H:/ProjH/TractorTool/artifacts/m2-ui-fixes/clipboard-checks
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-ui-fixes/host -o H:/ProjH/TractorTool/artifacts/m2-ui-fixes/integration-checks
+./artifacts/evidence/Inspect-UiFixes.ps1
+git diff --check
+```
+
+ZIP：`artifacts/m2-ui-fixes/clipboard/TractorTool.ClipboardHistory-1.1.1.zip`；SHA256：`D5BA8F986D3A91D95EC1795BECE10CCFD140E072B426E7ADF2414486138C2BE6`。先发布宿主再构建插件的哈希记录为 `ui-fixes-host-before-plugin.json`，结果在静态报告中；这证明构建/打包未改宿主，不证明运行加载成功。
+
+以下命令仅供用户隔离启动，本轮未执行：
+
+```powershell
+& .\artifacts\m2-ui-fixes\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\ui-fixes-manual-profile
+```
+
+将 1.1.1 ZIP 拖入插件页，确认后**显式退出并重启**。调试宿主也需要安装该 ZIP，单独 F5 不替换已安装插件。依次检查空/已安装列表、长说明、异常/待重启状态、窄/宽窗口中的拖放边界和按钮；剪贴板空历史、首次选择、清空与离页不再出现上述两条错误。继续完成 E17 的多格式原项粘贴、事件/焦点刷新及启停重启闭环，不因本次源码修复勾选全部验收。
+
+</details>
 
 <a id="evidence-clipboard-ux"></a>
 

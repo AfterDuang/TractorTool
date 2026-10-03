@@ -28,7 +28,7 @@
 | [ClipboardHistoryViewModel](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryViewModel.cs) | 事件合并、Id/选择保留、状态、预览取消和迟到结果保护、复制反馈及离页清理 |
 | [ClipboardHistoryView](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryView.axaml) | 分栏与共享主题、各自滚动、双击/键盘交互和窗口激活补刷 |
 
-`HistoryChanged` / `HistoryEnabledChanged` 回调只发出刷新通知，页面将通知派发到 Avalonia UI 线程再调用 `GetHistoryItemsAsync`。读取进行中收到多个事件时，合并为随后一次读取；本次异常也继续消费已排队的通知。项目按原始 `Timestamp` 倒序排列，不按本地时间字符串排序。[系统历史事件](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.historychanged?view=winrt-26100)
+`HistoryChanged` / `HistoryEnabledChanged` 回调只发出刷新通知，页面将通知派发到 Avalonia UI 线程再调用 `GetHistoryItemsAsync`。读取进行中收到多个事件时，合并为随后一次读取；本次异常也继续消费已排队的通知。没有定时器或持续轮询；首次进入、窗口激活和手动刷新是另外三个读取入口。每次触发读取系统快照与文本摘要，不为所有条目解码图片；实际 CPU/内存未作性能测量。项目按原始 `Timestamp` 倒序排列，不按本地时间字符串排序。[系统历史事件](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.historychanged?view=winrt-26100)
 
 复制调用 `Clipboard.SetHistoryItemAsContent`，传入保留的原 `ClipboardHistoryItem`；结果区分 Success、AccessDenied、ItemDeleted 和异常。未知预览格式不会被转换成文本再复制。系统焦点/策略或内容已失效时仍可能失败；Windows 并不保证任意文件或自定义格式都会进入系统历史。[复制原历史项](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.sethistoryitemascontent?view=winrt-26100)
 
@@ -44,28 +44,28 @@
 
 图像通过 Windows `BitmapDecoder` 缩放解码为 BGRA 预乘像素，再创建 Avalonia 位图；替换预览前解除旧绑定再释放，离页或迟到结果也释放资源。[缩放像素读取 API](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.imaging.bitmapdecoder.getpixeldataasync?view=winrt-26100)
 
-正式构建只引用已发布 Contracts/UI，宿主没有插件静态项目引用。独立版本 **1.1.0** 在清单维护，打包脚本派生程序集产品版本；已有 1.0.0 应走更高版本更新，不能覆盖同版本 DLL。私有 MVVM、SDK 投影与 WinRT 库随包提供，许可见 [NOTICE.md](../../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)。不增加专属设置页或历史数据库。
+正式构建只引用已发布 Contracts/UI，宿主没有插件静态项目引用。独立版本 **1.1.1** 在清单维护，打包脚本派生程序集产品版本；已有 1.0.0 / 1.1.0 应走更高版本更新，不能覆盖同版本 DLL。私有 MVVM、SDK 投影与 WinRT 库随包提供，许可见 [NOTICE.md](../../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)。不增加专属设置页或历史数据库。
 
 ## 4. 生命周期、错误与数据
 
 - 页面离开先停止接收事件，再取消读取/预览。迟到结果和已经排队的 UI 回调不能重建离页内容；所有异步操作结束后再释放生命周期取消源。
 - 选中项变化取消旧预览；旧结果不能覆盖新项，也不能提前结束新项的加载状态。只保留一个当前预览，不缓存全部图片。
-- 临时访问拒绝保留已有列表；成功读取为空或历史已关闭时清空选择/预览。系统状态、预览失败与复制结果分别提示。
+- 临时访问拒绝保留已有列表；成功读取为空或历史已关闭时清空选择/预览。右侧标题绑定非空派生字符串，选择变化同步通知；不依靠父容器隐藏来阻止空对象链求值。系统状态、预览失败与复制结果分别提示。
 - 页面操作不影响其他插件的有限任务或常驻服务。Windows 专属实现只留在插件内。
 - 不记录真实剪贴板正文，不擅自清空历史、改动系统历史开关或删除用户内容；运行验收由用户用临时内容执行。
 
 ## 5. 验收方法
 
-下表是待执行方法，不是通过记录；完整结果集中在 [开发验收 A08](../DEVELOPMENT.md#acceptance) / [E17](../DEVELOPMENT.md#evidence-clipboard-ux)。
+下表是待执行方法，不是通过记录；完整结果集中在 [开发验收 A08](../DEVELOPMENT.md#acceptance) / [E18](../DEVELOPMENT.md#evidence-ui-fixes)。
 
 | 场景 | 判定与证据 |
 | --- | --- |
-| 独立更新 | 将 1.1.0 ZIP 拖入已发布宿主插件页，确认后显式退出重启；版本更新且宿主文件未替换 |
+| 独立更新 | 将 1.1.1 ZIP 拖入已发布宿主插件页，确认后显式退出重启；版本更新且宿主文件未替换 |
 | 分栏与选择 | 窄/宽窗口、浅/深色、长文本、空列表；左右独立滚动，选中行无多层卡片高亮，文本选区仅在预览区域 |
 | 再次复制 | 临时文本、截图、超长文本；复制后粘贴到适合的目标应用，核对原内容；双击空白/滚动条不复制 |
 | 自动刷新 | 页面打开时在其他应用复制临时内容，返回后刷新；快速连续复制不并发读写，也不不断重置选择 |
 | 预览竞争 | 快速切换图片/文本、刷新时继续切换；最后选中的内容正确，旧请求不遮盖当前预览 |
-| 系统状态 | 历史关闭、空、拒绝、系统移除选中项、暂时无法预览时分别有反馈；手动刷新可重试预览 |
+| 系统状态 | 历史关闭、空、拒绝、系统移除选中项、暂时无法预览时分别有反馈；空选择/离页无标题绑定错误，手动刷新可重试预览 |
 | 生命周期 | 多次切页/返回、隐藏/恢复后刷新正常；离页不再响应历史事件，应用退出无资源异常 |
 | 格式界限 | 记录 Windows 实际返回的格式和目标应用粘贴结果；不能将模型替身或文件存在当作 WinRT 成功 |
 
