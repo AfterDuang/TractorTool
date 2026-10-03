@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' != ''">
     <Reference Include="TractorTool"><HintPath>$(HostSdkDir)/TractorTool.dll</HintPath></Reference>
     <Reference Include="TractorTool.Core"><HintPath>$(HostSdkDir)/TractorTool.Core.dll</HintPath></Reference>
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath></Reference>
   </ItemGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' == ''">
     <ProjectReference Include="../../TractorTool/TractorTool.csproj" />
     <ProjectReference Include="../../TractorTool.Core/TractorTool.Core.csproj" />
     <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" />
@@ -20,7 +20,8 @@
     <PackageReference Include="Avalonia.Skia" Version="12.1.2" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
-  <Target Name="RequirePublishedHost" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(HostSdkDir)/TractorTool.dll')">
-    <Error Text="Integration checks require -p:HostSdkDir pointing to the already published host." />
+  <Target Name="RequirePublishedHost" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
+    <Error Condition="!Exists('$(HostSdkDir)/TractorTool.dll') Or !Exists('$(HostSdkDir)/TractorTool.Core.dll') Or !Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="HostSdkDir must contain the published host, Core, Contracts and UI DLLs; source references are not a fallback." />
   </Target>
 </Project>

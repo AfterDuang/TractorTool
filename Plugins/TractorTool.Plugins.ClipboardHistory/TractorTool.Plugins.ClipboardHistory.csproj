@@ -6,11 +6,12 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+  <!-- Local development uses public SDK projects. Packaging explicitly selects a published SDK. -->
+  <ItemGroup Condition="'$(HostSdkDir)' != ''">
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' == ''">
     <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
     <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
   </ItemGroup>
@@ -20,7 +21,8 @@
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(HostSdkDir)/TractorTool.UI.dll')">
-    <Error Text="先发布宿主，再用 -p:HostSdkDir 指向发布目录；正式插件不引用宿主源码。" />
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
+    <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="HostSdkDir 必须包含已发布的 Contracts/UI DLL；无效路径不会回退到源码引用。" />
   </Target>
 </Project>

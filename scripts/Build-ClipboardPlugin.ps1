@@ -11,7 +11,8 @@ if ((Test-Path -LiteralPath $destination) -and (Get-ChildItem -LiteralPath $dest
 $project = Join-Path $repo 'Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj'
 $manifest = Get-Content -LiteralPath (Join-Path (Split-Path $project) 'plugin.json') -Raw | ConvertFrom-Json
 $files = Join-Path $destination 'files'
-dotnet build $project -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files
+# Rebuild with normal restore when switching from source references to published DLLs.
+dotnet build $project -t:Rebuild -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files
 if ($LASTEXITCODE -ne 0) { throw '剪贴板插件构建失败。' }
 $shared = @(Get-ChildItem -LiteralPath $files -Recurse -Filter *.dll | Where-Object {
     $_.BaseName -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$'

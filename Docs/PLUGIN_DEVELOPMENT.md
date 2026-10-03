@@ -109,12 +109,29 @@ registry.AddNavigationPage("main", "我的工具", () => new MyToolView(),
 
 ## 6. 开发、构建与安装验证
 
-使用 VS Code 和现有 Avalonia/.NET 工作流。参考 [IndependentPlugin.csproj](../tests/IndependentPlugin/IndependentPlugin.csproj)：正式构建通过 `HostSdkDir` 引用**已发布的** Contracts/UI DLL，并禁止复制它们；Avalonia 是相同版本的仅编译引用。示例的 DesignTimeBuild 条件项目引用只用于 IntelliSense，不是正式构建的宿主依赖。
+使用 VS Code 和现有 Avalonia/.NET 工作流，打开根 [TractorTool.slnx](../TractorTool.slnx)。正式插件在 Plugins 分组，检查和机制夹具在 tests 分组；新增插件工程也应加入解决方案，不能靠排除工程维持独立性。宿主项目仍禁止引用具体插件。
+
+| 用途 | 引用与构建方式 |
+| --- | --- |
+| 日常编辑/构建 | 不传 `HostSdkDir`；插件 `ProjectReference` 公开 Contracts/UI，普通解决方案还原、构建和设计时分析使用同一依赖图；无需预先发布宿主 |
+| 独立插件交付 | 显式传入有效 `HostSdkDir`；插件只引用已发布 Contracts/UI DLL，`Private=false`；通过打包脚本正常 restore 并 `-t:Rebuild`，校验包内没有共享 SDK 副本 |
+| 检查源码开发 | 检查工程默认引用被测项目；这只方便编辑和编译，不能作为独立安装证明 |
+| 发布产物检查 | IntegrationChecks 显式传 `HostSdkDir`；ClipboardChecks 同时传 `HostSdkDir` 和 `PluginBuildDir`，只引用指定产物。缺少任意路径或 DLL 明确失败 |
+
+参考 [IndependentPlugin.csproj](../tests/IndependentPlugin/IndependentPlugin.csproj) 的互斥条件。模式取决于是否显式提供产物路径，不随 Debug/Release 或 `DesignTimeBuild` 偷换。指定坏路径不会回退源码；切换模式时不要使用 `--no-restore`，条件依赖变化需要重新还原。正式脚本强制重新编译，避免沿用日常源码构建的 DLL。
+
+在 VS Code 中正常开发可直接构建解决方案：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+```
+
+插件开发输出保留在该工程的 bin 下，不自动复制进调试宿主的 Plugins，不绕过安装状态覆盖现有版本。源码模式可能包含公共项目的传递依赖，不能把整个 bin 目录当正式插件包。需要安装时使用下方独立打包流程；宿主和插件版本各自维护。
 
 验证顺序：
 
 1. 先发布宿主到新的空目录并记录原有文件 SHA256。
-2. 再单独构建插件；收集清单、入口、私有依赖、资源与许可。
+2. 再以发布 SDK 模式单独重新构建插件；收集清单、入口、私有依赖、资源与许可。之前的日常源码构建不计作独立交付证据。
 3. 复制到该发布副本的 Plugins/PluginId/Version。
 4. 重新核对原有宿主文件哈希，确认无需修改/重编宿主。
 5. 使用隔离 profile 重启宿主，真实验证导航和设置注册、设置持久化、错误状态及生命周期；编译和文件复制不能替代 DLL 加载证据。
@@ -123,7 +140,7 @@ registry.AddNavigationPage("main", "我的工具", () => new MyToolView(),
 
 ```powershell
 $publishedHost = 'H:\ProjH\TractorTool\artifacts\manual-publish'
-dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -c Release "-p:HostSdkDir=$publishedHost" -o .\artifacts\manual-plugin
+dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Release "-p:HostSdkDir=$publishedHost" -o .\artifacts\manual-plugin
 # 将 manual-plugin 完整输出放入该发布副本 Plugins/Test.Independent/1.0.0。
 # 用隔离 --profile-root 启动宿主，具体命令见 DEVELOPMENT.md。
 ```
@@ -136,7 +153,7 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -c Release "-p:H
 ./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/manual-publish -Output H:/ProjH/TractorTool/artifacts/manual-clipboard
 ```
 
-输出必须是新空目录。将单个本地 ZIP 拖到宿主插件面板，或通过“插件 → 安装 / 更新”选择 ZIP；两者共用可信来源确认及校验流程。确认后显式退出并重新启动，不能只关闭到托盘。插件及其检查工程不加入宿主日常构建链，VS Code 设计时引用仅用于补全；发布后独立构建才是正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
+输出必须是新空目录。将单个本地 ZIP 拖到宿主插件面板，或通过“插件 → 安装 / 更新”选择 ZIP；两者共用可信来源确认及校验流程。确认后显式退出并重新启动，不能只关闭到托盘。日常解决方案可以编译全部工程；发布宿主仍只指定 `TractorTool.csproj`，不会因此静态包含插件，随后独立编译/打包才是插件正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
 
 ## 7. 插件交付要求
 

@@ -4,19 +4,22 @@
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion>
   </PropertyGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' != '' Or '$(PluginBuildDir)' != ''">
     <Reference Include="TractorTool.Plugins.ClipboardHistory"><HintPath>$(PluginBuildDir)/TractorTool.Plugins.ClipboardHistory.dll</HintPath></Reference>
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath></Reference>
   </ItemGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' == '' And '$(PluginBuildDir)' == ''">
     <ProjectReference Include="../../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj" />
+    <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" />
+    <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Avalonia" Version="12.1.2" />
   </ItemGroup>
-  <Target Name="RequireBuiltPlugin" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(PluginBuildDir)/TractorTool.Plugins.ClipboardHistory.dll')">
-    <Error Text="请先独立构建剪贴板插件，再传入 PluginBuildDir 和 HostSdkDir。" />
+  <Target Name="RequireBuiltPlugin" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != '' Or '$(PluginBuildDir)' != ''">
+    <Error Condition="'$(HostSdkDir)' == '' Or '$(PluginBuildDir)' == '' Or !Exists('$(PluginBuildDir)/TractorTool.Plugins.ClipboardHistory.dll') Or !Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="产物检查必须同时提供有效的 HostSdkDir 和 PluginBuildDir；不会回退到源码引用。" />
   </Target>
 </Project>

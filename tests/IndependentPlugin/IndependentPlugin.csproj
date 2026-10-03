@@ -3,12 +3,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
-  <!-- Real builds use the published SDK; the IDE uses public source contracts for IntelliSense only. -->
-  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+  <!-- Local development uses public SDK projects; Verify-M1 explicitly rebuilds against a published SDK. -->
+  <ItemGroup Condition="'$(HostSdkDir)' != ''">
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
-  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+  <ItemGroup Condition="'$(HostSdkDir)' == ''">
     <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
     <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
   </ItemGroup>
@@ -19,7 +19,8 @@
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(HostSdkDir)/TractorTool.UI.dll')">
-    <Error Text="先发布宿主，再传入 -p:HostSdkDir=发布目录；测试插件不引用宿主源码工程。" />
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
+    <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="HostSdkDir 必须包含已发布的 Contracts/UI DLL；无效路径不会回退到源码引用。" />
   </Target>
 </Project>

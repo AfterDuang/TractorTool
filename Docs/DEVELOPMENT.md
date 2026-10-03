@@ -8,13 +8,13 @@
 
 ## 1. 当前状态
 
-**当前收敛 M2：已修正拖放提示框边界、插件卡片布局及剪贴板空选择绑定，交付插件 1.1.1；新版运行验收待用户执行，M3–M5 未开始。** 用户截图证实 1.1.0 已加载，但暴露布局与绑定缺陷，不代表 A08 全部通过。代理仅做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或读取真实剪贴板。最新证据见 [E18](#evidence-ui-fixes)。
+**当前收敛 M2：已修正 VS Code 插件工程不属于解决方案的问题，统一 10 个工程的日常开发和独立发布配置；业务版本仍为剪贴板 1.1.1，M3–M5 未开始。** 工程组织最新证据见 [E19](#evidence-project-layout)；此前拖放框、卡片及空选择修复见 [E18](#evidence-ui-fixes)，其运行效果仍待用户确认。代理仅核对源码/引用图、构建、发布及文件，没有启动应用、核心/集成/Headless 检查、VS Code UI 或读取真实剪贴板。
 
 ### 1.1 代码事实
 
 | 项目 | 当前情况 |
 | --- | --- |
-| 解决方案 | [TractorTool.slnx](../TractorTool.slnx)，保留原 `TractorTool/` 应用路径 |
+| 解决方案 | [TractorTool.slnx](../TractorTool.slnx) 包含全部 10 个实际工程，Plugins/tests 分组；默认源码模式可整体构建，显式路径切换为产物模式，见 [E19](#evidence-project-layout)；物理路径未移动 |
 | 运行基线 | .NET 10；Avalonia、Desktop、Inter `12.1.2`；CommunityToolkit.Mvvm `8.4.2`；FluentAvaloniaUI `3.1.0` 替换原 FluentTheme，Avalonia/MVVM 基线未升级 |
 | Contracts | [插件与基础服务契约](../TractorTool.Contracts/PluginContracts.cs)：插件初始化/停止/释放、可选常驻活动、路径、插件配置、日志；不依赖 Avalonia/Windows |
 | Core | 路径/设置/日志、清单兼容性和独立加载；新增安装目录锁、插件 ZIP 校验/暂存、活动版本、待重启变更、更新前数据快照及回退，见 [E16](#evidence-m2) |
@@ -37,16 +37,16 @@
 
 ### 1.2 最近证据与限制
 
-最新一轮按用户截图修复拖放遮罩、插件卡片及空选择绑定。GPT-6.1-Sol + high 子代理只读复审本次差异及相关生命周期，未发现新的确定缺陷；这不等于运行结果或全仓库无缺陷。完整证据见 [E18](#evidence-ui-fixes)，交互初版及管理事务记录保留在 E17/E16。
+最新一轮修正 VS Code 的工程归属与构建体验。对照 Watt 固定提交的解决方案和插件 csproj，GPT-6.1-Sol + high 子代理复审双模式依赖边界及脚本，未发现确定新缺陷；这不等于运行结果或全仓库无缺陷。完整证据见 [E19](#evidence-project-layout)，功能修复及管理事务记录保留在 E18/E17/E16。
 
 | 层级 | 最近事实 | 证据 |
 | --- | --- | --- |
-| 静态检查 | 遮罩有效边距、卡片换行、派生属性通知与资源生命周期经复审；文档/XML/ZIP/差异文件核对 | [E18](#evidence-ui-fixes) |
-| 构建 | 最终默认 Debug、独立插件及模型/集成检查均 0 警告/0 错误，Release 发布成功；初次 AXAML 格式化错误已修正 | [E18](#evidence-ui-fixes) |
-| 发布准备 | `artifacts/m2-ui-fixes/host` 发布后独立构建 1.1.1 ZIP，234 个原有宿主文件 SHA256 不变；宿主未预装插件 | [E18](#evidence-ui-fixes) |
-| 自动化 | 历史旧核心 33/33 不覆盖当前改动；20 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E18](#evidence-ui-fixes) |
-| 集成/Headless | 历史旧 UI 21/21 不覆盖当前改动；7 项管理 UI 检查仅编译，原生拖放未验证 | [E01](#evidence-baseline)、[E18](#evidence-ui-fixes) |
-| 真实 Windows UI | 用户截图证实 1.1.0 加载并暴露本次三处缺陷；1.1.1 及新宿主修正效果待用户验收 | [E18](#evidence-ui-fixes) |
+| 静态检查 | slnx 覆盖全部 10 工程；17 组 MSBuild 引用评估、5 个预期失败的参数校验目标；文档/XML/ZIP/差异核对 | [E19](#evidence-project-layout) |
+| 构建 | 源码 → 发布 SDK → 源码模式切换：默认 Debug 全方案、两个独立插件与模型/集成工程均成功，Release 宿主发布成功 | [E19](#evidence-project-layout) |
+| 发布准备 | `artifacts/m2-project-layout/host` 发布后重建插件，234 个原宿主文件 SHA256 不变；包不含共享 SDK；未装载 | [E19](#evidence-project-layout) |
+| 自动化 | 历史旧核心 33/33 不覆盖当前改动；20 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E19](#evidence-project-layout) |
+| 集成/Headless | 历史旧 UI 21/21 不覆盖当前改动；7 项管理 UI 检查仅编译，未执行 | [E01](#evidence-baseline)、[E19](#evidence-project-layout) |
+| 真实 Windows UI / VS Code | 未接管 IDE 确认弹窗消失，未启动应用；E18 功能修正效果继续待用户验收 | [E19](#evidence-project-layout)、[E18](#evidence-ui-fixes) |
 
 证据保留：早前整个 artifacts 曾在外部被清理，旧发布、日志和修改前快照已不可读取；历史记录仍保留，但不表示对应文件尚在。version-icon-final 和 E06/E07 证据在清理后重建，历史测试未重跑。历史成功不能自动覆盖后续代码。
 
@@ -64,7 +64,7 @@
 
 开发 IDE 为 **VS Code**。沿用 `.vscode/launch.json` 中的 `Avalonia: TractorTool` 启动项，以及当前 Avalonia/.NET 扩展；不切换 Visual Studio 或 VS MCP，不覆盖用户的编辑器配置。以下终端命令用于构建与隔离验收，默认 VS Code 启动项不含隔离参数，测试时应使用下方明确的 profile 命令。
 
-从仓库根目录执行。日常开发解决方案只包含宿主、Contracts、Core、UI 和核心检查工程；独立插件与发布集成工程需要先提供已发布的 SDK，所以由验证脚本分阶段构建，不混入宿主构建依赖。
+从仓库根目录执行。日常开发解决方案统一包含宿主、公共库、正式插件及检查/夹具工程；无需预先发布即可还原和编译。插件只引用公开 Contracts/UI，宿主不引用具体插件。正式打包/集成验收再由脚本显式传入已发布 SDK 路径、正常还原并 Rebuild；具体规则见 [插件开发规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。
 
 ```powershell
 dotnet restore .\TractorTool.slnx
@@ -81,9 +81,11 @@ dotnet run --project .\tests\TractorTool.Checks -c Release
 
 不带 `--profile-root` 时使用产品默认 `%LOCALAPPDATA%\TractorTool`。该参数仅用于隔离开发/验收，不是数据迁移功能；路径必须为绝对路径。固定启动文件是 `<ProfileRoot>/bootstrap.json`，默认与数据根相同。已存在的有效 `dataRoot` 指针受支持，目录不存在时拒绝启动并保留指针。应用内数据迁移仍在 M5。
 
-最新副本为 `artifacts/m2-ui-fixes/host`，未预装插件；将同级 `clipboard/TractorTool.ClipboardHistory-1.1.1.zip` 拖入插件页并重启。隔离启动与准确命令见 [E18](#evidence-ui-fixes)，未经新指示不代用户启动。旧 m2-ready / m2-clipboard-final 不包含本次修正。完整 M1 机制回归仍由 Verify-M1.ps1 生成自己的副本和测试插件，不能将空宿主或正式剪贴板插件冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确 profile。
+功能验收副本仍可使用 `artifacts/m2-ui-fixes/host`，未预装插件；将同级 `clipboard/TractorTool.ClipboardHistory-1.1.1.zip` 拖入插件页并重启。隔离启动与准确命令见 [E18](#evidence-ui-fixes)。E19 的 `artifacts/m2-project-layout` 用于工程模式切换证据，没有业务版本变化；已安装 1.1.1 不需重装同版本。完整 M1 机制回归仍由 Verify-M1.ps1 生成自己的副本和测试插件，不能将空宿主或正式剪贴板插件冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确 profile。
 
 VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Previewer**；必要时执行 `Developer: Reload Window`。当前 DLL 的版本及可见性属性已核对，但尚未代用户刷新预览。
+
+若 VS Code 仍保留“插件项目不属于解决方案”的旧提示，关闭提示后执行 `Developer: Reload Window`，重新载入根 `TractorTool.slnx`。不要新建第二个解决方案或将插件加成宿主的项目引用；所有实际 csproj 已登记在根解决方案中。默认 `Avalonia: TractorTool` 调试启动项不变。
 
 用户手动验收建议（以下为步骤，未因此视作已经执行）：
 
@@ -239,7 +241,7 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 
 ## 6. 下一步与维护
 
-下一步由用户按 [E18](#evidence-ui-fixes) 验证拖放边框对齐、卡片紧凑布局和空选择时的控制台，再完成 E17 的原生拖放/启停/重启、预览/粘贴/事件刷新闭环。已安装的 1.1.0 需要更新到 1.1.1；仅重建宿主不更新插件。先处理本阶段反馈，再决定进入 M3。未经新测试指示不代用户运行检查或 UI；数据目录迁移仍留 M5。
+下一步在 VS Code 重新载入根解决方案，确认正式插件和检查工程正常提供编辑支持；工程变更证据见 [E19](#evidence-project-layout)。继续由用户按 [E18](#evidence-ui-fixes) 验证布局与绑定修复，再完成 E17 的管理/剪贴板闭环。已安装的 1.1.0 需要更新到 1.1.1；仅重建宿主不更新插件。先处理本阶段反馈，再决定进入 M3。未经新测试指示不代用户运行检查或 UI；数据目录迁移仍留 M5。
 
 后续有实质性进展时更新第 1 节当前状态、第 3 节里程碑和第 4 节验收结果。必要的真实命令和结果追加到下方附录，不用新流水账挤占当前摘要；同步 PROJECT_CONTEXT.md 的精简交接。文档归属按 README.md 维护。
 
@@ -248,6 +250,53 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 ## 附录：历史实施与验收记录
 
 以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
+
+<a id="evidence-project-layout"></a>
+
+<details open>
+<summary>E19 · VS Code 解决方案与插件开发组织（2026-10-04）</summary>
+
+用户截图提示正式剪贴板工程不属于当前解决方案。原因是此前把“独立发布后编译”过度施加在日常开发上：根 slnx 漏掉插件及相关检查；只在 DesignTimeBuild 下使用源码引用，普通编译硬需已发布 SDK。源码目录本身不需要搬迁。
+
+对照 Watt 固定提交 `d04213147e77a8d73277fa8b86eeecfa444df071` 的 `WattToolkit.slnx`、Authenticator/GameTools csproj：插件列入同一解决方案的 Plugins 分组，并引用公共客户端/UI 工程。其 `src/README.md` 主体仍是 TODO/旧注释，结构判断以实际 slnx/csproj 为准。文件缓存在 `artifacts/reference-projects`，链接和采用边界见 [架构第 1 节](ARCHITECTURE.md#1-当前代码与目标结构)。网页正文获取失败后用正常网络权限下载公开固定源码，仅阅读，未执行。
+
+修改范围：
+
+- 根 slnx 收录全部 10 个工程，Plugins/tests 分组，保留所有物理路径和原 VS Code 启动配置。
+- 正式插件、机制插件、剪贴板模型检查和集成检查统一按显式产物路径选择引用模式。日常源码模式可整体构建；发布模式使用 DLL，坏路径拒绝而不回退。ClipboardChecks 必须同时提供 HostSdkDir/PluginBuildDir，源码模式明确引用 UI/Contracts 以供检查程序使用。
+- 正式打包和 Verify-M1 的独立阶段使用正常 restore + `-t:Rebuild`。源码输出不能作为发布包，不自动复制到运行安装。宿主 csproj、公开 API、业务代码、依赖和产品版本未改。
+
+GPT-6.1-Sol + high 子代理复审引用方向、条件互斥、CopyLocal、缺参数失败及脚本；没有发现确定新缺陷。依次验证源码编译 → 发布 SDK 独立重建 → 源码编译恢复。默认开发输出与正式交付证据分开，未执行任何应用/检查程序。
+
+| 层级 | 实际结果 |
+| --- | --- |
+| 工程静态 | slnx 覆盖全部 10 csproj；17 组普通/设计时/产物引用评估均符合预期；5 个无效/缺路径目标按预期报错，非运行测试失败；见 `project-layout-references.json` |
+| 构建 | 前后两次默认 Debug 全方案均 0 警告/0 错误；Release 宿主发布、独立剪贴板/机制插件及产物模式模型/集成工程成功 |
+| 文件与包 | 发布后独立重建未改变 234 个宿主文件；插件 ZIP/许可/哈希与共享 DLL 排除、文档链接/XML/脚本语法见 `project-layout-static.json` |
+| 自动化 / 集成 / Headless | 未执行；MSBuild 参数校验目标的结果不等于应用测试通过，Verify-M1 脚本只改动/核对，没有运行 |
+| VS Code / Windows UI | 未操作 IDE 或启动应用，编辑器重新载入后的提示、补全和预览仍由用户确认 |
+
+实际执行命令（均在仓库根目录；日志在 `artifacts/evidence/project-layout-*.txt`）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-project-layout/host
+# 发布后记录 Get-FileHash 到 project-layout-host-before-plugin.json
+./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/m2-project-layout/host -Output H:/ProjH/TractorTool/artifacts/m2-project-layout/clipboard
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -t:Rebuild -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-project-layout/host -o H:/ProjH/TractorTool/artifacts/m2-project-layout/independent
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -t:Rebuild -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-project-layout/host -o H:/ProjH/TractorTool/artifacts/m2-project-layout/integration-checks
+dotnet build tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj -t:Rebuild -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-project-layout/host -p:PluginBuildDir=H:/ProjH/TractorTool/artifacts/m2-project-layout/clipboard/files -o H:/ProjH/TractorTool/artifacts/m2-project-layout/clipboard-checks
+./artifacts/evidence/Inspect-ProjectLayout.ps1
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./artifacts/evidence/Inspect-ProjectArtifacts.ps1
+git diff --check
+```
+
+引用检查只执行 `dotnet msbuild -getItem:ProjectReference` 及 RequirePublishedSdk/RequireBuiltPlugin/RequirePublishedHost 校验目标，没有启动被测程序集。分别确认设计时与普通评估一致、产物模式无公共源码引用，以及检查的 Debug 输出具备 UI/Contracts/插件 DLL。结果不代表空白 NuGet 缓存的离线构建。
+
+本轮只改变工程开发方式，不需要为已安装的 1.1.1 再发同版本更新。后续从 VS Code 重新载入唯一根 slnx；功能验收继续沿用 E18。没有进入 M3。
+
+</details>
 
 <a id="evidence-ui-fixes"></a>
 

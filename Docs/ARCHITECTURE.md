@@ -6,7 +6,7 @@
 
 ## 1. 当前代码与目标结构
 
-解决方案 [TractorTool.slnx](../TractorTool.slnx) 包含原路径的宿主、Contracts、Core、UI 和核心检查工程。目标框架为 `net10.0`，Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；包服务和有限任务队列仍为后续设计，运行验证状态集中在开发文档。
+解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 10 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；包服务和有限任务队列仍为后续设计，运行验证状态集中在开发文档。
 
 职责结构如下。表中的任务/包管理为 M3-M4 职责，不先创建空实现：
 
@@ -36,6 +36,10 @@ flowchart TD
 图中实线为项目依赖，虚线为运行时服务调用（插件通过 Contracts，不引用 Core 实现）。宿主应用不通过 `ProjectReference` 引用具体插件；开发打包可以构建插件并复制产物，但不能因此把插件写死进宿主。
 
 上表中的 `Plugins/<插件工程>` 是源代码工程路径，不参与宿主的静态项目引用。发布运行时的插件安装位置是 `<AppRoot>/Plugins/<PluginId>/<Version>`，两者不能混淆；`AppRoot` 以实际应用目录为准。
+
+解决方案归属与程序集依赖分别管理：插件加入同一解决方案，供 VS Code 正常编辑和构建，并不建立宿主到插件的引用。日常开发通过 `ProjectReference` 使用公开 Contracts/UI；正式交付显式传入 `HostSdkDir`，改为引用已发布 DLL，正常还原后重新编译。指定路径无效时失败，不回退源码。两条路径的工程引用不依赖 `DesignTimeBuild`，避免还原、编辑器分析和实际编译得到不同依赖图。操作规则集中在 [插件开发规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。
+
+组织参考采用第 6.1 节固定版本的 [WattToolkit.slnx](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/WattToolkit.slnx)：插件在同一解决方案的 Plugins 分组中，[GameTools 工程](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Plugins.GameTools/BD.WTTS.Client.Plugins.GameTools.csproj) 引用公共客户端/UI 工程。这里只借鉴开发组织方式，TractorTool 继续使用自身公开 SDK 边界，保留当前物理路径。
 
 ## 2. 插件协议与装载
 
