@@ -223,6 +223,20 @@ M1 路径服务已按上述布局创建数据目录和扫描插件目录；Packa
 
 后台消息通过 UI 调度更新可观察状态，不能在 UI 线程等待进程或执行大文件 I/O。页离开后解除事件订阅，日志和任务列表采用有界保留与合适的虚拟化，避免长时间驻留导致持续增长。
 
+<a id="ui-style-ownership"></a>
+
+**样式按使用者和职责归属，不按文件名统一搬到 UI 工程。** “共享样式集中维护”指共用外观只有一个来源，宿主和插件仍各自拥有专属布局：
+
+| 归属 | 维护内容 | 不应包含 |
+| --- | --- | --- |
+| `TractorTool.UI` 的 [ThemeResources](../TractorTool.UI/Styles/ThemeResources.axaml)、[SharedStyles](../TractorTool.UI/Styles/SharedStyles.axaml) 和 Controls | 宿主、插件共用的配色、文字、卡片、设置行、图标、页面呈现和可复用动效 | 宿主导航项、具体页面名称、剪贴板或视频业务、Core 内部服务 |
+| 宿主的 [ShellStyles](../TractorTool/Styles/ShellStyles.axaml) 与 [MainWindow](../TractorTool/Views/MainWindow.axaml) | 72 宽主导航、导航项模板适配、PagePresenter 的边距及宿主整页滚动适配 | 另一套公共颜色/控件主题、具体插件页面的排版或业务规则 |
+| 各 View 的局部样式，例如 [剪贴板历史列表](../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryView.axaml) 的 `ListBox.Styles` | 当前页面的分栏、列表密度、预览布局；颜色及通用外观继续使用 UI SDK | 修改 Application 的全局样式、引用宿主 ShellStyles 或其他插件的私有资源 |
+
+[App.axaml](../TractorTool/App.axaml) 是组装入口：加载单一 FluentAvalonia 主题、公共资源和宿主适配。宿主消费公共 UI，而 UI 不反向引用宿主；把 ShellStyles 移入 UI 会让公共 SDK 承担主窗口的专属规则，当前没有这种复用需要。Core/Contracts 不包含 AXAML 或控件样式。
+
+评审新增 UI 时，先确认消费者：共用外观改 UI 的现有定义，主窗口专用改宿主，单页布局留在该页；确有多个使用者再抽取控件或样式。局部规则尽量收窄选择器作用域，不靠复制公共颜色或向全局注入样式解决单页问题。当前 ShellStyles 在应用级加载，但以 `shell`、`rail`、`PagePresenter` 等标识选择宿主元素；这些是宿主私有约定，不是插件 SDK。该约定不是运行时隔离机制，可信插件仍需遵守接入规范。
+
 <a id="ui-reference"></a>
 
 ### 6.1 参考实现依据

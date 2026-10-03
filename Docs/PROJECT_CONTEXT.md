@@ -1,14 +1,14 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-04。当前收敛 M2：已修正 VS Code 插件不在解决方案的工程组织问题，10 个工程统一纳入主解决方案，日常源码开发与正式发布 SDK 构建分别配置。业务仍为 E18 的剪贴板 1.1.1，完整运行验收待用户执行；未进入 M3。
+更新日期：2026-10-04。当前收敛 M2：10 个工程统一纳入主解决方案；最新核对共享 UI、宿主 ShellStyles 和插件局部样式的职责，补充归属规则，未修改应用代码或目录。业务仍为 E18 的剪贴板 1.1.1，完整运行验收待用户执行；未进入 M3。
 
-本文只保留交接摘要；完整状态、命令、证据和限制见 [DEVELOPMENT.md](DEVELOPMENT.md#current-status) / [E19](DEVELOPMENT.md#evidence-project-layout)。文档分工见 [README.md](README.md)，工作约定见唯一根 [AGENTS.md](../AGENTS.md)。
+本文只保留交接摘要；完整状态、命令、证据和限制见 [DEVELOPMENT.md](DEVELOPMENT.md#current-status)；样式职责复核见 [E20](DEVELOPMENT.md#evidence-style-ownership)，工程组织见 [E19](DEVELOPMENT.md#evidence-project-layout)。文档分工见 [README.md](README.md)，工作约定见唯一根 [AGENTS.md](../AGENTS.md)。
 
 ## 1. 当前约定
 
 - Windows 优先，.NET 10、Avalonia、MVVM；开发 IDE 为 **VS Code**，保留现有 `.vscode` 工作流，不转向 Visual Studio。
 - 用户接手运行测试；未经新指示不启动应用、核心/集成/Headless 检查或 UI 自动化，不读取真实剪贴板。构建、发布和静态核对与运行证据分别记录。
-- 子代理显式指定 **GPT-6.1-Sol + high**，本轮复审工程引用互斥、缺路径错误及独立构建脚本。没有发现新确定问题不等于全仓库无缺陷。
+- 子代理使用用户指定的 **GPT-6.1-Sol + high**，复审结论必须标明范围；没有发现新确定问题不等于全仓库无缺陷。
 - 本地 Git 分支 `main`，M1 基线 `fc18c20`；后续变更形成独立本地提交，查看 `git log` 获取最新版本。不自动建立远程或推送；artifacts/bin/obj 不入库。
 - 插件代码固定在实际 `AppRoot/Plugins/<Id>/<Version>`，不是源码 `Plugins` 或终端当前目录；数据默认 LocalAppData/TractorTool，使用绝对路径 `--profile-root` 隔离测试。
 - 数据根指针已有，自定义目录的完整 UI/迁移仍在 M5；修改数据目录不迁移插件代码。M3 外部包与进程服务、M4 视频和有限任务尚未开始。
@@ -19,6 +19,7 @@
 - 保留原 TractorTool 应用目录及 Contracts/Core/UI/tests；Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0 未升级。公开 Contracts API 1.0、UI API 1.2（接受旧 1.0/1.1），本轮未改变 SDK。
 - 根 slnx 纳入全部 10 个工程，Plugins/tests 分组只影响开发组织，不建立宿主到插件的引用。默认编译插件引用公开 Contracts/UI 源码；正式打包显式 HostSdkDir 只用发布 DLL 并 Rebuild，坏路径不回退。模式切换必须正常还原，不用 --no-restore；开发 bin 不作为安装包，不自动覆盖已安装插件。
 - M1 已有路径、JSON 原子保存/备份、日志、实例恢复/托盘、独立 DLL 加载、页面/设置注册、常驻活动；默认主页、紧凑导航、共享样式/图标/设置行/动效与整页靠右滚动条沿用。
+- 样式分工见 [架构约定](ARCHITECTURE.md#ui-style-ownership)：公共配色/控件在 UI，主窗口导航/边距在宿主 ShellStyles，插件专属布局留在自己的 View。不能为了目录统一把宿主规则塞入 SDK，插件也不依赖宿主私有样式。
 - 外观选择即生效并自动保存；正常无保存按钮/说明，失败才出现重试区域，无 DataContext 默认隐藏。保存串行合并快照并参与退出等待，220 ms 主要表面颜色过渡遵循动画开关。
 - M2 管理状态位于 `PluginRoot/.management/state.json`；ZIP 暂存及活动版本选择和启用状态与用户外观配置分开。目录锁持有到进程终止；另有自定义数据根锁，避免其他安装/profile 并发写同一数据。
 - 安装/更新/启停/卸载/回退均重启生效，不覆盖已加载 DLL。更新前在新进程中备份旧插件最后保存的数据；快照位于 `DataRoot/Data/.plugin-backups`，回退保留新版数据，卸载保留用户数据。

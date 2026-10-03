@@ -83,6 +83,7 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 ## 5. 统一 UI 与设置
 
 - 页面采用 Avalonia/MVVM，复用宿主 UI SDK 的 `SettingRow`、`ToolIcon` 和 [共享样式](../TractorTool.UI/Styles/SharedStyles.axaml)；业务布局放插件自己的 View。
+- 样式归属遵循 [公共 UI / 宿主 / 页面边界](ARCHITECTURE.md#ui-style-ownership)。页面可以有局部 `Styles` 调整列表密度等布局，不向 Application 注入全局规则，不引用 `TractorTool/Styles/ShellStyles.axaml` 或依赖 `shell`、`rail`、`PagePresenter` 等宿主私有标识。
 - 颜色使用主题动态资源，支持深色、浅色、跟随系统和主题色，不再安装第二套全局主题。工具身份可用彩色图片并保留原色；设置和工具栏操作使用共享单色符号，随主题调整前景色。
 - 切页由宿主 PageHost 统一呈现和过渡，页面不得绕过导航所有权控制宿主窗口。
 - 后台变化经 UI 调度更新状态；列表、日志和订阅须有边界。加载、空、失败状态明确，长路径与较窄窗口可用。

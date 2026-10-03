@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**当前收敛 M2：已修正 VS Code 插件工程不属于解决方案的问题，统一 10 个工程的日常开发和独立发布配置；业务版本仍为剪贴板 1.1.1，M3–M5 未开始。** 工程组织最新证据见 [E19](#evidence-project-layout)；此前拖放框、卡片及空选择修复见 [E18](#evidence-ui-fixes)，其运行效果仍待用户确认。代理仅核对源码/引用图、构建、发布及文件，没有启动应用、核心/集成/Headless 检查、VS Code UI 或读取真实剪贴板。
+**当前收敛 M2：已修正 VS Code 插件工程不属于解决方案的问题，统一 10 个工程的日常开发和独立发布配置；业务版本仍为剪贴板 1.1.1，M3–M5 未开始。** 最新 [E20](#evidence-style-ownership) 仅复核样式职责并补充文档；最近构建及工程组织证据为 [E19](#evidence-project-layout)。此前拖放框、卡片及空选择修复见 [E18](#evidence-ui-fixes)，其运行效果仍待用户确认。没有新增应用、核心/集成/Headless、VS Code UI 或真实剪贴板运行证据。
 
 ### 1.1 代码事实
 
@@ -37,11 +37,11 @@
 
 ### 1.2 最近证据与限制
 
-最新一轮修正 VS Code 的工程归属与构建体验。对照 Watt 固定提交的解决方案和插件 csproj，GPT-6.1-Sol + high 子代理复审双模式依赖边界及脚本，未发现确定新缺陷；这不等于运行结果或全仓库无缺陷。完整证据见 [E19](#evidence-project-layout)，功能修复及管理事务记录保留在 E18/E17/E16。
+最新一轮仅复核样式分工：公共 UI、宿主 ShellStyles 和插件局部布局符合原有依赖方向，补充归属及接入规则，见 [E20](#evidence-style-ownership)。没有改动程序，也未重跑构建/运行测试。下表保留最近一次实际构建和发布结果 [E19](#evidence-project-layout)；功能修复及管理事务记录仍为 E18/E17/E16。
 
 | 层级 | 最近事实 | 证据 |
 | --- | --- | --- |
-| 静态检查 | slnx 覆盖全部 10 工程；17 组 MSBuild 引用评估、5 个预期失败的参数校验目标；文档/XML/ZIP/差异核对 | [E19](#evidence-project-layout) |
+| 静态检查 | 本轮核对样式职责、引用和文档链接；上轮 slnx/17 组引用/5 个参数目标、XML/ZIP 记录仍保留 | [E20](#evidence-style-ownership)、[E19](#evidence-project-layout) |
 | 构建 | 源码 → 发布 SDK → 源码模式切换：默认 Debug 全方案、两个独立插件与模型/集成工程均成功，Release 宿主发布成功 | [E19](#evidence-project-layout) |
 | 发布准备 | `artifacts/m2-project-layout/host` 发布后重建插件，234 个原宿主文件 SHA256 不变；包不含共享 SDK；未装载 | [E19](#evidence-project-layout) |
 | 自动化 | 历史旧核心 33/33 不覆盖当前改动；20 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E19](#evidence-project-layout) |
@@ -250,6 +250,33 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 ## 附录：历史实施与验收记录
 
 以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
+
+<a id="evidence-style-ownership"></a>
+
+<details open>
+<summary>E20 · 公共 UI、宿主与插件样式职责复核（2026-10-04）</summary>
+
+用户询问宿主的 `Styles/ShellStyles.axaml` 是否偏离公共 UI 分层。对照产品第 3.2 节、架构第 1/6 节及实际 AXAML/项目引用后，保留当前代码归属：
+
+- ThemeResources/SharedStyles 提供统一颜色、通用控件与外观；UI 工程只依赖 Contracts 与 UI 框架，没有反向引用宿主/Core/具体插件。
+- ShellStyles 的内容是主导航模板适配和 PagePresenter 边距；App 负责装配。MainViewModel 只对四个内置整页滚动页面启用 edgeScroll，外部插件使用默认页面边距。
+- 剪贴板的 ListBox.Styles 只调整当前列表项排版，表面颜色使用公共动态资源，没有向 Application 加装全局主题。
+
+没有发现上述范围内需要迁移文件或改变工程依赖的确定问题。ShellStyles 当前在应用级挂载，`shell`/`rail` 等选择器靠私有标识限定用途，并非强隔离；现有插件没有复用这些标识。后续若需更强范围约束，应收窄选择器，不能把同名冲突风险解释为现在已经污染插件，也不能把样式文件移进 UI 当作作用域修复。
+
+本轮只补充 [架构中的样式归属表](ARCHITECTURE.md#ui-style-ownership)、插件规范和交接摘要，不更改 AXAML、项目、SDK、功能、版本或目录。高思考深度子代理独立复核此范围；复审不代表全仓库无缺陷。
+
+静态核对命令：
+
+```powershell
+rg -n 'Styles|StyleInclude|ThemeResources|SharedStyles|ShellStyles|HasPageScroll' TractorTool TractorTool.UI Plugins -g '*.cs' -g '*.axaml' -g '*.csproj'
+./artifacts/evidence/Inspect-StyleDocs.ps1
+git diff --check
+```
+
+文档本地链接/锚点与本次文档差异核对结果保存在 `artifacts/evidence/style-ownership-static.json`。本轮构建、自动化、集成和真实 Windows UI 均未执行；不把 E19 构建或历史测试当作本次新执行结果。下一步仍由用户完成 E18/E17 运行验收，不因本次架构复核自动进入 M3。
+
+</details>
 
 <a id="evidence-project-layout"></a>
 
