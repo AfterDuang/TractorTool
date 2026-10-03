@@ -26,11 +26,12 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
     public List<PluginRecord> Records { get; } = [];
     public string? DirectoryError { get; private set; }
 
-    public void Discover(IReadOnlyCollection<string> disabled)
+    public void Discover(IReadOnlyCollection<string> disabled, IReadOnlyList<ManagedPlugin>? managed = null, string? startupError = null)
     {
         if (_loadTask is not null || _disposed) throw new InvalidOperationException("插件变更需重启生效。");
         Records.Clear();
         DirectoryError = null;
+        if (startupError is not null) { DirectoryError = startupError; log.Write("Plugins", startupError); return; }
         try
         {
             ManifestValidator.CheckNoLinks(paths.PluginRoot);
@@ -44,7 +45,21 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 try
                 {
                     ManifestValidator.CheckNoLinks(idDirectory);
-                    foreach (var versionDirectory in System.IO.Directory.GetDirectories(idDirectory)) ReadRecord(versionDirectory, disabled);
+                    var selection = managed?.FirstOrDefault(p => p.Id.Equals(Path.GetFileName(idDirectory), StringComparison.OrdinalIgnoreCase));
+                    if (selection is not null)
+                    {
+                        if (selection.ActiveVersion is not null)
+                        {
+                            var versionDirectory = Path.Combine(idDirectory, selection.ActiveVersion);
+                            ReadRecord(versionDirectory, selection.Enabled ? [] : [selection.Id]);
+                            if (selection.Error.Length != 0)
+                            {
+                                Records[^1].State = PluginState.Failed;
+                                Records[^1].Detail = selection.Error;
+                            }
+                        }
+                    }
+                    else foreach (var versionDirectory in System.IO.Directory.GetDirectories(idDirectory)) ReadRecord(versionDirectory, disabled);
                 }
                 catch (Exception ex) { Records.Add(new(idDirectory, null, PluginState.Invalid, ex.Message)); }
             }

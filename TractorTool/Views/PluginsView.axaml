@@ -3,11 +3,15 @@
              x:Class="TractorTool.Views.PluginsView" x:DataType="vm:PluginsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="20">
-      <ui:SettingRow Header="本地插件" Description="将可信插件放入此目录，重启后自动加载。" Icon="Folder">
-        <Button Content="打开插件目录" Command="{Binding OpenDirectoryCommand}" />
+      <ui:SettingRow Header="本地插件" Description="从可信 ZIP 安装或更新插件，变更在重启后生效。" Icon="Folder">
+        <WrapPanel>
+          <Button Content="安装 / 更新" Command="{Binding InstallCommand}" Classes="accent" Margin="0,0,8,0" />
+          <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" />
+        </WrapPanel>
       </ui:SettingRow>
       <SelectableTextBlock Text="{Binding PluginRoot}" Classes="caption" TextWrapping="Wrap" Margin="4,-8,4,0" />
       <TextBlock Text="{Binding OperationStatus}" Classes="caption" IsVisible="{Binding HasOperationStatus}" />
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" Height="3" />
       <StackPanel IsVisible="{Binding IsLoading}" Spacing="8">
         <TextBlock Text="{Binding Summary}" Classes="caption" />
         <ProgressBar IsIndeterminate="{Binding IsLoading}" Height="3" />
@@ -34,11 +38,11 @@
         <TextBox Grid.Column="1" Width="190" Text="{Binding Search}" PlaceholderText="查找插件" AutomationProperties.Name="查找插件" />
       </Grid>
       <TextBlock Text="没有找到匹配的插件。" IsVisible="{Binding NoMatches}" Classes="muted" Margin="4,12" />
-      <ItemsControl ItemsSource="{Binding FilteredItems}">
+      <ItemsControl ItemsSource="{Binding FilteredItems}" IsEnabled="{Binding !IsBusy}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PluginCard">
             <Border Classes="card" Margin="0,0,0,10">
-              <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+              <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
                 <Border Classes="iconTile" Margin="0,0,18,0"><ui:ToolIcon Kind="{Binding Icon}" ImageSource="{Binding ImageSource}" FontSize="36" /></Border>
                 <StackPanel Grid.Column="1" Spacing="6">
                   <TextBlock Text="{Binding Name}" Classes="sectionTitle" />
@@ -50,6 +54,15 @@
                   <Button Content="打开工具" Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}" />
                 </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Detail}" IsVisible="{Binding HasIssue}" Margin="0,14,0,0" />
+                <StackPanel Grid.Row="2" Grid.ColumnSpan="3" Spacing="10" Margin="0,14,0,0">
+                  <TextBlock Text="{Binding PendingText}" IsVisible="{Binding HasPending}" Classes="caption" />
+                  <WrapPanel>
+                    <Button Content="{Binding ToggleText}" Command="{Binding ToggleCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
+                    <Button Content="卸载" Command="{Binding UninstallCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
+                    <Button Content="回退版本" Command="{Binding RollbackCommand}" IsVisible="{Binding CanRollback}" Margin="0,0,8,0" />
+                    <Button Content="取消变更" Command="{Binding CancelChangeCommand}" IsVisible="{Binding CanCancelChange}" />
+                  </WrapPanel>
+                </StackPanel>
               </Grid>
             </Border>
           </DataTemplate>

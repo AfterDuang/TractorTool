@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "TractorTool.ClipboardHistory",
+  "name": "剪贴板历史",
+  "version": "1.0.0",
+  "entryAssembly": "TractorTool.Plugins.ClipboardHistory.dll",
+  "entryType": "TractorTool.Plugins.ClipboardHistory.ClipboardPlugin",
+  "apiVersion": "1.0",
+  "uiApiVersion": "1.2",
+  "avaloniaVersion": "12.1.2",
+  "supportedPlatforms": ["windows"],
+  "description": "查看 Windows 剪贴板历史中的文本。",
+  "author": "TractorTool"
+}

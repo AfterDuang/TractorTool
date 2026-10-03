@@ -20,17 +20,20 @@
 
 剪贴板插件使用 Windows 历史 API，区分成功、访问被拒绝和系统历史未启用。切换页面后可以释放显示资源；刷新取消令牌只作用于该次加载，不影响视频任务。[Windows API 状态](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboardhistoryitemsresultstatus?view=winrt-26100)
 
-插件采用 Windows 专属 TFM，宿主在装载前按清单排除不支持的平台；具体 SDK 最低版本在实现时结合 .NET、Avalonia 与 API 要求验证。首版不为了跨平台而模拟其他平台的 Windows 历史接口。
+插件采用 `net10.0-windows10.0.19041.0`，最低支持版本声明为 Windows 10 build 19041，固定 Windows SDK 投影包 `10.0.19041.57`。API 自 build 17763 引入，但本插件采用更高的编译/支持基线；这不是最低系统实机测试结论。清单排除非 Windows，入口再次检查版本。[系统 API](https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.datatransfer.clipboard.gethistoryitemsasync?view=winrt-26100)、[桌面应用使用 WinRT](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/winrt-apis-desktop-apps)
 
-建议的职责边界：
+当前源码位于 [TractorTool.Plugins.ClipboardHistory](../../Plugins/TractorTool.Plugins.ClipboardHistory)，只正式引用已发布的 Contracts/UI，宿主没有对此插件的静态项目引用。职责如下：
 
 | 部分 | 责任 |
 | --- | --- |
-| Windows 历史读取适配 | 调用系统 API，保留系统状态和单项读取错误 |
-| 插件 ViewModel | 页面进入时发起加载、手动刷新、维护加载/空/失败状态与展示项 |
-| 插件 View | 共享控件和主题下的列表、状态说明和刷新入口 |
+| [ClipboardPlugin](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardPlugin.cs) | 注册导航及页面工厂；每次创建页面使用新的 VM |
+| [WindowsClipboardHistory](../../Plugins/TractorTool.Plugins.ClipboardHistory/WindowsClipboardHistory.cs) | 调用系统 API，保留系统状态和单项读取错误；不使用 Task.Run 将访问转移到任意后台线程 |
+| [ClipboardHistoryViewModel](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryViewModel.cs) | 页面首次进入时加载、手动刷新、维护加载/空/失败状态；取消和迟到返回保护 |
+| [ClipboardHistoryView](../../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryView.axaml) | 共享主题下的列表、可选中文本、状态说明和刷新入口 |
 
-这些是该插件内部的设计职责，不要求先建立独立平台工程，也不表示已有同名类。系统历史由 Windows 拥有，宿主只提供页面、设置、目录和日志等公共能力。
+系统历史由 Windows 拥有，宿主只提供页面、设置、目录和日志等公共能力。当前仅展示文本，每项显示最多 20,000 字符；不支持的图片/文件等内容显示占位，失效或读取失败的单项不影响其他项。页面加载和手动刷新由 Avalonia UI 线程发起，保留 WinRT 剪贴板访问所需线程/前台上下文；实际权限、窗口焦点和系统策略差异需在 Windows 运行验证。
+
+插件没有私有设置页或后台监听，无需为演示而增加开关或历史数据库。独立版本 `1.0.0` 在清单中维护，打包脚本将其作为程序集产品版本。私有的 MVVM、Windows SDK 投影及 WinRT 运行库随包提供；许可来源与文件见 [NOTICE.md](../../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)。
 
 ## 4. 生命周期、错误与数据
 
@@ -53,4 +56,4 @@
 | 生命周期 | 离页/刷新取消只影响该次读取；不停止其他任务或常驻服务 |
 | 平台与 UI | 在目标 Windows/SDK 环境真实调用；记录内容类型清单、主题和长内容展示结果 |
 
-Windows API 最低目标版本、TFM 和实际内容类型需要在实现时验证；不因文档已列出 API 就宣称支持。真实 Windows 结果与 Headless/构建结果分开记录。
+另有 [ClipboardChecks](../../tests/TractorTool.ClipboardChecks/Program.cs) 使用可控读取器覆盖状态、初始化一次/手动刷新、离页迟到结果、异常脱敏和应用取消。它不能证明 Windows API 已调用；本轮仅编译，未执行。真实 Windows 结果与这些模型检查及构建结果分开记录。

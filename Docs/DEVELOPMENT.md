@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**仍处于 M1，未验收完成；M2–M5 未开始。** 用户已接手运行测试，后续代码修正仅进行了源码核对、构建或发布准备，没有自动运行应用、核心/集成/Headless 检查或接管 Windows UI。
+**已获授权推进 M2；插件管理和真实剪贴板插件代码已实现，运行验收待执行，M3–M5 未开始。** 用户在 E15 后反馈“测试一圈没发现啥问题，可以继续开发”。这是现有版本的人工反馈和推进授权，不补造逐项用例结果。本轮仍只做源码核对、构建、发布/文件核对，没有启动应用、核心/集成/Headless 检查或接管 Windows UI。
 
 ### 1.1 代码事实
 
@@ -17,7 +17,7 @@
 | 解决方案 | [TractorTool.slnx](../TractorTool.slnx)，保留原 `TractorTool/` 应用路径 |
 | 运行基线 | .NET 10；Avalonia、Desktop、Inter `12.1.2`；CommunityToolkit.Mvvm `8.4.2`；FluentAvaloniaUI `3.1.0` 替换原 FluentTheme，Avalonia/MVVM 基线未升级 |
 | Contracts | [插件与基础服务契约](../TractorTool.Contracts/PluginContracts.cs)：插件初始化/停止/释放、可选常驻活动、路径、插件配置、日志；不依赖 Avalonia/Windows |
-| Core | 路径与固定启动配置、JSON 原子保存/备份、实例锁、日志、清单校验、平台/SDK 检查、独立加载上下文 |
+| Core | 路径/设置/日志、清单兼容性和独立加载；新增安装目录锁、插件 ZIP 校验/暂存、活动版本、待重启变更、更新前数据快照及回退，见 [E16](#evidence-m2) |
 | UI SDK | [页面契约](../TractorTool.UI/PluginUi.cs) 与 [共享样式](../TractorTool.UI/Styles/SharedStyles.axaml)，Contracts API `1.0`、UI API `1.2`（接受旧 `1.0` / `1.1`），Avalonia 精确匹配 `12.1.2`；提供 SettingRow、ToolIcon、PageHost，可选包内 PNG 元数据 |
 | 主界面 | FAAppWindow + 72 宽 FANavigationView；三个固定入口、独立 AXAML 页面、公共设置行/图标/卡片、FAFrame 页面过渡。标题栏/导航修正见 [E05](#evidence-review)；最新收紧导航宽度、图标与按钮留白，默认 Debug 已编译，实际新比例待验，见 [E10](#evidence-nav-density) |
 | 默认主页 | 左侧顶部“主页”；欢迎区、插件/设置入口、真实安装记录卡片；加载中/空安装/目录错误分开，复用插件导航与失败处理。已编译，运行验收未执行，见 [E08](#evidence-home) |
@@ -25,27 +25,28 @@
 | Review 与彩色图标 | 修复重复初始化造成入口重复、插件页加载/目录失败时状态矛盾；导航和卡片接入 Fluent Emoji PNG，操作仍用单色符号。图片由宿主缓存并在窗口关闭后释放；静态复审完成，最新运行回归未执行，见 [E09](#evidence-icons-review) |
 | 设置与主题 | 浅色、深色、跟随系统及四种主题色、动画选择后即时应用并自动保存；正常保存不显示常驻说明，失败提示重试。新增主要表面的 220 ms 颜色过渡，遵循动画开关。保存队列见 [E12](#evidence-appearance-review)，最新编译及待验范围见 [E13](#evidence-theme-transition) |
 | 生命周期 | 普通关闭隐藏到托盘；托盘不可用时保持窗口；恢复事件与实例锁统一路径规范化；退出禁用新保存/页面操作，有界等待已有保存和插件清理，Stop/后台活动/取消回调结束后才 Dispose |
-| 测试 | 无新增测试框架依赖的核心检查程序、引用已发布宿主的 Avalonia Headless 集成程序、独立插件及私有依赖夹具 |
+| 测试 | 核心程序新增 15 项管理检查；独立剪贴板模型程序 8 项；沿用已发布宿主的 Headless 集成工程，均仅编译，未新增测试框架 |
 | 发布验证 | [Publish-Host.ps1](../scripts/Publish-Host.ps1)、[Verify-M1.ps1](../scripts/Verify-M1.ps1)，win-x64 自包含目录发布，禁用 AOT/裁剪/单文件 |
 | 产品版本与图标 | `Directory.Build.props` → 程序集元数据 → AppInfo → 关于页/日志；PNG/多尺寸 ICO 由同一透明多功能工具母版导出，见 [E06](#evidence-version) |
 | 绑定与 VS Code 预览 | 已修正字符串可见性、设置错误区域无 DataContext 默认显示及旧代码残留，见 [E14](#evidence-settings-cleanup)；E15 默认 Debug 已重新构建成功，先前占用不再阻塞这次构建，预览显示仍需刷新确认 |
-| 版本管理 | 开始开发时未发现 `.git`；目前没有创建 Git 仓库或编造提交哈希 |
-| 尚未实现 | M1 新 UI 的运行验收尚未执行；M2 的插件管理变更事务及剪贴板；M3 包管理/进程服务；M4 视频、有限任务队列；M5 迁移恢复、CI/安装器等 |
+| 正式剪贴板 | [独立工程](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj)，真实 Windows 历史 API、文本/其他类型占位、加载/刷新/取消；未实际调用 Windows API，不能写为功能验收通过 |
+| 版本管理 | 本地 Git `main`，M1 基线 `fc18c20`；本轮 M2 独立保存为后续本地提交，无远程；构建产物/测试数据不入库 |
+| 尚未实现 | M3 包管理/进程服务；M4 视频、有限任务队列；M5 数据目录迁移、恢复完善、CI/安装器；当前 M2 的真实管理及剪贴板运行证据仍缺 |
 
 测试插件只用于验证机制，不是正式业务插件。有限任务服务尚未实现；当前页面生命周期和常驻服务已分离，不能把常驻计数测试当成视频任务验收。
 
 ### 1.2 最近证据与限制
 
-最新按参考截图调整宿主整页滚动条的位置：滚动容器扩到右侧，原有正文边距保留，见 E15。E14 的预览/清理改动已包含在这次成功的默认 Debug 构建中；历史运行测试不覆盖这些新代码。
+最新实现 M2 的本地插件管理与 Windows 剪贴板插件，并按用户指示建立 Git。两个 GPT-6.1-Sol + high 子代理分别复审管理和剪贴板代码；已修复发现的问题，最终静态复审没有新的确定 P1/P2。这不等于运行结果或全仓库无缺陷。完整证据见 [E16](#evidence-m2)。
 
 | 层级 | 最近事实 | 证据 |
 | --- | --- | --- |
-| 静态检查 | 核对页面容器与正文边距、插件页布局边界和属性绑定，XML及文档链接核对完成 | [E15](#evidence-scroll-edge) |
-| 构建 | 最新默认 Debug 解决方案通过，0 警告/0 错误；之前 E14 的进程占用失败保留为历史记录 | [E15](#evidence-scroll-edge) |
-| 发布准备 | 本轮未重新发布；settings-cleanup-build/host 仍是 E14，theme-transition-ready 是 E13，均不含最新滚动条布局 | [E15](#evidence-scroll-edge)、[E14](#evidence-settings-cleanup) |
-| 自动化 | 首轮旧代码核心 33/33 通过；之后新增回归只编译，未执行 | [E01](#evidence-baseline)、[E05](#evidence-review) |
-| 集成/Headless | 首轮旧 UI 21/21 通过；后续用例仅编译，新增无 DataContext/错误正显示时移除上下文/恢复及按钮命令绑定检查未运行 | [E01](#evidence-baseline)、[E14](#evidence-settings-cleanup) |
-| 真实 Windows UI | 本轮未执行；滚动条贴边、窄窗切页以及之前预览/颜色过渡等实际表现仍由用户验收 | [E15](#evidence-scroll-edge) |
+| 静态检查 | M2 管理/平台边界与错误恢复复审完成；文档、XML、脚本和插件包文件核对见 E16 | [E16](#evidence-m2) |
+| 构建 | 默认 Debug 解决方案、独立剪贴板插件、剪贴板模型/现有集成检查编译均 0 警告/0 错误；宿主自包含发布成功 | [E16](#evidence-m2) |
+| 发布准备 | 新 `artifacts/m2-ready/host` 发布后才构建并放入剪贴板插件；234 个原有宿主文件 SHA256 全部不变；未加载该 DLL | [E16](#evidence-m2) |
+| 自动化 | 首轮旧核心 33/33 通过；M2 新 15 项管理和 8 项剪贴板模型用例仅编译，未执行 | [E01](#evidence-baseline)、[E16](#evidence-m2) |
+| 集成/Headless | 首轮旧 UI 21/21 通过；后续用例及本轮管理/真实插件集成均未执行 | [E01](#evidence-baseline)、[E16](#evidence-m2) |
+| 真实 Windows UI | 用户对 E15 后现有版本反馈未发现问题并允许继续，未列逐项结果；本轮 M2 管理/剪贴板均未运行，未读取真实历史 | [E16](#evidence-m2) |
 
 证据保留：早前整个 artifacts 曾在外部被清理，旧发布、日志和修改前快照已不可读取；历史记录仍保留，但不表示对应文件尚在。version-icon-final 和 E06/E07 证据在清理后重建，历史测试未重跑。历史成功不能自动覆盖后续代码。
 
@@ -80,7 +81,7 @@ dotnet run --project .\tests\TractorTool.Checks -c Release
 
 不带 `--profile-root` 时使用产品默认 `%LOCALAPPDATA%\TractorTool`。该参数仅用于隔离开发/验收，不是数据迁移功能；路径必须为绝对路径。固定启动文件是 `<ProfileRoot>/bootstrap.json`，默认与数据根相同。已存在的有效 `dataRoot` 指针受支持，目录不存在时拒绝启动并保留指针。应用内数据迁移仍在 M5。
 
-完整发布及示例插件验收使用 Verify-M1.ps1 生成的新隔离副本。E15 滚动条改动只构建到默认 Debug，隔离启动见 [E15](#evidence-scroll-edge)。现有 `artifacts/settings-cleanup-build/host` 为 E14 发布，用于检查编译，未装入示例插件；`artifacts/theme-transition-ready/host` 为带示例插件的 E13 旧副本；均不包含 E15。默认 VS Code 启动项没有隔离参数，运行验证使用明确的 profile 命令。
+最新副本为 `artifacts/m2-ready/host`，已放入独立构建的剪贴板插件；ZIP 位于 `artifacts/m2-ready/clipboard`。隔离启动与本轮准确命令见 [E16](#evidence-m2)，未经新指示不代用户启动。旧 theme-transition-ready/settings-cleanup-build 等副本不含 M2。完整 M1 机制回归仍由 Verify-M1.ps1 生成其自己的隔离副本和测试插件，不能直接用只有剪贴板插件的宿主冒充该集成夹具。默认 VS Code 启动项没有隔离参数，运行验证使用明确的 profile 命令。
 
 VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Previewer**；必要时执行 `Developer: Reload Window`。当前 DLL 的版本及可见性属性已核对，但尚未代用户刷新预览。
 
@@ -104,13 +105,13 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 | 阶段 | 交付边界 | 当前状态 |
 | --- | --- | --- |
 | M0 | 需求、架构、工作约定与开发文档 | 已建立并持续维护；不是 UI 开发阶段 |
-| M1 | 宿主、路径/设置/日志、完整公共 UI、主题/托盘、独立插件协议 | 进行中，代码与构建已有，最新运行验收未完成 |
-| M2 | 插件管理闭环与真实剪贴板插件 | 未开始 |
+| M1 | 宿主、路径/设置/日志、完整公共 UI、主题/托盘、独立插件协议 | 代码已交付；用户实测反馈无问题并允许继续，历史逐项证据仍保留限制 |
+| M2 | 插件管理闭环与真实剪贴板插件 | 代码/独立构建已交付，待管理闭环及真实 Windows 验收 |
 | M3 | 包/进程公共服务、真实媒体链路验证 | 未开始 |
 | M4 | 完整视频插件与有限任务交互 | 未开始 |
 | M5 | 恢复、数据迁移、Windows 正式发布和最终验收 | 未开始 |
 
-### M1：当前阶段出口
+### M1：宿主基础出口
 
 - 保留现有应用路径，必要的 Contracts/Core/UI/测试工程可还原和构建，实际环境与结果可追溯。
 - 软件、插件、数据和固定启动配置解析正确；设置持久化、备份和日志可用。
@@ -119,13 +120,15 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 - 清单/兼容性/独立 DLL 加载、页面及设置注册和失败隔离得到验证；发布宿主后单独构建测试插件，保留宿主二进制未改变的证据。
 - 快速切页、导航取消/失败、后台常驻活动以及保存后立即退出回归通过。测试夹具不作为正式工具交付。
 
-当前出口尚未满足；详见第 4 节 A01/A02/A03/A05/A21 等状态，不能只依据静态样式存在或历史测试勾选完成。
+用户已基于实测允许进入 M2；但 A01/A02/A03/A05/A21 的未逐项记录部分不因此自动改为全部通过，历史限制继续有效。
 
 ### M2：插件管理与剪贴板
 
 宿主实现软件目录 Plugins 的安装、更新、禁用、卸载待重启事务及失败恢复，覆盖重复 ID、损坏清单、缺 DLL、不兼容、不可写和文件占用；不重定向到数据目录。
 
 独立交付 [剪贴板插件](Plugins/ClipboardHistory.md)，真实 Windows 历史读取/刷新及状态显示符合该文档。阶段出口是管理闭环和 A08 的真实系统证据，不接受自建历史库替代。
+
+当前代码与打包已落实上述范围，15 项管理和 8 项模型用例仅编译。变更生效、快照回退、ACL/占用、真实系统读取等仍待运行验收，暂不宣称 M2 全部通过。
 
 ### M3：公共依赖服务与媒体验证
 
@@ -153,14 +156,14 @@ VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Prev
 
 | 编号 | 验收场景 | 通过条件 | 证据层级 | 状态 |
 | --- | --- | --- | --- | --- |
-| A01 | 主框架与主题 | 顶部主页和三个底部入口可达，欢迎/插件卡片与实际安装一致，布局/图标/控件/切页反馈统一，宿主和插件主题一致，重启保留 | UI | 未通过：标题栏/导航/状态已修正，主页和彩色图标已接入并编译；真实拖动、卡片/空态、图片/回退、布局/主题/动效待验 |
-| A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | 部分通过：历史旧 UI 真实加载通过；最近代码修正发布后独立编译成功、234 个宿主文件不变，最新加载及页面/设置显示未验证 |
-| A03 | 兼容性与禁用 | 不兼容、禁用插件只读清单不执行入口；加载错误可定位 | 集成 | 历史 M1 通过禁用/兼容/故障隔离；UI 1.2 接受旧 1.0/1.1 的检查及 FluentAvalonia 共享规则仅编译，旧 DLL 动态加载待回归；管理端禁用操作属 M2 |
-| A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | 未完成：仅目录受阻报错分支已自动验证；安装事务/恢复/ACL 属后续验收 |
+| A01 | 主框架与主题 | 顶部主页和三个底部入口可达，欢迎/插件卡片与实际安装一致，布局/图标/控件/切页反馈统一，宿主和插件主题一致，重启保留 | UI | 用户现有版本实测反馈无问题并授权继续；未提供逐项记录，本轮管理 UI/真实插件主题仍待验 |
+| A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | 部分通过：历史旧 UI 加载通过；E16 正式剪贴板插件独立构建后 234 个宿主文件未变，实际加载未执行；该插件不需设置页，设置注册仍由机制夹具验收 |
+| A03 | 兼容性与禁用 | 不兼容、禁用插件只读清单不执行入口；加载错误可定位 | 集成 | 历史 M1 有运行证据；本轮活动版本选择/管理禁用及后续 SDK 兼容检查仅编译，未运行 |
+| A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | M2 管理/快照回退代码及 15 项管理检查已编译；未执行，真实 ACL/占用/中断恢复待验，不能据历史目录受阻用例标为完成 |
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 未完成：仅常驻活动切页/隐藏继续的 Headless 检查通过；真实视频任务及托盘待验证 |
 | A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | 部分通过：默认/自定义指针、路径分离、不可用目录保护；迁移/恢复在 M5 |
 | A07 | 外部包事务 | 哈希错误/中断不成就绪，重试成功，多版本共存，使用中不可删 | 集成 | 未验证 |
-| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 真实读取/刷新，空/关闭/拒绝等状态明确，无自建历史库 | 集成、UI | 未验证 |
+| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 真实读取/刷新，空/关闭/拒绝等状态明确，无自建历史库 | 集成、UI | 真实 API 插件已独立构建，8 项模型检查仅编译；Windows API、系统状态及页面均未运行验证 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 未验证 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
 | A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | 未验证 |
@@ -236,7 +239,7 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 
 ## 6. 下一步与维护
 
-下一步由用户按 [E15](#evidence-scroll-edge) 的默认 Debug 隔离命令，检查设置等页面滚动条靠右、卡片与页头对齐、窄窗滚动及切回日志/插件页面的边距；同时刷新预览确认 E14 修复。随后继续之前的主题、标题栏、保存退出、插件与托盘验收。检查程序仍未运行；未获新指示不代用户测试，不自动推进 M2。
+下一步由用户按 [E16](#evidence-m2) 使用隔离副本验证剪贴板真实加载/刷新/系统状态，及安装/更新/启停/卸载/回退重启闭环。先解决新出现的错误，再决定进入 M3 的包/进程服务和真实媒体链路。未经新测试指示不代用户执行检查程序或 UI；数据目录迁移仍留 M5，未借本轮扩张范围。
 
 后续有实质性进展时更新第 1 节当前状态、第 3 节里程碑和第 4 节验收结果。必要的真实命令和结果追加到下方附录，不用新流水账挤占当前摘要；同步 PROJECT_CONTEXT.md 的精简交接。文档归属按 README.md 维护。
 
@@ -245,6 +248,68 @@ M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、
 ## 附录：历史实施与验收记录
 
 以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
+
+<a id="evidence-m2"></a>
+
+<details open>
+<summary>E16 · 本地 Git、插件管理与剪贴板插件（2026-10-04）</summary>
+
+用户在 E15 后反馈“目前测试一圈没发现啥问题，可以继续开发”，据此推进 M2；没有收到逐项测试记录，未将历史缺证条目批量标为通过。随后用户要求先初始化本地 Git。已建立 `main`、提交 M1 基线 `fc18c20`（95 个文件），未配置远程。当时已经开始的 PluginFiles 新文件和清单 ValidateVersion 提取没有混入基线：用修改前快照恢复这一个文件的暂存版本，工作区改动保留。后续 M2 改动单独形成本地提交，以 `git log` 为准。快照 `artifacts/m2-before-20261004/`、构建产物和测试数据由现有 `.gitignore` 排除。
+
+暂存检查最初报告原始 Windows SDK RTF 许可自带的行尾空白；未修改发行方许可格式，使用仅针对该文件的 `.gitattributes` binary 属性按原字节保存，重新检查其余文本差异。没有更改用户全局换行设置。
+
+本轮代码：
+
+- 插件页从本地 ZIP 安装/更新；启停、卸载、回退、取消待处理请求及错误反馈，全部重启生效。入口使用原生文件选择与现有主题确认框，不增加在线市场。
+- Core 校验 ZIP 边界/链接/重名/大小、清单兼容性、共享 DLL 与入口元数据，暂存并记录摘要。活动版本选择、安装目录锁、与 dataRoot 绑定的请求、防覆盖更新、卸载保留数据及启动失败恢复明确分离。
+- 更新数据快照在旧进程退出后的新启动制作；回退保留新版数据副本。管理状态使用原子 JSON 保存。固定启动、安装和自定义数据根锁一直保留到进程终止，避免退出超时后迟到写入与新进程重叠。
+- 正式剪贴板插件使用真实 Windows 历史 API，UI 线程进入/刷新，只展示文本（每项最多 20,000 字符），其他类型/失效项占位，区分系统关闭、拒绝、空和失败。离页取消与迟到结果保护，无历史库、监听和正文日志。详细平台/依赖/许可见 [插件文档](Plugins/ClipboardHistory.md)。
+
+两名子代理均显式使用 GPT-6.1-Sol + high，分别审查管理事务和剪贴板。确认并修复：首次接管旧插件的 ID 大小写漏洞、取消安装未清理暂存包、失败更新缺少可操作的取消入口、缺失清单时管理卡片重复/丢失恢复操作、长状态文字不换行；退出后继续排队的保护和管理异常日志也已补齐。最终静态复核未发现新确定 P1/P2，未宣称覆盖一切故障。
+
+| 层级 | 实际结果与限制 |
+| --- | --- |
+| 静态 | 文档链接/片段、项目与 AXAML XML、脚本语法、插件包内容/许可及 Git 差异检查；报告 `artifacts/evidence/m2-static.json` |
+| 构建 | 最终默认 Debug 解决方案 0 警告/0 错误；win-x64 自包含宿主发布成功；独立剪贴板插件、剪贴板模型/现有集成工程均 0 警告/0 错误 |
+| 自动化 | 新增 15 项管理检查和 8 项剪贴板模型检查，仅编译，未执行。管理用例中的 Loaded 是显式状态夹具，未冒充 DLL 加载；模型读取器不调用系统 API |
+| 发布文件检查 | 发布宿主后才单独构建剪贴板，复制到实际发布副本 Plugins/TractorTool.ClipboardHistory/1.0.0；234 个原有宿主文件 SHA256 均不变，无宿主/Core 静态引用或共享 SDK DLL 副本 |
+| 集成 / Windows UI | 均未执行；未启动程序、未读取真实剪贴板、未改变系统历史开关、未触碰真实用户数据。首次真实 WinRT 加载/权限/焦点、管理变更和恢复仍待验 |
+
+实际环境为 Windows、.NET SDK 10.0.401，既有 Avalonia 12.1.2 / MVVM 8.4.2 / FluentAvaloniaUI 3.1.0 不变；剪贴板单独采用 net10.0-windows10.0.19041.0，固定 WindowsSdkPackageVersion 10.0.19041.57。编译组件需要访问本机日志目录，构建使用已说明范围的提权执行；没有运行应用。第一次剪贴板构建因 ListBox 不支持 HorizontalContentAlignment 报 AVLN2000，改为 ListBoxItem 样式后重新构建成功；失败日志保留在 `m2-clipboard-build.txt`。
+
+最终实际命令（从仓库根执行，输出目录在当时为空）：
+
+```powershell
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-ready/host
+./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/m2-ready/host -Output H:/ProjH/TractorTool/artifacts/m2-ready/clipboard
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-ready/host -o artifacts/m2-ready/integration-checks
+dotnet build tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/m2-ready/host -p:PluginBuildDir=H:/ProjH/TractorTool/artifacts/m2-ready/clipboard/files -o artifacts/m2-ready/clipboard-checks
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+```
+
+通过 PowerShell `Get-FileHash` 在独立构建前记录宿主文件，并在复制插件后比较原相对路径；没有用启动程序代替文件校验。证据：`m2-host-before-plugin.json`、`m2-ready-host-hashes.json`。ZIP 的 SHA256 为 `40AC3588BD4F019C06A131F01C0AE8ADE3B527F936EF77FFF8590F7D423D6DE5`，随包 `.sha256`；插件产品版本 1.0.0 来自清单，SDK 添加的 `+fc18c20…` 为编译时 HEAD，产物含当时未提交工作区，不能据此声称二进制恰好等于 M1 基线。
+
+最终日志位于 `artifacts/evidence/`：`m2-ready-publish.txt`、`m2-ready-plugin-package.txt`、`m2-ready-integration.txt`、`m2-ready-clipboard-checks.txt`、`m2-ready-debug.txt`。早期 m2-sdk/m2-package 为中间产物，以 m2-ready 为当前副本。
+
+以下仅供用户运行，**本轮未执行**：
+
+```powershell
+& .\artifacts\m2-ready\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\m2-manual-profile
+# 只验证模型/管理逻辑，不调用 Windows 历史 API：
+dotnet .\tests\TractorTool.Checks\bin\Debug\net10.0\TractorTool.Checks.dll
+dotnet .\artifacts\m2-ready\clipboard-checks\TractorTool.ClipboardChecks.dll
+```
+
+用户验收重点：
+
+1. 从默认主页/左侧进入剪贴板工具，检查真实列表/刷新、长文本、系统关闭/拒绝/空状态、切页后重新进入、浅深主题。仅使用可供验收的系统内容，不需清空历史。
+2. 插件页禁用后当前窗口保持原功能；**从设置或托盘显式退出**（关闭窗口只隐藏），重启后没有该工具入口；再启用/重启恢复。
+3. 卸载/重启后代码移除、数据保留；选择 `artifacts/m2-ready/clipboard/TractorTool.ClipboardHistory-1.0.0.zip` 重新安装，重启后出现。当前预置同版本时直接再安装应被拒绝覆盖。
+4. 更新/数据回退需要另一个更高版本的隔离插件包与临时数据。源码检查已覆盖摘要变动、同版本/ID 冲突、备份时机、数据保留及移动后重放；运行结果仍未取得。真实 ACL、文件占用、磁盘/断电窗口尚未实测，不能将上述用例编译等同于事务验收。
+
+M2 仍待运行出口；M3 的包/进程服务、视频真实链路、数据目录迁移和 CI 未借本轮提前实现。
+
+</details>
 
 <a id="evidence-baseline"></a>
 

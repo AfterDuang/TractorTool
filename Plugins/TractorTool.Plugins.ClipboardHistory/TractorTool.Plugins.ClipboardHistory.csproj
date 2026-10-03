@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <WindowsSdkPackageVersion>10.0.19041.57</WindowsSdkPackageVersion>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+    <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+    <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.2" IncludeAssets="compile;build;buildTransitive" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(HostSdkDir)/TractorTool.UI.dll')">
+    <Error Text="先发布宿主，再用 -p:HostSdkDir 指向发布目录；正式插件不引用宿主源码。" />
+  </Target>
+</Project>

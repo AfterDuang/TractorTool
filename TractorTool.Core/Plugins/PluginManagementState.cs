@@ -1,0 +1,64 @@
+using TractorTool.Contracts;
+using TractorTool.Core.Storage;
+
+namespace TractorTool.Core.Plugins;
+
+public enum PluginChangeKind { Activate, Enable, Disable, Uninstall, Rollback }
+public sealed record PendingPluginChange(PluginChangeKind Kind, string Token, string DataRoot, string? Version = null, string? Digest = null);
+public sealed record PluginRecovery(string Version, string Token, string DataRoot, bool HadData);
+public sealed record ManagedPlugin
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string? ActiveVersion { get; init; }
+    public bool Enabled { get; init; } = true;
+    public PendingPluginChange? Pending { get; init; }
+    public PluginRecovery? Recovery { get; init; }
+    public bool AwaitingLoad { get; init; }
+    public string Error { get; init; } = "";
+}
+
+public sealed record PluginManagementState : IVersionedSettings
+{
+    public int SchemaVersion { get; init; } = 1;
+    public ManagedPlugin[] Plugins { get; init; } = [];
+
+    public static void Validate(PluginManagementState value)
+    {
+        if (value.Plugins is null) throw new InvalidDataException("插件管理列表无效。");
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in value.Plugins)
+        {
+            if (item is null) throw new InvalidDataException("插件管理条目为空。");
+            AppPaths.ValidateId(item.Id);
+            if (!ids.Add(item.Id)) throw new InvalidDataException("插件管理记录 ID 重复。");
+            if (item.ActiveVersion is { } active) ManifestValidator.ValidateVersion(active);
+            if (item.Pending is { } pending)
+            {
+                if (!Enum.IsDefined(pending.Kind)) throw new InvalidDataException("未知插件变更。");
+                ValidateToken(pending.Token);
+                _ = AppPaths.Absolute(pending.DataRoot);
+                if (pending.Kind == PluginChangeKind.Activate)
+                {
+                    ManifestValidator.ValidateVersion(pending.Version!);
+                    if (pending.Digest is null || pending.Digest.Length != 64 || !pending.Digest.All(Uri.IsHexDigit))
+                        throw new InvalidDataException("待安装包校验值无效。");
+                }
+                else if (item.ActiveVersion is null) throw new InvalidDataException("待变更插件没有活动版本。");
+                if (pending.Kind == PluginChangeKind.Rollback && item.Recovery is null)
+                    throw new InvalidDataException("回退缺少恢复记录。");
+            }
+            if (item.Recovery is { } recovery)
+            {
+                ManifestValidator.ValidateVersion(recovery.Version);
+                ValidateToken(recovery.Token);
+                _ = AppPaths.Absolute(recovery.DataRoot);
+            }
+        }
+    }
+
+    internal static void ValidateToken(string token)
+    {
+        if (!Guid.TryParseExact(token, "N", out _)) throw new InvalidDataException("插件事务标识无效。");
+    }
+}

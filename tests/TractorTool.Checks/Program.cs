@@ -141,5 +141,6 @@ Check("Blocked software plugin directory reports error without relocation", () =
     host.Discover([]);
     Assert(host.DirectoryError is null && Directory.Exists(blocked.PluginRoot));
 });
+PluginManagementChecks.Run(root, Check);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; isolated evidence={root}");
 return failed == 0 ? 0 : 1;

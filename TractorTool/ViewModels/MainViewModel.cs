@@ -31,6 +31,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private readonly AppLog _log;
     private readonly Func<Task> _exit;
     private readonly NavigationIconStore _icons;
+    private readonly PluginManager? _manager;
+    private readonly IReadOnlyCollection<string> _legacyDisabled;
     private Task? _initialization;
     private readonly List<RegisteredPage> _registered = [];
     private string _pageKey = "";
@@ -59,13 +61,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private string _activeNavigation = "";
     public bool IsLogsSelected => ActiveNavigation == "logs";
 
-    public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit)
+    public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit, PluginManager? manager = null,
+        IReadOnlyCollection<string>? legacyDisabled = null)
     {
-        _plugins = plugins; _log = log; Settings = settings; _exit = exit;
+        _plugins = plugins; _log = log; Settings = settings; _exit = exit; _manager = manager;
+        _legacyDisabled = legacyDisabled ?? [];
         _icons = new NavigationIconStore(log);
         Settings.ExitCommand = ExitCommand;
         Logs = new LogsViewModel(paths, log);
-        Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand);
+        Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand, manager, log);
         Home = new HomeViewModel(ShowPluginsCommand, ShowSettingsCommand);
         Navigation.Add(new("主页", ShowHomeCommand, "home", ToolIconKind.Home, imageSource: _icons.GetHostIcon(ToolIconKind.Home)));
         FooterNavigation = [
@@ -85,6 +89,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private async Task InitializeCoreAsync()
     {
         if (_detached) return;
+        if (_manager is not null)
+        {
+            try
+            {
+                await Task.Run(() => { _manager.ApplyPending(); _plugins.Discover(_legacyDisabled, _manager.Snapshot); });
+            }
+            catch (Exception ex)
+            {
+                if (_detached) return;
+                Plugins.ManagementAvailable = false;
+                _plugins.Discover([], startupError: "插件管理启动失败：" + ex.Message);
+            }
+            if (_detached) return;
+        }
         await _plugins.LoadAsync((record, plugin) =>
         {
             if (_detached) return;
@@ -92,6 +110,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             if (plugin is IPluginUiModule ui) ui.RegisterPages(registry);
             if (!_detached) _registered.AddRange(registry.Pages);
         });
+        if (_detached) return;
+        if (_manager is not null)
+        {
+            try { await Task.Run(() => _manager.RecordLoadResults(_plugins.Records)); }
+            catch (Exception ex) { _log.Write("Plugins", "保存插件加载结果失败", ex); Plugins.OperationStatus = "插件已加载，但管理状态保存失败：" + ex.Message; }
+        }
         if (_detached) return;
         foreach (var page in _registered)
         {

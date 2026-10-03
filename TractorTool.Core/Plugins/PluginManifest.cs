@@ -64,8 +64,7 @@ public static class ManifestValidator
         AppPaths.ValidateId(m.Id);
         if (string.IsNullOrWhiteSpace(m.Name) || string.IsNullOrWhiteSpace(m.EntryType))
             throw new InvalidDataException("清单缺少名称或入口类型。");
-        if (!Regex.IsMatch(m.Version ?? "", @"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$") || !Version.TryParse(m.Version, out _))
-            throw new InvalidDataException("M1 插件版本须为三段数字版本。");
+        ValidateVersion(m.Version);
         var info = new DirectoryInfo(directory);
         if (!string.Equals(info.Name, m.Version, StringComparison.Ordinal) ||
             !string.Equals(info.Parent?.Name, m.Id, StringComparison.Ordinal))
@@ -75,6 +74,12 @@ public static class ManifestValidator
         if (m.SupportedPlatforms is null || m.SupportedPlatforms.Length == 0 || m.SupportedPlatforms.Any(string.IsNullOrWhiteSpace) || m.Dependencies is null)
             throw new InvalidDataException("清单平台或依赖列表无效。");
         _ = EntryPath(m, directory);
+    }
+
+    public static void ValidateVersion(string value)
+    {
+        if (!Regex.IsMatch(value ?? "", @"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$") || !Version.TryParse(value, out _))
+            throw new InvalidDataException("插件版本须为三段数字版本。");
     }
 
     public static string EntryPath(PluginManifest m, string directory)

@@ -1,5 +1,6 @@
 using Avalonia.Media;
 using Avalonia.Controls;
+using Avalonia.Platform.Storage;
 using FluentAvalonia.UI.Controls;
 using FluentAvalonia.UI.Windowing;
 using TractorTool.ViewModels;
@@ -32,6 +33,24 @@ public partial class MainWindow : FAAppWindow
         if (ReferenceEquals(next, _presentedViewModel)) return;
         _presentedViewModel?.DetachPagePresenter();
         _presentedViewModel = next;
+        if (next is not null)
+        {
+            next.Plugins.PickArchiveAsync = async () =>
+            {
+                var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = "安装或更新插件", AllowMultiple = false,
+                    FileTypeFilter = [new FilePickerFileType("插件 ZIP") { Patterns = ["*.zip"] }]
+                });
+                return files.Count == 0 ? null : files[0].TryGetLocalPath()
+                    ?? throw new InvalidOperationException("请选择本地插件 ZIP 文件。");
+            };
+            next.Plugins.ConfirmAsync = async message => await new FAContentDialog
+            {
+                Title = "插件变更", Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                PrimaryButtonText = "确认", CloseButtonText = "取消", DefaultButton = FAContentDialogButton.Close
+            }.ShowAsync(this) == FAContentDialogResult.Primary;
+        }
         next?.AttachPagePresenter(PagePresenter.Present, PagePresenter.Clear);
     }
     private void ApplyCaptionColors()

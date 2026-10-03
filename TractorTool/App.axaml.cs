@@ -17,6 +17,9 @@ public partial class App : Application
 {
     private PluginHost? _plugins;
     private InstanceLease? _lease;
+    // Keep installation/data ownership until the process closes, even if plugin cleanup times out.
+    private static PluginManager? _pluginManager;
+    private static InstanceLease? _dataLease;
     private TrayService? _tray;
     private MainViewModel? _vm;
     private AppLog? _log;
@@ -37,15 +40,22 @@ public partial class App : Application
                 var fixedRoot = Program.ProfileRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
                 _lease = new InstanceLease(AppPaths.Absolute(fixedRoot));
                 var paths = AppPaths.Open(Program.ProfileRoot);
+                if (!string.Equals(paths.DataRoot, paths.BootstrapRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    _dataLease = new InstanceLease(paths.DataRoot);
                 _log = new AppLog(paths.LogRoot);
                 _log.Write("Host", $"启动：Version={AppInfo.Version}; AppRoot={paths.AppRoot}; DataRoot={paths.DataRoot}; Bootstrap={paths.BootstrapFile}");
                 var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate);
                 var settings = store.Load();
                 ThemeService.Apply(settings);
-                _plugins = new PluginHost(paths, new(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
-                    System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion), _log);
-                _plugins.Discover(settings.DisabledPlugins);
-                _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log), ExitAsync);
+                var compatibility = new HostCompatibility(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
+                    System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion);
+                string? managementError = null;
+                try { _pluginManager = new PluginManager(paths, compatibility); }
+                catch (Exception ex) { managementError = "插件管理不可用：" + ex.Message; _log.Write("Plugins", managementError, ex); }
+                _plugins = new PluginHost(paths, compatibility, _log);
+                if (managementError is not null) _plugins.Discover([], startupError: managementError);
+                _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log), ExitAsync,
+                    managementError is null ? _pluginManager : null, settings.DisabledPlugins);
                 var window = new MainWindow { DataContext = _vm };
                 desktop.MainWindow = window;
                 window.Closing += (_, e) =>
@@ -71,11 +81,10 @@ public partial class App : Application
                     if (!_exiting && _tray.Available != true) _vm.NotifyTrayUnavailable();
                 };
                 desktop.ShutdownRequested += (_, e) => { if (!_exiting) { e.Cancel = true; _ = ExitAsync(); } };
-                desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); _lease?.Dispose(); };
+                desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); };
             }
             catch (Exception ex)
             {
-                _lease?.Dispose();
                 var quit = new Button { Content = "退出" };
                 quit.Click += (_, _) => desktop.Shutdown(1);
                 var message = new TextBox { Text = "启动失败，原配置未覆盖。\n" + ex.Message + "\n若配置损坏，可在退出后用同目录的 .bak 恢复。", IsReadOnly = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
@@ -103,14 +112,15 @@ public partial class App : Application
         _exiting = true;
         if (_desktop?.MainWindow is { } window) window.IsEnabled = false;
         var pendingSave = _vm?.Settings.BeginShutdown() ?? Task.CompletedTask;
+        var pendingManagement = _vm?.Plugins.BeginShutdown() ?? Task.CompletedTask;
         _vm?.Detach();
         _log?.Write("Host", "显式退出：等待设置保存并停止插件和常驻服务。");
         try
         {
             var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-            await Task.WhenAll(pendingSave, stopPlugins).WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(pendingSave, pendingManagement, stopPlugins).WaitAsync(TimeSpan.FromSeconds(10));
         }
         catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
-        finally { _tray?.Dispose(); _lease?.Dispose(); _desktop?.Shutdown(); }
+        finally { _tray?.Dispose(); _desktop?.Shutdown(); }
     }
 }
