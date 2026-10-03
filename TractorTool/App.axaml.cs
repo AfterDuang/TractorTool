@@ -1,0 +1,116 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using TractorTool.Core.Logging;
+using TractorTool.Core.Plugins;
+using TractorTool.Core.Storage;
+using TractorTool.Services;
+using TractorTool.UI;
+using TractorTool.ViewModels;
+using TractorTool.Views;
+
+namespace TractorTool;
+
+public partial class App : Application
+{
+    private PluginHost? _plugins;
+    private InstanceLease? _lease;
+    private TrayService? _tray;
+    private MainViewModel? _vm;
+    private AppLog? _log;
+    private IClassicDesktopStyleApplicationLifetime? _desktop;
+    private bool _exiting;
+    private bool _ready;
+
+    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            _desktop = desktop;
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            try
+            {
+                var fixedRoot = Program.ProfileRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
+                _lease = new InstanceLease(AppPaths.Absolute(fixedRoot));
+                var paths = AppPaths.Open(Program.ProfileRoot);
+                _log = new AppLog(paths.LogRoot);
+                _log.Write("Host", $"启动：Version={AppInfo.Version}; AppRoot={paths.AppRoot}; DataRoot={paths.DataRoot}; Bootstrap={paths.BootstrapFile}");
+                var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate);
+                var settings = store.Load();
+                ThemeService.Apply(settings);
+                _plugins = new PluginHost(paths, new(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
+                    System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion), _log);
+                _plugins.Discover(settings.DisabledPlugins);
+                _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log), ExitAsync);
+                var window = new MainWindow { DataContext = _vm };
+                desktop.MainWindow = window;
+                window.Closing += (_, e) =>
+                {
+                    if (_exiting) return;
+                    e.Cancel = true;
+                    if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitAsync(); return; }
+                    if (_tray?.Available == true) { window.Hide(); _log.Write("Tray", "主窗口已隐藏；插件生命周期保持运行。"); }
+                    else { _vm.NotifyTrayUnavailable(); Restore(); }
+                };
+                window.Opened += async (_, _) =>
+                {
+                    if (_ready) return;
+                    _ready = true;
+                    _tray = new TrayService(Restore, ExitAsync, _log, Program.LaunchArguments.Contains("--no-tray"));
+                    if (OperatingSystem.IsWindows()) Program.RestoreSignal?.Listen(() => Dispatcher.UIThread.Post(Restore));
+                    try { await _vm.InitializeAsync(); }
+                    catch (Exception ex)
+                    {
+                        _log.Write("Host", "初始化失败", ex);
+                        if (!_exiting) _vm.Status = "初始化失败：" + ex.Message;
+                    }
+                    if (!_exiting && _tray.Available != true) _vm.NotifyTrayUnavailable();
+                };
+                desktop.ShutdownRequested += (_, e) => { if (!_exiting) { e.Cancel = true; _ = ExitAsync(); } };
+                desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); _lease?.Dispose(); };
+            }
+            catch (Exception ex)
+            {
+                _lease?.Dispose();
+                var quit = new Button { Content = "退出" };
+                quit.Click += (_, _) => desktop.Shutdown(1);
+                var message = new TextBox { Text = "启动失败，原配置未覆盖。\n" + ex.Message + "\n若配置损坏，可在退出后用同目录的 .bak 恢复。", IsReadOnly = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+                var window = new Window { Title = "TractorTool · 启动失败", Width = 720, Height = 360,
+                    Content = new StackPanel { Margin = new Thickness(24), Spacing = 20, Children = { message, quit } } };
+                window.Closed += (_, _) => desktop.Shutdown(1);
+                desktop.MainWindow = window;
+            }
+        }
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    private void Restore()
+    {
+        if (_exiting || _desktop?.MainWindow is not { } window) return;
+        window.Show();
+        if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
+        window.Activate();
+        _log?.Write("Tray", "主窗口已恢复。");
+    }
+
+    private async Task ExitAsync()
+    {
+        if (_exiting) return;
+        _exiting = true;
+        if (_desktop?.MainWindow is { } window) window.IsEnabled = false;
+        var pendingSave = _vm?.Settings.BeginShutdown() ?? Task.CompletedTask;
+        _vm?.Detach();
+        _log?.Write("Host", "显式退出：等待设置保存并停止插件和常驻服务。");
+        try
+        {
+            var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+            await Task.WhenAll(pendingSave, stopPlugins).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
+        finally { _tray?.Dispose(); _lease?.Dispose(); _desktop?.Shutdown(); }
+    }
+}

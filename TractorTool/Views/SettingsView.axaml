@@ -1,0 +1,84 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Views.SettingsView" x:DataType="vm:SettingsViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="24">
+      <StackPanel Spacing="8">
+        <TextBlock Text="外观" Classes="sectionTitle" Margin="0,0,0,4" />
+        <ui:SettingRow Header="主题" Description="选择明亮或柔和的深色界面，也可以跟随系统。" Icon="Theme">
+          <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" AutomationProperties.Name="主题">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ThemeChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+        </ui:SettingRow>
+        <ui:SettingRow Header="主题色" Description="应用于选中状态和主要操作，彩色图标保留原色。" Icon="Palette">
+          <ComboBox ItemsSource="{Binding Accents}" SelectedItem="{Binding SelectedAccent}" AutomationProperties.Name="主题色">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:AccentChoice">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Value}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </ui:SettingRow>
+        <ui:SettingRow Header="界面动画" Description="主题过渡、页面切换与控件反馈。" Icon="Motion">
+          <ToggleSwitch IsChecked="{Binding EnableAnimations}" AutomationProperties.Name="界面动画" />
+        </ui:SettingRow>
+        <WrapPanel x:Name="SaveErrorPanel" IsVisible="{Binding HasSaveError, FallbackValue=False, TargetNullValue=False}" Margin="0,8,0,0">
+          <TextBlock Text="{Binding SaveError}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" MaxWidth="620" />
+          <Button Content="重试保存" Command="{Binding RetrySaveCommand}" Margin="12,0,0,8" />
+        </WrapPanel>
+        <TextBlock Text="{Binding ApplyError}" Classes="caption" IsVisible="{Binding HasApplyError, FallbackValue=False, TargetNullValue=False}" />
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Text="存储位置" Classes="sectionTitle" Margin="0,0,0,4" />
+        <ui:SettingRow Header="数据目录" Description="{Binding Paths.DataRoot}" Icon="Folder">
+          <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.DataRoot}" />
+        </ui:SettingRow>
+        <ui:SettingRow Header="插件目录" Description="{Binding Paths.PluginRoot}" Icon="Tools">
+          <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.PluginRoot}" />
+        </ui:SettingRow>
+        <TextBlock Text="插件程序与用户数据分别存放。当前版本暂不提供数据目录迁移。" Classes="caption" Margin="4,4" />
+        <Expander Header="更多位置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+          <StackPanel Spacing="12">
+            <TextBlock Text="软件目录" Classes="caption" /><SelectableTextBlock Text="{Binding Paths.AppRoot}" TextWrapping="Wrap" />
+            <TextBlock Text="启动配置" Classes="caption" /><SelectableTextBlock Text="{Binding Paths.BootstrapFile}" TextWrapping="Wrap" />
+            <TextBlock Text="外部工具目录" Classes="caption" /><SelectableTextBlock Text="{Binding Paths.PackageRoot}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Expander>
+        <TextBlock Text="{Binding DirectoryStatus}" Classes="caption" IsVisible="{Binding HasDirectoryStatus, FallbackValue=False, TargetNullValue=False}" />
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Text="插件设置" Classes="sectionTitle" Margin="0,0,0,4" />
+        <Border Classes="card" IsVisible="{Binding !HasPluginSettings}">
+          <TextBlock Text="还没有插件提供设置。加载插件后，专属设置会出现在这里。" Classes="muted" />
+        </Border>
+        <ItemsControl ItemsSource="{Binding PluginSettings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:NavigationItem">
+              <ui:SettingRow Header="{Binding Title}" Description="{Binding Description}" Icon="{Binding Icon}" ImageSource="{Binding ImageSource}" Margin="0,0,0,8">
+                <Button Content="打开设置" Command="{Binding OpenCommand}" />
+              </ui:SettingRow>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+      <StackPanel Spacing="8">
+        <TextBlock Text="关于" Classes="sectionTitle" Margin="0,0,0,4" />
+        <Border Classes="card">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Image Source="/Assets/tractortool.png" Width="48" Height="48" Margin="0,0,16,0" />
+            <StackPanel Grid.Column="1" Spacing="6">
+              <TextBlock Text="TractorTool" FontSize="18" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding ApplicationVersion, StringFormat='版本 {0} · 你的桌面工具箱'}" Classes="caption" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </Border>
+        <ui:SettingRow Header="退出应用" Description="关闭窗口会隐藏到托盘；在此完全退出并停止后台服务。" Icon="Info">
+          <Button Content="退出应用" Command="{Binding ExitCommand}" />
+        </ui:SettingRow>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

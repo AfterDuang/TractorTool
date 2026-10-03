@@ -1,0 +1,97 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:TractorTool.UI.Controls" xmlns:fa="using:FluentAvalonia.UI.Controls">
+  <Styles.Resources>
+    <ControlTheme x:Key="{x:Type ui:SettingRow}" TargetType="ui:SettingRow">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Classes="themeSurface" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}"
+                  BorderThickness="1" CornerRadius="8" ClipToBounds="True">
+            <fa:FASettingsExpanderItem IsClickEnabled="False" Padding="18,16" MinHeight="76"
+                  Background="Transparent" Description="{TemplateBinding Description}"
+                  IconSource="{TemplateBinding IconSource}" Footer="{TemplateBinding Content}">
+              <TextBlock Text="{TemplateBinding Header}" FontWeight="Medium" TextWrapping="Wrap" />
+            </fa:FASettingsExpanderItem>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </ControlTheme>
+  </Styles.Resources>
+  <!-- Only opt our own surfaces into theme motion. Removing the window class also cancels
+       in-flight Avalonia transitions; the Fluent animation flag alone does not do that. -->
+  <Style Selector=":is(Window).themeTransitions">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+        <BrushTransition Property="Foreground" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector=":is(Window).themeTransitions Border.themeSurface, :is(Window).themeTransitions Border.card, :is(Window).themeTransitions Border.iconTile, :is(Window).themeTransitions ui|SettingRow /template/ Border.themeSurface">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+        <BrushTransition Property="BorderBrush" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector=":is(Window).themeTransitions TextBlock.muted, :is(Window).themeTransitions :is(TextBlock).caption">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Foreground" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector=":is(Window).themeTransitions Button.toolCard">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+        <BrushTransition Property="BorderBrush" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector=":is(Window)">
+    <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI" />
+    <Setter Property="FontSize" Value="14" />
+  </Style>
+  <Style Selector="TextBlock.pageTitle">
+    <Setter Property="FontSize" Value="28" /><Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.sectionTitle"><Setter Property="FontSize" Value="16" /><Setter Property="FontWeight" Value="SemiBold" /></Style>
+  <Style Selector="TextBlock.muted"><Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" /></Style>
+  <Style Selector=":is(TextBlock).caption"><Setter Property="FontSize" Value="12" /><Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" /></Style>
+  <Style Selector="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  <!-- Host page headers use the full viewport. Keep scrollable bodies on that same left edge. -->
+  <Style Selector="ScrollViewer.pageScroll">
+    <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+    <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="StackPanel.pageBody">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Margin" Value="0,0,8,24" />
+  </Style>
+  <Style Selector="Button"><Setter Property="CornerRadius" Value="6" /></Style>
+  <Style Selector="Button.quiet"><Setter Property="Theme" Value="{DynamicResource TransparentButton}" /></Style>
+  <Style Selector="Button.toolCard">
+    <Setter Property="Padding" Value="20" /><Setter Property="CornerRadius" Value="8" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="VerticalContentAlignment" Value="Stretch" />
+    <Setter Property="Background" Value="{DynamicResource AppCardBrush}" /><Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+  </Style>
+  <Style Selector="TextBox.path">
+    <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" /><Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="Border.card">
+    <Setter Property="Padding" Value="24" /><Setter Property="CornerRadius" Value="8" /><Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" /><Setter Property="Background" Value="{DynamicResource AppCardBrush}" />
+  </Style>
+  <Style Selector="ui|ToolIcon"><Setter Property="FontSize" Value="22" /></Style>
+  <Style Selector="ui|SettingRow ComboBox"><Setter Property="Width" Value="180" /></Style>
+  <Style Selector="ui|SettingRow ToggleSwitch"><Setter Property="OnContent" Value="开启" /><Setter Property="OffContent" Value="关闭" /></Style>
+  <Style Selector="Border.iconTile">
+    <Setter Property="Width" Value="48" /><Setter Property="Height" Value="48" /><Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Background" Value="{DynamicResource AppIconBackgroundBrush}" />
+  </Style>
+  <Style Selector="Border.iconTile ui|ToolIcon"><Setter Property="FontSize" Value="26" /><Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" /></Style>
+</Styles>

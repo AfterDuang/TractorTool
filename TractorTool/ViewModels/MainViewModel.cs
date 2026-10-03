@@ -1,0 +1,274 @@
+using System.Collections.ObjectModel;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using TractorTool.Core.Logging;
+using TractorTool.Core.Plugins;
+using TractorTool.Core.Storage;
+using TractorTool.Services;
+using TractorTool.UI;
+using TractorTool.Views;
+
+namespace TractorTool.ViewModels;
+
+public class NavigationItem(string title, IRelayCommand openCommand, string key = "",
+    ToolIconKind icon = ToolIconKind.Tools, string description = "", IImage? imageSource = null)
+{
+    public string Title { get; } = title;
+    public IRelayCommand OpenCommand { get; } = openCommand;
+    public string Key { get; } = key;
+    public ToolIconKind Icon { get; } = icon;
+    public string Description { get; } = description;
+    public IImage? ImageSource { get; } = imageSource;
+}
+
+public partial class MainViewModel : ViewModelBase, IDisposable
+{
+    private readonly PluginHost _plugins;
+    private readonly AppLog _log;
+    private readonly Func<Task> _exit;
+    private readonly NavigationIconStore _icons;
+    private Task? _initialization;
+    private readonly List<RegisteredPage> _registered = [];
+    private string _pageKey = "";
+    private bool _detached;
+    private bool _navigating;
+    private Func<Control, bool>? _presentPage;
+    private Action? _clearPage;
+    private bool _logUpdateQueued;
+    private readonly object _logGate = new();
+    public ObservableCollection<NavigationItem> Navigation { get; } = [];
+    public IReadOnlyList<NavigationItem> FooterNavigation { get; }
+    public HomeViewModel Home { get; }
+    public SettingsViewModel Settings { get; }
+    public PluginsViewModel Plugins { get; }
+    public LogsViewModel Logs { get; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasPageScroll))] private Control? _currentPage;
+    // Only built-in pages with a page-level ScrollViewer opt into the shell's edge layout.
+    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView;
+    [ObservableProperty] private string _pageTitle = "主页";
+    [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
+    [ObservableProperty] private string _status = "正在加载插件…";
+    [ObservableProperty] private NavigationItem? _selectedNavigation;
+    [ObservableProperty] private bool _canGoBack;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLogsSelected))]
+    private string _activeNavigation = "";
+    public bool IsLogsSelected => ActiveNavigation == "logs";
+
+    public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit)
+    {
+        _plugins = plugins; _log = log; Settings = settings; _exit = exit;
+        _icons = new NavigationIconStore(log);
+        Settings.ExitCommand = ExitCommand;
+        Logs = new LogsViewModel(paths, log);
+        Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand);
+        Home = new HomeViewModel(ShowPluginsCommand, ShowSettingsCommand);
+        Navigation.Add(new("主页", ShowHomeCommand, "home", ToolIconKind.Home, imageSource: _icons.GetHostIcon(ToolIconKind.Home)));
+        FooterNavigation = [
+            new("日志", ShowLogsCommand, "logs", ToolIconKind.Logs, imageSource: _icons.GetHostIcon(ToolIconKind.Logs)),
+            new("插件", ShowPluginsCommand, "plugins", ToolIconKind.Tools, imageSource: _icons.GetHostIcon(ToolIconKind.Tools)),
+            new("设置", ShowSettingsCommand, "settings", ToolIconKind.Settings, imageSource: _icons.GetHostIcon(ToolIconKind.Settings))];
+        _log.Changed += OnLogChanged;
+        ShowHome();
+    }
+
+    public Task InitializeAsync()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        return _initialization ??= InitializeCoreAsync();
+    }
+
+    private async Task InitializeCoreAsync()
+    {
+        if (_detached) return;
+        await _plugins.LoadAsync((record, plugin) =>
+        {
+            if (_detached) return;
+            var registry = new PageRegistry(record.Manifest!.Id);
+            if (plugin is IPluginUiModule ui) ui.RegisterPages(registry);
+            if (!_detached) _registered.AddRange(registry.Pages);
+        });
+        if (_detached) return;
+        foreach (var page in _registered)
+        {
+            var record = _plugins.Records.Single(r => r.Manifest?.Id == page.PluginId && r.State == PluginState.Loaded);
+            var item = new NavigationItem(page.Title, new RelayCommand(() => OpenPluginPage(page)),
+                page.PluginId + "/" + page.Id, page.Options.Icon, page.Options.Description,
+                _icons.GetPluginIcon(record.Directory, page.Options.IconPath, page.PluginId));
+            if (page.IsSettings) Settings.PluginSettings.Add(item); else Navigation.Add(item);
+        }
+        Plugins.Update(_registered, Navigation);
+        Home.Update(Plugins.Items, Plugins.Summary, Plugins.DirectoryError);
+        Status = $"已加载 {_plugins.Records.Count(p => p.State == PluginState.Loaded)} 个插件";
+        // Update the catalog without replacing a page opened while plugins were starting.
+    }
+
+    private void OpenPluginPage(RegisteredPage page)
+    {
+        var key = page.PluginId + "/" + page.Id;
+        if (_detached || _navigating || _pageKey == key) return;
+        var navigationKey = page.IsSettings ? "settings" : key;
+        _navigating = true;
+        try
+        {
+            Navigate(key, navigationKey, page.Title, page.Options.Description,
+                page.Factory() ?? throw new InvalidDataException("页面工厂返回空值。"), page.IsSettings);
+        }
+        catch (Exception ex)
+        {
+            ShowNavigationError(key, navigationKey, page.Title, page.PluginId, ex,
+                new RelayCommand(() => OpenPluginPage(page)), page.IsSettings);
+        }
+        finally { _navigating = false; }
+    }
+
+    private void Navigate(string key, string navigationKey, string title, string description, Control view, bool back = false)
+    {
+        // A parented control belongs to someone else; never clean it up as our candidate.
+        if (view.Parent is not null || view.GetVisualParent() is not null)
+            throw new InvalidDataException("页面工厂必须返回尚未挂载的独立页面。");
+        if (_detached) { ReleasePage(view); return; }
+        try
+        {
+            if (_presentPage?.Invoke(view) == false)
+            {
+                ReleasePage(view);
+                Status = "当前页面取消了切换。";
+                return;
+            }
+        }
+        catch { ReleasePage(view); throw; }
+        if (_detached)
+        {
+            ReleasePage(view);
+            ClearPresentedPage();
+            return;
+        }
+        var previous = CurrentPage;
+        _pageKey = key;
+        ActiveNavigation = navigationKey;
+        SelectedNavigation = Navigation.Concat(FooterNavigation).FirstOrDefault(p => p.Key == navigationKey);
+        PageTitle = title; PageDescription = description; CanGoBack = back;
+        CurrentPage = view;
+        // Commit before cleanup; callbacks cannot reenter navigation while it is in progress.
+        ReleasePage(previous);
+        _log.Write("Navigation", "打开页面：" + title);
+    }
+
+    private void ReleasePage(Control? page)
+    {
+        try
+        {
+            if (page is IPluginPageLifetime lifetime) lifetime.OnNavigatedFrom();
+            else if (page?.DataContext is IPluginPageLifetime vm) vm.OnNavigatedFrom();
+        }
+        catch (Exception ex) { _log.Write("Navigation", "页面离开清理失败", ex); }
+    }
+
+    [RelayCommand] private void ShowHome()
+    {
+        if (_detached || _navigating || _pageKey == "home") return;
+        NavigateHostPage("home", "主页", "你的桌面工具箱，从这里开始。", () => new HomeView { DataContext = Home }, ShowHomeCommand);
+    }
+    [RelayCommand] private void ShowPlugins()
+    {
+        if (_detached || _navigating || _pageKey == "plugins") return;
+        NavigateHostPage("plugins", "插件", "你的工具，由插件扩展。", () => new PluginsView { DataContext = Plugins }, ShowPluginsCommand);
+    }
+    [RelayCommand] private void ShowSettings()
+    {
+        if (_detached || _navigating || _pageKey == "settings") return;
+        NavigateHostPage("settings", "设置", "让 TractorTool 更适合你的使用习惯。", () => new SettingsView { DataContext = Settings }, ShowSettingsCommand);
+    }
+    [RelayCommand] private void ShowLogs()
+    {
+        if (_detached || _navigating || _pageKey == "logs") return;
+        Logs.Refresh();
+        NavigateHostPage("logs", "日志", "查看运行记录，定位插件与宿主问题。", () => new LogsView { DataContext = Logs }, ShowLogsCommand);
+    }
+    private void NavigateHostPage(string key, string title, string description, Func<Control> factory, IRelayCommand retry)
+    {
+        _navigating = true;
+        try { Navigate(key, key, title, description, factory()); }
+        catch (Exception ex) { ShowNavigationError(key, key, title, "Navigation", ex, retry); }
+        finally { _navigating = false; }
+    }
+    private void ShowNavigationError(string key, string navigationKey, string title, string source,
+        Exception error, IRelayCommand retry, bool back = false)
+    {
+        if (_detached) return;
+        _log.Write(source, "页面创建或呈现失败", error);
+        Status = "页面加载失败；可重试或查看日志。";
+        try
+        {
+            Navigate(key + "/error", navigationKey, title, "页面暂时无法打开",
+                new MessageView { DataContext = new MessageViewModel("页面加载失败",
+                    error.GetBaseException().Message, retry, ShowLogsCommand) }, back);
+        }
+        catch (Exception ex) { _log.Write("Navigation", "错误页呈现失败", ex); Status = "页面呈现失败，请查看日志后重试。"; }
+    }
+    public void AttachPagePresenter(Func<Control, bool> present, Action clear)
+    {
+        if (_detached) return;
+        _presentPage = present;
+        _clearPage = clear;
+        if (CurrentPage is not { } initial) return;
+        _navigating = true;
+        try
+        {
+            if (!present(initial)) Status = "当前页面取消了切换。";
+        }
+        catch (Exception ex) { ShowNavigationError(_pageKey, ActiveNavigation, PageTitle, "Navigation", ex, SelectedNavigation?.OpenCommand ?? ShowHomeCommand, CanGoBack); }
+        finally { _navigating = false; }
+    }
+    public void DetachPagePresenter()
+    {
+        ClearPresentedPage();
+        _presentPage = null;
+        _clearPage = null;
+    }
+    private void ClearPresentedPage()
+    {
+        try { _clearPage?.Invoke(); }
+        catch (Exception ex) { _log.Write("Navigation", "退出页面呈现清理失败", ex); }
+    }
+    [RelayCommand] private void GoBack() => ShowSettings();
+    [RelayCommand] private Task ExitAsync() => _exit();
+    public void NotifyTrayUnavailable() => Status = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
+    private void OnLogChanged()
+    {
+        // Coalesce worker notifications; the bounded log buffer remains the source of truth.
+        lock (_logGate)
+        {
+            if (_detached || _logUpdateQueued) return;
+            _logUpdateQueued = true;
+        }
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (_logGate) _logUpdateQueued = false;
+            if (!_detached && IsLogsSelected) Logs.Refresh();
+        });
+    }
+    public void Detach()
+    {
+        if (_detached) return;
+        _detached = true;
+        _log.Changed -= OnLogChanged;
+        var previous = CurrentPage;
+        CurrentPage = null;
+        DetachPagePresenter();
+        ReleasePage(previous);
+    }
+
+    // Detach runs when shutdown begins; the disabled window can still render during plugin cleanup.
+    // Dispose only after the owning window closes (or for a VM that was never attached to a window).
+    public void Dispose()
+    {
+        Detach();
+        _icons.Dispose();
+    }
+}

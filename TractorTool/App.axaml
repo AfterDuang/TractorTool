@@ -1,0 +1,16 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fa="using:FluentAvalonia.Styling"
+             x:Class="TractorTool.App" RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TractorTool.UI/Styles/ThemeResources.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <fa:FluentAvaloniaTheme PreferSystemTheme="False" PreferUserAccentColor="False" />
+    <StyleInclude Source="avares://TractorTool.UI/Styles/SharedStyles.axaml" />
+    <StyleInclude Source="avares://TractorTool/Styles/ShellStyles.axaml" />
+  </Application.Styles>
+</Application>

@@ -1,0 +1,48 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:fa="using:FluentAvalonia.UI.Controls" xmlns:p="using:FluentAvalonia.UI.Controls.Primitives"
+        xmlns:ui="using:TractorTool.UI.Controls">
+  <Style Selector="ui|PageHost#PagePresenter">
+    <Setter Property="Margin" Value="28,0,28,0" />
+  </Style>
+  <!-- Put the right gutter inside page scrolling, keeping the scrollbar at the shell edge.
+       Leave embedded log scrolling and independently registered pages on the default layout. -->
+  <Style Selector="ui|PageHost#PagePresenter.edgeScroll">
+    <Setter Property="Margin" Value="28,0,0,0" />
+  </Style>
+  <Style Selector="ui|PageHost#PagePresenter.edgeScroll StackPanel.pageBody">
+    <Setter Property="Margin" Value="0,0,36,24" />
+  </Style>
+  <!-- Adapt the navigation template while retaining its keyboard, selection and focus behavior. -->
+  <Style Selector="fa|FANavigationView.shell">
+    <Setter Property="Background" Value="{DynamicResource AppSidebarBrush}" />
+    <Setter Property="OpenPaneLength" Value="72" /><Setter Property="CompactPaneLength" Value="72" />
+  </Style>
+  <Style Selector=":is(Window).themeTransitions fa|FANavigationView.shell">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter">
+    <Setter Property="MinHeight" Value="72" /><Setter Property="HorizontalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter /template/ Border#LayoutRoot">
+    <Setter Property="MinHeight" Value="64" /><Setter Property="Margin" Value="4,4" /><Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter /template/ Border#IconColumn">
+    <Setter Property="IsVisible" Value="False" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter /template/ Grid#ContentGrid">
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter /template/ ContentPresenter#ContentPresenter">
+    <Setter Property="Margin" Value="0" /><Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter:pointerover /template/ Border#LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource AppNavHoverBrush}" />
+  </Style>
+  <Style Selector="fa|FANavigationViewItem.rail /template/ p|FANavigationViewItemPresenter:selected /template/ Border#LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource AppNavSelectedBrush}" />
+  </Style>
+</Styles>

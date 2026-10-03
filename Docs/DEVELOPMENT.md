@@ -1,0 +1,811 @@
+# TractorTool 开发与验收
+
+更新日期：2026-10-04。
+
+本文是**唯一的完整开发与验收台账**。软件需求、公共架构、插件接入规则和业务设计分别维护，入口见 [文档导航](README.md)。[开发上下文](PROJECT_CONTEXT.md) 只保留交接摘要。
+
+<a id="current-status"></a>
+
+## 1. 当前状态
+
+**仍处于 M1，未验收完成；M2–M5 未开始。** 用户已接手运行测试，后续代码修正仅进行了源码核对、构建或发布准备，没有自动运行应用、核心/集成/Headless 检查或接管 Windows UI。
+
+### 1.1 代码事实
+
+| 项目 | 当前情况 |
+| --- | --- |
+| 解决方案 | [TractorTool.slnx](../TractorTool.slnx)，保留原 `TractorTool/` 应用路径 |
+| 运行基线 | .NET 10；Avalonia、Desktop、Inter `12.1.2`；CommunityToolkit.Mvvm `8.4.2`；FluentAvaloniaUI `3.1.0` 替换原 FluentTheme，Avalonia/MVVM 基线未升级 |
+| Contracts | [插件与基础服务契约](../TractorTool.Contracts/PluginContracts.cs)：插件初始化/停止/释放、可选常驻活动、路径、插件配置、日志；不依赖 Avalonia/Windows |
+| Core | 路径与固定启动配置、JSON 原子保存/备份、实例锁、日志、清单校验、平台/SDK 检查、独立加载上下文 |
+| UI SDK | [页面契约](../TractorTool.UI/PluginUi.cs) 与 [共享样式](../TractorTool.UI/Styles/SharedStyles.axaml)，Contracts API `1.0`、UI API `1.2`（接受旧 `1.0` / `1.1`），Avalonia 精确匹配 `12.1.2`；提供 SettingRow、ToolIcon、PageHost，可选包内 PNG 元数据 |
+| 主界面 | FAAppWindow + 72 宽 FANavigationView；三个固定入口、独立 AXAML 页面、公共设置行/图标/卡片、FAFrame 页面过渡。标题栏/导航修正见 [E05](#evidence-review)；最新收紧导航宽度、图标与按钮留白，默认 Debug 已编译，实际新比例待验，见 [E10](#evidence-nav-density) |
+| 默认主页 | 左侧顶部“主页”；欢迎区、插件/设置入口、真实安装记录卡片；加载中/空安装/目录错误分开，复用插件导航与失败处理。已编译，运行验收未执行，见 [E08](#evidence-home) |
+| 页面伸缩 | 主页/设置/插件/错误页按视口伸缩，最新将页面级滚动条移到内容区右边，正文与标题对齐及原有留白保留；默认 Debug 构建通过，实机待验，见 [E15](#evidence-scroll-edge)；早期伸缩修正见 [E11](#evidence-page-layout) |
+| Review 与彩色图标 | 修复重复初始化造成入口重复、插件页加载/目录失败时状态矛盾；导航和卡片接入 Fluent Emoji PNG，操作仍用单色符号。图片由宿主缓存并在窗口关闭后释放；静态复审完成，最新运行回归未执行，见 [E09](#evidence-icons-review) |
+| 设置与主题 | 浅色、深色、跟随系统及四种主题色、动画选择后即时应用并自动保存；正常保存不显示常驻说明，失败提示重试。新增主要表面的 220 ms 颜色过渡，遵循动画开关。保存队列见 [E12](#evidence-appearance-review)，最新编译及待验范围见 [E13](#evidence-theme-transition) |
+| 生命周期 | 普通关闭隐藏到托盘；托盘不可用时保持窗口；恢复事件与实例锁统一路径规范化；退出禁用新保存/页面操作，有界等待已有保存和插件清理，Stop/后台活动/取消回调结束后才 Dispose |
+| 测试 | 无新增测试框架依赖的核心检查程序、引用已发布宿主的 Avalonia Headless 集成程序、独立插件及私有依赖夹具 |
+| 发布验证 | [Publish-Host.ps1](../scripts/Publish-Host.ps1)、[Verify-M1.ps1](../scripts/Verify-M1.ps1)，win-x64 自包含目录发布，禁用 AOT/裁剪/单文件 |
+| 产品版本与图标 | `Directory.Build.props` → 程序集元数据 → AppInfo → 关于页/日志；PNG/多尺寸 ICO 由同一透明多功能工具母版导出，见 [E06](#evidence-version) |
+| 绑定与 VS Code 预览 | 已修正字符串可见性、设置错误区域无 DataContext 默认显示及旧代码残留，见 [E14](#evidence-settings-cleanup)；E15 默认 Debug 已重新构建成功，先前占用不再阻塞这次构建，预览显示仍需刷新确认 |
+| 版本管理 | 开始开发时未发现 `.git`；目前没有创建 Git 仓库或编造提交哈希 |
+| 尚未实现 | M1 新 UI 的运行验收尚未执行；M2 的插件管理变更事务及剪贴板；M3 包管理/进程服务；M4 视频、有限任务队列；M5 迁移恢复、CI/安装器等 |
+
+测试插件只用于验证机制，不是正式业务插件。有限任务服务尚未实现；当前页面生命周期和常驻服务已分离，不能把常驻计数测试当成视频任务验收。
+
+### 1.2 最近证据与限制
+
+最新按参考截图调整宿主整页滚动条的位置：滚动容器扩到右侧，原有正文边距保留，见 E15。E14 的预览/清理改动已包含在这次成功的默认 Debug 构建中；历史运行测试不覆盖这些新代码。
+
+| 层级 | 最近事实 | 证据 |
+| --- | --- | --- |
+| 静态检查 | 核对页面容器与正文边距、插件页布局边界和属性绑定，XML及文档链接核对完成 | [E15](#evidence-scroll-edge) |
+| 构建 | 最新默认 Debug 解决方案通过，0 警告/0 错误；之前 E14 的进程占用失败保留为历史记录 | [E15](#evidence-scroll-edge) |
+| 发布准备 | 本轮未重新发布；settings-cleanup-build/host 仍是 E14，theme-transition-ready 是 E13，均不含最新滚动条布局 | [E15](#evidence-scroll-edge)、[E14](#evidence-settings-cleanup) |
+| 自动化 | 首轮旧代码核心 33/33 通过；之后新增回归只编译，未执行 | [E01](#evidence-baseline)、[E05](#evidence-review) |
+| 集成/Headless | 首轮旧 UI 21/21 通过；后续用例仅编译，新增无 DataContext/错误正显示时移除上下文/恢复及按钮命令绑定检查未运行 | [E01](#evidence-baseline)、[E14](#evidence-settings-cleanup) |
+| 真实 Windows UI | 本轮未执行；滚动条贴边、窄窗切页以及之前预览/颜色过渡等实际表现仍由用户验收 | [E15](#evidence-scroll-edge) |
+
+证据保留：早前整个 artifacts 曾在外部被清理，旧发布、日志和修改前快照已不可读取；历史记录仍保留，但不表示对应文件尚在。version-icon-final 和 E06/E07 证据在清理后重建，历史测试未重跑。历史成功不能自动覆盖后续代码。
+
+### 1.3 文档整理与前期图标调研（历史摘要）
+
+仅调整文档归属：建立文档导航、通用插件开发规范、剪贴板和视频两个插件文档；架构移出专属业务，开发文档保留台账并将旧命令移入附录，上下文改为精简交接。R01–R17、A01–A22、已确认语义和历史执行记录保留。没有修改应用代码、项目配置或插件实现，没有执行构建和运行测试。
+
+文档静态核对通过：9 份文档的 137 个本地链接（含 41 个片段链接）无缺失；插件需求/设计/媒体验收原文迁移核对通过；本轮文档范围外的 71 个工作区文件 SHA256 未变；6 段历史 PowerShell 命令完整保留。证据：`artifacts/evidence/docs-reorg-links.json`、`docs-reorg-content.json`、`docs-reorg-scope.json`。这只验证文档整理，不新增任何应用验收结论。
+
+随后按用户截图补查 Watt 的图标实现：固定提交的主导航使用图片，设置操作使用字体符号；当时 TractorTool 的 ToolIcon 和注册元数据只接了单色符号。公共设计及固定源码链接集中在 [图标分工与扩展](ARCHITECTURE.md#icon-design)。参考文本保留于 `artifacts/reference-icons/`，通过 `Invoke-WebRequest` 获取固定提交源码，并用 `rg` 核对导航、SDK 和本地 NuGet XML 类型声明。该次仅调研和文档更新，没有构建或运行测试；后续彩色资源和协议接入结果见 [E09](#evidence-icons-review)，不再列为尚未实现。
+
+<a id="workflow"></a>
+
+## 2. 开发与验收操作
+
+开发 IDE 为 **VS Code**。沿用 `.vscode/launch.json` 中的 `Avalonia: TractorTool` 启动项，以及当前 Avalonia/.NET 扩展；不切换 Visual Studio 或 VS MCP，不覆盖用户的编辑器配置。以下终端命令用于构建与隔离验收，默认 VS Code 启动项不含隔离参数，测试时应使用下方明确的 profile 命令。
+
+从仓库根目录执行。日常开发解决方案只包含宿主、Contracts、Core、UI 和核心检查工程；独立插件与发布集成工程需要先提供已发布的 SDK，所以由验证脚本分阶段构建，不混入宿主构建依赖。
+
+```powershell
+dotnet restore .\TractorTool.slnx
+dotnet build .\TractorTool.slnx -c Debug -m:1 -nr:false
+# 隔离开发运行，固定启动指针和业务数据都不进入真实用户目录
+dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH\TractorTool\artifacts\manual-profile
+# 核心检查为可执行断言程序，失败返回非零；不是 dotnet test 项目
+dotnet run --project .\tests\TractorTool.Checks -c Release
+# 完整复用入口：构建、核心检查、发布、独立插件、Headless 集成、哈希比对
+.\scripts\Verify-M1.ps1
+# 仅发布到一个新的空目录
+.\scripts\Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\manual-publish
+```
+
+不带 `--profile-root` 时使用产品默认 `%LOCALAPPDATA%\TractorTool`。该参数仅用于隔离开发/验收，不是数据迁移功能；路径必须为绝对路径。固定启动文件是 `<ProfileRoot>/bootstrap.json`，默认与数据根相同。已存在的有效 `dataRoot` 指针受支持，目录不存在时拒绝启动并保留指针。应用内数据迁移仍在 M5。
+
+完整发布及示例插件验收使用 Verify-M1.ps1 生成的新隔离副本。E15 滚动条改动只构建到默认 Debug，隔离启动见 [E15](#evidence-scroll-edge)。现有 `artifacts/settings-cleanup-build/host` 为 E14 发布，用于检查编译，未装入示例插件；`artifacts/theme-transition-ready/host` 为带示例插件的 E13 旧副本；均不包含 E15。默认 VS Code 启动项没有隔离参数，运行验证使用明确的 profile 命令。
+
+VS Code 预览报旧属性不存在时，先构建 C#，再点击 **Restart Previewer**；必要时执行 `Developer: Reload Window`。当前 DLL 的版本及可见性属性已核对，但尚未代用户刷新预览。
+
+用户手动验收建议（以下为步骤，未因此视作已经执行）：
+
+1. 确认默认进入“主页”，欢迎区和安装卡片与真实插件一致；从卡片进入工具后左侧选中项同步，返回主页仍可打开。无插件、加载中、目录受阻及禁用/失败插件的显示要区分。再打开“独立插件”“日志”“插件”“设置”，检查紧凑图文导航、选中/悬停/键盘焦点、设置行和空态；软件目录应指向本次实际测试的发布副本（开发运行则为构建输出），数据目录应指向隔离 profile。先从标题文字与空白区拖动、双击最大化/还原，确认系统按钮仍可用；再检查缩放、高 DPI 和长路径。
+2. 在“设置”选择浅色、深色、跟随系统及主题色，确认立即生效、没有常驻保存按钮；连续切换后退出重启确认最后选择保留。检查彩色导航/卡片保持原色、操作符号可辨、宿主和插件共享主题。在测试副本移走示例插件的 Assets/icon.png 后重启，确认回退符号且页面仍可打开，再恢复文件。开启/关闭页面动画后快速连续切页，检查无叠页/闪烁/误点，重启确认动画设置保留。仅在隔离 profile 中制造不可写配置，确认已生效但未保存的提示及重试。
+3. 在“设置”中的“独立插件设置”修改备注并保存；返回插件页、退出重开，确认备注保留。
+4. 记录插件页常驻计数，点窗口关闭；从系统托盘点击图标或“显示 TractorTool”恢复，计数应继续增长；切页面也不停止。
+5. 隐藏后重复执行同一启动命令，并尝试 profile 参数末尾有/无反斜杠，应恢复同一窗口；从托盘“退出”和“设置 → 关于 → 退出应用”分别检查进程结束及日志中的 StopAsync/DisposeAsync。更改外观后立即退出再重开，检查最后选择仍保留。
+6. 退出当前实例后，启动命令追加 `--no-tray`，点击窗口关闭应保留可见窗口并提示从设置退出。该模式是禁用托盘的故障注入，不能当作真实 Explorer 崩溃验证。
+
+所有插件代码实验都使用临时发布副本的 `Plugins`。软件目录不可写时报告实际失败路径，不写入数据目录作为替代；历史自动测试验证了目录被文件阻塞的分支，Windows ACL 拒写尚未实测。测试不会删除真实视频、封面、剪贴板内容或用户数据。
+
+插件开发、清单填写、正式引用与打包流程统一见 [插件开发规范](PLUGIN_DEVELOPMENT.md)，这里不维护第二份教程。
+
+<a id="milestones"></a>
+
+## 3. 实施里程碑
+
+| 阶段 | 交付边界 | 当前状态 |
+| --- | --- | --- |
+| M0 | 需求、架构、工作约定与开发文档 | 已建立并持续维护；不是 UI 开发阶段 |
+| M1 | 宿主、路径/设置/日志、完整公共 UI、主题/托盘、独立插件协议 | 进行中，代码与构建已有，最新运行验收未完成 |
+| M2 | 插件管理闭环与真实剪贴板插件 | 未开始 |
+| M3 | 包/进程公共服务、真实媒体链路验证 | 未开始 |
+| M4 | 完整视频插件与有限任务交互 | 未开始 |
+| M5 | 恢复、数据迁移、Windows 正式发布和最终验收 | 未开始 |
+
+### M1：当前阶段出口
+
+- 保留现有应用路径，必要的 Contracts/Core/UI/测试工程可还原和构建，实际环境与结果可追溯。
+- 软件、插件、数据和固定启动配置解析正确；设置持久化、备份和日志可用。
+- 默认主页的欢迎区/真实安装卡片、日志/插件/设置入口、统一主题、图标/控件/设置行、页面过渡完整；深浅色/跟随系统、主题色、动画设置和重启保留实测。
+- 标题栏拖动/双击/系统按钮、长路径、窄窗口和高 DPI 可用；关闭到托盘、恢复、再次启动和显式退出有真实结果，托盘失败时窗口可找回。
+- 清单/兼容性/独立 DLL 加载、页面及设置注册和失败隔离得到验证；发布宿主后单独构建测试插件，保留宿主二进制未改变的证据。
+- 快速切页、导航取消/失败、后台常驻活动以及保存后立即退出回归通过。测试夹具不作为正式工具交付。
+
+当前出口尚未满足；详见第 4 节 A01/A02/A03/A05/A21 等状态，不能只依据静态样式存在或历史测试勾选完成。
+
+### M2：插件管理与剪贴板
+
+宿主实现软件目录 Plugins 的安装、更新、禁用、卸载待重启事务及失败恢复，覆盖重复 ID、损坏清单、缺 DLL、不兼容、不可写和文件占用；不重定向到数据目录。
+
+独立交付 [剪贴板插件](Plugins/ClipboardHistory.md)，真实 Windows 历史读取/刷新及状态显示符合该文档。阶段出口是管理闭环和 A08 的真实系统证据，不接受自建历史库替代。
+
+### M3：公共依赖服务与媒体验证
+
+按 [架构：包和进程服务](ARCHITECTURE.md#packages) 实现 Contracts/Packages、Core/Packages 与宿主管理页，FFmpeg/ffprobe 文件放 DataRoot/Packages。验证下载/校验/解压、固定版本来源和许可、并存/占用、重试。
+
+按 [视频插件设计](Plugins/VideoExport.md) 实现探测、基本参数校验、单次导出、进度和取消，尽早取得单视频真实转码、严格首帧替换及至少一条实际 GPU 路径的证据。定稿初始多格式矩阵；缺硬件仍记未验证。
+
+### M4：完整视频交互与任务
+
+完成 [视频插件](Plugins/VideoExport.md) 的单视频/单封面输入、多预设卡片和持久化、码率大小预估、不可变快照、全队列串行、进度与取消、首帧替换、多格式及 GPU 交互。
+
+阶段出口是同一视频按多预设产生独立、正确、可播放的真实文件，切页/隐藏不中断，重启保留预设和设置。详细模型、算法、失败策略和媒体判定只维护在插件文档。
+
+### M5：可靠性与发布
+
+实现数据根迁移、固定启动指针与失败恢复；下载包和插件数据随数据根迁移，软件目录的插件代码不动，旧数据默认保留。完善退出、关机、有界进程清理、中断摘要、临时输出、日志保留，覆盖空间不足、冲突和更新失败。
+
+本地与 GitHub Actions 复用发布流程，提供 Windows 安装包/压缩包、SHA256 和许可，验证无开发 SDK 的机器启动和加载。最低系统、架构、安装器、签名和设备支持由真实证据落实；不照搬参考软件结论。
+
+<a id="acceptance"></a>
+
+## 4. 验收台账
+
+下表是整版产品验收，不以 M1 子项通过代替完整条目通过。无界面、真实 UI、媒体和硬件证据分别记录。
+
+| 编号 | 验收场景 | 通过条件 | 证据层级 | 状态 |
+| --- | --- | --- | --- | --- |
+| A01 | 主框架与主题 | 顶部主页和三个底部入口可达，欢迎/插件卡片与实际安装一致，布局/图标/控件/切页反馈统一，宿主和插件主题一致，重启保留 | UI | 未通过：标题栏/导航/状态已修正，主页和彩色图标已接入并编译；真实拖动、卡片/空态、图片/回退、布局/主题/动效待验 |
+| A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | 部分通过：历史旧 UI 真实加载通过；最近代码修正发布后独立编译成功、234 个宿主文件不变，最新加载及页面/设置显示未验证 |
+| A03 | 兼容性与禁用 | 不兼容、禁用插件只读清单不执行入口；加载错误可定位 | 集成 | 历史 M1 通过禁用/兼容/故障隔离；UI 1.2 接受旧 1.0/1.1 的检查及 FluentAvalonia 共享规则仅编译，旧 DLL 动态加载待回归；管理端禁用操作属 M2 |
+| A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | 未完成：仅目录受阻报错分支已自动验证；安装事务/恢复/ACL 属后续验收 |
+| A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 未完成：仅常驻活动切页/隐藏继续的 Headless 检查通过；真实视频任务及托盘待验证 |
+| A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | 部分通过：默认/自定义指针、路径分离、不可用目录保护；迁移/恢复在 M5 |
+| A07 | 外部包事务 | 哈希错误/中断不成就绪，重试成功，多版本共存，使用中不可删 | 集成 | 未验证 |
+| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 真实读取/刷新，空/关闭/拒绝等状态明确，无自建历史库 | 集成、UI | 未验证 |
+| A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 未验证 |
+| A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
+| A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | 未验证 |
+| A12 | 名称与大小预估 | 改名不改变参数，码率单位正确，仅显示预计大小，无目标 MB 控制 | 单元、UI | 未验证 |
+| A13 | 多版本串行 | N 张选中卡片对应 N 个结果，任何时刻最多一个转码任务运行 | 集成、进程 | 未验证 |
+| A14 | 参数快照 | 入队后编辑预设不影响已提交任务，源文件变化可检测 | 集成 | 未验证 |
+| A15 | 首帧替换 | 各输出首帧为裁剪封面、后续对应原画面，时长与音画不被额外移动 | 媒体、UI | 未验证 |
+| A16 | 不加封面版本 | 同次导出的未启用封面版本保留自己的原始首帧 | 媒体 | 未验证 |
+| A17 | 多格式 | 至少多个实际容器/编码组合可播放，信息与预设一致 | 媒体 | 未验证 |
+| A18 | GPU | 真实硬件完成所选处理链，记录实际编码器；不可用时不假报成功 | 硬件、媒体 | 未验证 |
+| A19 | 取消与失败 | 单项取消/整批取消正确，无遗留进程，失败不冒充成功，余项策略一致 | 集成、进程 | 未验证 |
+| A20 | 输出安全 | 不覆盖源文件和已有文件，只清理任务自身临时产物 | 集成 | 未验证 |
+| A21 | 退出和恢复 | 明确退出能停止任务，重启标记中断，无无限等待或重复执行 | UI、进程 | 历史常驻服务停止/释放有证据；本轮取消回调/迟到初始化/释放顺序及设置退出等待仅编译未回归，真实退出、有限任务和中断恢复未验证 |
+| A22 | 发布验证 | 本地与 CI 使用同一脚本，安装/压缩包加载插件，校验信息正确 | 发布、UI | 部分通过：本地自包含目录与插件独立加载已测；CI、安装器及无 SDK 机器未验证 |
+
+## 5. 验证与发布要求
+
+### 5.1 验证层级
+
+优先给清单、兼容性、路径、持久化、任务状态及业务算法等高风险行为增加有意义的测试。界面文案和简单可逆样式变更不需要写镜像实现的单元测试。
+
+集成测试使用真实独立插件、临时应用与数据目录及可控包下载来源，检查哈希失败、路径越界、迁移中断、版本占用、目录不可写和插件不兼容。媒体测试使用短小合成视频和真实 FFmpeg，不能全部替换为返回成功的假进程。
+
+UI 检查覆盖主题、导航、设置保存、托盘、输入限制、预设卡片和长文本。Headless 可验证绑定和布局逻辑，但不能证明真实托盘、Windows 剪贴板和显卡工作。
+
+具体业务验收方法分别见 [剪贴板插件](Plugins/ClipboardHistory.md#5-验收方法) 和 [视频插件](Plugins/VideoExport.md#6-验收方法)。此处只维护全项目的证据标准。
+
+### 5.2 证据记录格式
+
+每次记录包含日期、代码版本或对应文件、环境、操作/命令、结果、日志或产物位置，以及未覆盖的范围。仓库未建立版本管理前不要编造提交哈希。
+
+示例仅表示记录格式，不是执行结果：
+
+```text
+日期：YYYY-MM-DD
+验收项：A15
+环境：Windows / FFmpeg 版本 / CPU 或具体 GPU
+输入：临时合成样本及其参数
+操作：真实执行的测试命令或 UI 步骤
+结果：通过 / 失败 / 阻塞 / 未执行
+证据：测试输出、截图、媒体探测文件的位置
+限制：尚未覆盖的素材或设备
+```
+
+### 5.3 发布约定
+
+M1 已有最小本地发布脚本和分阶段验证脚本；CI、正式打包、安装器、签名尚未实现。以下完整发布要求保留到 M5：
+
+- 本地脚本接受版本、配置和 RID，CI 调用同一入口，避免两套不一致逻辑。
+- 常规 .NET 自包含发布，初始目标 `win-x64`；不用 Native AOT，也不默认启用未经验证的裁剪。
+- 插件作为独立产物部署到发布包内的 `Plugins/<PluginId>/<Version>`，安装程序保持相同结构；无需首启复制到数据根目录，也不能只在开发机目录才能加载。升级软件时保留用户安装的插件。
+- GitHub Actions 的测试构建可上传 publish 目录；正式 Release 提供独立压缩包、安装程序及 SHA256。
+- 发布不得包含用户数据、开发缓存、私人路径、令牌或本机工具安装副本。
+- 记录 FFmpeg 二进制来源、构建能力与许可；记录所复用代码的许可，不照搬参考项目的内部发布凭据或脚本配置。
+- 实际远程仓库、安装器、签名方案和最低 Windows 版本在 M5 确定；文档不代表已创建仓库或完成 CI。
+
+### 5.4 待验证的技术选择
+
+这些项目需要实现或实验，不需要重新询问已确认的产品方向：
+
+| 项目 | 落实阶段 | 完成证据 |
+| --- | --- | --- |
+| 统一 UI 控件、图标、导航过渡与插件适配 | M1 补完 | 已接入并编译发布，已核对依赖；动态加载、过渡及真实 UI 待用户验收 |
+| 插件 SDK 与共享程序集集合 | M1 | 已有真实独立加载、私有依赖缺失及共享 DLL 副本拒绝测试；后续插件继续固定已验证 SDK 基线 |
+| Windows API 目标框架与历史内容类型 | M2 | 真实系统调用与展示清单 |
+| FFmpeg 包版本、来源和许可 | M3 | 可下载、可校验、实际工具探测结果 |
+| 初始输出格式/编码兼容矩阵 | M3 | 各支持组合的真实输出验证 |
+| 首帧替换滤镜链与 VFR 时间处理 | M3-M4 | 首帧、后续帧和音画时间证据 |
+| GPU 后端和组合支持范围 | M3-M4 | 设备实测，缺少设备的条目标注限制 |
+| 安装器、签名、最低系统及远程 CI | M5 | 安装、启动、卸载和工作流执行证据 |
+
+<a id="next"></a>
+
+## 6. 下一步与维护
+
+下一步由用户按 [E15](#evidence-scroll-edge) 的默认 Debug 隔离命令，检查设置等页面滚动条靠右、卡片与页头对齐、窄窗滚动及切回日志/插件页面的边距；同时刷新预览确认 E14 修复。随后继续之前的主题、标题栏、保存退出、插件与托盘验收。检查程序仍未运行；未获新指示不代用户测试，不自动推进 M2。
+
+后续有实质性进展时更新第 1 节当前状态、第 3 节里程碑和第 4 节验收结果。必要的真实命令和结果追加到下方附录，不用新流水账挤占当前摘要；同步 PROJECT_CONTEXT.md 的精简交接。文档归属按 README.md 维护。
+
+<a id="evidence"></a>
+
+## 附录：历史实施与验收记录
+
+以下保留当时的操作、命令、失败和通过范围。`本轮`、`当前` 等词在每条记录中指**该次工作发生时**；当前结论以第 1 节为准。旧产物已被清理的事实不会因保留命令而改变。展开对应记录查看细节。
+
+<a id="evidence-baseline"></a>
+
+<details>
+<summary>E01 · 首轮工作与证据（2026-10-03）</summary>
+
+### E01 · 首轮工作与证据（2026-10-03）
+
+- 初始源码与用户提供的起点一致：只有 Avalonia 初始工程。先阅读根 AGENTS 和三份文档，再检查文件；未覆盖已存在的额外业务实现。
+- 环境：Windows `10.0.26200` / `win-x64`；SDK `10.0.401`、MSBuild `18.9.11`，已装运行时 `10.0.12`。
+- 原项目 `dotnet restore` 通过。第一次 Debug 构建因沙箱禁止 Avalonia BuildServices 写本地日志失败；获得正常构建权限后重试成功，0 警告/0 错误。证据在 `artifacts/evidence/baseline-restore.txt`、`baseline-build.txt`、`baseline-build-retry.txt`。后续脚本使用 `-m:1 -nr:false`，避免复用受限的 MSBuild 节点。
+- M1 主工程 Debug 构建通过。最终 Release 解决方案构建、自包含发布、独立插件构建、集成检查工程构建均通过，最终各构建 0 警告/0 错误。最初夹具的两个警告已修正；最终验证在用户接手测试前已启动并完成。
+- **核心自动化 33/33 通过**：软件/数据/启动路径分离、默认/自定义指针、相对路径与目录重叠拒绝、不可用自定义目录不创建替代、配置版本、原子替换与备份、并发保存、写失败保留原文件、损坏配置/指针保留、插件设置隔离、实例锁、日志边界、清单/SDK/平台/路径校验、禁用/重复/坏 DLL/缺失 DLL、插件目录受阻不重定向。
+- **发布产物集成及 Headless UI 21/21 通过**：宿主发布后单独编译测试插件，仅引用发布 SDK；加载真实 DLL/私有依赖；导航/设置工厂实例化；插件与宿主设置保存读取；主题应用；三个固定入口；页面切换/隐藏期间常驻活动继续；停止/释放；禁用/API/Avalonia/平台不匹配不执行构造器；入口/初始化/注册/页面异常；共享 SDK 副本冲突及缺少私有依赖；一个失败插件不阻止另一个加载。
+- **独立发布证据**：先发布宿主并计算所有原有文件 SHA256，再构建/复制插件并测试；原有 **231 个宿主文件哈希全部未变**。不是源码引用或假加载。
+- 最终证据目录：`artifacts/m1-20261003-153553-4b56cf/`；包含 `build.txt`、`core-checks.txt`、`publish.txt`、`plugin-build.txt`、`integration-build.txt`、`integration-checks.txt`、`host-hashes-before.json`、`host-hashes-after.json`、`hash-result.txt`。控制台汇总为 `artifacts/evidence/final-verification-console.txt`。测试数据和故障插件副本均隔离；核心检查额外使用随机命名的系统临时目录，位置打印于检查结果末尾。
+- **真实 Windows 启动已观察到，交互未验收**：曾启动 `artifacts/m1-20261003-153221-489f42/host/TractorTool.exe --profile-root .../ui-profile`，窗口枚举返回 `TractorTool`，PID 45004（仅为当时观测）。该副本 `ui-profile/Logs` 记录启动、托盘创建、真实插件/私有依赖加载、常驻计数。托盘创建日志只证明程序执行到该分支，不证明用户实际可以点击恢复。
+- Computer Use 获取/激活窗口被拒绝，返回 `Computer Use was not approved to use tractortool`，未取得窗口截图或交互结果。随后用户明确表示“测试部分我自己来就行”，**停止后续测试及 UI 操作，保留已启动的隔离窗口供用户检查**。
+- 当前人工待验：Windows 真实主题/布局/导航、重启持久化、托盘隐藏/恢复/菜单退出、再次启动恢复、`--no-tray` 兜底。没有声称这些已通过。无界面测试不替代 Windows UI 验收。
+- 先前文档整理的 Markdown 链接检查是历史记录，不能当作本次应用验证；本次已经核对工程依赖方向和未静态引用具体插件，文档修改后未再启动自动检查（用户已接手测试）。
+
+</details>
+
+<a id="evidence-adjustment"></a>
+
+<details>
+<summary>E02 · 用户截图反馈后的修正（2026-10-03）</summary>
+
+### E02 · 用户截图反馈后的修正（2026-10-03）
+
+- 用户指出初版主窗口纯黑、导航像普通按钮、左下角多出“退出”。这些属于 M1 视觉实现不足；之前的构建及 Headless 结果没有验证颜色和最终观感，不能据此宣称 UI 已完成验收。
+- 已补充 `TractorTool.UI/Styles/ThemeResources.axaml`，使用深灰分层背景和对应浅色资源；宿主 Fluent palette 复用这些颜色。增加导航图标、选中/悬停、卡片及路径框样式；插件页整理为本地目录卡片和空状态。移除面向用户的 M1/M2/M3/M5 开发阶段文案。
+- 左下角只保留三个固定入口，显式退出改在托盘及“设置 → 关于”；无托盘时的状态提示指向设置中的退出入口。
+- 用户截图中的两项工作区诊断来自 `RequirePublishedSdk` / `RequirePublishedHost` 在 IDE 设计时也执行。现将其限制为正式构建；设计时通过条件项目引用提供 IntelliSense，正式构建仍用指定 `HostSdkDir` 的 DLL。独立插件新增同版本 Avalonia 12.1.2 的**仅编译引用**，不复制第二套 Avalonia 运行时，也不引用宿主/Core 实现。
+- 已做源码与项目配置核对。生产宿主编译、独立插件正常构建、集成检查工程正常构建均 0 警告/0 错误；两个工程的 MSBuild 设计时 `Compile`（`SkipCompilerExecution=true`）及 `ReferencePath` 解析均成功。证据在 `artifacts/evidence/ui-adjustment-build.txt`、`ui-adjustment-plugin-build.txt`、`ui-adjustment-integration-build.txt`、`independent-design-time.txt`、`integration-design-time.txt`。
+- **未执行新的自动化测试、集成程序或真实 UI 操作**，遵守用户自行测试的决定。未直接观察 VS Code 问题面板刷新，也未验证本次实际颜色/布局/托盘交互；旧的 33/21 项测试及发布哈希是修正前的证据，不自动适用于当前改动。
+- M0 的定义从一开始就是需求、架构和 Agent 文档整理；文档已经存在。本轮没有跳过 M0，问题是 M1 视觉未达到参考效果。当时仅完成局部修正与编译；进一步反馈后的当前结论见[E03](#evidence-research)，不能继续写成只差人工验收。
+
+本次实际执行的编译/设计时解析命令（未运行检查程序）：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false --no-restore -o artifacts/ui-adjustment-build
+dotnet restore tests/IndependentPlugin/IndependentPlugin.csproj -m:1 -nr:false
+dotnet msbuild tests/IndependentPlugin/IndependentPlugin.csproj -t:Compile -p:DesignTimeBuild=true -p:BuildProjectReferences=false -p:SkipCompilerExecution=true -p:ProvideCommandLineArgs=true -m:1 -nr:false -getItem:ReferencePath
+dotnet msbuild tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -t:Compile -p:DesignTimeBuild=true -p:BuildProjectReferences=false -p:SkipCompilerExecution=true -p:ProvideCommandLineArgs=true -m:1 -nr:false -getItem:ReferencePath
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Debug -m:1 -nr:false --no-restore -p:HostSdkDir=H:\ProjH\TractorTool\artifacts\m1-20261003-153553-4b56cf\host -o artifacts/ui-adjustment-plugin-build
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Debug -m:1 -nr:false --no-restore -p:HostSdkDir=H:\ProjH\TractorTool\artifacts\ui-adjustment-build -o artifacts/ui-adjustment-integration-build
+```
+
+</details>
+
+<a id="evidence-research"></a>
+
+<details>
+<summary>E03 · 进一步 UI 反馈与参考源码调研（2026-10-03）</summary>
+
+### E03 · 进一步 UI 反馈与参考源码调研（2026-10-03）
+
+用户再次提供 Watt Toolkit 与 TractorTool 对比截图，指出整体 UI 不一致、切换动画缺失，并要求分析可复用实现。**当时结论：M1 基础设施已有实现，公共 UI 实现尚未完成；A01 未通过。** [E02](#evidence-adjustment)的改色和图标补丁没有解决完整界面组织问题。
+
+这一调研轮只读源码、查询公开依赖及维护文档；后续授权实现见[E04](#evidence-ui)。当时源码核对发现：
+
+- `MainWindow.axaml` 使用 `ColumnDefinitions="200,*"`、三个手写 PathIcon 与普通 ContentControl；没有页面过渡容器或动画。
+- `SettingsView.axaml` 是多层 StackPanel，主题下拉框全宽拉伸；没有复用设置行和合理内容宽度约束。
+- `MainViewModel` 直接创建插件管理、日志等控件；公共视觉规则未形成完整 View/模板体系。
+- `IPluginPageRegistry` 只有 id/title/factory，没有图标元数据；当前共享程序集名单也未包含候选新控件库，需要随 UI SDK 一起处理。
+
+参考源码依据、固定提交、候选版本和加载边界集中在 [架构 UI 参考依据](ARCHITECTURE.md#ui-reference)。已确认 Watt 使用 FluentAvalonia 导航/Frame、定制设置行和现成过渡，彩色导航使用图片资源。首选评估 FluentAvaloniaUI 3.1.0 与统一 Fluent 图标；包元数据允许 net10.0/Avalonia 12.1.2 基线，但尚无本项目编译或运行证据。当时项目仍使用原来的 Avalonia.Themes.Fluent，没有接入这些候选依赖。
+
+实际只读查询包括：
+
+```powershell
+git status --short # 返回 not a git repository；未创建或重置仓库
+rg -n 'ContentControl|ColumnDefinitions|PathIcon|Transitions|Animation|CurrentPage|AddNavigationPage' TractorTool/Views/MainWindow.axaml TractorTool/ViewModels/MainViewModel.cs TractorTool.UI/PluginUi.cs
+Invoke-RestMethod -Uri 'https://api.github.com/repos/BeyondDimension/SteamTools/git/trees/develop?recursive=1'
+Invoke-WebRequest -Uri 'https://api.nuget.org/v3-flatcontainer/fluentavaloniaui/3.1.0/fluentavaloniaui.nuspec'
+Invoke-WebRequest -Uri 'https://api.nuget.org/v3-flatcontainer/fluenticons.avalonia.fluent/2.1.333/fluenticons.avalonia.fluent.nuspec'
+```
+
+调研轮静态核对完成；当时构建、自动化测试、发布集成测试与真实 Windows UI 验证均**未执行**。用户自行测试的决定保持有效。参考软件的源码实现和包声明不是 TractorTool 的验收结果。
+
+</details>
+
+<a id="evidence-ui"></a>
+
+<details>
+<summary>E04 · 用户授权继续后的 UI 补完（2026-10-03）</summary>
+
+### E04 · 用户授权继续后的 UI 补完（2026-10-03）
+
+本轮从现有工作区继续，没有重建仓库或进入 M2。编辑前源码快照在 `artifacts/ui-foundation-before/`。用户自行测试的决定仍有效：**只进行了源码核对、还原、编译、隔离发布及文件哈希核对，没有运行应用、核心检查、Headless 或集成检查程序。**
+
+实际改动：
+
+- 新增 FluentAvaloniaUI 3.1.0，统一窗口、导航、控件主题、符号图标与 Frame；Avalonia 相关托管包统一 12.1.2、MVVM 保持 8.4.2。最终依赖清单在 `artifacts/ui-foundation-ready/ui-dependencies.txt`，不含旧 Avalonia.Themes.Fluent 或具体插件引用。
+- 标题区与内容区统一；导航从 200 改为 88 逻辑单位的图文侧栏，底部只有日志/插件/设置。应用及托盘使用项目自绘图标，生成脚本为 `scripts/Generate-AppIcon.ps1`。
+- 三个宿主页面独立为 View/VM。设置改为有内容宽度限制的分组设置行；插件页提供空态、版本/错误信息、名称查找与打开工具；日志页提供只读文本、复制、暂停和打开目录；页面工厂异常有重试与日志入口。
+- 公共 SettingRow、ToolIcon、PageHost 和样式放在 UI 工程。切页使用 FAFrame 自带过渡，关闭缓存和导航栈；保存动画开关，保留离页清理与后台服务分离。标题栏仍调用既有关闭/托盘服务，未改变数据及插件目录语义。
+- UI API 增至 1.1，保留 1.0 注册方法签名，接受旧 UI 1.0 清单；新元数据包含图标与说明。共享程序集增加 FluentAvalonia，插件不得携带共享副本。示例插件只通过已发布 Contracts/UI 编译，使用新公共设置行和图标。核心检查新增兼容性用例，集成检查同步错误页断言及新主题依赖；**这些用例仅编译，未执行**。
+
+| 检查层级 | 本轮结果与限制 |
+| --- | --- |
+| 静态核对 | 已核对模板层级、绑定/页面工厂、插件依赖方向及最终依赖清单；修正跨模板导航选择器及派生窗口字体规则；59 个本地文档链接无缺失；不等于真实渲染通过 |
+| 还原与构建 | 还原通过；宿主 Debug 构建通过。最终解决方案使用隔离中间/输出目录构建，0 警告/0 错误；独立插件及集成检查工程最终均 0 警告/0 错误 |
+| 发布与文件 | win-x64 自包含发布成功；发布后独立构建插件，安装至该副本 Plugins/Test.Independent/1.0.0；原有 234 个宿主文件 SHA256 未变化 |
+| 自动化测试 | 未执行；旧 33 项通过不覆盖新增兼容性/动画设置 |
+| 集成/Headless 测试 | 未执行；独立编译和文件复制不等于真实加载。旧 21 项通过不覆盖新 UI 底座 |
+| 真实 Windows UI | 未执行，由用户验收；标题栏、导航比例、主题、动效、DPI、托盘及重启持久化均不能记为通过 |
+
+编译过程中曾修正缺少 Clipboard/资源查找扩展命名空间、示例注册参数顺序；最终编译通过。默认 Debug 解决方案构建另遇 `AVLN9999`：`TractorTool/obj/Debug/net10.0/TractorTool.dll` 被其他进程占用。未终止用户进程，改用各项目 `obj/UIFoundation/`、`bin/UIFoundation/` 构建成功；不声称默认 Debug 文件占用已解除。
+
+最终产物为 `artifacts/ui-foundation-ready/`：`host/` 已放入独立测试插件，`plugin/` 是插件编译输出，`checks/` 是只编译未运行的集成程序；`host-hashes-before.json`、`host-hashes-after.json`、`hash-result.txt` 记录 234/0 的文件结果。默认运行不触碰真实用户数据需要使用[开发操作](#workflow)的 profile 参数。
+
+实际命令（从仓库根目录执行，均未启动测试）：
+
+```powershell
+dotnet restore TractorTool.slnx -m:1 -nr:false
+dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false --no-restore -o artifacts/ui-foundation-build
+# 默认构建遇到中间文件占用；保留失败日志，随后用独立目录成功编译
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore -p:IntermediateOutputPath=obj/UIFoundation/ -p:OutputPath=bin/UIFoundation/
+# 最终发布目标当时为空；此命令不会覆盖已有发布目录
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/ui-foundation-ready/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/ui-foundation-ready/host -o artifacts/ui-foundation-ready/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/ui-foundation-ready/host -o artifacts/ui-foundation-ready/checks
+```
+
+文件核对使用 `Get-FileHash -Algorithm SHA256`，发布后先枚举宿主文件，插件构建/复制后只对相同路径再次计算。执行记录为 `artifacts/evidence/ui-foundation-restore.txt`、`ui-foundation-build.txt`、`ui-foundation-solution-build.txt`（文件占用失败）、`ui-foundation-solution-build-isolated.txt`、`ui-foundation-ready-publish.txt`、`ui-foundation-ready-plugin-build.txt`、`ui-foundation-ready-integration-build.txt`。早期试编译及中间发布 `ui-foundation-publish/`、`ui-foundation-final/` 也保留；最后修正了派生窗口的字体样式匹配，用户应使用包含该修正的 ready 副本。
+
+</details>
+
+<a id="evidence-review"></a>
+
+<details>
+<summary>E05 · 标题栏故障与核心代码审查修复（2026-10-03）</summary>
+
+### E05 · 标题栏故障与核心代码审查修复（2026-10-03）
+
+用户报告窗口无法拖动，要求参考软件实现并让子代理审查核心代码；同时明确日常 IDE 为 **VS Code**。已按阅读顺序核对文档/实际源码，保留现有 `.vscode/launch.json`，未切换 IDE。修改前快照为 `artifacts/drag-review-before/`。
+
+标题栏根因：`ExtendsContentIntoTitleBar` 只调整内容/标题布局，自定义 Border 覆盖了框架默认的 TitleBar 区域，却没有声明 Avalonia 12 非客户区角色。已在 `TitleBarDragRegion` 设置 `WindowDecorationProperties.ElementRole="TitleBar"`，纯图文内容设置 `IsHitTestVisible=false`，保留库的系统按钮。复核了 Watt 固定提交的 TitleBar、FluentAvalonia 3.1 的窗口模板/Windows 适配，以及 [Avalonia 12 窗口说明](https://docs.avaloniaui.net/docs/app-development/window-management)；没有照搬旧 Avalonia 11 的标题栏属性，也没有叠加自写 Win32 拖动逻辑。**故障来自用户实际反馈，修复后的拖动/双击/缩放尚未实机验证。**
+
+三个子代理分别审查插件加载与生命周期、存储与恢复、UI 导航。修复了确认的问题，并对退出/路径及最终导航代码做二次只读复核：
+
+- 同一 profile 有无末尾分隔符必须产生同一 Windows 恢复事件，复用实例锁的 `AppPaths.Absolute` 规则。
+- 目录包含判断不再给卷根重复追加分隔符；拒绝卷根 DataRoot，避免错误创建业务目录或绕过插件/数据互含限制。
+- 私有托管/本机依赖与入口 DLL 共享版本包路径校验；拒绝解析出包外路径及包内任何父级链接。没有把加载上下文当作安全沙箱。
+- 显式退出先阻止新保存和界面操作，已有宿主保存与插件停止共用外层 10 秒等待，之后释放锁和关闭；超时记日志。
+- 每个插件独立取消、共享幂等清理任务；按初始化完成 → Stop → Background/取消回调完成 → Dispose 的顺序清理。取消回调异常不跳过其他实例，超时不并发释放仍在运行的对象；晚于退出快照完成构造/初始化的实例仍纳入清理且不注册 UI。内部统一等待 9 秒，超时继续观察迟到结束。
+- PageHost 用同步 presenter 回报成功/取消/异常；成功后才提交标题/选择并清理旧页，取消保留旧页，失败换掉内部状态可能受损的 Frame 后显示错误页。拒绝已有父级的候选页面，阻止导航重入和退出后工厂调用；保留 FAFrame 过渡。FANavigationView 自行选中的项目也恢复到实际已提交的选择。
+
+新增 6 项路径回归、5 项生命周期/设置/标题栏检查和 5 项导航检查（均为源码用例）。生命周期夹具仍单独构建成真实插件 DLL，只依赖 Contracts/UI，通过每例隔离插件数据目录中的标记控制延迟，失败后也释放等待条件。**没有执行这些检查，不把已编译写成已通过测试。**
+
+| 检查层级 | 本轮事实 |
+| --- | --- |
+| 静态检查 | 三份专项审查及二次复核已完成；依赖方向、文档链接与源码差异另记录于 `artifacts/evidence/drag-review-static.txt`；不代表运行正确性 |
+| 构建与发布 | 核心检查工程、完整解决方案隔离 Debug 构建、Release 发布、发布后独立插件和集成工程编译均成功；各 build 汇总 0 警告/0 错误；发布包含正常还原 |
+| 文件集成准备 | 新副本 `artifacts/drag-review/host` 已复制独立示例插件；构建/复制插件前后的 234 个原有宿主文件 SHA256 全部一致，没有重编宿主 |
+| 自动化/集成/Headless | 本轮未执行；新增回归只编译。旧 33/21 项结果不覆盖本轮修复 |
+| 真实 Windows UI | 本轮未启动或操作，由用户手测；标题栏、页面动画/取消、保存后立即退出、托盘及等价路径恢复均未验收 |
+
+实际命令（仅构建/发布，未运行应用或检查程序）：
+
+```powershell
+dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Debug -m:1 -nr:false --no-restore -p:IntermediateOutputPath=obj/DragReview/ -p:OutputPath=bin/DragReview/
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore -p:IntermediateOutputPath=obj/DragReview/ -p:OutputPath=bin/DragReview/
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/drag-review/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/drag-review/host -o artifacts/drag-review/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/drag-review/host -o artifacts/drag-review/checks
+```
+
+日志分别为 `artifacts/evidence/drag-review-core-build.txt`、`drag-review-solution-build.txt`、`drag-review-publish.txt`、`drag-review-plugin-build.txt`、`drag-review-integration-build.txt`。文件核对仍用 `Get-FileHash -Algorithm SHA256`，JSON 清单和 `hash-result.txt` 位于 `artifacts/drag-review/`。没有执行 Verify-M1.ps1，因为用户已经接手测试。默认 Debug 的旧文件占用未重新验证，也没有结束任何用户进程。
+
+边界：进程内插件同步卡死构造/注册、任意延迟绘制/异步事件异常仍可能影响整个进程；有界退出不能保证不合作插件或持续阻塞磁盘一定完成。M1 继续待验收，未进入 M2。
+
+</details>
+
+<a id="evidence-version"></a>
+
+<details>
+<summary>E06 · 统一产品版本和应用图标（2026-10-03）</summary>
+
+### E06 · 统一产品版本和应用图标（2026-10-03）
+
+用户指出版本显示写死，并要求扳手/瑞士军刀主题图标。已确认关于页的 `0.1.0` 是重复字面量，且之前全局固定 AssemblyVersion 使宿主文件版本也停留在 `1.0.0.0`。
+
+- 根 `Directory.Build.props` 的 `Version` 继续作为唯一默认产品版本；当前仍为 `0.1.0`，没有无依据升版。关于页通过 `SettingsViewModel.ApplicationVersion` 读取宿主 `AppInfo.Version`，启动日志复用同一值。宿主程序集/文件版本交给 SDK 派生；公开 SDK 库的程序集身份和 API/UI 兼容版本保持不变。
+- `Publish-Host.ps1` 新增可选 `-Version` 参数，直接传递 MSBuild Version；普通发布仍使用根配置，界面无需同步改字面量。Win32 manifest 的固定激活标识增加说明，不与产品版本混淆。
+- 使用内置 imagegen 生成透明的红色折叠工具柄、银色扳手和短螺丝刀图标。母版及提示词位于 `Artwork/`，窗口/关于页/EXE/托盘全部继续引用同一套导出资源。更新 Generate-AppIcon.ps1，导出 256 PNG 和含 8 个尺寸的 ICO；没有增加运行时图像依赖。
+- 修改前曾备份到 `artifacts/version-icon-before/`，该目录随后随 artifacts 被外部清理；开发 IDE 和现有 `.vscode` 配置未改。
+
+验证事实：隔离编译 `-p:Version=0.1.0-version-check` 成功，0 警告/0 错误；读取产物元数据得到产品版本 `0.1.0-version-check`、文件版本 `0.1.0.0`，Contracts/UI 的 AssemblyVersion 仍为 `1.0.0.0`。随后使用默认版本正常发布，新 EXE 和 DLL 的产品版本均为 `0.1.0`、文件版本均为 `0.1.0.0`。独立插件和集成检查工程也重新编译成功，均 0 警告/0 错误，复制插件后原有 234 个宿主文件哈希未变。
+
+已查看导出的 PNG，核对透明通道及 ICO 的 16/20/24/32/48/64/128/256 尺寸目录。文档链接、版本字面量和脚本语法做静态检查。**没有运行应用、自动化/集成/Headless 测试或真实 Windows UI；以上不是关于页实际显示、托盘可辨识度和 Windows 图标缓存刷新的运行证据。**
+
+首批构建/发布成功后，发现 artifacts 已在外部被清理，因此重新生成下列最终副本及日志。一次文件复制核对因源目录消失而未完成，其空清单输出已明确标记 INVALID，不作为证据；最终完整清单记录 234/0。
+
+实际执行命令（最终重建副本；Generate-AppIcon 在清理前已成功导出至源码 Assets）：
+
+```powershell
+./scripts/Generate-AppIcon.ps1
+dotnet build TractorTool/TractorTool.csproj -c Release -m:1 -nr:false --no-restore -p:Version=0.1.0-version-check -p:IntermediateOutputPath=obj/VersionProbe/ -p:OutputPath=bin/VersionProbe/
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/version-icon-final/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/version-icon-final/host -o artifacts/version-icon-final/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/version-icon-final/host -o artifacts/version-icon-final/checks
+```
+
+证据：`artifacts/evidence/version-icon-override-build.txt`、`version-icon-override-metadata.json`、`version-icon-publish.txt`、`version-icon-published-metadata.json`、`version-icon-plugin-build.txt`、`version-icon-integration-build.txt`、`version-icon-assets.txt`、`version-icon-static.txt`，以及 `artifacts/version-icon-final/host-hashes-*.json` / `hash-result.txt`。该次隔离副本为 `artifacts/version-icon-final/host`，包含上一轮拖动/导航/退出修复和示例插件，尚未启动。
+
+</details>
+
+<a id="evidence-binding"></a>
+
+<details>
+<summary>E07 · 调试绑定错误与 VS Code 预览复核（2026-10-03）</summary>
+
+### E07 · 调试绑定错误与 VS Code 预览复核（2026-10-03）
+
+用户截图暴露了此前静态审查的遗漏，不能把已有编译/Review 记录当作运行绑定无误的证明。
+
+- `PluginsView` 的 `!!OperationStatus` 把字符串交给布尔转换，空字符串会产生截图中的运行绑定错误。同页 `!!DirectoryError` 存在同类问题。改为 VM 的 `HasOperationStatus` / `HasDirectoryError` 布尔属性，使用 `IsNullOrWhiteSpace`，并在对应源字段上添加 `NotifyPropertyChangedFor`，保证状态更新后可见性跟随变化。
+- 复用 UI 子代理只读审查全部 5 个宿主 AXAML、ViewModel、导航模板、共享设置行/图标/主题，核对 DataContext、命令来源、通知和控件属性。剩余 `!` 绑定均用于 bool；没有发现新的确定 P1/P2 绑定问题。另修正 `caption` 只匹配 `TextBlock` 的样式遗漏，使用 `:is(TextBlock).caption` 覆盖可选择的插件路径文字；类型关系依据 [Avalonia 12.1.2 源码](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Controls/SelectableTextBlock.cs)。此审查范围不代表全仓库没有缺陷。
+- `ApplicationVersion` 当前在 SettingsViewModel 中确实存在，MainViewModel 也设置了正确的页面 DataContext。此次重建前，默认 Debug DLL 就已有该公共属性，不能诊断为当前源码或磁盘 DLL 缺少属性。读取 VS Code Avalonia 扩展 12.4.3 的既有日志，确认 18:03:40 预览仍报告缺失，扩展也记录了构建期间 `SIGSTOP` / `SIGCONT` 不支持。预览进程使用旧程序集/旧元数据是当前推断，尚未确认其内部状态或唯一根因。
+- 已实际更新 VS Code 默认 `bin/Debug/net10.0` / `obj/Debug/net10.0` 产物；只读 PE 元数据确认 `ApplicationVersion`、`HasOperationStatus`、`HasDirectoryError` 在这两个宿主 DLL 中都有公共 getter。没有删除 obj/bin、结束用户进程、修改 VS Code 配置或升级依赖。
+
+实际构建命令（第一条在 caption 修正前，第二条在全部源码修正后成功）：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false --no-restore -p:IntermediateOutputPath=obj/BindingFix/ -p:OutputPath=bin/BindingFix/
+dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false --no-restore
+```
+
+| 检查类型 | 本次结果 |
+| --- | --- |
+| 静态审查 | 上述源码/通知/样式复核完成；宿主及共享 AXAML 无 `!!` 绑定；默认 bin/obj 的 6 条属性核对全部存在 |
+| 构建 | 两条命令均 0 警告、0 错误；本次默认 Debug 未复现早前的文件占用 |
+| 自动化 / 集成 / Headless 测试 | 未执行，继续遵守用户自行测试的决定 |
+| 真实 Windows UI / VS Code 预览刷新 | 未操作、未验证；不能宣称绑定日志已在真实运行中清零或预览已恢复 |
+
+证据位于 `artifacts/evidence/binding-fix-build.txt`、`binding-fix-default-debug-build.txt`、`binding-fix-metadata.json`、`binding-fix-static.txt`、`binding-fix-previewer-log.txt`。元数据通过 PowerShell 的 `PEReader` / `MetadataReader` 读取，没有执行应用程序集。预览日志是用户既有会话的只读摘录，不是本轮运行测试。
+
+本次未重新发布；**`version-icon-final` 是[E06](#evidence-version)的旧发布副本，不含此次绑定和 caption 修正**。最新修正位于源码及默认 Debug 输出。用户可先在预览错误页点击 **Restart Previewer** 使其重新加载已构建的程序集；以后改动 C# 属性需先 **Rebuild Project**。若预览仍保持旧状态，可执行 `Developer: Reload Window`。以上操作尚未代用户执行；恢复后再确认关于页版本、插件页空状态及打开目录失败提示。M1 仍待运行验收，不进入 M2。
+
+</details>
+
+<a id="evidence-home"></a>
+
+<details>
+<summary>E08 · 欢迎主页与已安装插件卡片（2026-10-03）</summary>
+
+### E08 · 欢迎主页与已安装插件卡片（2026-10-03）
+
+用户要求参考 Watt 的主页显示欢迎内容与已安装插件。核对固定提交的 HomePage.axaml / HomePageViewModel.cs，参考文本存放在 `artifacts/reference-icons/`；采用其卡片聚合与导航思路，没有复制参考源码或素材。修改前快照为 `artifacts/home-before-20261003-184852/`。开发 IDE 仍为 VS Code，依赖版本未变。
+
+- 新增 HomeView/VM，启动默认进入主页，左侧第一项为主页，底部保留日志/插件/设置。欢迎区使用已有应用图标，提供插件管理和外观设置入口。
+- 安装卡片复用 PluginsViewModel 的真实记录及导航命令，显示名称、版本、说明和状态；可打开的记录进入首个普通页面，其余进入插件页。按可用宽度换行，沿用统一主题与 Frame 动效，不提前创建插件页面。主页不受管理页搜索影响，启动加载完成也不强制改回主页。
+- 加载中、未安装、目录不可用明确区分。单色 Home 图标追加至现有枚举末尾，未改变原值、注册签名或 API/UI 兼容版本。彩色导航素材和图片协议仍待实现，本次未将该项标为完成。
+- 集成工程新增 4 项主页检查，覆盖默认加载态、真实插件卡片及搜索隔离、空安装、目录受阻；已有独立页面、注册、故障与导航取消检查同步更新，覆盖卡片复用导航、失败入口回退和启动期间保留已选页面。**仅编译这些用例，未执行。**
+
+| 检查层级 | 本次结果 |
+| --- | --- |
+| 静态 | 核对新 AXAML 的类型/布尔可见性、数据来源、命令与选择同步、旧图标枚举顺序、文档链接；未发现新的确定问题，不能证明实际布局无误 |
+| 构建 | 默认 Debug 构建通过，0 警告/0 错误；独立插件与集成工程均 0 警告/0 错误 |
+| 发布与文件 | win-x64 自包含发布成功；发布后单独构建并复制示例插件，234 个原有宿主文件 SHA256 未变 |
+| 自动化 / 集成 / Headless | 未执行；遵守用户自行测试的决定 |
+| 真实 Windows UI / VS Code 预览 | 未启动或操作；欢迎布局、卡片换行/键盘/长名称/主题、点击与导航选择、返回主页均待用户验收 |
+
+首次受限 Debug 构建在 AvaloniaStatsTask 写入 `LocalAppData/AvaloniaUI/BuildServices/buildtasks.log` 时权限失败；允许必要的构建日志写入后，同一构建命令成功。没有关闭构建任务、改动依赖或结束用户进程。失败与成功日志分别为 `artifacts/evidence/home-debug-build.txt`、`home-debug-build-approved.txt`。
+
+实际命令（前三类只编译/发布，没有运行应用或检查程序）：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false --no-restore
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/home-ready/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/home-ready/host -o artifacts/home-ready/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false --no-restore -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/home-ready/host -o artifacts/home-ready/checks
+```
+
+发布、插件及集成编译日志为 `artifacts/evidence/home-publish.txt`、`home-plugin-build.txt`、`home-integration-build.txt`。`artifacts/home-ready/host` 已放入 `Plugins/Test.Independent/1.0.0`；文件清单和 `hash-result.json` 位于 `artifacts/home-ready/`，使用 Get-FileHash 对发布前后相同的原有宿主路径计算。源码/文档静态核对记录为 `artifacts/evidence/home-static.json`。
+
+用户可从仓库根目录执行下面的隔离启动命令；**此命令仅供用户验收，本轮未执行**。该副本同时含 E07 的绑定修正：
+
+```powershell
+& .\artifacts\home-ready\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\home-manual-profile
+```
+
+默认 VS Code 调试仍使用其原有启动配置。不要用缺少本次主页及绑定修正的旧发布副本判断结果。M1 保持待验收，未进入 M2。
+
+</details>
+
+<a id="evidence-icons-review"></a>
+
+<details>
+<summary>E09 · Review 修复与彩色图标接入（2026-10-03）</summary>
+
+### E09 · Review 修复与彩色图标接入（2026-10-03）
+
+按用户要求继续 Review 并补齐 M1 图标。复用 review_ui 子代理进行两轮只读审查：首轮确认问题，修正后复核初始化、状态通知、绑定、图片所有权和公开 SDK；复审未发现额外确定缺陷，不代表证明没有其他缺陷。审查没有运行程序。修改前主要文件快照在 `artifacts/icons-review-before-20261003-190421/`。
+
+| 确认的问题 | 修正 |
+| --- | --- |
+| MainViewModel 再次初始化会重复追加导航和设置入口，虽然底层插件只加载一次 | 缓存整次初始化 Task，在 UI 线程共用首次结果；重复及并发调用都不重复构建入口 |
+| 插件页加载时显示“无匹配”，目录不可访问时又同时显示“未安装” | 引入加载状态；空态、搜索无结果排除加载和目录错误，补齐派生属性通知与 AXAML 条件 |
+
+继续补完的图标能力：
+
+- 固定来源的 Fluent Emoji 3D PNG 用于主页/日志/插件/设置导航，示例插件使用随包拼图图片；设置操作继续使用现有单色符号。没有升级依赖或增加图标运行库。来源提交、5 张原文件 SHA256 和 MIT 许可见 `artifacts/reference-emoji/`、[Artwork](../Artwork/README.md)、[第三方声明](../THIRD-PARTY-NOTICES.md)。素材原图已查看，不等同于实际 UI 显示验收。
+- UI API 1.2 新增可选 IconPath，保留原构造函数、注册签名、枚举旧值和共享程序集身份；源代码兼容规则接受 1.0/1.1/1.2。还只读核对了旧 home-ready SDK 的 SettingRow.IconSource 元数据，原类型已是 FAIconSource，没有更改该返回类型。旧插件二进制在新宿主的实际加载没有执行。
+- 宿主校验 PNG 包内路径、重解析点边界、2 MiB 长度及最多 1024×1024 尺寸后解码；源文件随即关闭，图片/失败结果缓存。控件只呈现 IImage，缺图/损坏回退符号并记录日志。Detach 和托盘隐藏不释放缓存，窗口 Closed 后才释放，避免退出等待期间绘制已释放图片。
+- 核心和集成检查新增/更新兼容矩阵、重复与并发初始化、状态互斥、缓存/文件释放、控件切换、坏图/越界/尺寸限制、真实插件缺图仍可导航，以及退出时图片寿命。图像集成检查配置 Headless + Skia 解码；**只编译，全部未执行**。
+
+| 检查层级 | 本次结果 |
+| --- | --- |
+| 静态 | 两轮源码审查完成；文档本地链接、AXAML/工程 XML、素材/许可随包及宿主文件哈希核对通过；范围见 icons-review-static.json |
+| 构建 | 最终默认 Debug 解决方案、独立插件、集成检查工程均 0 警告/0 错误；win-x64 自包含发布成功 |
+| 发布与文件 | 发布后再引用 SDK 独立编译插件；完整复制插件资源及许可到临时 Plugins，234 个原有宿主文件 SHA256 未变 |
+| 自动化 / 集成 / Headless | 未执行；未运行 Verify-M1.ps1，不把编译、拷贝和哈希等同于插件加载成功 |
+| 真实 Windows UI / VS Code 预览 | 未启动或操作；彩色图片、主题/高 DPI、缺图回退、窗口拖动、动画及退出仍待用户验收 |
+
+环境为 Windows、.NET SDK 10.0.401、PowerShell 7.6.5；沿用 VS Code，未改编辑器配置。最初 `dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore` 因前次 Release 还原留下的条件依赖资产导致 WithDeveloperTools 无法解析；正常还原构建后成功，没有更改依赖。集成工程首编译出现两处 Bitmap.Save 的弃用警告，改用 PngBitmapEncoderOptions 重编后 0 警告。
+
+实际成功执行的构建/发布命令：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\icons-ready\host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:\ProjH\TractorTool\artifacts\icons-ready\host -o H:\ProjH\TractorTool\artifacts\icons-ready\plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:\ProjH\TractorTool\artifacts\icons-ready\host -o H:\ProjH\TractorTool\artifacts\icons-ready\checks
+```
+
+发布前后哈希使用 Get-ChildItem / Get-FileHash 记录相同的原有宿主路径；独立编译后用以下命令复制到新创建的测试插件目录（宿主工程没有具体插件引用）：
+
+```powershell
+$pluginTarget = 'H:\ProjH\TractorTool\artifacts\icons-ready\host\Plugins\Test.Independent\1.0.0'
+New-Item -ItemType Directory -Path $pluginTarget -Force | Out-Null
+Get-ChildItem -LiteralPath artifacts/icons-ready/plugin | Copy-Item -Destination $pluginTarget -Recurse
+```
+
+构建日志位于 `artifacts/evidence/icons-review-debug-final.txt`、`icons-review-publish.txt`、`icons-review-plugin-build.txt`、`icons-review-integration-build-final.txt`。早期失败/警告日志保留为 `icons-review-debug-build.txt`、`icons-review-integration-build.txt`。宿主逐文件证据为 `icons-review-host-before.json` / `icons-review-host-after.json`，静态核对命令与结果为 `Inspect-IconsReview.ps1` / `icons-review-static.json`。发布后再次正常构建 Debug，恢复 VS Code 日常配置对应的依赖资产，见 `icons-review-debug-workspace.txt`。
+
+最新隔离副本包含本次修正和独立示例插件。下面只供用户手动验收，**未执行**：
+
+```powershell
+& .\artifacts\icons-ready\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\icons-manual-profile
+```
+
+本轮没有进入 M2；先完成第 2 节的实际 UI 与插件运行验收，再决定后续阶段。
+
+</details>
+
+<a id="evidence-nav-density"></a>
+
+<details>
+<summary>E10 · 收紧导航按钮比例（2026-10-04）</summary>
+
+用户对比截图指出侧栏图标按钮区域偏大。核对本地保存的 Watt 固定提交 MainView.axaml（侧栏 72、图标容器 28）及本项目模板，确认本项目侧栏 88、背景最小高度 76，并叠加图文间距和上下留白。参考的是比例，没有复制控件模板。
+
+只调整 `TractorTool/Styles/ShellStyles.axaml` 和 `TractorTool/Views/MainWindow.axaml`：侧栏 88→72，背景最小高度 76→64、四周间距 4、圆角 8→6；呈现器最小高度 72，保留背景以外的留白；图标 32→28、图文间距 9→6、上下留白 10→8。标签字号 11→10、固定行高 14，单行省略，保留完整 Tooltip 与无障碍名称。主页与插件内容区的卡片、设置行和业务逻辑未改。
+
+- 静态：AXAML、模板尺寸和本地文档链接核对通过；修改前快照为 `artifacts/nav-density-before-20261004-fda6cf/`，结果在 `artifacts/evidence/nav-density-static.json`。
+- 构建：`dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false` 成功，0 警告/0 错误；日志为 `artifacts/evidence/nav-density-debug-build.txt`，默认 VS Code Debug 产物已更新。
+- 自动化、集成、真实 Windows UI：均未执行；本次为可逆样式调整，没有新增镜像尺寸的单元测试，也未启动应用。截图仅说明用户看到旧比例偏大，不能作为新样式验收结果。
+- 发布：本次未重新发布；E09 的 icons-ready 仍是旧尺寸。M1 继续待验收。
+
+用户可重新启动 VS Code 调试，或用下列已构建程序隔离检查；此启动命令未代执行：
+
+```powershell
+& .\TractorTool\bin\Debug\net10.0\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\nav-manual-profile
+```
+
+</details>
+
+<a id="evidence-page-layout"></a>
+
+<details>
+<summary>E11 · 窗口大小变化时的正文对齐（2026-10-04）</summary>
+
+用户四张截图显示：页头固定左对齐，但主页/设置正文在宽窗口中移到中央，缩窄后又靠近左侧。源码原因是主页和插件页 MaxWidth=1000、设置页 MaxWidth=960、错误页 MaxWidth=800 与 Stretch 组合，而页头使用全宽容器。
+
+移除上述整页宽度上限，四页复用 SharedStyles 中的 `pageScroll` 和 `pageBody`：内容横向 Stretch、禁止水平滚动、竖向滚动 Auto、统一右侧滚动条留白及底部间距。局部空状态文字仍限宽，主页插件卡片仍由 WrapPanel 换行。页头、状态栏、日志自身滚动和插件页面生命周期不变；没有修改 C#、插件协议、字体缩放或依赖。
+
+核对了锁定 FluentAvalonia 提交的 [Frame 模板](https://github.com/amwx/FluentAvalonia/blob/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/src/FluentAvalonia/Styling/ControlThemes/FAControls/FrameStyles.axaml) 和 [设置行实现](https://github.com/amwx/FluentAvalonia/blob/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/src/FluentAvalonia/UI/Controls/SettingsExpander/FASettingsExpanderItem.cs)：Frame 已按父视口拉伸，设置行保留描述换行和小于 460 时操作区下移的库内行为，没有重写模板或新增窗口尺寸监听器。参考文本存于 `artifacts/reference-resize/`。
+
+| 层级 | 本次结果 |
+| --- | --- |
+| 静态 | 核对四页布局、共享样式、原绑定保留和文档本地链接；证据 `artifacts/evidence/page-layout-static.json` |
+| 构建 | `dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false` 通过，0 警告/0 错误；日志 `artifacts/evidence/page-layout-debug-build.txt` |
+| 自动化 / 集成 / Windows UI | 均未执行，遵守用户自行测试的决定；没有为纯样式修正新增镜像参数的单元测试 |
+| 发布 | 未重新发布；默认 Debug 已更新，icons-ready 仍是 E09 旧布局 |
+
+修改前快照在 `artifacts/page-layout-before-20261004-d64602/`。以下仅供用户隔离验收，未执行：
+
+```powershell
+& .\TractorTool\bin\Debug\net10.0\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\layout-manual-profile
+```
+
+待验：720×540 最小窗口、普通宽度与宽窗口的标题/正文对齐，短窗口滚动到设置底部，长路径/错误文字换行，已安装卡片换行，以及系统缩放下的实际视觉表现。M1 仍未验收完成。
+
+</details>
+
+<a id="evidence-appearance-review"></a>
+
+<details>
+<summary>E12 · GPT-6.1-Sol Review 与外观即时生效（2026-10-04）</summary>
+
+用户要求使用 GPT-6.1-Sol、相同思考深度审查后继续。三个子代理显式选用该模型，但当时未传 reasoning_effort；原记录将此直接表述为继承主代理深度并不可靠。用户后续截图确认 UI 子代理实际显示“轻度”，不能把本节记录当作高深度 Review 证据。全部为只读审查，没有运行程序。修改前快照：`artifacts/review-appearance-before-20261004-d6f901/`。
+
+| 审查范围 | 结果与处理 |
+| --- | --- |
+| Storage/Logging、启动、App 退出、Windows/托盘 | 未发现确定阻断缺陷；数据迁移、磁盘日志保留等仍属于后续阶段 |
+| 清单、兼容、独立装载、Contracts/UI 注册、插件生命周期 | 发现 Discover 重试未清除旧 DirectoryError；本次在每次扫描开始重置，扩展隔离文件阻塞用例覆盖修复后重扫 |
+| 宿主 ViewModels/Views/Services 与 UI 控件 | 旧实现未发现新的确定缺陷；对新外观流程再做两轮复审，最终未发现新的确定问题，但不代表全仓库无缺陷 |
+
+本次外观修改：主题、主题色、动画立即应用，移除“保存外观”和保存期间禁用选项；单个后台保存任务串行写入快照，期间只保留最后选择，旧写盘完成不重新应用旧主题。失败显示“已生效，但未保存”和重试；应用异常单独提示。瞬时空选择不产生配置，相同已应用值不重复写入，同步主题通知重入时应用最后有效选择。退出阻止新变更，等待整个队列；此前最后保存失败时最多再试一次，仍受 App 原有 10 秒退出期限约束。没有升级依赖或改动 SDK。
+
+参考机制在上一轮已核对固定 Watt 提交：外观控件直接绑定设置，[设置属性](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client/Settings/Infrastructure/SettingsProperty.cs#L98-L122) 触发变更通知和自动保存，[应用](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/App.axaml.cs#L197-L204) 订阅主题色；本次使用现有 MVVM/ThemeService/JsonFileStore 实现，没有复制其设置框架。
+
+| 验证层级 | 实际结果 |
+| --- | --- |
+| 静态 | 三组审查、外观复审及 XML/文档链接核对完成；新检查覆盖快速切换/旧写失败继续/重试/退出等待/临时空选择/同步重入/应用失败 |
+| 构建 | 最终默认 Debug 解决方案、独立插件和集成检查均 0 警告/0 错误；win-x64 自包含发布成功 |
+| 发布准备 | 宿主先发布，然后引用该 SDK 独立构建插件；复制到临时 Plugins 后，234 个原有宿主文件 SHA256 不变 |
+| 自动化 / 集成 / Headless | 全部未执行；新增源码用例和编译不视为运行通过，没有运行 Verify-M1.ps1 |
+| 真实 Windows UI / VS Code 预览 | 未启动或操作；主题即时效果、控件实际绑定、系统主题事件、动画和托盘由用户验收 |
+
+失败注入用例在 JsonFileStore 验证回调中抛出 IOException，验证的是保存队列、状态和旧文件保留；不能代表已验证磁盘满、Flush 或 File.Replace 失败。同步主题重入通过 Application.PropertyChanged 注入，不代表已验证实际 ComboBox 模板重建。运行结果仍待补齐。
+
+实际命令（仅编译/发布，未执行程序）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/appearance-ready/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/appearance-ready/host -o H:/ProjH/TractorTool/artifacts/appearance-ready/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/appearance-ready/host -o H:/ProjH/TractorTool/artifacts/appearance-ready/checks
+# 发布后再次正常 Debug 构建，恢复 VS Code 日常依赖资产
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+```
+
+首次受限构建因 Avalonia BuildServices 无权写本机日志失败，并出现 NU1900 查询警告；正常权限重试构建成功但暂时保留还原缓存警告。随后发布与最终 Debug 还原构建正常，未关闭漏洞检查。集成工程初编译一处可空警告已用明确的页面非空检查修正。日志：`artifacts/evidence/appearance-debug-build.txt`（初始失败）、`appearance-debug-build-full.txt`（重试含警告）、`appearance-debug-final.txt`、`appearance-publish.txt`、`appearance-plugin-build.txt`、`appearance-integration-build.txt`、`appearance-integration-build-final.txt`。环境：.NET SDK 10.0.401，Windows，PowerShell，IDE 保持 VS Code。
+
+独立插件复制到新目录的命令：
+
+```powershell
+$pluginTarget = 'H:\ProjH\TractorTool\artifacts\appearance-ready\host\Plugins\Test.Independent\1.0.0'
+New-Item -ItemType Directory -Path $pluginTarget -Force | Out-Null
+Get-ChildItem -LiteralPath artifacts/appearance-ready/plugin | Copy-Item -Destination $pluginTarget -Recurse
+```
+
+逐文件哈希在 `artifacts/evidence/appearance-host-before.json` / `appearance-host-after.json`，结果 `appearance-host-hashes.json`；源码变更范围及文档核对 `appearance-static.json`。它们只证明文件和编译准备，没有声称新插件真实加载成功。
+
+以下启动命令仅供用户隔离验收，本轮未执行：
+
+```powershell
+& .\artifacts\appearance-ready\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\appearance-manual-profile
+```
+
+下一步：用户检查实际主题/主题色/动画即时生效、快速更改后立即退出并重启保留、隔离写入失败提示及重试，再完成前述布局/图标/插件/托盘运行验收。M1 尚未完成，未进入 M2。
+
+</details>
+
+<a id="evidence-theme-transition"></a>
+
+<details>
+<summary>E13 · 移除常驻说明与深浅色过渡（2026-10-04）</summary>
+
+用户截图指出“外观更改即时生效并自动保存”说明多余，且深浅色切换突然闪白。正常初始化、写入中和成功后均不显示保存文案；错误区域仅保存失败时出现，应用失败提示及重试保留。窗口背景/前景、标题区、侧栏、内容区、公共设置行、卡片及辅助文字加入原生 BrushTransition，220 ms、CubicEaseInOut；关闭“界面动画”会撤销过渡样式并取消在途过渡。主页工具按钮仅修改 toolCard 的背景/边框，不全局替换第三方按钮反馈。无截图遮罩、额外动画框架或依赖升级。
+
+参考核对：固定 Watt 提交的 [App.Theme.cs](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/App.Theme.cs) 直接设置主题；[MainView.axaml.cs](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/MainView.axaml.cs) 使用页面过渡，已核对的 Border/Window/TextBlock 样式没有整窗主题渐变。不能据此认定用户截图对应的其他版本没有此效果。本次按 [Avalonia 控件过渡机制](https://docs.avaloniaui.net/docs/graphics-animation/control-transitions) 实现；GPT-6.1-Sol 子代理核对 12.1.2 官方 Animatable/Selector 源码，确认过渡状态按控件隔离，撤销样式释放在途实例，设置行需要显式 `/template/` 选择器。
+
+| 验证层级 | 本轮实际结果 |
+| --- | --- |
+| 静态 | 主题样式、关闭动画、错误区域绑定经子代理只读复审，未发现确定缺陷；XML、文档链接、资源及变更范围见 `artifacts/evidence/theme-transition-static.json` |
+| 构建 | 最终默认 Debug 解决方案、独立插件、发布 SDK 集成检查均 0 警告/0 错误；win-x64 自包含发布成功 |
+| 发布准备 | 新副本 `artifacts/theme-transition-ready/host` 中加入发布后独立构建的插件；234 个原有宿主文件 SHA256 不变 |
+| 自动化 / 集成 / Headless | 未执行；新增窗口/导航/模板表面的动画开关检查，扩展保存失败区域可见性检查，仅编译 |
+| 真实 Windows UI / VS Code 预览 | 未执行，由用户验收；没有将源码或编译结果写成视觉通过 |
+
+范围限制：第三方控件内部、导航选中背景、Windows 标题栏按钮等没有全面增加主题颜色过渡；不是整窗所有像素交叉淡化。跟随系统时依靠同一动态资源变化触发过渡，实际系统事件、快速反向切换、关闭开关和深浅色对比度尚未运行核验。
+
+用户截图指出旧 UI Review 显示轻度后，新建 `review_theme_high`，显式传入 `model="gpt-6.1-sol"`、`reasoning_effort="high"`、`fork_turns="1"`，重新只读审查本节修改及必要上下文。独立复核保存提示/失败/重试/退出、窗口 class 与设置行模板选择器、Avalonia 12.1.2 在途过渡取消和反转取当前值，未发现确定的新功能缺陷。检查源码只覆盖过渡配置随开关存在/撤销，不证明颜色时间序列；第三方文字前景、中途对比度和系统主题事件仍待实际验收。本次只更新约定和记录，未更改应用源码、重新构建或运行程序；不能用这次 UI 范围的高深度复审替代全仓库 Review。
+
+实际命令（仅构建/发布和文件准备）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/theme-transition-ready/host
+dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/theme-transition-ready/host -o H:/ProjH/TractorTool/artifacts/theme-transition-ready/plugin
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/theme-transition-ready/host -o H:/ProjH/TractorTool/artifacts/theme-transition-ready/checks
+$pluginTarget = 'H:\ProjH\TractorTool\artifacts\theme-transition-ready\host\Plugins\Test.Independent\1.0.0'
+New-Item -ItemType Directory -Path $pluginTarget -Force | Out-Null
+Get-ChildItem -LiteralPath artifacts/theme-transition-ready/plugin | Copy-Item -Destination $pluginTarget -Recurse
+# 最后恢复 VS Code 默认 Debug 资产
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+```
+
+集成检查初编译新增断言有一处 CS8602，改为检查可空 Property 后重新编译为 0 警告；初始与最终日志均保留。构建使用正常权限允许 Avalonia 写 BuildServices 日志，没有运行应用。证据文件位于 `artifacts/evidence/theme-transition-*`（debug-build/debug-final、publish、plugin-build、checks-build/checks-final 的 txt，host-before/host-hashes 与 static 的 json）。修改前快照：`artifacts/theme-transition-before-20261004-cb31bc/`。环境仍为 Windows / .NET SDK 10.0.401 / VS Code，未改 IDE 配置。
+
+以下仅供用户启动验收，本轮未执行：
+
+```powershell
+& .\artifacts\theme-transition-ready\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\theme-transition-manual-profile
+```
+
+先切到设置页，来回选择深浅色，检查大面积背景和设置行是否柔和变化；关闭“界面动画”确认直接切换，再开启。检查正常状态无保存说明，重启仍保留最后设置；写盘错误及重试只在隔离数据中验证。M1 保持未验收完成，未进入 M2。
+
+</details>
+
+<a id="evidence-settings-cleanup"></a>
+
+<details>
+<summary>E14 · 设置预览与确定死代码清理（2026-10-04）</summary>
+
+用户截图是 VS Code 预览：SettingsView 无设计时 DataContext，可见性绑定没有失败/空值回退，存在错误区域按默认 IsVisible 显示的源码问题。截图的 AXAML 也早于 E13（未含父级可见性判断），不能据截图认定当前运行实例发生了保存失败。补充 FallbackValue/TargetNullValue=false，父面板统一控制错误提示与重试按钮；同页其他错误说明也默认隐藏。机制依据：[Avalonia 绑定回退说明](https://docs.avaloniaui.net/docs/data-binding/introduction-to-data-binding#fallbackvalue-and-targetnullvalue)。实际预览未由代理刷新，结果待用户确认。
+
+重试命令确有用途：自动写盘失败后恢复最后已应用的配置，不能因普通保存按钮取消就删除恢复路径。本次将 Status/HasSaveError 两个可写状态合并为 SaveError 及派生 bool，移除成功时冗余清空和子按钮重复可见性绑定；串行队列、重试次数和退出等待语义保留。
+
+GPT-6.1-Sol + high 子代理按 C#/XAML/源生成器/反射入口核对，确认并清理三组残留：NavigationItem.IsSelected 及只写不读的赋值循环；IsPluginsSelected/IsSettingsSelected 及无消费者的通知；未参与当前页面创建的 ViewLocator 与 App 注册。IsLogsSelected 仍供日志刷新使用。公开 Contracts/UI 与共享资源未按“宿主无引用”误删。高深度最终复审未发现确定退化，但并非全仓库无缺陷的证明。
+
+| 层级 | 实际结果 |
+| --- | --- |
+| 静态 | 上述引用清理、错误状态及可见性复审完成；文档链接/XML/变更范围见 `artifacts/evidence/settings-cleanup-static.json` |
+| 构建 | 首次 Debug 通过，0 警告/0 错误；win-x64 自包含发布成功；最新集成检查编译 0 警告/0 错误 |
+| 默认输出刷新 | 发布后恢复 Debug 时 TractorTool PID 17892 锁定 apphost EXE，报 MSB3026/MSB3027/MSB3021，10 警告/2 错误；保留用户进程，不声称最后一次默认构建成功 |
+| 自动化 / 集成 / 真实 UI | 均未执行；只扩展并编译无 DataContext、错误显示时清空/恢复上下文及实际重试按钮命令绑定的检查 |
+
+真实命令如下；最后的默认 Debug 命令因上述占用失败：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/settings-cleanup-build/host
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/settings-cleanup-build/host -o H:/ProjH/TractorTool/artifacts/settings-cleanup-build/checks
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+```
+
+复审后补强“错误正显示时移除 DataContext”用例，并以相同命令再次编译检查，0 警告/0 错误。日志：`artifacts/evidence/settings-cleanup-debug.txt`、`settings-cleanup-publish.txt`、`settings-cleanup-checks.txt`、`settings-cleanup-checks-final.txt`、`settings-cleanup-debug-final.txt`。修改前快照：`artifacts/settings-cleanup-before-20261004-013830/`。未修改依赖版本、VS Code 配置或真实用户数据；无新增运行结果。
+
+先停止调试/从托盘退出后重新构建、Restart Previewer。以下仅供用户隔离启动（本轮未执行，此发布未装入示例插件）：
+
+```powershell
+& .\artifacts\settings-cleanup-build\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\settings-cleanup-manual-profile
+```
+
+</details>
+
+<a id="evidence-scroll-edge"></a>
+
+<details>
+<summary>E15 · 页面滚动条靠右（2026-10-04）</summary>
+
+对照用户本轮参考截图：滚动条靠内容区右边，卡片留白在容器内部。此前 PagePresenter 左右各 28 外边距使滚动条也缩进 28。本次只对主页/设置/插件/错误四个宿主整页滚动页面启用 edgeScroll，取消页面容器右边距，将该 28 加到原正文右边距 8 上；正文位置和宽度保持，滚动条可到内容区右边。MainViewModel.HasPageScroll 随 CurrentPage 通知，ShellStyles 集中适配；日志和独立插件页面使用原边距。没有改公共 SDK、第三方滚动条模板或页面生命周期。
+
+GPT-6.1-Sol + high 子代理只读复审未发现确定退化：正文样式沿内容逻辑树可达，优先级没有本地 Margin 遮挡；成功切页/错误页/Detach 更新 CurrentPage，取消导航保留原状态。实际像素位置与不同滚动条显示态未运行核验。
+
+静态依据为用户截图、实际 AXAML 布局与已有 Watt 源码缓存；没有将截图对应到未经确认的参考版本。构建命令 `dotnet build TractorTool.slnx -c Debug -m:1 -nr:false` 通过，0 警告/0 错误，日志 `artifacts/evidence/scroll-edge-debug-build.txt`；E14 后续曾阻塞的默认输出已在本次成功刷新。XML/链接及变更核对见 `artifacts/evidence/scroll-edge-static.json`。修改前快照 `artifacts/scroll-edge-before-20261004-014805/`。
+
+自动化、集成、真实 UI 均未运行；低风险布局调整没有新增仅重复尺寸常量的测试，也没有重新发布。现有 artifacts 发布副本不含本次改动。以下仅供用户隔离验收，本轮未启动：
+
+```powershell
+& .\TractorTool\bin\Debug\net10.0\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\scroll-edge-manual-profile
+```
+
+待验：短窗口中的设置/主页/插件页滚动条位置、正文与标题对齐、快速切页、窄窗与高 DPI；切回日志及独立插件页时保持其原有页面边距。M1 仍未完成运行验收。
+
+</details>

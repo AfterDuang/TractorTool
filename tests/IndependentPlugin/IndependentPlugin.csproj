@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+  <!-- Real builds use the published SDK; the IDE uses public source contracts for IntelliSense only. -->
+  <ItemGroup Condition="'$(DesignTimeBuild)' != 'true'">
+    <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(DesignTimeBuild)' == 'true'">
+    <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Compile-only public Avalonia API, same version as the host; never ship a second runtime. -->
+    <PackageReference Include="Avalonia" Version="12.1.2" IncludeAssets="compile" PrivateAssets="all" />
+    <ProjectReference Include="../FixtureDependency/FixtureDependency.csproj" />
+    <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(DesignTimeBuild)' != 'true' And !Exists('$(HostSdkDir)/TractorTool.UI.dll')">
+    <Error Text="先发布宿主，再传入 -p:HostSdkDir=发布目录；测试插件不引用宿主源码工程。" />
+  </Target>
+</Project>

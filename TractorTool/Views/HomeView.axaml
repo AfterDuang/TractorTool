@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Views.HomeView" x:DataType="vm:HomeViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="28">
+      <Border Classes="card" Padding="28">
+        <Grid ColumnDefinitions="Auto,*">
+          <Image Source="/Assets/tractortool.png" Width="64" Height="64" Stretch="Uniform"
+                 Margin="0,0,24,0" VerticalAlignment="Top" />
+          <StackPanel Grid.Column="1" Spacing="12">
+            <TextBlock Text="欢迎使用 TractorTool" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Text="把常用工具放在一起，让日常操作更简单。选择下方插件即可开始。" Classes="muted" />
+            <WrapPanel Margin="0,8,0,0">
+              <Button Content="管理插件" Command="{Binding ShowPluginsCommand}" Classes="accent" Margin="0,0,12,8" />
+              <Button Content="外观设置" Command="{Binding ShowSettingsCommand}" Margin="0,0,0,8" />
+            </WrapPanel>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <StackPanel Spacing="16">
+        <StackPanel Spacing="6">
+          <TextBlock Text="已安装插件" FontSize="20" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding Summary}" Classes="caption" />
+        </StackPanel>
+        <ProgressBar IsVisible="{Binding IsLoading}" IsIndeterminate="{Binding IsLoading}"
+                     Height="3" AutomationProperties.Name="正在加载本地插件" />
+        <Border Classes="card" IsVisible="{Binding HasDirectoryError}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="插件目录需要处理" Classes="sectionTitle" />
+            <TextBlock Text="{Binding DirectoryError}" Classes="muted" />
+            <Button Content="查看插件状态" Command="{Binding ShowPluginsCommand}" HorizontalAlignment="Left" />
+          </StackPanel>
+        </Border>
+        <Border Classes="card" IsVisible="{Binding IsEmpty}" Padding="28,36">
+          <StackPanel Spacing="16" MaxWidth="420" HorizontalAlignment="Center">
+            <Border Classes="iconTile" HorizontalAlignment="Center"><ui:ToolIcon Kind="Tools" /></Border>
+            <TextBlock Text="从第一个插件开始" FontSize="20" FontWeight="SemiBold" TextAlignment="Center" />
+            <TextBlock Text="安装的插件会显示在这里，也可以从左侧随时打开。前往插件页查看添加方式。"
+                       Classes="muted" TextAlignment="Center" />
+            <Button Content="前往插件页" Command="{Binding ShowPluginsCommand}" HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding InstalledPlugins}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:HomePluginCard">
+              <Button Classes="toolCard" Command="{Binding OpenCommand}" Width="220" Height="264" Margin="0,0,12,12"
+                      AutomationProperties.Name="{Binding Plugin.Name}" ToolTip.Tip="{Binding Plugin.Description}">
+                <Grid RowDefinitions="Auto,Auto,*,Auto">
+                  <Border Classes="iconTile" Width="56" Height="56" HorizontalAlignment="Left">
+                    <ui:ToolIcon Kind="{Binding Plugin.Icon}" ImageSource="{Binding Plugin.ImageSource}" FontSize="44" />
+                  </Border>
+                  <TextBlock Grid.Row="1" Text="{Binding Plugin.Name}" Classes="sectionTitle" MaxLines="2"
+                             TextTrimming="CharacterEllipsis" Margin="0,14,0,8" />
+                  <TextBlock Grid.Row="2" Text="{Binding Plugin.Description}" Classes="caption" MaxLines="2"
+                             TextTrimming="CharacterEllipsis" />
+                  <StackPanel Grid.Row="3" Spacing="6" Margin="0,12,0,0">
+                    <TextBlock Text="{Binding Plugin.Version, StringFormat='版本 {0}'}" Classes="caption"
+                               MaxLines="1" TextTrimming="CharacterEllipsis" />
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="{Binding Plugin.State}" Classes="caption" />
+                      <TextBlock Grid.Column="1" Text="{Binding ActionText}" FontSize="12" FontWeight="SemiBold" />
+                    </Grid>
+                  </StackPanel>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

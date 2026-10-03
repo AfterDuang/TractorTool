@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/TractorTool.Checks/TractorTool.Checks.csproj" />
+  </Folder>
+  <Project Path="TractorTool.Contracts/TractorTool.Contracts.csproj" />
+  <Project Path="TractorTool.Core/TractorTool.Core.csproj" />
+  <Project Path="TractorTool.UI/TractorTool.UI.csproj" />
+  <Project Path="TractorTool/TractorTool.csproj" />
+</Solution>

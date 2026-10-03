@@ -1,0 +1,59 @@
+<fa:FAAppWindow xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:fa="using:FluentAvalonia.UI.Windowing" xmlns:nav="using:FluentAvalonia.UI.Controls"
+        xmlns:ui="using:TractorTool.UI.Controls" xmlns:vm="using:TractorTool.ViewModels"
+        x:Class="TractorTool.Views.MainWindow" x:DataType="vm:MainViewModel"
+        Width="1120" Height="760" MinWidth="720" MinHeight="540"
+        Title="TractorTool" Icon="/Assets/tractortool.png" Classes.themeTransitions="{Binding Settings.EnableAnimations}"
+        Background="{DynamicResource AppBackgroundBrush}" Foreground="{DynamicResource AppTextBrush}">
+  <Grid RowDefinitions="48,*">
+    <!-- Avalonia 12 needs an explicit non-client role on the custom surface above the default title bar. -->
+    <Border x:Name="TitleBarDragRegion" Classes="themeSurface" WindowDecorationProperties.ElementRole="TitleBar"
+            Background="{DynamicResource AppSidebarBrush}" Padding="20,0,160,0">
+      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" IsHitTestVisible="False">
+        <Image Source="/Assets/tractortool.png" Width="24" Height="24" />
+        <TextBlock Text="TractorTool" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <TextBlock Text="桌面工具箱" Classes="caption" Margin="8,0,0,0" VerticalAlignment="Center" />
+      </StackPanel>
+    </Border>
+    <nav:FANavigationView x:Name="NavigationView" Grid.Row="1" Classes="shell"
+          MenuItemsSource="{Binding Navigation}" FooterMenuItemsSource="{Binding FooterNavigation}"
+          SelectedItem="{Binding SelectedNavigation, Mode=OneWay}" IsSettingsVisible="False"
+          PaneDisplayMode="Left" IsPaneOpen="True"
+          IsPaneToggleButtonVisible="False" IsBackButtonVisible="False" AlwaysShowHeader="False">
+      <nav:FANavigationView.Resources>
+        <Thickness x:Key="NavigationViewContentMargin">0</Thickness>
+        <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
+        <CornerRadius x:Key="NavigationViewContentGridCornerRadius">0</CornerRadius>
+      </nav:FANavigationView.Resources>
+      <nav:FANavigationView.MenuItemTemplate>
+        <DataTemplate x:DataType="vm:NavigationItem">
+          <nav:FANavigationViewItem Classes="rail" Content="{Binding}" ToolTip.Tip="{Binding Title}" AutomationProperties.Name="{Binding Title}">
+            <nav:FANavigationViewItem.ContentTemplate>
+              <DataTemplate x:DataType="vm:NavigationItem">
+                <StackPanel Spacing="6" Margin="0,8" Width="60" HorizontalAlignment="Center">
+                  <ui:ToolIcon Kind="{Binding Icon}" ImageSource="{Binding ImageSource}" FontSize="28" Foreground="{DynamicResource AppTextBrush}" />
+                  <TextBlock Text="{Binding Title}" FontSize="10" LineHeight="14" TextAlignment="Center"
+                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                </StackPanel>
+              </DataTemplate>
+            </nav:FANavigationViewItem.ContentTemplate>
+          </nav:FANavigationViewItem>
+        </DataTemplate>
+      </nav:FANavigationView.MenuItemTemplate>
+      <Border Classes="themeSurface" Background="{DynamicResource AppBackgroundBrush}" BorderThickness="1,0,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+        <Grid RowDefinitions="Auto,*,Auto">
+          <Grid Margin="28,26,28,20" ColumnDefinitions="Auto,*">
+            <Button IsVisible="{Binding CanGoBack}" Command="{Binding GoBackCommand}" Classes="quiet"
+                    Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center" AutomationProperties.Name="返回设置" Content="←" />
+            <StackPanel Grid.Column="1" Spacing="6">
+              <TextBlock Text="{Binding PageTitle}" Classes="pageTitle" />
+              <TextBlock Text="{Binding PageDescription}" Classes="muted" />
+            </StackPanel>
+          </Grid>
+          <ui:PageHost x:Name="PagePresenter" Grid.Row="1" Classes.edgeScroll="{Binding HasPageScroll}" />
+          <TextBlock Grid.Row="2" Text="{Binding Status}" Classes="caption" Margin="28,10,28,12" />
+        </Grid>
+      </Border>
+    </nav:FANavigationView>
+  </Grid>
+</fa:FAAppWindow>

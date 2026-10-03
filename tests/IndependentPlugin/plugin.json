@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "Test.Independent",
+  "name": "独立测试插件",
+  "version": "1.0.0",
+  "entryAssembly": "IndependentPlugin.dll",
+  "entryType": "IndependentPlugin.ProbePlugin",
+  "apiVersion": "1.0",
+  "uiApiVersion": "1.2",
+  "avaloniaVersion": "12.1.2",
+  "supportedPlatforms": ["windows", "linux", "osx"],
+  "description": "独立 DLL、共享界面与后台生命周期的机制验证插件。"
+}

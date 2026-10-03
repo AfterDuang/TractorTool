@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Views.MessageView" x:DataType="vm:MessageViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody">
+      <Border Classes="card">
+        <StackPanel Spacing="18">
+          <ui:ToolIcon Kind="Warning" FontSize="36" HorizontalAlignment="Left" />
+          <TextBlock Text="{Binding Title}" Classes="sectionTitle" />
+          <SelectableTextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+          <WrapPanel>
+            <Button Content="重试" Command="{Binding RetryCommand}" Classes="accent" Margin="0,0,12,8" />
+            <Button Content="查看日志" Command="{Binding ShowLogsCommand}" Margin="0,0,0,8" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
