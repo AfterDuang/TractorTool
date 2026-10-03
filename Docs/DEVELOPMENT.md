@@ -13,7 +13,7 @@
 | 工程与环境 | VS Code；最近构建环境为 Windows / .NET SDK 10.0.401；根 slnx 包含 10 工程。Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0；产品版本由 Directory.Build.props 统一提供 |
 | 公共基础 | 路径、带版本 JSON 原子保存/备份、日志、托盘/实例恢复、独立 DLL 装载、页面/设置注册及常驻服务已有；Contracts API 1.0、UI API 1.2，接受旧 UI 1.0/1.1 |
 | 公共 UI | 主页、导航、设置行、图标、主题即时应用/自动保存及动效已有；共享外观、宿主适配、插件局部布局的分工见 [架构](ARCHITECTURE.md#ui-style-ownership) |
-| M2 管理 | 本地 ZIP 选择/拖入、开关启停、卸载/回退/取消；变更重启生效。活动版本、目录锁、原子管理状态、更新前数据快照与恢复已有代码，真实事务闭环待验 |
+| M2 管理 | 本地 ZIP 选择/拖入、开关启停、卸载/回退/取消；变更重启生效。卡片左侧集中信息，右上开关、右下操作共享高度；额外操作换行。管理事务与恢复已有代码，真实闭环及新布局待验 |
 | 正式剪贴板 | 1.1.1：左历史/右预览、再次复制原项、系统事件与窗口激活补刷，无定时轮询或自建历史库；图片按当前选择预览，离页取消并解绑；详见 [插件设计](Plugins/ClipboardHistory.md) |
 | 工程边界 | 同一解决方案方便编辑，宿主不引用具体插件。日常源码引用公开 SDK；正式打包显式 HostSdkDir，只引用发布 DLL，坏路径拒绝；切换模式正常还原，开发 bin 不作为安装包 |
 | 未实现 | M3 包/进程服务；M4 视频插件和有限任务队列；M5 数据目录迁移、恢复完善、CI/安装器。现有自定义数据根指针不等于已经提供迁移 UI |
@@ -22,11 +22,11 @@
 
 | 层级 | 最近实际结果 | 详情（按需阅读） |
 | --- | --- | --- |
-| 静态 | 工程引用/产物核对、样式职责复核；本次另做文档归档完整性、链接与变更范围核对 | [E19](PROJECT_HISTORY.md#evidence-project-layout)、[E20](PROJECT_HISTORY.md#evidence-style-ownership)、[归档记录](PROJECT_HISTORY.md#docs-archive) |
-| 构建/发布 | E19 的默认 Debug 全方案、发布 SDK 模式下两个独立插件及模型/集成工程成功，Release 宿主发布成功；本次只改文档，没有重跑构建 | [E19](PROJECT_HISTORY.md#evidence-project-layout) |
-| 发布文件 | 先发布宿主再重建插件，234 个原宿主文件 SHA256 不变；包不含共享 SDK DLL；此项不证明实际装载 | [E19](PROJECT_HISTORY.md#evidence-project-layout) |
+| 静态 | 核实 Debug 已装清单仍为 1.1.0，源码/新包为 1.1.1；卡片 diff 经 GPT-6.1-Sol/high 只读复审，未发现确定缺陷；不代表实际渲染通过 | [E21](PROJECT_HISTORY.md#evidence-card-layout) |
+| 构建/发布 | 本次 Debug 全方案及独立剪贴板构建均 0 警告/0 错误，Release 宿主发布成功；首次受构建日志写权限阻塞，授权重试成功 | [E21](PROJECT_HISTORY.md#evidence-card-layout) |
+| 发布文件 | 先发布宿主再重建插件，234 个原宿主文件 SHA256 不变；1.1.1 ZIP 共 13 文件、不含共享 SDK DLL；此项不证明实际装载 | [E21](PROJECT_HISTORY.md#evidence-card-layout) |
 | 自动化/集成 | 15 项管理、20 项剪贴板模型和 7 项管理 UI 用例仅编译未运行；历史旧核心 33/33、旧 Headless 21/21 不覆盖后续代码 | [E18](PROJECT_HISTORY.md#evidence-ui-fixes)、[E01](PROJECT_HISTORY.md#evidence-baseline) |
-| Windows UI/系统 | 用户截图证实 1.1.0 实际加载且存在绑定问题；1.1.1 修复、原生拖放、卡片、系统 API、VS Code 工程/预览刷新仍待验收 | [E18](PROJECT_HISTORY.md#evidence-ui-fixes)及第 2 节 |
+| Windows UI/系统 | 最新截图仍出现旧版 SelectedEntry 空值绑定；安装目录核实为 1.1.0。需安装 1.1.1 并显式退出重启；新卡片、绑定修复及 M2 完整系统行为仍待验收 | [E21](PROJECT_HISTORY.md#evidence-card-layout)及第 2 节 |
 
 早期 artifacts 曾被外部清理；历史日志路径不保证文件仍存在。测试夹具不替代真实剪贴板/视频插件，Headless 不替代托盘、WinRT 和 GPU 实机证据。
 
@@ -55,8 +55,8 @@ dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH
 当前功能验收副本（如果本地产物已清理，按发布与打包脚本重新生成隔离副本）：
 
 ```powershell
-& .\artifacts\m2-ui-fixes\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\ui-fixes-manual-profile
-# ZIP：artifacts/m2-ui-fixes/clipboard/TractorTool.ClipboardHistory-1.1.1.zip
+& .\artifacts\m2-card-layout\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\card-layout-manual-profile
+# ZIP：artifacts/m2-card-layout/clipboard/TractorTool.ClipboardHistory-1.1.1.zip
 ```
 
 M2 待用户验收：
@@ -158,4 +158,4 @@ M2 待用户验收：
 
 <a id="evidence"></a>
 
-历史入口：[M1 E01–E15、M2 E16–E20 索引](PROJECT_HISTORY.md#记录索引)。日常接续不要求通读；修改对应模块或追查失败时才打开相关记录。
+历史入口：[M1 E01–E15、M2 E16–E21 索引](PROJECT_HISTORY.md#记录索引)。日常接续不要求通读；修改对应模块或追查失败时才打开相关记录。

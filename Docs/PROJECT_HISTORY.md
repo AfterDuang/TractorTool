@@ -33,6 +33,7 @@
 | M2（进行中） | [E18 · 拖放边界、卡片布局与空选择绑定修复（2026-10-04）](#evidence-ui-fixes) |
 | M2（进行中） | [E19 · VS Code 解决方案与插件开发组织（2026-10-04）](#evidence-project-layout) |
 | M2（进行中） | [E20 · 公共 UI、宿主与插件样式职责复核（2026-10-04）](#evidence-style-ownership) |
+| M2（进行中） | [E21 · 卡片信息/操作分组及旧插件绑定诊断（2026-10-04）](#evidence-card-layout) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
 
@@ -922,3 +923,45 @@ git diff --check
 本次只改 Markdown。静态命令 `./artifacts/evidence/Inspect-DocsArchive.ps1` 核对 20 条记录与命令的迁移完整性、A01–A22 原文、本地链接/锚点、唯一 AGENTS 和文档外变更范围；另执行 `git diff --check`。结果保存 `artifacts/evidence/docs-archive-static.json`。没有执行构建、应用、自动化/集成或 Windows UI 测试，也没有提升任何验收状态。
 
 静态核对通过：20 条记录（其中 29 段 PowerShell 命令）、5 份 M1 补充片段和 22 条验收行完整保留；12 份文档的 203 个本地链接、78 个锚点引用无缺失；变更仅为 Markdown，根 AGENTS 仍唯一。
+
+<a id="evidence-card-layout"></a>
+
+<details>
+<summary>E21 · 卡片信息/操作分组及旧插件绑定诊断（2026-10-04）</summary>
+
+基于 `17600b2` 干净工作区处理用户的新截图。只读核对 Debug 软件目录的 `Plugins/TractorTool.ClipboardHistory/1.1.0/plugin.json`，确认仍安装 1.1.0；截图同时显示旧 `SelectedEntry.TypeName` / `SelectedEntry.Timestamp` 绑定错误。源码 1.1.1 在 E18 已改为非空派生属性 `SelectedTypeName` / `SelectedTimestamp`，选择变化通知和对应模型用例均存在。这里没有重复修改插件，也没有覆盖用户已安装 DLL；重新提供独立 1.1.1 ZIP，需安装并显式退出重启后验证。目录清单本身不能证明现存进程的加载版本，诊断同时依据截图中的旧绑定路径。
+
+插件卡片局部布局留在宿主 `PluginsView.axaml`：图标与名称/说明/版本/当前状态组成左侧信息组；右列上方为无可见文字的开关，下方为操作组。两组共享高度，移除整张卡片单独预留的操作行；右列最大 240 逻辑单位，额外按钮按 8 单位间距换行。错误和待重启信息仍在下方、与信息文字对齐。没有改动开关状态语义、命令、事务或共享控件主题。
+
+排版依据为 Apple [Layout](https://developer.apple.com/design/human-interface-guidelines/layout) 的对齐、相关内容分组和尺寸适配，以及 [Toggles](https://developer.apple.com/design/human-interface-guidelines/toggles) 的上下文识别原则；开关继续保留可访问名称和重启生效提示。采用本项目现有 Avalonia 控件，不引入 Apple 平台控件/素材。按钮换行使用 Avalonia [WrapPanel](https://docs.avaloniaui.net/controls/layout/panels/wrappanel) 的 ItemSpacing / LineSpacing，本机 12.1.2 API 和编译均确认支持。
+
+实际命令（仓库根目录，Windows / SDK 10.0.401）：
+
+```powershell
+git status --short
+dotnet --version
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+# 首次构建因沙箱拒绝写 LocalAppData/AvaloniaUI/BuildServices/buildtasks.log 失败。
+# 授权同一构建命令重试，仅允许构建任务日志写入，不启动程序。
+New-Item -ItemType Directory -Path artifacts/m2-card-layout -Force | Out-Null
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false 2>&1 | Tee-Object artifacts/m2-card-layout/debug-build.log
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-card-layout/host 2>&1 | Tee-Object artifacts/m2-card-layout/publish-host.log
+$publishedRoot = (Resolve-Path artifacts/m2-card-layout/host).Path
+Get-ChildItem -LiteralPath $publishedRoot -Recurse -File | ForEach-Object {
+    [pscustomobject]@{ Path = [IO.Path]::GetRelativePath($publishedRoot, $_.FullName); Hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+} | ConvertTo-Json | Set-Content artifacts/m2-card-layout/host-before-plugin.json
+./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/m2-card-layout/host -Output H:/ProjH/TractorTool/artifacts/m2-card-layout/clipboard 2>&1 | Tee-Object artifacts/m2-card-layout/build-clipboard.log
+./artifacts/m2-card-layout/Inspect-Delivery.ps1
+git diff --check
+```
+
+结果分层：
+
+- 静态：新包清单 1.1.1，共 13 文件，不含共享 SDK DLL；插件单独 Rebuild 后 234 个原宿主文件 SHA256 不变。结果在 `artifacts/m2-card-layout/delivery-static.json`，检查脚本只读文件/ZIP，不执行插件。变更与文档链接另作静态核对。
+- 构建：授权重试的 Debug 全方案和发布 SDK 模式的剪贴板独立构建均 0 警告、0 错误；Release win-x64 自包含宿主发布成功。隔离输出在 `artifacts/m2-card-layout`，没有复制进真实安装或启动应用。
+- 复审：GPT-6.1-Sol / high 子代理只读检查本次 diff、最小窗口布局约束、额外操作、命令绑定和旧插件诊断，未发现确定缺陷；不代表整个项目无问题或 UI 已通过。
+- 自动化/集成/真实 Windows UI：均未执行。检查工程仅随方案编译；高 DPI/宽窄窗口、开关与恢复操作、安装更新后空选择控制台错误消失，均待用户运行确认。
+
+交付 ZIP：`artifacts/m2-card-layout/clipboard/TractorTool.ClipboardHistory-1.1.1.zip`，SHA256 `3ADF97493EE6636B1428896B9CFA993F97A1EB6E7628643CE29685718FD74201`。本轮插件业务未改变，继续使用 1.1.1；已经安装该版本时不应重复安装同版本。日常 F5 仍启动原应用目录，发布副本是另一个独立软件目录；二者各自拥有 Plugins。运行入口与待验清单维护在 [开发文档](DEVELOPMENT.md#workflow)。
+
+</details>

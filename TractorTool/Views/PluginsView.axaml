@@ -44,28 +44,37 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PluginCard">
             <Border Classes="card" Padding="20" Margin="0,0,0,10">
-              <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-                <Border Classes="iconTile" Margin="0,0,16,0" VerticalAlignment="Top"><ui:ToolIcon Kind="{Binding Icon}" ImageSource="{Binding ImageSource}" FontSize="32" /></Border>
-                <StackPanel Grid.Column="1" Spacing="4">
-                  <TextBlock Text="{Binding Name}" Classes="sectionTitle" />
-                  <TextBlock Text="{Binding Description}" Classes="muted" />
-                  <WrapPanel>
-                    <TextBlock Text="{Binding Version, StringFormat='版本 {0}'}" Classes="caption" Margin="0,0,16,0" />
-                    <TextBlock Text="{Binding State}" Classes="caption" />
-                  </WrapPanel>
-                </StackPanel>
-                <ToggleSwitch Grid.Column="2" IsChecked="{Binding RequestedEnabled, Mode=OneWay}" IsCheckedChanged="OnPluginEnabledChanged"
-                              IsEnabled="{Binding CanToggle}" OnContent="" OffContent=""
-                              HorizontalAlignment="Right" VerticalAlignment="Top" Margin="16,0,0,0"
-                              AutomationProperties.Name="{Binding Name, StringFormat='启用 {0}'}" ToolTip.Tip="启用状态（重启后生效）" />
-                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Detail}" IsVisible="{Binding HasIssue}" Margin="0,10,0,0" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding PendingText}" IsVisible="{Binding HasPending}" Classes="caption" Margin="0,10,0,0" />
-                <WrapPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Right" Margin="0,12,0,0" IsVisible="{Binding HasActions}">
-                    <Button Content="卸载" Command="{Binding UninstallCommand}" IsVisible="{Binding CanManage}" Margin="0,0,8,0" />
-                    <Button Content="回退版本" Command="{Binding RollbackCommand}" IsVisible="{Binding CanRollback}" Margin="0,0,8,0" />
-                    <Button Content="取消变更" Command="{Binding CancelChangeCommand}" IsVisible="{Binding CanCancelChange}" Margin="0,0,8,0" />
-                    <Button Content="打开工具" Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}" />
-                </WrapPanel>
+              <Grid RowDefinitions="Auto,Auto,Auto">
+                <!-- Information and actions share a row instead of reserving a full-width footer. -->
+                <Grid ColumnDefinitions="*,Auto">
+                  <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
+                    <Border Classes="iconTile" Margin="0,0,16,0" VerticalAlignment="Top"><ui:ToolIcon Kind="{Binding Icon}" ImageSource="{Binding ImageSource}" FontSize="32" /></Border>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                      <TextBlock Text="{Binding Name}" Classes="sectionTitle" />
+                      <TextBlock Text="{Binding Description}" Classes="muted" />
+                      <WrapPanel ItemSpacing="16" LineSpacing="4">
+                        <TextBlock Text="{Binding Version, StringFormat='版本 {0}'}" Classes="caption" />
+                        <TextBlock Text="{Binding State}" Classes="caption" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Grid>
+                  <!-- Bound the action column so long descriptions still have room at minimum window width. -->
+                  <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" MaxWidth="240" Margin="24,0,0,0">
+                    <ToggleSwitch IsChecked="{Binding RequestedEnabled, Mode=OneWay}" IsCheckedChanged="OnPluginEnabledChanged"
+                                  IsEnabled="{Binding CanToggle}" OnContent="" OffContent=""
+                                  HorizontalAlignment="Right" VerticalAlignment="Top"
+                                  AutomationProperties.Name="{Binding Name, StringFormat='启用 {0}'}" ToolTip.Tip="启用状态（重启后生效）" />
+                    <WrapPanel Grid.Row="2" HorizontalAlignment="Right" Margin="0,16,0,0"
+                               ItemSpacing="8" LineSpacing="8" IsVisible="{Binding HasActions}">
+                      <Button Content="卸载" Command="{Binding UninstallCommand}" IsVisible="{Binding CanManage}" />
+                      <Button Content="回退版本" Command="{Binding RollbackCommand}" IsVisible="{Binding CanRollback}" />
+                      <Button Content="取消变更" Command="{Binding CancelChangeCommand}" IsVisible="{Binding CanCancelChange}" />
+                      <Button Content="打开工具" Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}" />
+                    </WrapPanel>
+                  </Grid>
+                </Grid>
+                <TextBlock Grid.Row="1" Text="{Binding Detail}" IsVisible="{Binding HasIssue}" Margin="64,12,0,0" />
+                <TextBlock Grid.Row="2" Text="{Binding PendingText}" IsVisible="{Binding HasPending}" Classes="caption" Margin="64,12,0,0" />
               </Grid>
             </Border>
           </DataTemplate>
