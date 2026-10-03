@@ -39,7 +39,7 @@ flowchart TD
 
 解决方案归属与程序集依赖分别管理：插件加入同一解决方案，供 VS Code 正常编辑和构建，并不建立宿主到插件的引用。日常开发通过 `ProjectReference` 使用公开 Contracts/UI；正式交付显式传入 `HostSdkDir`，改为引用已发布 DLL，正常还原后重新编译。指定路径无效时失败，不回退源码。两条路径的工程引用不依赖 `DesignTimeBuild`，避免还原、编辑器分析和实际编译得到不同依赖图。操作规则集中在 [插件开发规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。
 
-组织参考采用第 6.1 节固定版本的 [WattToolkit.slnx](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/WattToolkit.slnx)：插件在同一解决方案的 Plugins 分组中，[GameTools 工程](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Plugins.GameTools/BD.WTTS.Client.Plugins.GameTools.csproj) 引用公共客户端/UI 工程。这里只借鉴开发组织方式，TractorTool 继续使用自身公开 SDK 边界，保留当前物理路径。
+组织参考采用 [M1 调研](PROJECT_HISTORY.md#ui-reference) 固定版本的 [WattToolkit.slnx](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/WattToolkit.slnx)：插件在同一解决方案的 Plugins 分组中，[GameTools 工程](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Plugins.GameTools/BD.WTTS.Client.Plugins.GameTools.csproj) 引用公共客户端/UI 工程。这里只借鉴开发组织方式，TractorTool 继续使用自身公开 SDK 边界，保留当前物理路径。
 
 ## 2. 插件协议与装载
 
@@ -241,22 +241,11 @@ M1 路径服务已按上述布局创建数据目录和扫描插件目录；Packa
 
 ### 6.1 参考实现依据
 
-核对 Watt Toolkit 的 `develop` 提交 `d04213147e77a8d73277fa8b86eeecfa444df071`。用户截图所属版本未知，以下描述所读源码，不声称截图与该提交完全一致。
-
-| 部分 | 源码事实与可借鉴做法 |
-| --- | --- |
-| 导航与主窗口 | [MainView.axaml](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/MainView.axaml) 使用 FluentAvalonia `NavigationView`、`Frame` 和自定义 `TitleBar`；侧栏宽 72 个逻辑单位，定制图标在上、文字在下的模板及选中条，分别绑定工具与固定底部入口 |
-| 切换动画 | [MainView.axaml.cs](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/MainView.axaml.cs) 在选中工具时指定 `FromBottom`；[NavigationService.cs](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/Services.Implementation/UI/Widgets/NavigationService.cs) 映射到现成的 Slide、Entrance、DrillIn 或关闭过渡，并交给 Frame |
-| 主题 | [App.axaml](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/App.axaml) 加载 `FluentAvaloniaTheme` 与自定义主题；后者集中包含颜色、字体、图标、控件样式。不是只更换主窗口背景 |
-| 设置行 | [Settings_UI.axaml](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/Settings/Settings_UI.axaml) 复用 `OptionsDisplayItem` 和 `SettingsExpander`；[设置行模板](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Styling/Controls/OptionsDisplayItem.axaml) 将图标、标题/说明、操作区分列，并统一展开与状态外观 |
-| 主页 | [HomePage.axaml](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/HomePage.axaml#L517-L570) 将主窗口 TabItems 显示为可换行的按钮卡片，点击调用导航命令；TractorTool 采用欢迎区与本地插件入口，不接入其中的资讯、广告、商城或账号内容 |
-| 图标 | 主导航用 `ImageIconSource` 加载 `IconKey` 对应图片；仓库有 home/settings/plugin 等 `.ico` 资源。常规操作另用 SymbolIcon、FontIcon。彩色工具标识与单色操作图标职责不同，添加图标库不会自动生成整个界面 |
-
-其锁定的 [DirectoryPackages 子模块](https://github.com/BeyondDimension/DirectoryPackages/blob/5759bfb7760d10ec09c45ea405646c84fda4872a/Directory.Packages.props) 声明 Avalonia `11.3.20`、FluentAvaloniaUI `2.5.1`；[UI 工程](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/BD.WTTS.Client.Avalonia.csproj) 还引用自己的 Avalonia 内部工程。TractorTool 参考其组合方式，不整体迁入这些内部工程、旧版本模板和业务功能。
+M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组织，具体源码链接与版本对比归档于 [UI 参考调研](PROJECT_HISTORY.md#ui-reference)。这里只采用适合本项目的组合方式，不搬入参考项目的内部工程、旧版模板或业务功能；当前实现约定见下文。
 
 ### 6.2 宿主与公共 UI 的实现
 
-全局只使用 `FluentAvaloniaUI 3.1.0`，不同时加载 `Avalonia.Themes.Fluent`。ColorPicker、DataGrid、Skia 显式固定为 12.1.2，避免控件库的最低依赖改变共享基线。选型和构建过程见 [开发记录 E04](DEVELOPMENT.md#evidence-ui)。
+全局只使用 `FluentAvaloniaUI 3.1.0`，不同时加载 `Avalonia.Themes.Fluent`。ColorPicker、DataGrid、Skia 显式固定为 12.1.2，避免控件库的最低依赖改变共享基线。选型和构建过程见 [开发记录 E04](PROJECT_HISTORY.md#evidence-ui)。
 
 实现依据为 [3.1.0 固定源码](https://github.com/amwx/FluentAvalonia/tree/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab)，采用 `FA*` 新版 API，没有直接搬用 Watt 的 Avalonia 11 模板或 GPL 代码。当前复用库内置的符号字体，没有引入此前备选的 FluentIcons 包。第三方 MIT 声明随发布复制，见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
 
@@ -275,7 +264,7 @@ M1 路径服务已按上述布局创建数据目录和扫描插件目录；Packa
 
 ### 6.3 彩色标识与单色操作图标
 
-在第 6.1 节固定提交中，[导航模板](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/MainView.axaml#L354-L360) 将 `IconKey` 经 `BitmapAssetValueConverter` 交给 `ImageIconSource`。仓库包含 home/settings/plugin 等 ICO；[加速插件](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Plugins.Accelerator/Plugins/Plugin.cs) 将自己的 `Resources.accelerator` 作为菜单图标。[通用设置页](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Views/Pages/Settings/Settings_General.axaml) 的操作图标另用 `FontIcon` / `FontIconSource`，部分显式指定 Segoe Fluent Icons，其余使用主题字体。这说明彩色资源和单色符号分别承担识别工具、解释操作的职责；不能仅给所有线框图标套主题色来替代。
+彩色图片负责工具识别，单色符号表达操作；M1 的参考源码分析见 [图标调研](PROJECT_HISTORY.md#icon-reference)。
 
 现有 FluentAvaloniaUI 3.1.0 提供 `FAImageIcon` / `FAImageIconSource` 与 `FASymbolIcon`，当前直接复用，没有增加图标运行库。实现分工如下：
 

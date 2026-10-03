@@ -56,7 +56,7 @@
 
 ## 5. 验收方法
 
-下表是待执行方法，不是通过记录；完整结果集中在 [开发验收 A08](../DEVELOPMENT.md#acceptance) / [E18](../DEVELOPMENT.md#evidence-ui-fixes)。
+下表是待执行方法，不是通过记录；完整结果集中在 [开发验收 A08](../DEVELOPMENT.md#acceptance) / [E18](../PROJECT_HISTORY.md#evidence-ui-fixes)。
 
 | 场景 | 判定与证据 |
 | --- | --- |

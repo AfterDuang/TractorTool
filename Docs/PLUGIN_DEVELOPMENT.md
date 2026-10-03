@@ -1,6 +1,6 @@
 # 插件开发规范
 
-本文是所有 TractorTool 插件共同遵守的接入规范；具体业务需求和内部设计写在 [Docs/Plugins](Plugins)，完整进度与验收结果只写 [开发与验收](DEVELOPMENT.md)。装载实现和公共服务的设计依据见 [软件架构](ARCHITECTURE.md)。
+本文是所有 TractorTool 插件共同遵守的接入规范；具体业务需求和内部设计写在 [Docs/Plugins](Plugins)，当前进度与验收状态只写 [开发与验收](DEVELOPMENT.md)，历史执行详情归 [项目历史](PROJECT_HISTORY.md)。装载实现和公共服务的设计依据见 [软件架构](ARCHITECTURE.md)。
 
 ## 1. SDK 能力与依赖边界
 
@@ -162,4 +162,4 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 - 覆盖缺少依赖、坏 DLL、协议/平台不匹配、禁用、初始化/注册/页面失败等适用分支；错误可定位且不留下部分注册。
 - 验证页面与设置注册、深浅色/主题色、重启持久化和相关生命周期；有限任务与常驻服务各自验收。
 - 仅使用隔离数据和临时发布副本。静态检查、构建、自动化、集成、真实系统/UI/硬件分别报告。
-- 业务特有的用例和实现范围放各插件文档；结果和限制只写 DEVELOPMENT.md。当前用户接手运行测试，未经新指示不自动启动验收程序。
+- 业务特有的用例和实现范围放各插件文档；当前结果和限制写 DEVELOPMENT.md，已完成轮次的执行详情归 PROJECT_HISTORY.md。用户接手运行测试，未经新指示不自动启动验收程序。
