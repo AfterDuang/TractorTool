@@ -32,7 +32,8 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
             _ => false
         };
-        if (manifest.ApiVersion != PluginApi.Version || !supportedUi)
+        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion == "1.0";
+        if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
             return $"Avalonia 版本不兼容：插件 {manifest.AvaloniaVersion}，宿主 {AvaloniaVersion}";

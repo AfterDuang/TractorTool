@@ -13,7 +13,8 @@
 | 常驻活动 | `IPluginBackgroundService` | 按插件生命周期运行，与页面显示独立 |
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
-| 有限任务、外部包、进程服务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
+| 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1；上下文 Processes 按插件生命周期提供，当前 Windows 10+ 适配；见下文 |
+| 有限任务、外部包 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
 
@@ -31,11 +32,11 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 1.0 |
+| `apiVersion` | 当前 1.1，仍接受 1.0；使用 Processes 服务必须声明 1.1 |
 | `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
-| `dependencies` | 外部包需求预留，M3 前必须为空或省略；非空会被明确判为不兼容 |
+| `dependencies` | 外部包服务尚未接入，当前必须为空或省略；非空会被明确判为不兼容 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
@@ -79,6 +80,14 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 6. 停止并等待插件拥有的工作结束后再释放资源。宿主有有界退出等待，不能把它当作安全强杀线程或保证磁盘写入成功的机制；同步卡死的可信插件仍可能影响进程。
 
 有限任务服务的后续接入遵循相同所有权规则，具体业务的并发和失败策略写在各插件文档；不把业务队列参数塞进通用协议。
+
+### 工具进程（API 1.1）
+
+通过 `context.Processes` 调用 [RunAsync](../TractorTool.Contracts/Processes/IProcessRunner.cs)，只传绝对工具路径和逐项参数，不拼 shell 字符串、不引用 Core 或宿主平台类。上下文保留原构造函数，因此手工测试上下文可能没有此服务；正式新宿主注入实例，非 Windows 调用明确不支持。服务不是可信沙箱，插件仍须校验业务输入和工具来源。
+
+执行等待与页面无关，传入业务取消令牌；宿主退出/插件加载失败时服务封闭新调用并取消已有调用。根进程结束时其后代也会结束，不得用此接口启动应独立常驻的软件。返回非零退出码时由插件展示业务失败；调用取消为 OperationCanceledException，执行超时为 TimeoutException，清理失败为 IOException，不能把清理异常显示成“已安全取消”。
+
+输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调和包版本租约，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
 
 ## 5. 统一 UI 与设置
 

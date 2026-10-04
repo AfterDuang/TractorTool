@@ -35,6 +35,7 @@
 | M2（进行中） | [E20 · 公共 UI、宿主与插件样式职责复核（2026-10-04）](#evidence-style-ownership) |
 | M2（进行中） | [E21 · 卡片信息/操作分组及旧插件绑定诊断（2026-10-04）](#evidence-card-layout) |
 | M2（进行中） | [E22 · 统一动效与管理卡片原位更新（2026-10-04）](#evidence-shared-motion) |
+| M3（进行中） | [E23 · M2 复审与公共进程服务起步（2026-10-04）](#evidence-process-service) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
 
@@ -1012,5 +1013,51 @@ git diff --check
 - 产物：隔离宿主 `artifacts/m2-motion/host`；已有剪贴板 1.1.1 ZIP 沿用 E21，本轮不重编正式插件、不声称取得新的独立加载或哈希不变证据。VS Code F5 使用已构建的原 Debug 宿主；隔离宿主自带空 Plugins，用户可在该副本安装既有 ZIP 测试。
 
 当前操作与未关闭事项只在 [开发文档](DEVELOPMENT.md#workflow) 维护；本记录归档不代表 M2 或真实动效验收通过。
+
+</details>
+
+<a id="evidence-process-service"></a>
+
+<details>
+<summary>E23 · M2 复审与公共进程服务起步（2026-10-04）</summary>
+
+### E23 · M2 复审与公共进程服务起步
+
+起点为本地提交 `d1465dc`，工作区干净。用户要求 Review，无阻塞则继续开发；运行检查/UI 仍由用户负责。两位显式 GPT-6.1-Sol/high 子代理只读复审上一轮共享动效、稳定卡片/开关、M2 文件事务及剪贴板生命周期，未发现确定阻塞问题，没有把静态结论改写成 M2 验收通过。
+
+本轮进入 M3 第一个增量：
+
+- Contracts API 1.1 增加 `IProcessRunner`、请求/结果与 `PluginContext.Processes`，接受旧 API 1.0；保留原五参数构造/解构和 `AssemblyVersion=1.0.0.0`。剪贴板插件仍为 1.1.1，没有修改其安装目录。
+- Core 负责参数快照、UTF-8 双流并发有界保留、非零退出码、超时/取消分类与清理；实例属于插件，注册请求和关闭新请求使用同一把锁。初始化失败和宿主停止都会开始取消进程，不依赖页面卸载或插件 StopAsync 是否响应。
+- Windows 适配放在宿主 Platform，创建时用 Job 属性绑定整个进程树，限制继承句柄并关闭 stdin；正常结束、取消和失败都清理 Job，最后句柄关闭再兜底。Core/Contracts 未加入 Win32 依赖，没有 Worker/IPC 框架。非 Windows 调用明确不支持。
+- 此增量不含下载包、包租约、管理页、实时进度或真实媒体处理；清单非空 dependencies 继续拒绝。没有 FFmpeg/GPU 结果、没有发布产物新哈希证明。
+
+复审与修复记录：
+
+1. 初稿只依赖 `.NET Process.Kill(entireProcessTree)`，根先退出会失去后代；改为 `CreateProcessW` 创建属性 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 原子绑定，不能用启动后 Assign Job 冒充无竞争。
+2. 初稿启动前取消检查在异常分类外，极短执行时限可能返回普通取消；已放入同一分类路径。
+3. 正常结束时内部清理超时在第二次清理成功后可能被误报 Cancelled；两位复审均指出，现转为 IOException，并补故障用例。调用方取消、宿主停止、请求时限分别保留。
+4. 最终自查将 OS 等待包装改为共享同一 SafeWaitHandle 引用计数；已登记等待保护实际进程句柄，释放同时结束未派发的退出 Task。
+
+实现依据：[微软创建属性](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)、[Process.Kill 的后代等待限制](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.kill?view=net-10.0)。未复制参考软件模板或新增依赖，普通工具参数按参数向量传递，Windows 原生入口仅做 CRT 引用编码。
+
+实际命令（仓库根目录；只编译/静态检查）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false *> artifacts/m3-process/build-debug.log
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false *> artifacts/m3-process/build-debug-final.log
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false *> artifacts/m3-process/build-debug-reviewed.log
+./artifacts/m3-process/Check-Docs.ps1
+git diff --check
+```
+
+证据分层：
+
+- 静态：两位 GPT-6.1-Sol/high 审查新进程实现与适配器，以上确定问题均修复。最后错误分类及 4 项失败/竞争用例复审未发现新确定缺陷。文档相对链接/锚点核对保存 `artifacts/m3-process/docs-links.json`。
+- 构建：Debug 全方案 10 工程 0 警告/0 错误；日志保存在上述路径。本轮没有 Release 发布或独立插件重打包，不把 E22 产物视为含新服务。
+- 自动化/集成：新增 17 项进程用例（4 项替身：读失败、清理取消、清理失败、启动/关闭竞争；13 项 Windows 真实子进程夹具：参数/双流/状态/取消/超时/关停/EOF/后代及相互隔离）和 1 项 API 兼容检查，**仅编译，未运行**。夹具使用当前检查程序和随机临时目录，不调用媒体工具或用户文件。没有宣称 native Job 在本机运行通过。
+- Windows UI/剪贴板/媒体/GPU：**均未执行**。M2 闭环、API 1.0 旧 DLL 与新宿主实际装载、Windows 嵌套 Job/权限/后代清理仍待用户运行；包与媒体阶段未完成。
+
+开发接续与阶段缺口见 [当前台账](DEVELOPMENT.md#current-status)，不因本记录归档关闭验收项。
 
 </details>

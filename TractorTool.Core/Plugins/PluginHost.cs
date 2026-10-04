@@ -1,4 +1,6 @@
 using TractorTool.Contracts;
+using TractorTool.Core.Processes;
+using TractorTool.Contracts.Processes;
 using TractorTool.Core.Storage;
 
 namespace TractorTool.Core.Plugins;
@@ -15,7 +17,8 @@ public sealed class PluginRecord(string directory, PluginManifest? manifest, Plu
     public string Summary => $"{Name}   {Manifest?.Version}\n{State} · {Detail}\n{Directory}";
 }
 
-public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, IAppLog log) : IAsyncDisposable
+public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, IAppLog log,
+    Func<ProcessRequest, IProcessSession>? startProcess = null) : IAsyncDisposable
 {
     private static readonly TimeSpan StageTimeout = TimeSpan.FromSeconds(3);
     private readonly object _lifecycleGate = new();
@@ -123,13 +126,17 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 var type = assembly.GetType(manifest.EntryType, throwOnError: true)!;
                 if (!typeof(IPlugin).IsAssignableFrom(type) || type.IsAbstract) throw new InvalidDataException("入口类型必须实现 IPlugin。");
                 var plugin = (IPlugin)Activator.CreateInstance(type)!;
-                lifetime = new(manifest.Id, plugin);
+                lifetime = new(manifest.Id, plugin, log, startProcess ?? (_ =>
+                    throw new PlatformNotSupportedException("当前平台尚未提供受管理的工具进程适配器。")));
                 lock (_lifecycleGate) _instances.Add(lifetime);
                 var token = lifetime.Stopping.Token;
                 if (Volatile.Read(ref _disposed)) throw new OperationCanceledException("宿主正在退出。");
                 var data = paths.GetPluginDataDirectory(manifest.Id);
                 System.IO.Directory.CreateDirectory(data);
-                await plugin.InitializeAsync(new(manifest.Id, paths, new PluginSettingsStore(data), log, token), token);
+                await plugin.InitializeAsync(new(manifest.Id, paths, new PluginSettingsStore(data), log, token)
+                {
+                    Processes = lifetime.Processes
+                }, token);
                 // Commit registration and the background task together; shutdown must not race this handoff.
                 lock (_lifecycleGate)
                 {
@@ -173,6 +180,8 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
     {
         // Cancellation callbacks belong to this instance, so one callback cannot block other plugins.
         var cancellation = CancelAndObserveAsync(lifetime.Stopping, lifetime.Id, "生命周期取消回调");
+        // Stop processes even if plugin initialization/StopAsync fails to respond. No page owns this runner.
+        var processes = lifetime.Processes.DisposeAsync().AsTask();
         await ObserveStageAsync(lifetime.Initialized.Task, lifetime.Id, "等待初始化结束");
         using var stopCancellation = new CancellationTokenSource();
         Task stopCallbacks = Task.CompletedTask;
@@ -184,6 +193,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         // Neither a timed-out operation nor a still-running cancellation callback may use disposed resources.
         await cancellation;
         await stopCallbacks;
+        await ObserveStageAsync(processes, lifetime.Id, "停止工具进程");
         await ObserveStageAsync(Task.Run(async () => await lifetime.Plugin.DisposeAsync()), lifetime.Id, "释放插件");
         lifetime.Stopping.Dispose();
     }
@@ -266,10 +276,12 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         catch (Exception ex) { completion.TrySetException(ex); }
     }
 
-    private sealed class PluginLifetime(string id, IPlugin plugin)
+    private sealed class PluginLifetime(string id, IPlugin plugin, IAppLog log,
+        Func<ProcessRequest, IProcessSession> startProcess)
     {
         public string Id { get; } = id;
         public IPlugin Plugin { get; } = plugin;
+        public ProcessRunner Processes { get; } = new(id, log, startProcess);
         public CancellationTokenSource Stopping { get; } = new();
         public TaskCompletionSource Initialized { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? Background { get; set; }

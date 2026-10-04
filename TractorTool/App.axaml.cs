@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
+using TractorTool.Platform;
 using TractorTool.Services;
 using TractorTool.UI;
 using TractorTool.ViewModels;
@@ -52,7 +53,8 @@ public partial class App : Application
                 string? managementError = null;
                 try { _pluginManager = new PluginManager(paths, compatibility); }
                 catch (Exception ex) { managementError = "插件管理不可用：" + ex.Message; _log.Write("Plugins", managementError, ex); }
-                _plugins = new PluginHost(paths, compatibility, _log);
+                _plugins = new PluginHost(paths, compatibility, _log,
+                    OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null);
                 if (managementError is not null) _plugins.Discover([], startupError: managementError);
                 _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log), ExitAsync,
                     managementError is null ? _pluginManager : null, settings.DisabledPlugins);

@@ -64,7 +64,7 @@ flowchart TD
 | `IExternalPackageService` | 查询依赖、请求安装、获取指定工具路径及使用租约 |
 | `IProcessRunner` | 受管理的外部进程执行、输出读取与取消 |
 
-M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。IBackgroundTaskService、IExternalPackageService、IProcessRunner 留待真实业务阶段，尚未创建空接口或实现。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
+M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 首个增量增加 IProcessRunner；IBackgroundTaskService、IExternalPackageService 仍未实现。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
 
 插件设置页使用同样的注册机制。宿主只知道页面描述与工厂，不知道视频码率等业务字段。插件专属设置必须由插件拥有的服务读写。
 
@@ -160,11 +160,15 @@ SHA256 用于核对内容，不单独证明发布者可信；包清单和来源�
 
 ### 4.2 进程服务
 
-基于 .NET 进程 API 提供通用包装，使用 `ProcessStartInfo.ArgumentList` 与 `UseShellExecute = false`；不拼接 shell 命令处理用户文件名。
+公共 [IProcessRunner](../TractorTool.Contracts/Processes/IProcessRunner.cs) 接收绝对可执行路径和独立参数列表，不执行 shell、不搜索 PATH，默认工作目录为工具所在目录。Core 的 [ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs) 快照参数、并发读取 stdout/stderr、处理超时与停止；插件通过 API 1.1 的 `PluginContext.Processes` 获取按插件生命周期创建的实例。原五参数构造/解构及程序集身份保持不变，宿主仍接受 API 1.0；使用新服务的插件必须声明 1.1。
 
-标准输出和错误输出异步读取，避免缓冲区阻塞，保留退出码和必要诊断。支持取消和超时，确保任务结束后没有遗留子进程。工具自身参数语法、输出解析和业务校验由插件处理。
+Windows 专属实现位于 [WindowsProcessSession](../TractorTool/Platform/WindowsProcessSession.cs)，通过 Core 的 IProcessSession 适配边界注入，Core/Contracts 不含 Win32 API。仅靠 .NET Kill(entireProcessTree) 不能覆盖根先退出的后代：使用 Windows 10+ `CreateProcessW` 的 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 在创建时绑定私有 Job，配合显式继承句柄列表与 KILL_ON_JOB_CLOSE。原生入口需要命令行，因此仅在此适配层按 Windows CRT 参数引用规则编码参数向量，不进入 cmd/PowerShell；不会先启动再附加 Job。[创建属性说明](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 
-工具路径由包服务解析为明确路径，不按当前目录或系统 PATH 随机选择另一个程序。日志按插件和任务关联，不记录业务正文等敏感内容；具体数据边界由插件文档补充。
+每次调用的根进程退出后终止残留后代，取消/超时也终止整组，只操作该次调用的 Job。正常等待使用 OS 进程信号；清理期间才短时查询 Job 直到活动数为零，等待有 3 秒上限，不进行后台定时轮询。停止插件时关闭新请求并取消已登记的调用，切页/托盘隐藏不触发停止。尚无非 Windows 适配器，调用时明确报告不支持；嵌套 Job/权限/父先退出等真实 Windows 行为仍需运行验收。
+
+stdin 关闭为 EOF；UTF-8 输出两路分别有界保留（默认各 1 Mi 字符，最多 16 Mi），超出继续排空并返回截断标记，不按行等待换行。返回原始退出码，非零不伪装为成功；调用/宿主取消与执行 TimeoutException 区分，内部清理中断或失败为 IOException，不能假报普通取消。清理失败记录插件归属，不记录参数和业务输出正文。当前是一次执行及最终输出接口，实时媒体进度仍待实际消费方接入。
+
+包服务后续提供固定版本工具路径与占用租约，租约需覆盖进程退出和输出排空。当前进程服务尚不提供下载/校验/包占用保护，清单非空 dependencies 继续拒绝；不能把路径存在当作工具可信或把此增量当作 FFmpeg 导出完成。工具自身参数语法、解析和业务校验由插件处理。
 
 <a id="storage"></a>
 
@@ -257,7 +261,7 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 - **列表更新与交互连续性**：插件管理按安装记录目录保留可观察卡片，过滤集合只增删/移动实际变化项；管理结果原位提交状态和命令，不清空重建列表打断滑块或丢弃控件。重复 ID 的不同目录仍独立呈现。写入失败显式恢复开关目标值，不依赖相同值的绑定通知必定重放。忙碌时的串行保护保留，不承诺禁用列表期间保留键盘焦点。新列表应遵循同样的稳定身份原则。
 - **切页与生命周期**：公共 `PageHost` 是内部 `FAFrame` 的薄包装，通过同步 `Present(Control)` 将成功、取消或异常反馈宿主，不再用单向属性绑定吞掉导航结果。只接受未挂载的页面；成功后才提交标题/选择状态并清理旧页，取消保留旧页，异常记录日志并显示错误页。若 Frame 已在异常前改变内部状态，替换该 Frame 后继续导航，不访问其私有状态。`IFANavigationPageFactory` 只接收已注册工厂返回的 Control，不反射具体插件类型。缓存大小为 0、导航历史关闭；进入使用库的轻微上移淡入过渡（位移 18），关闭页面动画时使用 Suppress 过渡。宿主阻止切换重入和退出后创建页面，常驻服务不绑定到 Frame。这里隔离的是工厂/同步导航失败，不保证捕获插件任意异步事件或渲染线程异常；快速切页及真实视觉表现仍待用户验收。
 - **设置持久化**：SettingsViewModel 在 UI 线程应用外观，通过单个保存任务将不可变快照交给后台写入；期间的新选择只保留最新值，旧写入完成不再应用旧主题或覆盖新状态。正常保存不显示常驻提示，保存期间不禁用选择，应用失败与写盘失败分别提示。保存错误只存于 SaveError，HasSaveError 由其派生；错误面板统一控制重试入口可见性，无 DataContext 或无法解析绑定时默认隐藏，避免无模型的 VS Code 预览出现孤立按钮。退出阻止新变更并等待整个队列，对此前最后一次保存失败最多再试一次，仍受宿主 10 秒退出期限约束。同步主题通知重入时重新应用最终有效选择，控件临时空选择不生成配置。沿用 JSON 原子替换及备份，没有新增通用设置框架。可选布尔字段 `enableAnimations` 默认 true，旧 JSON 不含此字段时仍可读取，沿用当前设置 schema；控制范围见上述统一动效边界。
-- **SDK 与加载**：UI API 为 1.2，`PluginPageOptions` 新增可选 `IconPath` 初始化属性，保留原两参数构造函数及旧注册签名。宿主接受 1.0、1.1、1.2，拒绝更高未知 UI 版本；通用 Contracts API 仍为 1.0，程序集身份不随 UI 协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
+- **SDK 与加载**：UI API 为 1.2，`PluginPageOptions` 新增可选 `IconPath` 初始化属性，保留原两参数构造函数及旧注册签名。宿主接受 1.0、1.1、1.2，拒绝更高未知 UI 版本；Contracts API 为 1.1，仍接受 1.0，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
 
 运行效果及已知限制只在 [开发验收台账](DEVELOPMENT.md#acceptance) 记录，架构描述不代表真实 UI 或动态加载已经通过验收。
 

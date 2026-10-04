@@ -3,6 +3,8 @@ using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
 
+if (args.FirstOrDefault() == "--process-fixture") return await ProcessChecks.RunFixtureAsync(args[1..]);
+
 var root = Path.Combine(Path.GetTempPath(), "TractorTool-Checks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var passed = 0;
@@ -110,6 +112,12 @@ Check("Package paths accept ordinary nested dependencies", () =>
 Check("Reject unknown manifest schema", () => Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SchemaVersion = 2 }, dir)));
 Check("Reject null platform/dependency fields", () => { Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SupportedPlatforms = null! }, dir)); Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { Dependencies = null! }, dir)); });
 Check("Exact SDK baseline compatibility", () => { Assert(compatibility.Check(manifest) is null); Assert(compatibility.Check(manifest with { ApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { UiApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { AvaloniaVersion = "11.3.0" }) is not null); });
+Check("API 1.1 adds process service while accepting existing API 1.0 plugins", () =>
+{
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.1" }) is null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.0" }) is null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.2" }) is not null);
+});
 Check("UI 1.1 preserves legacy pages but old hosts reject new SDK", () => {
     var current = new HostCompatibility("windows", "win-x64", "1.1", "12.1.2");
     Assert(current.Check(manifest) is null);
@@ -142,5 +150,6 @@ Check("Blocked software plugin directory reports error without relocation", () =
     Assert(host.DirectoryError is null && Directory.Exists(blocked.PluginRoot));
 });
 PluginManagementChecks.Run(root, Check);
+ProcessChecks.Run(root, Check);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; isolated evidence={root}");
 return failed == 0 ? 0 : 1;

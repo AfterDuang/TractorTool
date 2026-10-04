@@ -1,4 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../TractorTool.Core/TractorTool.Core.csproj" /></ItemGroup>
+  <!-- Compile the real Windows adapter without referencing the Avalonia host executable. -->
+  <ItemGroup><Compile Include="../../TractorTool/Platform/WindowsProcessSession*.cs" Link="Platform/%(Filename)%(Extension)" /></ItemGroup>
 </Project>
