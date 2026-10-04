@@ -170,15 +170,22 @@ internal static class PluginManagementChecks
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
             var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
             File.WriteAllText(Path.Combine(data, "preferences.json"), "old format");
+            File.WriteAllText(Path.Combine(data, "empty.txt"), "");
+            Directory.CreateDirectory(Path.Combine(data, "nested"));
+            File.WriteAllBytes(Path.Combine(data, "nested", "data.bin"), Enumerable.Repeat((byte)0xA5, 70000).ToArray());
             Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
             File.WriteAllText(Path.Combine(data, "preferences.json"), "new format");
             manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
             var recovery = manager.Snapshot.Single().Recovery!;
+            // Frozen legacy digest: ordered relative UTF-8 paths + NUL + each file's SHA256.
+            // Empty/nested files and data spanning the hash buffer must remain compatible.
+            var originalSnapshot = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            Assert(new JsonFileStore<PluginManager.RecoveryMetadata>(originalSnapshot).Load().Digest ==
+                "E191F92B422840CD6A634D4174346F49274A3ABD2768D5A8868C2A782A25A678");
             var migration = new DataRootMigration(paths);
             Assert(migration.Queue(paths.DataRoot + "-moved", manager) is null);
             var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
             Assert(result.Error is null && manager.Snapshot.Single().Recovery!.DataRoot == result.Paths.DataRoot);
-            var originalSnapshot = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
             var savedMetadata = File.ReadAllText(originalSnapshot);
             Assert(savedMetadata.Contains(JsonSerializer.Serialize(paths.DataRoot, JsonOptions.Value)));
             Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
@@ -188,6 +195,37 @@ internal static class PluginManagementChecks
             Assert(File.ReadAllText(Path.Combine(result.Paths.GetPluginDataDirectory("Checks.Management"), "preferences.json")) == "old format");
             Assert(File.ReadAllText(Path.Combine(data, "preferences.json")) == "new format");
             Assert(File.ReadAllText(originalSnapshot) == savedMetadata);
+        });
+        foreach (var afterCommit in new[] { false, true })
+            check("Migration snapshot cancellation resumes " + (afterCommit ? "after" : "before") + " pointer commit", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "fixture.txt"), "retained source");
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var migration = new DataRootMigration(paths); var target = paths.DataRoot + "-moved";
+            Assert(migration.Queue(target, manager) is null);
+            using var cancel = new CancellationTokenSource();
+            var phase = afterCommit ? "正在完成插件回退记录…" : "正在校验插件回退快照…";
+            Reject<OperationCanceledException>(() => migration.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == phase) cancel.Cancel(); }), cancel.Token));
+            Assert(migration.Snapshot.DataRoot == (afterCommit ? target : null));
+            Assert(migration.Snapshot.Migration is { Error: null });
+            Assert(manager.Snapshot.Single().Recovery!.DataRoot == paths.DataRoot);
+            manager.Dispose(); // Reopen as the next startup would, using the persisted pointer.
+            var next = afterCommit ? new AppPaths(paths.AppRoot, paths.BootstrapRoot, target) : paths;
+            using var sourceLease = new InstanceLease(next.DataRoot);
+            using var resumedManager = new PluginManager(next, compatibility);
+            var scratch = Path.Combine(target, ".tractortool-migration-copy.tmp");
+            // All final files already exist; retry must still reclaim abandoned scratch space.
+            if (!afterCommit) File.WriteAllText(scratch, "incomplete scratch");
+            var resumed = new DataRootMigration(next).ApplyAtStartup(resumedManager, null, default);
+            using var targetLease = resumed.TargetLease;
+            Assert(resumed.Error is null && migration.Snapshot.Migration is null);
+            Assert(resumedManager.Snapshot.Single().Recovery!.DataRoot == target);
+            Assert(!File.Exists(scratch));
+            Assert(File.ReadAllText(Path.Combine(data, "fixture.txt")) == "retained source");
         });
         check("Migration detects damaged recovery snapshots before committing the pointer", () =>
         {
@@ -264,6 +302,8 @@ internal static class PluginManagementChecks
         });
     }
     private static void Assert(bool condition) { if (!condition) throw new Exception("Management assertion failed"); }
+    private sealed class CallbackProgress(Action<string> report) : IProgress<string>
+    { public void Report(string value) => report(value); }
     private static void Reject<T>(Action action) where T : Exception
     {
         try { action(); } catch (T) { return; }

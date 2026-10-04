@@ -89,7 +89,8 @@ public sealed class DataRootMigration(AppPaths paths)
                     targetLease = new InstanceLease(request.Target);
                     CheckTargetOwner(request, create: true);
                     CopyAndVerify(request, progress, token);
-                    manager.ValidateDataRootMigration(request.Source, new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target));
+                    progress?.Report("正在校验插件回退快照…");
+                    manager.ValidateDataRootMigration(request.Source, new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target), token);
                     token.ThrowIfCancellationRequested();
                     var switched = state with { DataRoot = request.Target, PreviousDataRoot = request.Source };
                     Save(switched); // Commit point: all copied files verified; source is untouched.
@@ -101,7 +102,8 @@ public sealed class DataRootMigration(AppPaths paths)
                 var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target);
                 // Idempotent finalization. A crash here retains the request with the new pointer;
                 // the next startup completes it before any plugin can write to either copy.
-                manager.CompleteDataRootMigration(request.Source, next);
+                manager.CompleteDataRootMigration(request.Source, next, token);
+                token.ThrowIfCancellationRequested();
                 Save(state with { Migration = null });
                 return new(next, targetLease);
             }
@@ -111,8 +113,8 @@ public sealed class DataRootMigration(AppPaths paths)
                 // A store failure must never roll back a pointer that reached disk. If reading
                 // the pointer also fails, stop startup rather than write through an unknown root.
                 committed |= Same(_store.Load().DataRoot ?? paths.BootstrapRoot, request.Target);
+                if (ex is OperationCanceledException && token.IsCancellationRequested) throw;
                 if (committed) throw new IOException("数据已复制并切换，迁移收尾尚未完成；请解决以下问题后重启。旧目录仍保留。\n" + ex.Message, ex);
-                if (ex is OperationCanceledException) throw;
                 var error = "迁移未完成，继续使用原目录：" + ex.Message;
                 Save(state with { Migration = request with { Error = error } });
                 return new(paths, null, error);
@@ -181,11 +183,16 @@ public sealed class DataRootMigration(AppPaths paths)
         foreach (var entry in Inventory(request.Target, token))
             if (!expected.TryGetValue(entry.Relative, out var original) || original.IsDirectory != entry.IsDirectory)
                 throw new IOException("目标目录含已变化或新增的内容，未覆盖；请选择新的空目录。");
+        // Ownership and contents have been checked under the target lease. Reclaim only this
+        // transaction's incomplete scratch file before measuring the space needed to retry.
+        var temp = Path.Combine(request.Target, TempName);
+        token.ThrowIfCancellationRequested();
+        CheckPath(temp);
+        if (File.Exists(temp)) File.Delete(temp);
         var required = source.Where(e => !e.IsDirectory && !File.Exists(Path.Combine(request.Target, e.Relative))).Sum(e => e.Length);
         var drive = new DriveInfo(Path.GetPathRoot(request.Target)!);
         if (!drive.IsReady || drive.AvailableFreeSpace < required + 16L * 1024 * 1024)
             throw new IOException("目标磁盘可用空间不足，需为数据及迁移记录保留空间。");
-        var temp = Path.Combine(request.Target, TempName);
         long copied = 0, total = source.Where(e => !e.IsDirectory).Sum(e => e.Length);
         var lastPercent = -1;
         var buffer = new byte[1024 * 1024];

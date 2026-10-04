@@ -93,6 +93,7 @@ internal static class DataMigrationChecks
             Assert(File.Exists(Path.Combine(Target(paths), ".tractortool-migration-copy.tmp")));
             var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
             Assert(result.Error is null && new FileInfo(Path.Combine(result.Paths.ConfigRoot, "large.bin")).Length == 3 * 1024 * 1024);
+            Assert(!File.Exists(Path.Combine(Target(paths), ".tractortool-migration-copy.tmp")));
         });
         check("Migration retry refuses changed copied files and cancellation never deletes either copy", () =>
         {

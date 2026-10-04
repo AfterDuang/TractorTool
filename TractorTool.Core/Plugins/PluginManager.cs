@@ -48,20 +48,22 @@ public sealed class PluginManager : IDisposable
     }
 
     // Called only at startup, before PluginHost discovery or any plugin DLL is loaded.
-    internal void ValidateDataRootMigration(string source, AppPaths target) => RebindDataRoot(source, target, commit: false);
-    internal void CompleteDataRootMigration(string source, AppPaths target) => RebindDataRoot(source, target, commit: true);
+    internal void ValidateDataRootMigration(string source, AppPaths target, CancellationToken token) => RebindDataRoot(source, target, false, token);
+    internal void CompleteDataRootMigration(string source, AppPaths target, CancellationToken token) => RebindDataRoot(source, target, true, token);
 
-    private void RebindDataRoot(string source, AppPaths target, bool commit)
+    private void RebindDataRoot(string source, AppPaths target, bool commit, CancellationToken token)
     {
         lock (_gate)
         {
             Check();
+            token.ThrowIfCancellationRequested();
             if (DataMigrationBlockReason is { } blocked) throw new InvalidOperationException(blocked);
             if (target.AppRoot != _paths.AppRoot || target.BootstrapRoot != _paths.BootstrapRoot)
                 throw new InvalidDataException("迁移不能更换软件或启动配置位置。");
             var next = _state.Plugins.ToArray();
             for (var i = 0; i < next.Length; i++)
             {
+                token.ThrowIfCancellationRequested();
                 var item = next[i];
                 if (item.Recovery is not { } recovery || (recovery.DataRoot != source && recovery.DataRoot != target.DataRoot)) continue;
                 var root = PluginFiles.Under(target.DataRoot, "Data", ".plugin-backups", recovery.Token);
@@ -69,8 +71,9 @@ public sealed class PluginManager : IDisposable
                 var saved = metadata.Load();
                 if (saved.Id != item.Id || saved.Version != recovery.Version || saved.HadData != recovery.HadData ||
                     (saved.DataRoot != source && saved.DataRoot != target.DataRoot) ||
-                    PluginFiles.Digest(PluginFiles.Under(root, "saved")) != saved.Digest)
+                    PluginFiles.Digest(PluginFiles.Under(root, "saved"), token) != saved.Digest)
                     throw new InvalidDataException("迁移后的插件回退快照无效：" + item.Id);
+                token.ThrowIfCancellationRequested();
                 if (commit && saved.DataRoot != target.DataRoot)
                 {
                     PluginFiles.Under(root, "snapshot.json.bak");
@@ -78,6 +81,7 @@ public sealed class PluginManager : IDisposable
                 }
                 next[i] = item with { Recovery = recovery with { DataRoot = target.DataRoot } };
             }
+            token.ThrowIfCancellationRequested();
             if (!commit) return;
             if (!next.SequenceEqual(_state.Plugins))
             {

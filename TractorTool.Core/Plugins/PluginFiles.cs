@@ -105,25 +105,36 @@ internal static class PluginFiles
         return manifest;
     }
 
-    internal static IEnumerable<string> Files(string root)
+    internal static IEnumerable<string> Files(string root, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         Under(root);
         foreach (var path in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
         {
+            token.ThrowIfCancellationRequested();
             Under(root, Path.GetFileName(path));
-            if (Directory.Exists(path)) { foreach (var file in Files(path)) yield return file; }
+            if (Directory.Exists(path)) { foreach (var file in Files(path, token)) yield return file; }
             else yield return path;
         }
     }
 
-    internal static string Digest(string root)
+    internal static string Digest(string root, CancellationToken token = default)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var path in Files(root))
+        var buffer = new byte[64 * 1024];
+        foreach (var path in Files(root, token))
         {
             hash.AppendData(Encoding.UTF8.GetBytes(Path.GetRelativePath(root, path).Replace('\\', '/') + "\0"));
             using var file = File.OpenRead(path);
-            hash.AppendData(SHA256.HashData(file));
+            using var fileHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            int count;
+            do
+            {
+                token.ThrowIfCancellationRequested();
+                count = file.Read(buffer);
+                fileHash.AppendData(buffer, 0, count);
+            } while (count != 0);
+            hash.AppendData(fileHash.GetHashAndReset());
         }
         return Convert.ToHexString(hash.GetHashAndReset());
     }
