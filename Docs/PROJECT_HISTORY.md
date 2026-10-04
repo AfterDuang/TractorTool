@@ -36,6 +36,7 @@
 | M2（进行中） | [E21 · 卡片信息/操作分组及旧插件绑定诊断（2026-10-04）](#evidence-card-layout) |
 | M2（进行中） | [E22 · 统一动效与管理卡片原位更新（2026-10-04）](#evidence-shared-motion) |
 | M3（进行中） | [E23 · M2 复审与公共进程服务起步（2026-10-04）](#evidence-process-service) |
+| M3（进行中） | [E24 · 外部包事务、租约与设置入口（2026-10-04）](#evidence-package-service) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
 
@@ -1061,3 +1062,43 @@ git diff --check
 开发接续与阶段缺口见 [当前台账](DEVELOPMENT.md#current-status)，不因本记录归档关闭验收项。
 
 </details>
+
+<a id="evidence-package-service"></a>
+
+## E24 · 外部包事务、租约与设置入口（2026-10-04）
+
+起点提交 `7e40df1`，工作区干净。用户允许继续开发，仍由用户负责运行验收。本轮实现 M3 包服务与设置入口，没有开发视频业务或启动应用/检查程序/FFmpeg。
+
+### 实现与复审
+
+- Contracts API 1.2 增加只读状态/取租约的 Packages 能力，保留上下文原构造/解构和程序集身份，接受旧 1.0/1.1。清单声明固定 ID/版本，只支持宿主目录和 RID；依赖缺失仍可加载页面，任务取得租约明确失败。
+- Core/Packages 集中固定目录、HTTPS 下载、SHA-256、安全 ZIP、工具版本探测、receipt、同版本请求合并、占用保护和版本共存。设置页显式下载/取消/重试/移除，展示路径、文件大小、来源/许可和使用者。进程/页面所有权继续分开，未引入 Worker/IPC 或新项目。
+- 临时事务位于 Packages/.work，带精确归属标记；启动恢复不删除无标记目录。退出封闭新请求并取消/等待已有请求；插件停止后回收遗漏租约。
+- GPT-6.1-Sol / high 子代理静态复审发现：单包路径异常穿透构造、HTTP 超时误报取消、Acquire 失败先释放占用导致旧状态覆盖新事务、清理过早删归属标记。均已修复并获复审确认。补充设置页实际目录/文件大小/来源信息并再次复核，无新确定缺陷；大小为安装时逻辑文件总量，不是实时物理磁盘占用。不将静态复审当运行通过。
+
+### 固定来源与静态证据
+
+[FFmpeg 官方下载页](https://ffmpeg.org/download.html)指向 Windows 构建提供方；本轮选 [Gyan 9.0.2 release](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) 的 essentials ZIP，固定 win-x64、GPLv3，上游 [构建说明](https://www.gyan.dev/ffmpeg/builds/)及[版本校验文件](https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip.sha256)已核对。代码不使用 latest。
+
+只下载到仓库 artifacts/m3-packages 后，用 Get-FileHash 和 .NET ZipArchive 读取文件目录，未执行 EXE、未向真实 DataRoot 安装：
+
+- ZIP 大小 114,768,076 字节，49 个条目，展开文件共 329,221,735 字节。
+- SHA-256：`60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`，与上游相同。
+- ffmpeg/ffprobe 路径为 ffmpeg-9.0.2-essentials_build/bin 下对应 EXE；LICENSE 存在，首部为 GPL version 3，安装保留全文与 README。
+- 证据：`artifacts/m3-packages/source-inspection.json` 和同目录 ZIP。初次受限网络请求 TLS 失败，获准正常网络权限后完成下载；未绕过证书校验。
+
+### 构建与限制
+
+实际在仓库根目录执行：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore
+```
+
+初次、复审修正后和最终构建均成功，10 工程，0 警告/0 错误。日志分别为 artifacts/m3-packages/build-debug.log、build-reviewed.log、build-final.log。本轮未发布，旧 E22 Release 副本不含 M3 变更。
+
+新增 18 项包事务用例（内存 ZIP/HTTP/进程替身）和依赖声明检查，覆盖多版本、安装/读取损坏、恶意 ZIP、哈希/版本错误、网络超时、取消/合并、占用、作用域、退出与遗留清理，**只编译未运行**。上一轮 17 项进程检查与 M2 用例仍未运行；没有真实 FFmpeg 版本探测、服务安装/取消、低磁盘/ACL/锁定、旧插件加载、视频导出或 GPU 证据。
+
+文档核对：183 个仓库本地链接无缺失，E24 锚点唯一，记录在 artifacts/m3-packages/docs-links.json；Git 差异空白检查通过。
+
+当前验收与下一步继续维护在 [开发台账](DEVELOPMENT.md#current-status)。接续为视频插件的真实探测/执行/进度，不能将本轮 ZIP 静态核对记为安装或转码已通过。

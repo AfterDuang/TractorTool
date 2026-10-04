@@ -1,0 +1,218 @@
+using System.IO.Compression;
+using System.Net;
+using System.Security.Cryptography;
+using TractorTool.Contracts;
+using TractorTool.Contracts.Packages;
+using TractorTool.Contracts.Processes;
+using TractorTool.Core.Packages;
+
+internal static class PackageChecks
+{
+    public static void Run(string root, Action<string, Action> check)
+    {
+        void Test(string name, Func<string, Task> action) => check("Packages: " + name, () =>
+            action(Path.Combine(root, "packages-" + Guid.NewGuid().ToString("N"))).GetAwaiter().GetResult());
+
+        Test("install, lease blocks removal, and reload", async path =>
+        {
+            using var http = Client(Archive());
+            var runner = new Probe();
+            await using (var service = Create(path, http, runner))
+            {
+                await service.InstallAsync(Key);
+                Equal(service.GetStatus(Key).Phase, PackagePhase.Ready);
+                using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
+                using (var lease = await scope.AcquireAsync(Key))
+                {
+                    Require(File.Exists(lease.Tools["tool"]));
+                    await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+                    Require(service.GetStatus(Key).Users.Single() == "Test.Plugin");
+                }
+                Require(service.GetStatus(Key).Users.Count == 0 && runner.Calls == 1);
+            }
+            await using var reload = Create(path, http, runner);
+            Equal(reload.GetStatus(Key).Phase, PackagePhase.Ready);
+            await reload.RemoveAsync(Key);
+            Equal(reload.GetStatus(Key).Phase, PackagePhase.Missing);
+        });
+        Test("bad hash never executes tools or commits", async path =>
+        {
+            var bytes = Archive(); using var http = Client(bytes); var probe = new Probe();
+            await using var service = Create(path, http, probe, Definition(bytes) with { Sha256 = new string('0', 64) });
+            await Throws<InvalidDataException>(() => service.InstallAsync(Key));
+            Equal(service.GetStatus(Key).Phase, PackagePhase.Failed); Require(probe.Calls == 0);
+            Require(!Directory.Exists(Path.Combine(path, Key.Id, Key.Version, "win-x64")));
+        });
+        Test("versions coexist and removing one preserves the other", async path =>
+        {
+            var bytes = Archive(); using var http = Client(bytes);
+            var first = Definition(bytes); var second = first with { Package = new(Key.Id, "2.0.0") };
+            await using var service = new ExternalPackageService(path, "win-x64", http, new Probe(), new Log(), [first, second]);
+            await Task.WhenAll(service.InstallAsync(Key), service.InstallAsync(second.Package));
+            await service.RemoveAsync(Key);
+            using var scope = service.CreateScope("Test.Plugin", [second.Package], CancellationToken.None);
+            using var lease = await scope.AcquireAsync(second.Package);
+            Require(File.Exists(lease.Tools["tool"]) && service.GetStatus(second.Package).Phase == PackagePhase.Ready);
+        });
+        Test("damaged receipt stays failed without overwriting existing files", async path =>
+        {
+            var directory = Path.Combine(path, Key.Id, Key.Version, "win-x64"); Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "receipt.json"), "broken");
+            File.WriteAllText(Path.Combine(directory, "keep.txt"), "original");
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            Equal(service.GetStatus(Key).Phase, PackagePhase.Failed);
+            await Throws<IOException>(() => service.InstallAsync(Key));
+            Require(File.ReadAllText(Path.Combine(directory, "keep.txt")) == "original");
+        });
+        foreach (var unsafeName in new[] { "../escape.exe", "C:/escape.exe", "bin/CON", "bin/tool.exe:extra", "BIN/other.exe" })
+            Test("reject ZIP path " + unsafeName, async path =>
+            {
+                var bytes = Archive(unsafeName); using var http = Client(bytes); var probe = new Probe();
+                await using var service = Create(path, http, probe, Definition(bytes));
+                await Throws<InvalidDataException>(() => service.InstallAsync(Key)); Require(probe.Calls == 0);
+            });
+        Test("reject ZIP symlink", async path =>
+        {
+            var bytes = Archive("link", true); using var http = Client(bytes); var probe = new Probe();
+            await using var service = Create(path, http, probe, Definition(bytes));
+            await Throws<InvalidDataException>(() => service.InstallAsync(Key)); Require(probe.Calls == 0);
+        });
+        Test("wrong version fails before commit", async path =>
+        {
+            using var http = Client(Archive());
+            await using var service = Create(path, http, new Probe { Output = "wrong version" });
+            await Throws<InvalidDataException>(() => service.InstallAsync(Key)); Equal(service.GetStatus(Key).Phase, PackagePhase.Failed);
+        });
+        Test("network timeout remains a visible failure", async path =>
+        {
+            using var http = new HttpClient(new Handler((_, _) => throw new TaskCanceledException("response timeout")));
+            await using var service = Create(path, http, new Probe());
+            await Throws<TimeoutException>(() => service.InstallAsync(Key));
+            Require(service.GetStatus(Key).Phase == PackagePhase.Failed && service.GetStatus(Key).Error.Length != 0);
+        });
+        Test("coalesced installs survive one waiter's cancellation", async path =>
+        {
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); int requests = 0;
+            using var http = new HttpClient(new Handler(async (request, token) =>
+            {
+                Interlocked.Increment(ref requests); entered.TrySetResult(); await release.Task.WaitAsync(token);
+                return Response(request, Archive());
+            }));
+            await using var service = Create(path, http, new Probe());
+            using var cancel = new CancellationTokenSource();
+            var first = service.InstallAsync(Key, cancel.Token); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var second = service.InstallAsync(Key); cancel.Cancel();
+            await Throws<OperationCanceledException>(() => first);
+            release.TrySetResult(); await second.WaitAsync(TimeSpan.FromSeconds(5));
+            Require(requests == 1 && service.GetStatus(Key).Phase == PackagePhase.Ready);
+        });
+        Test("explicit cancel cleans staged files and retry succeeds", async path =>
+        {
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); int requests = 0;
+            using var http = new HttpClient(new Handler(async (request, token) =>
+            {
+                if (Interlocked.Increment(ref requests) == 1) { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, token); }
+                return Response(request, Archive());
+            }));
+            await using var service = Create(path, http, new Probe());
+            var first = service.InstallAsync(Key); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5)); service.CancelInstall(Key);
+            await Throws<OperationCanceledException>(() => first);
+            Equal(service.GetStatus(Key).Phase, PackagePhase.Missing);
+            Require(!Directory.EnumerateDirectories(Path.Combine(path, ".work")).Any());
+            await service.InstallAsync(Key); Equal(service.GetStatus(Key).Phase, PackagePhase.Ready);
+        });
+        Test("scope rejects undeclared dependency and releases forgotten lease", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            await service.InstallAsync(Key);
+            using (var scope = service.CreateScope("Test.Plugin", [], CancellationToken.None))
+                await Throws<InvalidOperationException>(() => scope.AcquireAsync(Key));
+            var allowed = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
+            var lease = await allowed.AcquireAsync(Key); allowed.Dispose(); lease.Dispose();
+            Require(service.GetStatus(Key).Users.Count == 0); await service.RemoveAsync(Key);
+        });
+        Test("tampered tool fails acquisition without stale Ready notification", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            await service.InstallAsync(Key);
+            File.WriteAllText(Path.Combine(path, Key.Id, Key.Version, "win-x64", "bin", "tool.exe"), "changed");
+            using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
+            var reserved = false; var exposedReady = false;
+            service.Changed += () =>
+            {
+                var status = service.GetStatus(Key);
+                if (status.Users.Count > 0) reserved = true;
+                if (reserved && status.Users.Count == 0 && status.Phase == PackagePhase.Ready) exposedReady = true;
+            };
+            await Throws<InvalidDataException>(() => scope.AcquireAsync(Key));
+            Require(!exposedReady && service.GetStatus(Key).Phase == PackagePhase.Failed);
+            await service.RemoveAsync(Key); Equal(service.GetStatus(Key).Phase, PackagePhase.Missing);
+        });
+        Test("shutdown cancels download and seals new operations", async path =>
+        {
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var http = new HttpClient(new Handler(async (request, token) =>
+            { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, token); return Response(request, Archive()); }));
+            var service = Create(path, http, new Probe());
+            var operation = service.InstallAsync(Key); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await service.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+            await Throws<OperationCanceledException>(() => operation);
+            await Throws<ObjectDisposedException>(() => service.InstallAsync(Key));
+        });
+        Test("recover only marked abandoned work", async path =>
+        {
+            var owned = Path.Combine(path, ".work", Guid.NewGuid().ToString("N"));
+            var foreign = Path.Combine(path, ".work", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(owned); Directory.CreateDirectory(foreign);
+            File.WriteAllText(Path.Combine(owned, "owner.txt"), "TractorTool.PackageWork.v1");
+            File.WriteAllText(Path.Combine(owned, "download.zip"), "partial");
+            File.WriteAllText(Path.Combine(foreign, "user.txt"), "keep");
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            await service.InstallAsync(Key);
+            Require(!Directory.Exists(owned) && File.ReadAllText(Path.Combine(foreign, "user.txt")) == "keep");
+        });
+    }
+
+    private static readonly PackageReference Key = new("Fixture", "1.0.0");
+    private static byte[] Archive(string? extra = null, bool link = false)
+    {
+        using var memory = new MemoryStream();
+        using (var zip = new ZipArchive(memory, ZipArchiveMode.Create, true))
+        {
+            // Stable zip timestamps ensure repeated fixture hashes match.
+            void Add(string name, string value, bool symlink)
+            {
+                var entry = zip.CreateEntry(name); entry.LastWriteTime = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+                if (symlink) entry.ExternalAttributes = unchecked((int)0xA1FF0000);
+                using var writer = new StreamWriter(entry.Open()); writer.Write(value);
+            }
+            Add("bin/tool.exe", "fixture executable bytes, never executed", false);
+            Add("LICENSE.txt", "fixture", false);
+            if (extra is not null) Add(extra, "extra", link);
+        }
+        return memory.ToArray();
+    }
+    private static PackageDefinition Definition(byte[] bytes) => new(Key, "win-x64", "Fixture", "Fixture",
+        new("https://example.invalid/tool.zip"), Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), "Fixture",
+        new("https://example.invalid/source"), new Dictionary<string, PackageTool> { ["tool"] = new("bin/tool.exe", "tool version 1.0.0") });
+    private static ExternalPackageService Create(string root, HttpClient http, Probe runner, PackageDefinition? definition = null) =>
+        new(root, "win-x64", http, runner, new Log(), [definition ?? Definition(Archive())]);
+    private static HttpClient Client(byte[] bytes) => new(new Handler((request, _) => Task.FromResult(Response(request, bytes))));
+    private static HttpResponseMessage Response(HttpRequestMessage request, byte[] bytes) => new(HttpStatusCode.OK)
+    { RequestMessage = request, Content = new ByteArrayContent(bytes) };
+    private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => send(request, token); }
+    private sealed class Probe : IProcessRunner
+    {
+        public int Calls;
+        public string Output = "tool version 1.0.0\n";
+        public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken = default)
+        { cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Calls); return Task.FromResult(new ProcessResult(0, Output, "", false, false)); }
+    }
+    private sealed class Log : IAppLog { public void Write(string source, string message, Exception? error = null) { } }
+    private static void Require(bool value) { if (!value) throw new Exception("Package assertion failed."); }
+    private static void Equal<T>(T value, T expected) => Require(EqualityComparer<T>.Default.Equals(value, expected));
+    private static async Task Throws<T>(Func<Task> action) where T : Exception
+    { try { await action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
+}

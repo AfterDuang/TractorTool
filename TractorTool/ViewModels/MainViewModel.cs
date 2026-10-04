@@ -281,6 +281,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         if (_detached) return;
         _detached = true;
+        Settings.ExternalTools.Dispose();
         _log.Changed -= OnLogChanged;
         var previous = CurrentPage;
         CurrentPage = null;

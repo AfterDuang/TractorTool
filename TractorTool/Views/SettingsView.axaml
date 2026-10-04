@@ -50,6 +50,39 @@
         <TextBlock Text="{Binding DirectoryStatus}" Classes="caption" IsVisible="{Binding HasDirectoryStatus, FallbackValue=False, TargetNullValue=False}" />
       </StackPanel>
       <StackPanel Spacing="8">
+        <TextBlock Text="外部工具" Classes="sectionTitle" Margin="0,0,0,4" />
+        <TextBlock Text="当前平台暂未提供工具下载。" Classes="caption" IsVisible="{Binding ExternalTools.IsUnsupported}" />
+        <ItemsControl ItemsSource="{Binding ExternalTools.Cards}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PackageCardViewModel">
+              <Border Classes="card" Margin="0,0,0,8">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="{Binding Name}" Classes="sectionTitle" />
+                  <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Attribution}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding StatusText}" Classes="caption" />
+                  <TextBlock Text="{Binding SizeText}" Classes="caption" IsVisible="{Binding HasSize}" />
+                  <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+                  <TextBlock Text="{Binding Users}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasUsers}" />
+                  <TextBlock Text="{Binding Error}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+                  <Expander Header="来源与存储位置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <StackPanel Spacing="8">
+                      <SelectableTextBlock Text="{Binding Source}" TextWrapping="Wrap" />
+                      <SelectableTextBlock Text="{Binding Directory}" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </Expander>
+                  <WrapPanel>
+                    <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" Margin="0,0,8,0" />
+                    <Button Content="取消" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" Margin="0,0,8,0" />
+                    <Button Content="移除工具" Command="{Binding RemoveCommand}" IsVisible="{Binding CanRemove}" />
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+      <StackPanel Spacing="8">
         <TextBlock Text="插件设置" Classes="sectionTitle" Margin="0,0,0,4" />
         <Border Classes="card" IsVisible="{Binding !HasPluginSettings}">
           <TextBlock Text="还没有插件提供设置。加载插件后，专属设置会出现在这里。" Classes="muted" />

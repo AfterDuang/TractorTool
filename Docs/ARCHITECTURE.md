@@ -6,7 +6,7 @@
 
 ## 1. 当前代码与目标结构
 
-解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 10 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；包服务和有限任务队列仍为后续设计，运行验证状态集中在开发文档。
+解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 10 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务，有限任务队列仍为后续设计，运行验证状态集中在开发文档。
 
 职责结构如下。表中的任务/包管理为 M3-M4 职责，不先创建空实现：
 
@@ -64,7 +64,7 @@ flowchart TD
 | `IExternalPackageService` | 查询依赖、请求安装、获取指定工具路径及使用租约 |
 | `IProcessRunner` | 受管理的外部进程执行、输出读取与取消 |
 
-M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 首个增量增加 IProcessRunner；IBackgroundTaskService、IExternalPackageService 仍未实现。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
+M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；IBackgroundTaskService 仍未实现。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
 
 插件设置页使用同样的注册机制。宿主只知道页面描述与工厂，不知道视频码率等业务字段。插件专属设置必须由插件拥有的服务读写。
 
@@ -137,7 +137,7 @@ Windows 注销或关机也应执行有界清理，不能因无限等待阻止系
 
 ### 4.1 包管理
 
-包管理不是独立插件，首版也不另建单独的包管理项目。其规划归属如下；Contracts/Core 工程已经存在，但 Packages 服务和管理 UI 在 M3 才实现：
+包管理不是独立插件，也不另建单独的包管理项目。实现分工如下，当前运行验收状态只见开发台账：
 
 | 位置 | 内容 |
 | --- | --- |
@@ -158,9 +158,15 @@ Windows 注销或关机也应执行有界清理，不能因无限等待阻止系
 
 SHA256 用于核对内容，不单独证明发布者可信；包清单和来源本身也需要可信。FFmpeg 构建中的编码器和分发许可随构建选项变化，发布前记录采用的二进制来源和许可证。
 
+当前 [包目录](../TractorTool.Core/Packages/PackageCatalog.cs) 固定 Gyan FFmpeg 9.0.2 essentials / win-x64，包含 ffmpeg、ffprobe，使用版本化 HTTPS 地址和内置 SHA-256。其他 RID 不提供下载。目录由宿主维护，插件清单只声明 ID/三段版本，不允许传 URL、哈希或安装脚本。设置页显示来源/许可、实际目录、工具文件大小、状态/进度与使用者；下载、取消、重试、移除均由用户触发。
+
+[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs) 按包合并安装请求；调用方取消等待不影响其他等待者，设置页取消才停止共享下载。下载最多 256 MiB、ZIP 展开最多 1 GiB/10000 项，拒绝路径越界、重名/大小写冲突、特殊文件和重解析点。校验后执行固定工具的 `-version`，成功才写 receipt 并原子移动目录；不原位覆盖已装版本。receipt 保存下载哈希及工具哈希，取得租约时重新校验工具文件，失败禁止使用。网络/整体超时显示失败，用户取消回到缺失状态；已有异常版本须先由用户移除。
+
+事务暂存在 `Packages/.work/<GUID>`，归属标记最后删除。宿主持有数据根实例锁，启动时仅清理带精确标记的遗留事务，不扫描删除用户其他目录。共享服务在退出时封闭新操作并取消/等待已有操作。每个插件得到限定清单依赖的 PackageScope；插件持有租约至进程和输出结束，插件清理完成后回收遗忘的租约。占用期间拒绝移除；不同版本可并存。
+
 ### 4.2 进程服务
 
-公共 [IProcessRunner](../TractorTool.Contracts/Processes/IProcessRunner.cs) 接收绝对可执行路径和独立参数列表，不执行 shell、不搜索 PATH，默认工作目录为工具所在目录。Core 的 [ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs) 快照参数、并发读取 stdout/stderr、处理超时与停止；插件通过 API 1.1 的 `PluginContext.Processes` 获取按插件生命周期创建的实例。原五参数构造/解构及程序集身份保持不变，宿主仍接受 API 1.0；使用新服务的插件必须声明 1.1。
+公共 [IProcessRunner](../TractorTool.Contracts/Processes/IProcessRunner.cs) 接收绝对可执行路径和独立参数列表，不执行 shell、不搜索 PATH，默认工作目录为工具所在目录。Core 的 [ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs) 快照参数、并发读取 stdout/stderr、处理超时与停止；插件通过 API 1.1 的 `PluginContext.Processes` 获取按插件生命周期创建的实例。原五参数构造/解构及程序集身份保持不变，宿主仍接受 API 1.0/1.1；使用进程服务的插件声明 1.1 或 1.2。
 
 Windows 专属实现位于 [WindowsProcessSession](../TractorTool/Platform/WindowsProcessSession.cs)，通过 Core 的 IProcessSession 适配边界注入，Core/Contracts 不含 Win32 API。仅靠 .NET Kill(entireProcessTree) 不能覆盖根先退出的后代：使用 Windows 10+ `CreateProcessW` 的 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 在创建时绑定私有 Job，配合显式继承句柄列表与 KILL_ON_JOB_CLOSE。原生入口需要命令行，因此仅在此适配层按 Windows CRT 参数引用规则编码参数向量，不进入 cmd/PowerShell；不会先启动再附加 Job。[创建属性说明](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 
@@ -168,7 +174,7 @@ Windows 专属实现位于 [WindowsProcessSession](../TractorTool/Platform/Windo
 
 stdin 关闭为 EOF；UTF-8 输出两路分别有界保留（默认各 1 Mi 字符，最多 16 Mi），超出继续排空并返回截断标记，不按行等待换行。返回原始退出码，非零不伪装为成功；调用/宿主取消与执行 TimeoutException 区分，内部清理中断或失败为 IOException，不能假报普通取消。清理失败记录插件归属，不记录参数和业务输出正文。当前是一次执行及最终输出接口，实时媒体进度仍待实际消费方接入。
 
-包服务后续提供固定版本工具路径与占用租约，租约需覆盖进程退出和输出排空。当前进程服务尚不提供下载/校验/包占用保护，清单非空 dependencies 继续拒绝；不能把路径存在当作工具可信或把此增量当作 FFmpeg 导出完成。工具自身参数语法、解析和业务校验由插件处理。
+API 1.2 的包服务提供固定版本工具路径与占用租约，租约需覆盖进程退出和输出排空。支持的 dependencies 允许加载插件，即使工具尚未安装；调用取得租约会明确要求先安装，初始化不得自动下载。不能把包安装当作 FFmpeg 导出完成。工具自身参数语法、解析和业务校验由插件处理。
 
 <a id="storage"></a>
 
@@ -200,7 +206,7 @@ stdin 关闭为 EOF；UTF-8 输出两路分别有界保留（默认各 1 Mi 字�
   Logs/                           # 有保留策略的运行日志
 ```
 
-M1 路径服务已按上述布局创建数据目录和扫描插件目录；Packages 目前仅为存储路径，不代表包管理已实现。用户输出文件位于其指定目录，既不属于缓存，也不能由软件清理功能删除。`bootstrap.json` 不随业务数据迁移；公开 IAppPaths 不暴露启动指针。M1 支持读取已有有效的自定义 dataRoot，设置页只展示位置并说明迁移尚未提供，不允许绕过 M5 直接切换。开发参数 `--profile-root <绝对路径>` 将启动位置和默认数据一起隔离到测试目录，生产默认仍为 LocalApplicationData/TractorTool。
+M1 路径服务已按上述布局创建数据目录和扫描插件目录；M3 包服务使用 Packages，当前证据见开发台账。用户输出文件位于其指定目录，既不属于缓存，也不能由软件清理功能删除。`bootstrap.json` 不随业务数据迁移；公开 IAppPaths 不暴露启动指针。M1 支持读取已有有效的自定义 dataRoot，设置页只展示位置并说明迁移尚未提供，不允许绕过 M5 直接切换。开发参数 `--profile-root <绝对路径>` 将启动位置和默认数据一起隔离到测试目录，生产默认仍为 LocalApplicationData/TractorTool。
 
 设置优先采用带 `schemaVersion` 的 JSON；少量预设无需先引入数据库。真正需要大量检索的数据再采用 SQLite。M1 写文件采用同目录临时文件、Flush、File.Replace 和 `.bak`，进程内按完整路径串行写入。格式损坏、版本未知或保存失败保留原数据并报错，不自动重置为默认值。日志文件位于 Logs，界面只保留最近 300 条；磁盘日志保留策略在 M5。外部数据根目录不可用时显示恢复选项，不静默创建空配置冒充原数据。
 
@@ -261,7 +267,7 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 - **列表更新与交互连续性**：插件管理按安装记录目录保留可观察卡片，过滤集合只增删/移动实际变化项；管理结果原位提交状态和命令，不清空重建列表打断滑块或丢弃控件。重复 ID 的不同目录仍独立呈现。写入失败显式恢复开关目标值，不依赖相同值的绑定通知必定重放。忙碌时的串行保护保留，不承诺禁用列表期间保留键盘焦点。新列表应遵循同样的稳定身份原则。
 - **切页与生命周期**：公共 `PageHost` 是内部 `FAFrame` 的薄包装，通过同步 `Present(Control)` 将成功、取消或异常反馈宿主，不再用单向属性绑定吞掉导航结果。只接受未挂载的页面；成功后才提交标题/选择状态并清理旧页，取消保留旧页，异常记录日志并显示错误页。若 Frame 已在异常前改变内部状态，替换该 Frame 后继续导航，不访问其私有状态。`IFANavigationPageFactory` 只接收已注册工厂返回的 Control，不反射具体插件类型。缓存大小为 0、导航历史关闭；进入使用库的轻微上移淡入过渡（位移 18），关闭页面动画时使用 Suppress 过渡。宿主阻止切换重入和退出后创建页面，常驻服务不绑定到 Frame。这里隔离的是工厂/同步导航失败，不保证捕获插件任意异步事件或渲染线程异常；快速切页及真实视觉表现仍待用户验收。
 - **设置持久化**：SettingsViewModel 在 UI 线程应用外观，通过单个保存任务将不可变快照交给后台写入；期间的新选择只保留最新值，旧写入完成不再应用旧主题或覆盖新状态。正常保存不显示常驻提示，保存期间不禁用选择，应用失败与写盘失败分别提示。保存错误只存于 SaveError，HasSaveError 由其派生；错误面板统一控制重试入口可见性，无 DataContext 或无法解析绑定时默认隐藏，避免无模型的 VS Code 预览出现孤立按钮。退出阻止新变更并等待整个队列，对此前最后一次保存失败最多再试一次，仍受宿主 10 秒退出期限约束。同步主题通知重入时重新应用最终有效选择，控件临时空选择不生成配置。沿用 JSON 原子替换及备份，没有新增通用设置框架。可选布尔字段 `enableAnimations` 默认 true，旧 JSON 不含此字段时仍可读取，沿用当前设置 schema；控制范围见上述统一动效边界。
-- **SDK 与加载**：UI API 为 1.2，`PluginPageOptions` 新增可选 `IconPath` 初始化属性，保留原两参数构造函数及旧注册签名。宿主接受 1.0、1.1、1.2，拒绝更高未知 UI 版本；Contracts API 为 1.1，仍接受 1.0，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
+- **SDK 与加载**：UI API 为 1.2，`PluginPageOptions` 新增可选 `IconPath` 初始化属性，保留原两参数构造函数及旧注册签名。宿主接受 1.0、1.1、1.2，拒绝更高未知 UI 版本；Contracts API 为 1.2，仍接受 1.0/1.1，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
 
 运行效果及已知限制只在 [开发验收台账](DEVELOPMENT.md#acceptance) 记录，架构描述不代表真实 UI 或动态加载已经通过验收。
 

@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using TractorTool.Contracts;
 using TractorTool.Core.Storage;
+using TractorTool.Contracts.Packages;
+using TractorTool.Core.Packages;
 
 namespace TractorTool.Core.Plugins;
 
@@ -17,7 +19,7 @@ public sealed record PluginManifest
     public string UiApiVersion { get; init; } = "";
     public string AvaloniaVersion { get; init; } = "";
     public string[] SupportedPlatforms { get; init; } = [];
-    public JsonElement[] Dependencies { get; init; } = [];
+    public PackageReference[] Dependencies { get; init; } = [];
     public string Description { get; init; } = "";
     public string Author { get; init; } = "";
 }
@@ -32,7 +34,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
             _ => false
         };
-        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion == "1.0";
+        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1";
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
@@ -40,7 +42,9 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
         if (!manifest.SupportedPlatforms.Contains(Platform, StringComparer.OrdinalIgnoreCase) &&
             !manifest.SupportedPlatforms.Contains(Rid, StringComparer.OrdinalIgnoreCase))
             return $"不支持当前平台 {Rid}";
-        if (manifest.Dependencies.Length != 0) return "该插件需要外部包服务（M3 尚未实现）。";
+        if (manifest.Dependencies.Length != 0 && manifest.ApiVersion != "1.2") return "使用外部工具必须声明 API 1.2。";
+        foreach (var package in manifest.Dependencies)
+            if (!PackageCatalog.Supports(package, Rid)) return $"宿主尚不提供外部工具 {package.Id} {package.Version} / {Rid}。";
         return null;
     }
 }
@@ -74,6 +78,13 @@ public static class ManifestValidator
             throw new InvalidDataException("清单缺少 SDK 版本声明。");
         if (m.SupportedPlatforms is null || m.SupportedPlatforms.Length == 0 || m.SupportedPlatforms.Any(string.IsNullOrWhiteSpace) || m.Dependencies is null)
             throw new InvalidDataException("清单平台或依赖列表无效。");
+        if (m.Dependencies.Length > 32 || m.Dependencies.Distinct().Count() != m.Dependencies.Length)
+            throw new InvalidDataException("清单依赖过多或重复。");
+        foreach (var dependency in m.Dependencies)
+        {
+            if (dependency is null) throw new InvalidDataException("清单依赖不能为空。");
+            AppPaths.ValidateId(dependency.Id); ValidateVersion(dependency.Version);
+        }
         _ = EntryPath(m, directory);
     }
 

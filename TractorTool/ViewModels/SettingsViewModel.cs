@@ -6,6 +6,7 @@ using TractorTool.Services;
 using System.Collections.ObjectModel;
 using TractorTool.Platform;
 using Avalonia.Threading;
+using TractorTool.Core.Packages;
 namespace TractorTool.ViewModels;
 public sealed record ThemeChoice(string Id, string Name);
 public sealed record AccentChoice(string Value, string Name);
@@ -21,6 +22,7 @@ public partial class SettingsViewModel : ViewModelBase
     // All queue state belongs to the UI thread; only immutable snapshots cross to the writer.
     public Task SaveCompletion => _saveCompletion;
     public AppPaths Paths { get; }
+    public ExternalToolsViewModel ExternalTools { get; }
     public string ApplicationVersion => AppInfo.Version;
     public ThemeChoice[] Themes { get; } = [new("System", "跟随系统"), new("Light", "浅色"), new("Dark", "深色")];
     public AccentChoice[] Accents { get; } = [new("#2563EB", "蓝色"), new("#0F766E", "青绿色"), new("#7C3AED", "紫色"), new("#C2410C", "橙色")];
@@ -38,9 +40,11 @@ public partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<NavigationItem> PluginSettings { get; } = [];
     public bool HasPluginSettings => PluginSettings.Count != 0;
     public IAsyncRelayCommand? ExitCommand { get; internal set; }
-    public SettingsViewModel(AppPaths paths, JsonFileStore<HostSettings> store, HostSettings settings, AppLog log)
+    public SettingsViewModel(AppPaths paths, JsonFileStore<HostSettings> store, HostSettings settings, AppLog log,
+        ExternalPackageService? packages = null)
     {
         Paths = paths; _store = store; _settings = settings; _log = log;
+        ExternalTools = new(packages);
         _enableAnimations = settings.EnableAnimations;
         PluginSettings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPluginSettings));
         _selectedTheme = Themes.Single(t => t.Id == settings.Theme);
@@ -98,6 +102,7 @@ public partial class SettingsViewModel : ViewModelBase
         Dispatcher.UIThread.VerifyAccess();
         if (_stopping) return _saveCompletion;
         _stopping = true;
+        ExternalTools.Dispose();
         RetrySaveCommand.NotifyCanExecuteChanged();
         // One retry on exit, never an unbounded failure loop; App owns the overall timeout.
         if (HasSaveError && !IsSaving) QueueSave(_settings);

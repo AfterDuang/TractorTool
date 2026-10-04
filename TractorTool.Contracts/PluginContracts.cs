@@ -2,7 +2,7 @@ namespace TractorTool.Contracts;
 
 public static class PluginApi
 {
-    public const string Version = "1.1";
+    public const string Version = "1.2";
 }
 
 public interface IPlugin : IAsyncDisposable
@@ -23,6 +23,8 @@ public sealed record PluginContext(string PluginId, IAppPaths Paths,
     // Keep the original constructor/deconstruction ABI for independently built API 1.0 plugins.
     // Plugins using this service declare API 1.1; hand-built test contexts may leave it absent.
     public Processes.IProcessRunner? Processes { get; init; }
+    // API 1.2; host-owned downloads, plugin-owned usage leases.
+    public Packages.IExternalPackageService? Packages { get; init; }
 }
 
 public interface IAppPaths

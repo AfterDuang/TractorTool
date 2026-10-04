@@ -6,6 +6,9 @@ using Avalonia.Threading;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
+using TractorTool.Core.Packages;
+using TractorTool.Core.Processes;
+using System.Net.Http;
 using TractorTool.Platform;
 using TractorTool.Services;
 using TractorTool.UI;
@@ -27,6 +30,9 @@ public partial class App : Application
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private bool _exiting;
     private bool _ready;
+    private ExternalPackageService? _packages;
+    private ProcessRunner? _packageProcesses;
+    private HttpClient? _packageHttp;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -50,13 +56,17 @@ public partial class App : Application
                 ThemeService.Apply(settings);
                 var compatibility = new HostCompatibility(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
                     System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion);
+                _packageHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+                _packageProcesses = new ProcessRunner("Packages", _log, OperatingSystem.IsWindows() ? WindowsProcessSession.Start :
+                    _ => throw new PlatformNotSupportedException("当前平台尚未提供受管理的工具进程适配器。"));
+                _packages = new ExternalPackageService(paths.PackageRoot, compatibility.Rid, _packageHttp, _packageProcesses, _log);
                 string? managementError = null;
                 try { _pluginManager = new PluginManager(paths, compatibility); }
                 catch (Exception ex) { managementError = "插件管理不可用：" + ex.Message; _log.Write("Plugins", managementError, ex); }
                 _plugins = new PluginHost(paths, compatibility, _log,
-                    OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null);
+                    OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null, _packages);
                 if (managementError is not null) _plugins.Discover([], startupError: managementError);
-                _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log), ExitAsync,
+                _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log, _packages), ExitAsync,
                     managementError is null ? _pluginManager : null, settings.DisabledPlugins);
                 var window = new MainWindow { DataContext = _vm };
                 desktop.MainWindow = window;
@@ -120,9 +130,18 @@ public partial class App : Application
         try
         {
             var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-            await Task.WhenAll(pendingSave, pendingManagement, stopPlugins).WaitAsync(TimeSpan.FromSeconds(10));
+            var stopPackages = StopPackagesAsync();
+            await Task.WhenAll(pendingSave, pendingManagement, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
         }
         catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
         finally { _tray?.Dispose(); _desktop?.Shutdown(); }
+    }
+
+    private async Task StopPackagesAsync()
+    {
+        var packages = _packages?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+        var processes = _packageProcesses?.DisposeAsync().AsTask() ?? Task.CompletedTask;
+        await Task.WhenAll(packages, processes);
+        _packageHttp?.Dispose();
     }
 }

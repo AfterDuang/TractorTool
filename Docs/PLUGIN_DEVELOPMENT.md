@@ -14,7 +14,8 @@
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
 | 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1；上下文 Processes 按插件生命周期提供，当前 Windows 10+ 适配；见下文 |
-| 有限任务、外部包 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
+| 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2；只查询/取得声明的固定版本，下载由宿主设置显式触发 |
+| 有限任务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
 
@@ -32,11 +33,11 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.1，仍接受 1.0；使用 Processes 服务必须声明 1.1 |
+| `apiVersion` | 当前 1.2，仍接受 1.0/1.1；Processes 从 1.1 提供，Packages 要求 1.2 |
 | `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
-| `dependencies` | 外部包服务尚未接入，当前必须为空或省略；非空会被明确判为不兼容 |
+| `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复，版本和当前 RID 必须在宿主目录中 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
@@ -62,7 +63,7 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 
 - **宿主共享 SDK**：TractorTool.Contracts、TractorTool.UI、Avalonia 及 Avalonia.*、FluentAvalonia、MicroCom.Runtime 由宿主提供，插件包不携带另一套 DLL。固定已验证版本；复制共享副本或程序集身份不匹配会导致拒绝加载。
 - **插件私有依赖**：随插件提供 DLL、必要的 deps.json、资源和与目标平台匹配的原生库；不能依赖开发机 NuGet 缓存、工程相对路径或软件目录外的链接。依赖可由自己的项目或包构建，但不能成为宿主到具体插件的静态引用。
-- **外部可执行工具**：由宿主包服务提供版本化路径和占用保护，不混入插件代码目录。当前未提供包服务，相关业务待 M3。
+- **外部可执行工具**：由宿主包服务提供版本化路径和占用保护，不混入插件代码目录。包来源及版本由宿主维护，插件不自行下载或搜索系统 PATH。
 
 插件代码是可信的进程内代码；AssemblyLoadContext 不是安全沙箱。不承诺热卸载、不可信代码隔离或任意插件故障都不影响宿主。
 
@@ -87,7 +88,24 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 
 执行等待与页面无关，传入业务取消令牌；宿主退出/插件加载失败时服务封闭新调用并取消已有调用。根进程结束时其后代也会结束，不得用此接口启动应独立常驻的软件。返回非零退出码时由插件展示业务失败；调用取消为 OperationCanceledException，执行超时为 TimeoutException，清理失败为 IOException，不能把清理异常显示成“已安全取消”。
 
-输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调和包版本租约，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
+输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
+
+### 外部工具接入（API 1.2）
+
+清单只声明包 ID 与固定版本。宿主支持的依赖缺失时仍允许插件显示页面，应引导用户到设置下载安装；不在初始化中取得长期租约或自动下载。未知版本/平台被判为不兼容。当前目录提供 FFmpeg 9.0.2 / win-x64，其他平台没有该包。
+
+通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
+
+```csharp
+var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.2 的宿主。");
+using var lease = await packages.AcquireAsync(new("FFmpeg", "9.0.2"), cancellationToken);
+var result = await context.Processes!.RunAsync(
+    new(lease.Tools["ffprobe"], ["-v", "error", "-show_format", "-show_streams", "-of", "json", inputPath]),
+    cancellationToken);
+// 检查退出码、截断状态，再解析 JSON；退出 using 之后才释放该版本占用。
+```
+
+不能缓存租约外的工具路径再启动进程，不能在进程/输出读取仍活跃时释放租约。页面切换不应释放后台任务拥有的租约。宿主按插件生命周期收回遗漏租约，但这不替代插件正确的 using/取消逻辑。下载和移除在宿主管理界面完成，公开插件接口没有隐式安装能力；可信进程内插件也不应绕过公共约定。存储/事务边界见 [包管理](ARCHITECTURE.md#41-包管理)。
 
 ## 5. 统一 UI 与设置
 

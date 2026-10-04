@@ -1,4 +1,17 @@
-# Third-party UI notices
+# Third-party notices
+
+## Optional external tools: FFmpeg / ffprobe
+
+The host catalog pins Gyan's FFmpeg 9.0.2 essentials build for Windows x64.
+It is downloaded only on user request, separately from the host and plugin DLLs.
+Upstream identifies this build as GPLv3; the ZIP's LICENSE and README.txt are retained intact.
+
+- Release / source reference: https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2
+- Build information and license: https://www.gyan.dev/ffmpeg/builds/
+- Pinned ZIP: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
+- SHA-256: `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`
+
+## UI dependencies
 
 TractorTool uses FluentAvaloniaUI 3.1.0 (including its bundled symbol font).
 Source: https://github.com/amwx/FluentAvalonia
