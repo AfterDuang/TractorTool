@@ -140,7 +140,7 @@ public sealed class PackageCardViewModel : ObservableObject
     private async Task InstallAsync()
     {
         _operating = true; _operationError = ""; RefreshStopped();
-        try { using var lease = await _service.RequestAsync(Key, "软件设置", _stopping); }
+        try { using var lease = await _service.TryRequestAsync(Key, "软件设置", _stopping); }
         catch (OperationCanceledException) { }
         catch (Exception ex) { _operationError = ex.Message; }
         finally { _operating = false; RefreshStopped(); }

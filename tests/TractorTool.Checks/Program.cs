@@ -112,18 +112,20 @@ Check("Package paths accept ordinary nested dependencies", () =>
 Check("Reject unknown manifest schema", () => Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SchemaVersion = 2 }, dir)));
 Check("Reject null platform/dependency fields", () => { Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SupportedPlatforms = null! }, dir)); Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { Dependencies = null! }, dir)); });
 Check("Exact SDK baseline compatibility", () => { Assert(compatibility.Check(manifest) is null); Assert(compatibility.Check(manifest with { ApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { UiApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { AvaloniaVersion = "11.3.0" }) is not null); });
-Check("API 1.3 accepts existing process and legacy plugins", () =>
+Check("API 1.4 accepts existing process and legacy plugins", () =>
 {
     Assert(compatibility.Check(manifest with { ApiVersion = "1.1" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.0" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.2" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.3" }) is null);
-    Assert(compatibility.Check(manifest with { ApiVersion = "1.4" }) is not null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.4" }) is null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.5" }) is not null);
 });
 Check("Package dependencies validate shape and API without requiring an available source", () =>
 {
     var packageManifest = manifest with { ApiVersion = "1.2", Dependencies = [new("FFmpeg", "9.0.2")] };
     Assert(compatibility.Check(packageManifest) is null);
+    Assert(compatibility.Check(packageManifest with { ApiVersion = "1.4" }) is null);
     Assert(compatibility.Check(packageManifest with { ApiVersion = "1.1" }) is not null);
     Assert(compatibility.Check(packageManifest with { Dependencies = [new("Unknown", "1.0.0")] }) is null);
     Throws<InvalidDataException>(() => ManifestValidator.Validate(packageManifest with { Dependencies = [new("../escape", "1.0.0")] }, dir));

@@ -15,13 +15,15 @@
 
 - M2 ZIP/开关/卸载/更新/回退重启生效，保留插件数据；管理卡片原位更新。剪贴板 1.1.1 是系统历史左列表/右预览、复制原项，事件/激活补刷，无轮询/自建库；本轮未改已安装目录。
 - 进程服务按插件生命周期持有；Core 负责参数、双流、取消、退出；Windows 创建时绑定 Job。非 Windows 适配器与实时输出回调仍无，17 项用例只编译。
-- API 1.3 RequestAsync：已有包复用、缺失由宿主首次确认，合并同包确认/安装；申请预留到取得租约。原 Acquire 不下载。插件不能自建下载器或持有租约外路径启动进程。
+- API 1.4 TryRequestAsync：已有包复用、缺失首次确认，拒绝正常返回 null；token 取消仍抛 OCE，同包共享确认/安装，预留到取得租约。原 Acquire 不下载，旧 RequestAsync 保留 1.3 拒绝异常语义兼容 DLL。插件不能自建下载器或持有租约外路径启动进程。
 - 可信源是随宿主分发的 PackageSources/default.json，目前 Gyan FFmpeg 9.0.2 essentials/win-x64；无远程刷新/自定义源。receipt v2 保留独立安装定义，v1 可读、升级失败只警告。
 - PluginPackageReferences 从清单/管理日志重建引用，含禁用、失败、待激活及回退版本；不可确认则禁止清理。插件卸载不删除包，重启生效后才解除引用，清理同时检查声明/申请/租约/事务。
 - SettingsPage.Parent 表达层级；SelectedPage、SelectedCategory 和 Breadcrumbs 分离。SettingsView 仍只负责页呈现/生命周期，复用 PageHost 动画、取消和错误处理；窄窗口只折叠大类列表。主页外观快捷入口直接到外观子页。
-- 视频插件 0.1.0 已有独立工程/清单/ZIP，声明 FFmpeg 9.0.2，在选择或手动读取时申请包并运行 ffprobe，解析 JSON，支持取消、异常和文件变化检测。实例持有模型，切页/隐藏不取消；StopAsync 经 UI dispatcher 取消并等待读取/设置保存。未写任何转码、封面/GPU 或模拟输出。
-- 视频专属设置“选择视频后读取信息”自动保存，坏配置保留，写失败可重试；源码版本和包版本为 0.1.0。以后更新已安装包必须提高版本，不能覆盖同版本。
-- E26 两位 GPT-6.1-Sol/high 静态复审，退出跨线程问题已修复复核；新增层级回归及 5 组 JSON 检查仅编译。Debug 全方案 0 错误/0 警告，Release 宿主发布及视频独立构建通过；235 个宿主文件哈希未变。没有启动应用、测试程序或 ffprobe。
+- 视频插件 0.1.1 声明 FFmpeg 9.0.2，选择/手动读取时申请包并运行 ffprobe、解析 JSON，支持取消、异常和文件变化检查。“先不安装”保留输入、退出忙碌并允许重试。实例持有模型，切页/隐藏不取消；StopAsync 经 UI dispatcher 取消并等待读取/保存。没有转码、封面/GPU 或模拟输出。
+- 视频偏好自动保存，坏配置保留、写失败可重试。0.1.1 要求 API 1.4；需更新宿主并安装新 ZIP 后显式退出重启，日常源码编译不会替换已安装 0.1.0 DLL。
+- E27 修正拒绝安装的异常控制流，以及 File.GetAttributes 对正常缺失路径抛出再捕获造成的调试噪声。改用 FileInfo.Attributes 的 -1 缺失值，仍向上检查重解析点，权限等其他错误保留。未改插件/依赖卸载分离及清理保护。
+- 全局计数及正常页脚空白移除，统计仍在主页/插件管理摘要；Notice 仅用于实际初始化/呈现失败、托盘不可用提示。
+- E27 GPT-6.1-Sol/high 静态复审未发现确定缺陷；Debug 12 工程 0 错误/0 警告，Release 宿主/视频独立构建通过，235 个宿主文件哈希未变。包回归 Windows 共 29 项只编译；没有启动应用、测试程序或 ffprobe，修复待用户复测。
 
 ## 3. 入口与产物
 
@@ -32,8 +34,8 @@
 | 依赖/进程 | [PackageManagement](../TractorTool.Core/Packages/PackageManagement.cs)、[PluginPackageReferences](../TractorTool.Core/Plugins/PluginPackageReferences.cs)、[ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs) |
 | 打包/检查 | [Build-VideoPlugin](../scripts/Build-VideoPlugin.ps1)、[VideoChecks](../tests/TractorTool.VideoChecks/Program.cs)、[NavigationChecks](../tests/TractorTool.IntegrationChecks/NavigationChecks.cs) |
 
-当前可供用户测试：artifacts/settings-hierarchy/host；插件 ZIP 为 artifacts/settings-hierarchy/video/TractorTool.VideoExport-0.1.0.zip。不自动安装；用户可拖 ZIP 后显式退出重启。旧 E22 副本不含 M3。构建/发布/文件检查证据在 artifacts/settings-hierarchy，完整步骤只见 DEVELOPMENT。
+当前可供用户测试：artifacts/dependency-feedback/host；插件 ZIP 为 artifacts/dependency-feedback/video/TractorTool.VideoExport-0.1.1.zip。不自动安装；使用新宿主，拖 ZIP 后显式退出重启。旧 E26 副本不含本轮修复。构建/发布/文件检查证据在 artifacts/dependency-feedback，完整步骤只见 DEVELOPMENT。
 
 下一步实现插件内真实 FFmpeg 导出、进度和首帧/GPU 验证，然后 M4 多预设/有限任务。当前信息读取也尚缺运行证据，不能因为能打包就判定完成验收。源码开发应正常 restore/build，避免沿用正式打包模式的依赖图。
 
-后续替换本快照，详细过程归 [E26](PROJECT_HISTORY.md#evidence-settings-hierarchy)。
+后续替换本快照，详细过程归 [E27](PROJECT_HISTORY.md#evidence-dependency-feedback)。

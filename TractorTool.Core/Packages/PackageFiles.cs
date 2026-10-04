@@ -33,13 +33,11 @@ internal static class PackageFiles
         // Include existing ancestors, not just the final component (junctions may redirect writes).
         for (string? current = AppPaths.Absolute(path); current is not null; current = Path.GetDirectoryName(current))
         {
-            try
-            {
-                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
-                    throw new InvalidDataException("外部工具目录不接受链接或重解析点。");
-            }
-            catch (FileNotFoundException) { }
-            catch (DirectoryNotFoundException) { }
+            // Attributes returns -1 for an absent path; other I/O failures still propagate.
+            // Keep checking ancestors, including links whose children do not exist yet.
+            var attributes = new FileInfo(current).Attributes;
+            if (attributes != (FileAttributes)(-1) && (attributes & FileAttributes.ReparsePoint) != 0)
+                throw new InvalidDataException("外部工具目录不接受链接或重解析点。");
         }
     }
 

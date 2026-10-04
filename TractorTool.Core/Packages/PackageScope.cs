@@ -12,19 +12,22 @@ public sealed class PackageScope(ExternalPackageService service, string owner,
     private bool _disposed;
     public PackageStatus GetStatus(PackageReference package) { Check(package); return service.GetStatus(package); }
     public async Task<IPackageLease> AcquireAsync(PackageReference package, CancellationToken cancellationToken = default)
-        => await TakeLeaseAsync(package, false, cancellationToken).ConfigureAwait(false);
+        => (await TakeLeaseAsync(package, false, cancellationToken).ConfigureAwait(false))!;
     public async Task<IPackageLease> RequestAsync(PackageReference package, CancellationToken cancellationToken = default)
-        => await TakeLeaseAsync(package, true, cancellationToken).ConfigureAwait(false);
-    private async Task<IPackageLease> TakeLeaseAsync(PackageReference package, bool request, CancellationToken cancellationToken)
+        => await TryRequestAsync(package, cancellationToken).ConfigureAwait(false) ?? throw new OperationCanceledException("已取消依赖安装。");
+    public Task<IPackageLease?> TryRequestAsync(PackageReference package, CancellationToken cancellationToken = default)
+        => TakeLeaseAsync(package, true, cancellationToken);
+    private async Task<IPackageLease?> TakeLeaseAsync(PackageReference package, bool request, CancellationToken cancellationToken)
     {
         Check(package);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stoppingToken);
         var inner = request
-            ? await service.RequestAsync(package, owner, linked.Token).ConfigureAwait(false)
+            ? await service.TryRequestAsync(package, owner, linked.Token).ConfigureAwait(false)
             : await service.AcquireAsync(package, owner, linked.Token).ConfigureAwait(false);
         lock (_gate)
         {
-            if (_disposed || linked.IsCancellationRequested) { inner.Dispose(); throw new OperationCanceledException(linked.Token); }
+            if (_disposed || linked.IsCancellationRequested) { inner?.Dispose(); throw new OperationCanceledException(linked.Token); }
+            if (inner is null) return null;
             var lease = new ScopedLease(inner, this); _leases.Add(lease); return lease;
         }
     }

@@ -38,7 +38,7 @@ internal static class PackageChecks
             await reload.RemoveAsync(Key);
             Equal(reload.GetStatus(Key).Phase, PackagePhase.Missing);
         });
-        Test("declining consent performs no download; retry and installed reuse work", async path =>
+        Test("declining consent returns normally; retry and installed reuse work", async path =>
         {
             var calls = 0; var prompts = 0;
             using var http = new HttpClient(new Handler((request, _) =>
@@ -46,12 +46,67 @@ internal static class PackageChecks
             await using var service = Create(path, http, new Probe());
             service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(false); };
             using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
-            await Throws<OperationCanceledException>(() => scope.RequestAsync(Key));
-            Require(calls == 0 && prompts == 1);
+            var exceptions = 0;
+            void Observe(object? sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs args)
+            { if (args.Exception is OperationCanceledException) Interlocked.Increment(ref exceptions); }
+            AppDomain.CurrentDomain.FirstChanceException += Observe;
+            try { Require(await scope.TryRequestAsync(Key) is null); }
+            finally { AppDomain.CurrentDomain.FirstChanceException -= Observe; }
+            Require(calls == 0 && prompts == 1 && exceptions == 0 && service.GetStatus(Key).Users.Count == 0);
             service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(true); };
-            using (await scope.RequestAsync(Key)) { }
-            using (await scope.RequestAsync(Key)) { }
+            using (var lease = await scope.TryRequestAsync(Key)) { Require(lease is not null); }
+            using (var lease = await scope.TryRequestAsync(Key)) { Require(lease is not null); }
             Require(calls == 1 && prompts == 2);
+            await service.RemoveAsync(Key); // A refusal/retry must not leak a reservation or lease.
+        });
+        Test("API 1.3 retains cancellation on declined consent", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            service.ConfirmInstallAsync = (_, _) => Task.FromResult(false);
+            using var scope = service.CreateScope("Legacy.Plugin", [Key], CancellationToken.None);
+            await Throws<OperationCanceledException>(() => scope.RequestAsync(Key));
+            Require(service.GetStatus(Key).Phase == PackagePhase.Missing);
+        });
+        Test("shared declined consent returns null to every requester", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var prompts = 0;
+            service.ConfirmInstallAsync = async (_, token) => { prompts++; entered.TrySetResult(); return await answer.Task.WaitAsync(token); };
+            using var firstScope = service.CreateScope("First", [Key], CancellationToken.None);
+            using var secondScope = service.CreateScope("Second", [Key], CancellationToken.None);
+            var first = firstScope.TryRequestAsync(Key);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var second = secondScope.TryRequestAsync(Key);
+            answer.TrySetResult(false);
+            Require(await first.WaitAsync(TimeSpan.FromSeconds(5)) is null && await second.WaitAsync(TimeSpan.FromSeconds(5)) is null);
+            Require(prompts == 1 && service.GetStatus(Key).Users.Count == 0);
+        });
+        Test("missing package paths and cleanup cause no first-chance missing-file exceptions", async path =>
+        {
+            var missing = 0;
+            void Observe(object? sender, System.Runtime.ExceptionServices.FirstChanceExceptionEventArgs args)
+            {
+                if (args.Exception is FileNotFoundException or DirectoryNotFoundException &&
+                    args.Exception.Message.Contains(path, StringComparison.OrdinalIgnoreCase)) Interlocked.Increment(ref missing);
+            }
+            AppDomain.CurrentDomain.FirstChanceException += Observe;
+            try
+            {
+                using var http = Client(Archive());
+                await using (var service = Create(path, http, new Probe()))
+                {
+                    Equal(service.GetStatus(Key).Phase, PackagePhase.Missing);
+                    await service.InstallAsync(Key); await service.RemoveAsync(Key);
+                    Equal(service.GetStatus(Key).Phase, PackagePhase.Missing);
+                    Require(!Directory.Exists(service.GetStatus(Key).Directory));
+                }
+                await using var reload = Create(path, http, new Probe());
+                Equal(reload.GetStatus(Key).Phase, PackagePhase.Missing);
+            }
+            finally { AppDomain.CurrentDomain.FirstChanceException -= Observe; }
+            Require(missing == 0);
         });
         Test("concurrent requests share consent and survive one caller cancelling", async path =>
         {
@@ -63,13 +118,13 @@ internal static class PackageChecks
             using var cancel = new CancellationTokenSource();
             using var firstScope = service.CreateScope("First", [Key], CancellationToken.None);
             using var secondScope = service.CreateScope("Second", [Key], CancellationToken.None);
-            var first = firstScope.RequestAsync(Key, cancel.Token);
+            var first = firstScope.TryRequestAsync(Key, cancel.Token);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            var second = secondScope.RequestAsync(Key);
+            var second = secondScope.TryRequestAsync(Key);
             cancel.Cancel(); await Throws<OperationCanceledException>(() => first);
             approve.TrySetResult(true);
             using var lease = await second.WaitAsync(TimeSpan.FromSeconds(5));
-            Require(prompts == 1 && service.GetStatus(Key).Users.Single() == "Second");
+            Require(lease is not null && prompts == 1 && service.GetStatus(Key).Users.Single() == "Second");
             await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
         });
         Test("declared or uncertain references prevent cleanup without a running lease", async path =>

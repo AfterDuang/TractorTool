@@ -14,6 +14,9 @@ public interface IExternalPackageService
     /// <summary>Reuse an installed package, or ask the host to confirm and install it. API 1.3.</summary>
     Task<IPackageLease> RequestAsync(PackageReference package, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("此宿主尚不支持依赖安装申请。");
+    /// <summary>Request a package; null means the user declined installation. Token cancellation still throws. API 1.4.</summary>
+    Task<IPackageLease?> TryRequestAsync(PackageReference package, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("此宿主尚不支持可拒绝的依赖安装申请。");
 }
 
 /// <summary>Hold until all processes and output reads using these tools have completed.</summary>

@@ -372,7 +372,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         public bool HasFiles;
         public bool Requested;
         public int Requests;
-        public Task? Preparation;
+        public Task<bool>? Preparation;
     }
     private sealed record Receipt(int Schema, string ArchiveHash, Dictionary<string, string> Tools, long InstalledBytes,
         PackageDefinition? Definition = null);

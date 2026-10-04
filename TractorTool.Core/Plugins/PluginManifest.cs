@@ -33,7 +33,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
             _ => false
         };
-        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2";
+        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3";
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
@@ -41,7 +41,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
         if (!manifest.SupportedPlatforms.Contains(Platform, StringComparer.OrdinalIgnoreCase) &&
             !manifest.SupportedPlatforms.Contains(Rid, StringComparer.OrdinalIgnoreCase))
             return $"不支持当前平台 {Rid}";
-        if (manifest.Dependencies.Length != 0 && manifest.ApiVersion is not ("1.2" or "1.3")) return "使用外部工具必须声明 API 1.2 或更高。";
+        if (manifest.Dependencies.Length != 0 && manifest.ApiVersion is not ("1.2" or "1.3" or "1.4")) return "使用外部工具必须声明 API 1.2 或更高。";
         return null;
     }
 }

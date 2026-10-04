@@ -55,7 +55,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView;
     [ObservableProperty] private string _pageTitle = "主页";
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
-    [ObservableProperty] private string _status = "正在加载插件…";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasNotice))] private string _notice = "";
+    public bool HasNotice => Notice.Length != 0;
     [ObservableProperty] private NavigationItem? _selectedNavigation;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLogsSelected))]
@@ -139,7 +140,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
         Plugins.Update(_registered, Navigation);
         Home.Update(Plugins.Items, Plugins.Summary, Plugins.DirectoryError);
-        Status = $"已加载 {_plugins.Records.Count(p => p.State == PluginState.Loaded)} 个插件";
         // Update the catalog without replacing a page opened while plugins were starting.
     }
 
@@ -172,7 +172,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             if (_presentPage?.Invoke(view) == false)
             {
                 ReleasePage(view);
-                Status = "当前页面取消了切换。";
                 return;
             }
         }
@@ -237,14 +236,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         if (_detached) return;
         _log.Write(source, "页面创建或呈现失败", error);
-        Status = "页面加载失败；可重试或查看日志。";
+        Notice = "页面加载失败；可重试或查看日志。";
         try
         {
             Navigate(key + "/error", navigationKey, title, "页面暂时无法打开",
                 new MessageView { DataContext = new MessageViewModel("页面加载失败",
                     error.GetBaseException().Message, retry, ShowLogsCommand) });
         }
-        catch (Exception ex) { _log.Write("Navigation", "错误页呈现失败", ex); Status = "页面呈现失败，请查看日志后重试。"; }
+        catch (Exception ex) { _log.Write("Navigation", "错误页呈现失败", ex); Notice = "页面呈现失败，请查看日志后重试。"; }
     }
     public void AttachPagePresenter(Func<Control, bool> present, Action clear)
     {
@@ -255,7 +254,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _navigating = true;
         try
         {
-            if (!present(initial)) Status = "当前页面取消了切换。";
+            present(initial);
         }
         catch (Exception ex) { ShowNavigationError(_pageKey, ActiveNavigation, PageTitle, "Navigation", ex, SelectedNavigation?.OpenCommand ?? ShowHomeCommand); }
         finally { _navigating = false; }
@@ -272,7 +271,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { _log.Write("Navigation", "退出页面呈现清理失败", ex); }
     }
     [RelayCommand] private Task ExitAsync() => _exit();
-    public void NotifyTrayUnavailable() => Status = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
+    public void NotifyTrayUnavailable() => Notice = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
     private void OnLogChanged()
     {
         // Coalesce worker notifications; the bounded log buffer remains the source of truth.

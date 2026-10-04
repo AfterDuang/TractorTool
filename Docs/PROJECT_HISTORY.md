@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M3（进行中） | [E27 · 依赖拒绝/缺失路径异常与全局计数修正（2026-10-04）](#evidence-dependency-feedback) |
 | M3（进行中） | [E26 · 设置层级与视频读取入口（2026-10-04）](#evidence-settings-hierarchy) |
 | M3（进行中） | [E25 · 依赖申请、引用清理与设置分类（2026-10-04）](#evidence-dependency-flow) |
 | M1 | [E01 · 首轮工作与证据（2026-10-03）](#evidence-baseline) |
@@ -1145,3 +1146,30 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 首次受限构建因 Avalonia 用户缓存日志权限失败；授权构建缓存访问后通过。修复退出调度时多 await 层次造成 CS0815，按本地 Avalonia Func<Task> 重载自动展开规则改为一次 await 后编译通过。最终 Debug 共 12 工程，0 错误/0 警告；Release 宿主发布、只引用发布 DLL 的视频插件独立构建同样成功。235 个原宿主文件哈希全部未变。日志及哈希在 artifacts/settings-hierarchy/{build-debug.log,publish-host.log,build-video.log,host-hash-check.json}；插件 ZIP 与 SHA256 在 video 子目录。
 
 本地 Markdown 链接、JSON/ZIP 结构与共享 SDK 排除、Git diff 空白检查通过。运行验收仍由用户执行；真实网络下载、ffprobe 媒体内容、设置交互、卸载保留/清理、退出并发，以及先前 M2/进程/包测试仍未取得运行证据。当前状态集中在 DEVELOPMENT，不把信息读取入口当视频导出验收完成。
+
+<a id="evidence-dependency-feedback"></a>
+
+## E27：依赖拒绝/缺失路径异常与全局计数修正（2026-10-04）
+
+用户测试截图显示：缺失依赖选择“先不安装”后调试器在共享准备任务上中断；清理和下次启动出现 Packages/.work 及 FFmpeg 路径缺失异常；全局插件计数占用每页底部空间。
+
+- 原拒绝流程抛 OCE，视频模型虽捕获，跨优化插件调试仍可能中断。新增 API 1.4 `TryRequestAsync`，拒绝返回 null、保留输入、结束忙碌，调用 token 取消及实际失败仍抛异常。Core 共享准备结果和申请预留、Scope 租约回收继续复用；旧 1.3 `RequestAsync` 签名/拒绝语义保留，程序集身份不变。新宿主仍接受旧清单。
+- `PackageFiles.CheckPath` 原来对每个缺失组件调用 File.GetAttributes 再捕获，导致 first-chance 异常日志。改用 FileInfo.Attributes 的 -1 缺失值并继续向上检查重解析点，权限等错误仍传播。核对 [.NET 10 属性文档](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.attributes?view=net-10.0)及[运行时实现](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileSystemInfo.Windows.cs)。没有关闭调试器异常设置，也没有吞掉未知错误。
+- 主窗口移除正常计数及“加载中”页脚；主页与插件管理已有摘要继续保留。条件 Notice 只在实际初始化/呈现失败、托盘不可用时占位，取消导航不留下常驻提示。
+- 视频插件升至 0.1.1 / API 1.4，使用新申请接口；独立生成 ZIP，不覆盖已安装 0.1.0。宿主设置安装入口也使用新流程。
+- 包回归从 Windows 26 项增至 29 项，新增旧协议拒绝兼容、共享拒绝、安装/清理/重启正常路径无缺失文件 first-chance 异常；已有拒绝/重试/取消共享用例改测新接口，补协议版本检查。全部仅编译未运行。
+- GPT-6.1-Sol/high 只读复审契约、共享确认、取消/租约及路径防护，未发现确定缺陷；实际并发、旧 DLL 加载及真实 UI 仍未验证。
+
+实际构建与打包：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug --no-restore -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\dependency-feedback\host
+./scripts/Build-VideoPlugin.ps1 -HostSdkDir H:\ProjH\TractorTool\artifacts\dependency-feedback\host -Output H:\ProjH\TractorTool\artifacts\dependency-feedback\video
+```
+
+首次 Debug 构建指出 App 初始化错误处理仍引用旧 Status 属性（CS1061），改为 Notice 后全方案 12 工程编译通过，0 警告/0 错误。Release 宿主发布及插件独立构建成功，235 个宿主文件哈希未变。日志为 artifacts/dependency-feedback/{build-debug-first.log,build-debug.log,publish-host.log,build-video.log,host-hash-check.json}。ZIP 为 video/TractorTool.VideoExport-0.1.1.zip，SHA256 为 `7A44BD7C8ABABD14BF177CAE0422B3522F0AC2CC3B852FFC91059E87973C2290`。
+
+静态核对 186 个本地文档链接、ZIP 9 个条目、清单版本/API、无共享 DLL 副本及 diff 空白均通过（static-checks.json）。独立打包后正常 restore 恢复源码 SDK 依赖图；首次受限 restore 无诊断退出 1，授权缓存访问后还原成功，证据在 restore-development.log。
+
+未启动应用、检查程序、UI 自动化或 FFmpeg，没有改用户实际依赖、已安装插件或数据。用户截图是问题定位证据，源码修正/构建不等于实机问题已验收；新宿主与新 ZIP 需一同使用，修复复测和已有阶段缺口仍留在 DEVELOPMENT。

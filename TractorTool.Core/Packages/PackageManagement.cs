@@ -55,46 +55,54 @@ public sealed partial class ExternalPackageService
         !_references.Dependencies.Any(d => d.Package == e.Definition.Package) &&
         e.Operation is null && e.Users.Count == 0 && e.Requests == 0 && e.Preparation is null;
 
+    // Preserve the API 1.3 contract for already-built plugins.
+    public async Task<IPackageLease> RequestAsync(PackageReference package, string owner, CancellationToken token = default) =>
+        await TryRequestAsync(package, owner, token).ConfigureAwait(false) ?? throw new OperationCanceledException("已取消依赖安装。");
+
     // Reservation spans consent, shared installation and lease acquisition. One caller cancelling
     // its wait must not stop another plugin's download or expose the ready package to cleanup.
-    public async Task<IPackageLease> RequestAsync(PackageReference package, string owner, CancellationToken token = default)
+    public async Task<IPackageLease?> TryRequestAsync(PackageReference package, string owner, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
-        Entry e; Task prepare;
+        Entry e; Task<bool> prepare;
         lock (_gate)
         {
             EnsureRunning(); e = Find(package);
             if (e.Operation is not null && e.InstallCancellation is null)
                 throw new InvalidOperationException("此依赖正在清理，请完成后再申请。");
             e.Requests++; e.Requested = true;
-            if (e.Phase == PackagePhase.Ready && e.Operation is null) prepare = Task.CompletedTask;
+            if (e.Phase == PackagePhase.Ready && e.Operation is null) prepare = Task.FromResult(true);
             else prepare = e.Preparation ??= StartPreparation(e, owner);
         }
         Notify();
         try
         {
-            await prepare.WaitAsync(token).ConfigureAwait(false);
+            var accepted = await prepare.WaitAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (!accepted) return null;
             return await AcquireAsync(package, owner, token).ConfigureAwait(false);
         }
         finally { lock (_gate) e.Requests--; Notify(); }
     }
-    private Task StartPreparation(Entry e, string owner)
+    private Task<bool> StartPreparation(Entry e, string owner)
     {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _operations.Add(completion.Task);
         _ = Task.Run(async () =>
         {
             Exception? failure = null;
+            var accepted = false;
             try
             {
                 if (!e.SourceAvailable) throw new NotSupportedException("可信安装源暂未提供此包版本。");
                 var confirm = ConfirmInstallAsync ?? throw new InvalidOperationException("宿主暂时无法确认依赖安装。");
                 if (!await confirm(new(e.SourceDefinition!, owner, e.HasFiles), _stopping.Token).ConfigureAwait(false))
-                    throw new OperationCanceledException("已取消依赖安装。");
+                    return;
                 _stopping.Token.ThrowIfCancellationRequested();
                 // Every requester may have left while the confirmation dialog was visible.
                 lock (_gate) if (e.Requests == 0) throw new OperationCanceledException("依赖申请已取消。");
                 await InstallAsync(e.Definition.Package, _stopping.Token, repair: true).ConfigureAwait(false);
+                accepted = true;
             }
             catch (Exception ex) { failure = ex; }
             finally
@@ -104,7 +112,7 @@ public sealed partial class ExternalPackageService
                     e.Preparation = null; _operations.Remove(completion.Task);
                     if (failure is OperationCanceledException canceled) completion.TrySetCanceled(canceled.CancellationToken);
                     else if (failure is not null) completion.TrySetException(failure);
-                    else completion.TrySetResult();
+                    else completion.TrySetResult(accepted);
                 }
                 Notify();
             }

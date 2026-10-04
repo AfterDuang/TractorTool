@@ -88,7 +88,7 @@ public partial class App : Application
                     catch (Exception ex)
                     {
                         _log.Write("Host", "初始化失败", ex);
-                        if (!_exiting) _vm.Status = "初始化失败：" + ex.Message;
+                        if (!_exiting) _vm.Notice = "初始化失败：" + ex.Message;
                     }
                     if (!_exiting && _tray.Available != true) _vm.NotifyTrayUnavailable();
                 };

@@ -79,8 +79,9 @@ public partial class VideoViewModel : ObservableObject
             var packages = _context.Packages ?? throw new NotSupportedException("宿主未提供依赖服务。");
             var processes = _context.Processes ?? throw new NotSupportedException("宿主未提供工具进程服务。");
             Status = "正在准备媒体工具…";
-            using var lease = await packages.RequestAsync(MediaPackage, operation.Token);
+            using var lease = await packages.TryRequestAsync(MediaPackage, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
+            if (lease is null) { Status = "尚未安装媒体工具，可稍后重新读取。"; return; }
             if (!File.Exists(path)) throw new FileNotFoundException("所选视频已不存在，请重新选择。");
             var before = new FileInfo(path); var length = before.Length; var modified = before.LastWriteTimeUtc;
             Status = "正在读取媒体信息…";

@@ -14,7 +14,7 @@
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
 | 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1；上下文 Processes 按插件生命周期提供，当前 Windows 10+ 适配；见下文 |
-| 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2 查询/取得已装版本，API 1.3 申请缺失包；确认、下载与安装统一由宿主处理 |
+| 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2 查询/取得已装版本，API 1.4 TryRequestAsync 申请缺失包；确认、下载与安装统一由宿主处理 |
 | 有限任务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
@@ -33,7 +33,7 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.3，仍接受 1.0/1.1/1.2；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3 |
+| `apiVersion` | 当前 1.4，仍接受 1.0/1.1/1.2/1.3；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4 |
 | `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -90,17 +90,18 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 
 输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
 
-### 外部工具接入（API 1.3）
+### 外部工具接入（API 1.4）
 
-插件在用户使用功能时调用 `RequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。取消抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`；失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
+插件在用户使用功能时调用 `TryRequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。用户选择“先不安装”正常返回 `null`，插件保留输入并结束本次操作，不作为异常；调用方 token 取消仍抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`。旧 API 1.3 `RequestAsync` 的签名与拒绝时抛取消异常的语义保持兼容，新插件使用 1.4。失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
 
 清单只声明包 ID 与固定版本，不传入下载 URL、哈希或安装脚本。不在初始化中取得长期租约或自动下载。源缺失不使插件整体不兼容；需要依赖的操作不可继续，但其他页面仍可用。软件维护的索引为 `PackageSources/default.json`，当前提供 FFmpeg 9.0.2 / win-x64，尚无远程索引刷新和自定义源。
 
 通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
 
 ```csharp
-var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.3 的宿主。");
-using var lease = await packages.RequestAsync(new("FFmpeg", "9.0.2"), cancellationToken);
+var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.4 的宿主。");
+using var lease = await packages.TryRequestAsync(new("FFmpeg", "9.0.2"), cancellationToken);
+if (lease is null) return; // 用户暂不安装；保留已选择的输入，允许稍后重试。
 var result = await context.Processes!.RunAsync(
     new(lease.Tools["ffprobe"], ["-v", "error", "-show_format", "-show_streams", "-of", "json", inputPath]),
     cancellationToken);
