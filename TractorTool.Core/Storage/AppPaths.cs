@@ -7,6 +7,14 @@ public sealed record BootstrapSettings : IVersionedSettings
 {
     public int SchemaVersion { get; init; } = 1;
     public string? DataRoot { get; init; }
+    public DataMigrationRequest? Migration { get; init; }
+    public string? PreviousDataRoot { get; init; }
+    public static void Validate(BootstrapSettings value)
+    {
+        if (value.DataRoot is { } root) _ = AppPaths.Absolute(root);
+        if (value.PreviousDataRoot is { } previous) _ = AppPaths.Absolute(previous);
+        if (value.Migration is { } migration) DataMigrationRequest.Validate(migration);
+    }
 }
 
 public sealed class AppPaths : IAppPaths
@@ -32,18 +40,18 @@ public sealed class AppPaths : IAppPaths
             throw new InvalidDataException("数据目录不能与软件 Plugins 目录互相包含。");
     }
 
-    public static AppPaths Open(string? testProfileRoot = null)
+    public static AppPaths Open(string? testProfileRoot = null, bool ensureDirectories = true)
     {
         var fixedRoot = testProfileRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
         fixedRoot = Absolute(fixedRoot);
         Directory.CreateDirectory(fixedRoot);
-        var store = new JsonFileStore<BootstrapSettings>(Path.Combine(fixedRoot, "bootstrap.json"));
+        var store = new JsonFileStore<BootstrapSettings>(Path.Combine(fixedRoot, "bootstrap.json"), BootstrapSettings.Validate);
         var settings = store.Load();
         var result = new AppPaths(AppContext.BaseDirectory, fixedRoot, settings.DataRoot);
         if (settings.DataRoot is not null && !Directory.Exists(result.DataRoot))
             throw new DirectoryNotFoundException($"数据目录不可用：{result.DataRoot}。请恢复该目录或修正 {result.BootstrapFile}，未创建空数据替代。");
-        result.EnsureDataDirectories();
+        if (ensureDirectories) result.EnsureDataDirectories();
         if (!File.Exists(result.BootstrapFile)) store.Save(settings);
         return result;
     }

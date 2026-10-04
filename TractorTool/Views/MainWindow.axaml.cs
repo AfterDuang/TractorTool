@@ -51,6 +51,14 @@ public partial class MainWindow : FAAppWindow
             };
             next.Plugins.ConfirmAsync = message => _dialogs.ConfirmAsync("插件变更", message);
             next.Settings.ExternalTools.ConnectConfirmation(_dialogs.ConfirmAsync);
+            next.Settings.Migration.PickDirectoryAsync = async () =>
+            {
+                var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                    { Title = "选择空的应用数据目录", AllowMultiple = false });
+                return folders.Count == 0 ? null : folders[0].TryGetLocalPath()
+                    ?? throw new InvalidOperationException("请选择本机磁盘上的空目录。");
+            };
+            next.Settings.Migration.ConfirmAsync = message => _dialogs.ConfirmAsync("迁移应用数据", message);
         }
         next?.AttachPagePresenter(PagePresenter.Present, PagePresenter.Clear);
     }
@@ -60,6 +68,8 @@ public partial class MainWindow : FAAppWindow
         previous.Plugins.PickArchiveAsync = null;
         previous.Plugins.ConfirmAsync = null;
         previous.Settings.ExternalTools.ConnectConfirmation(null);
+        previous.Settings.Migration.PickDirectoryAsync = null;
+        previous.Settings.Migration.ConfirmAsync = null;
         previous.DetachPagePresenter();
     }
     private void ApplyCaptionColors()

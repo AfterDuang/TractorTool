@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（可靠性实现） | [E37 · 数据目录迁移与启动恢复（2026-10-04）](#evidence-data-migration) |
 | M5（可靠性起步） | [E36 · 用户回归反馈与日志磁盘保留（2026-10-04）](#evidence-log-retention) |
 | M4（用户反馈修正） | [E35 · 日志全部已读、底部跟随与管理冲突（2026-10-04）](#evidence-log-follow) |
 | M4（用户反馈修正） | [E34 · 预设命名、公共任务归属与双代理复审（2026-10-04）](#evidence-preset-task-review) |
@@ -1409,3 +1410,21 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 静态 verify_static.py / static-checks.json 核对 10 份文档 240 处本地链接/锚点及 6 个 AXAML，Issues 为空；git diff --check 通过。主代理复核清理边界及失败路径，没有新子代理审查，不将旧审查结论套用到本轮。用户原有 .vscode/launch.json 空白修改继续保留，不纳入提交。
 
 Contracts API 1.7 / UI 1.3 与视频 0.5.2 未变，插件未重新打包或安装。未运行检查程序、应用、FFmpeg、UI 自动化，未访问实际媒体/剪贴板，也未清理真实用户日志。M5 开始不等于阶段完成；M1–M4 未逐项记录的运行缺口、旧取消异常及 Job 终止轮询仍保留。
+
+<a id="evidence-data-migration"></a>
+
+## E37：数据目录迁移与启动恢复（2026-10-04）
+
+用户在 M5 日志保留后要求“继续”，按接续计划实现数据根迁移；未扩大到 Python/AI 或通用事务平台。本轮无子代理，主代理复核复制范围、启动次序与故障提交点。
+
+- Core DataRootMigration 沿用 AppPaths/JsonFileStore/InstanceLease：固定 bootstrap schema 1 增加请求与 previousDataRoot，旧文件兼容；本机空目标、目录重叠/链接/空间检查，事务归属标记，流式复制及 SHA256 校验，无覆盖提交，保留文件时间（允许目标文件系统精度不同）。源数据、目标已复制文件和插件代码不自动删除。
+- 设置页增加选择/确认、待处理目标、重试/取消与旧目录信息，关停等待请求保存。App 启动先独占 profile/DataRoot/插件目录，再后台执行迁移并显示进度，完成后才创建写入服务和插件；启动窗口关闭取消复制并退出。普通目标冲突正常返回原因，不人为抛异常；实际 I/O/损坏记录仍捕获并说明。
+- Config/Data/Packages/Logs 迁移，Cache/Packages/.work/bootstrap/host.lock/Plugins 不复制。失败重试只复用相同内容，外部变化拒绝覆盖；取消只撤销请求，保留部分目标。待重启管理变更在旧根先处理，不与迁移交叉执行。
+- 复制验证后原子切换指针，事务暂留；PluginManager 在新根核对并重绑定当前安装引用的插件回退状态及快照，全部完成才清除请求；切换前先复用同一校验逻辑，损坏快照在旧指针阶段拒绝迁移。指针提交前失败回原根；提交后收尾失败停在恢复阶段，重启先完成收尾，不加载旧根插件。复核修正了“保存指针报错后错误记录不得使用尚未成功提交的新 state”的分支，并重新读取落盘指针处理保存结果不确定的情况。
+- 新增 DataMigrationChecks 9 组及 PluginManagementChecks 4 组：旧 schema、复制范围/源保留、目录冲突、目标占用、取消恢复、改变源后的拒绝、提交后恢复、bootstrap 写入失败、目标混入内容、管理变更互斥、迁移后快照回退和管理状态占用后的收尾、损坏快照提交前拒绝。其中 2 组 Windows 专属占用场景，全部只编译未运行。测试在随机隔离目录内构造夹具，不代表真实插件运行或 UI 已验。
+
+证据位于 artifacts/m5-data-migration：首次受限构建遇 Avalonia BuildServices 的 LocalAppData 日志权限错误（会话输出保留）；获自动审批后 build-debug.log 成功，未关闭构建任务或改 IDE。build-final.log 成功；复核时错误移除了 AppLogLevel 所需 using，build-reviewed.log 记录 2 个 CS0103，恢复后 build-verified.log 成功。最后处理跨卷时间精度后的 build-final-storage.log 为 Debug 12 工程 **0 警告/0 错误**。publish-host.log 生成首份副本；publish-host-final.log 发布时间精度修正副本。随后补切换前快照校验，build-delivery.log 再次通过 12 工程、0 警告/0 错误；最终 publish-host-reviewed.log 沿用 Publish-Host.ps1 生成 win-x64 自包含 **host-reviewed/TractorTool.exe**，不覆盖旧安装。
+
+静态 verify_static.py / static-checks.json 核对 10 份文档、242 处本地链接/锚点、6 个 AXAML，Issues 为空；git diff --check 通过。Contracts API 1.7 / UI 1.3、剪贴板 1.1.1、视频 0.5.2 均未改；没有重打包或替换已安装插件。保留用户原有 .vscode/launch.json 空白修改，不纳入提交。未运行应用、检查程序、FFmpeg 或 UI 自动化，未操作真实配置/依赖包/媒体/剪贴板。
+
+交付由用户在隔离 profile 和新空目录验收。启动进度/退出、跨卷时间精度、空间不足、ACL、链接、取消恢复、提交点两侧故障、真实包复用和插件回退仍待运行证据；M5 不能标记完成，既有 M1–M4 缺口、旧取消异常和 Job 终止轮询仍保留。后续推进统一分发/CI/安装器。

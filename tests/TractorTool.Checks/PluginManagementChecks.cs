@@ -151,6 +151,79 @@ internal static class PluginManagementChecks
             Assert(manager.Snapshot.Single().ActiveVersion == "1.0.0" && File.ReadAllText(config) == "last old-version save");
             Assert(File.ReadAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "preferences.json")) == "new-version format");
         });
+        check("Management pending changes block migration before copying", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Install(manager, paths);
+            var migration = new DataRootMigration(paths);
+            var target = paths.DataRoot + "-moved";
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null);
+            Assert(migration.Queue(target, manager) is not null && !Directory.Exists(target));
+            manager.CancelPending("Checks.Management");
+            Assert(migration.Queue(target, manager) is null);
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null);
+            Assert(migration.ApplyAtStartup(manager, null, default).Error is not null);
+            Assert(!Directory.Exists(target) && migration.Snapshot.DataRoot is null && manager.Snapshot.Single().Pending is not null);
+        });
+        check("Management rollback uses migrated snapshots and leaves original data unchanged", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "preferences.json"), "old format");
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            File.WriteAllText(Path.Combine(data, "preferences.json"), "new format");
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var recovery = manager.Snapshot.Single().Recovery!;
+            var migration = new DataRootMigration(paths);
+            Assert(migration.Queue(paths.DataRoot + "-moved", manager) is null);
+            var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
+            Assert(result.Error is null && manager.Snapshot.Single().Recovery!.DataRoot == result.Paths.DataRoot);
+            var originalSnapshot = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            var savedMetadata = File.ReadAllText(originalSnapshot);
+            Assert(savedMetadata.Contains(JsonSerializer.Serialize(paths.DataRoot, JsonOptions.Value)));
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
+            Assert(manager.Snapshot.Single().Pending!.DataRoot == result.Paths.DataRoot);
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null });
+            Assert(File.ReadAllText(Path.Combine(result.Paths.GetPluginDataDirectory("Checks.Management"), "preferences.json")) == "old format");
+            Assert(File.ReadAllText(Path.Combine(data, "preferences.json")) == "new format");
+            Assert(File.ReadAllText(originalSnapshot) == savedMetadata);
+        });
+        check("Migration detects damaged recovery snapshots before committing the pointer", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var recovery = manager.Snapshot.Single().Recovery!;
+            var backup = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "saved", "unexpected.txt");
+            File.WriteAllText(backup, "damaged snapshot fixture");
+            var migration = new DataRootMigration(paths);
+            Assert(migration.Queue(paths.DataRoot + "-moved", manager) is null);
+            var result = migration.ApplyAtStartup(manager, null, default);
+            Assert(result.Error?.Contains("回退快照无效") == true && migration.Snapshot.DataRoot is null);
+            Assert(manager.Snapshot.Single().Recovery!.DataRoot == paths.DataRoot && File.ReadAllText(backup) == "damaged snapshot fixture");
+        });
+        if (OperatingSystem.IsWindows()) check("Migration resumes after pointer commit and a locked plugin management state", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "fixture.txt"), "retained source");
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var migration = new DataRootMigration(paths);
+            var target = paths.DataRoot + "-moved";
+            Assert(migration.Queue(target, manager) is null);
+            using (var busy = new FileStream(Path.Combine(paths.PluginRoot, ".management", "state.json"), FileMode.Open, FileAccess.Read, FileShare.Read))
+                Reject<IOException>(() => migration.ApplyAtStartup(manager, null, default));
+            Assert(migration.Snapshot.DataRoot == target && migration.Snapshot.Migration is not null);
+            Assert(manager.Snapshot.Single().Recovery!.DataRoot == paths.DataRoot);
+            using var targetLease = new InstanceLease(target);
+            var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, target);
+            var resumed = new DataRootMigration(next).ApplyAtStartup(manager, null, default);
+            Assert(resumed.Error is null && migration.Snapshot.Migration is null);
+            Assert(manager.Snapshot.Single().Recovery!.DataRoot == target);
+            Assert(File.ReadAllText(Path.Combine(data, "fixture.txt")) == "retained source");
+        });
         check("Management pending change rejects different data profile", () =>
         {
             var paths = Paths();

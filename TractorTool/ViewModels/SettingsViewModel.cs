@@ -29,6 +29,7 @@ public partial class SettingsViewModel : ViewModelBase
     public Task SaveCompletion => _saveCompletion;
     public AppPaths Paths { get; }
     public ExternalToolsViewModel ExternalTools { get; }
+    public DataMigrationViewModel Migration { get; }
     public string ApplicationVersion => AppInfo.Version;
     public string LogRetentionDescription => AppLog.RetentionDescription;
     public ThemeChoice[] Themes { get; } = [new("System", "跟随系统"), new("Light", "浅色"), new("Dark", "深色")];
@@ -68,10 +69,11 @@ public partial class SettingsViewModel : ViewModelBase
     public bool HasPluginSettings => PluginSettings.Count != 0;
     public IAsyncRelayCommand? ExitCommand { get; internal set; }
     public SettingsViewModel(AppPaths paths, JsonFileStore<HostSettings> store, HostSettings settings, AppLog log,
-        ExternalPackageService? packages = null)
+        ExternalPackageService? packages = null, TractorTool.Core.Plugins.PluginManager? manager = null)
     {
         Paths = paths; _store = store; _settings = settings; _log = log;
         ExternalTools = new(packages, OpenPackage);
+        Migration = new(paths, manager, log);
         SoftwareSettings = [new("通用设置", () => new SettingsGeneralView { DataContext = this }),
             new("外部依赖", () => new ExternalToolsView { DataContext = ExternalTools })];
         GeneralPages = [new("外观", () => new SettingsAppearanceView { DataContext = this }, SoftwareSettings[0], "主题、主题色与界面动画", ToolIconKind.Palette),
@@ -139,13 +141,13 @@ public partial class SettingsViewModel : ViewModelBase
     public Task BeginShutdown()
     {
         Dispatcher.UIThread.VerifyAccess();
-        if (_stopping) return _saveCompletion;
+        if (_stopping) return Task.WhenAll(_saveCompletion, Migration.BeginShutdown());
         _stopping = true;
         ExternalTools.Dispose();
         RetrySaveCommand.NotifyCanExecuteChanged();
         // One retry on exit, never an unbounded failure loop; App owns the overall timeout.
         if (HasSaveError && !IsSaving) QueueSave(_settings);
-        return _saveCompletion;
+        return Task.WhenAll(_saveCompletion, Migration.BeginShutdown());
     }
 
     private void QueueSave(HostSettings settings)

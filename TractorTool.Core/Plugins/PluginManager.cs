@@ -5,7 +5,7 @@ namespace TractorTool.Core.Plugins;
 /// <summary>One installation owner; all mutations are serialized and no loaded version is overwritten.</summary>
 public sealed class PluginManager : IDisposable
 {
-    private readonly AppPaths _paths;
+    private AppPaths _paths;
     private readonly HostCompatibility _compatibility;
     private readonly JsonFileStore<PluginManagementState> _store;
     private readonly FileStream _lease;
@@ -14,6 +14,11 @@ public sealed class PluginManager : IDisposable
     private PluginManagementState _state;
     private bool _disposed;
     public IReadOnlyList<ManagedPlugin> Snapshot { get { lock (_gate) return _state.Plugins.ToArray(); } }
+    public string? DataMigrationBlockReason
+    {
+        get { lock (_gate) return _state.Plugins.Any(p => p.Pending is not null || p.AwaitingLoad)
+            ? "请先完成插件的待重启变更或处理加载失败，再迁移数据目录。" : null; }
+    }
     // Invalidate dependency cleanup before committing a new selection; rebuild before returning.
     internal event Action? StateChanging;
     internal event Action? StateChanged;
@@ -40,6 +45,49 @@ public sealed class PluginManager : IDisposable
             _state = _store.Load();
         }
         catch { _lease.Dispose(); throw; }
+    }
+
+    // Called only at startup, before PluginHost discovery or any plugin DLL is loaded.
+    internal void ValidateDataRootMigration(string source, AppPaths target) => RebindDataRoot(source, target, commit: false);
+    internal void CompleteDataRootMigration(string source, AppPaths target) => RebindDataRoot(source, target, commit: true);
+
+    private void RebindDataRoot(string source, AppPaths target, bool commit)
+    {
+        lock (_gate)
+        {
+            Check();
+            if (DataMigrationBlockReason is { } blocked) throw new InvalidOperationException(blocked);
+            if (target.AppRoot != _paths.AppRoot || target.BootstrapRoot != _paths.BootstrapRoot)
+                throw new InvalidDataException("迁移不能更换软件或启动配置位置。");
+            var next = _state.Plugins.ToArray();
+            for (var i = 0; i < next.Length; i++)
+            {
+                var item = next[i];
+                if (item.Recovery is not { } recovery || (recovery.DataRoot != source && recovery.DataRoot != target.DataRoot)) continue;
+                var root = PluginFiles.Under(target.DataRoot, "Data", ".plugin-backups", recovery.Token);
+                var metadata = new JsonFileStore<RecoveryMetadata>(PluginFiles.Under(root, "snapshot.json"));
+                var saved = metadata.Load();
+                if (saved.Id != item.Id || saved.Version != recovery.Version || saved.HadData != recovery.HadData ||
+                    (saved.DataRoot != source && saved.DataRoot != target.DataRoot) ||
+                    PluginFiles.Digest(PluginFiles.Under(root, "saved")) != saved.Digest)
+                    throw new InvalidDataException("迁移后的插件回退快照无效：" + item.Id);
+                if (commit && saved.DataRoot != target.DataRoot)
+                {
+                    PluginFiles.Under(root, "snapshot.json.bak");
+                    metadata.Save(saved with { DataRoot = target.DataRoot });
+                }
+                next[i] = item with { Recovery = recovery with { DataRoot = target.DataRoot } };
+            }
+            if (!commit) return;
+            if (!next.SequenceEqual(_state.Plugins))
+            {
+                var state = _state with { Plugins = next };
+                PluginFiles.Under(_root, "state.json"); PluginFiles.Under(_root, "state.json.bak");
+                _store.Save(state);
+                _state = state;
+            }
+            _paths = target;
+        }
     }
 
     // Called only at startup, before PluginHost discovery or any plugin DLL is loaded.

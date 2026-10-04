@@ -176,5 +176,6 @@ ProcessChecks.Run(root, Check);
 PackageChecks.Run(root, Check);
 TaskChecks.Run(root, Check);
 LogChecks.Run(root, Check);
+DataMigrationChecks.Run(root, Check);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; isolated evidence={root}");
 return failed == 0 ? 0 : 1;
