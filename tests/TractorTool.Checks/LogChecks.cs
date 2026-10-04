@@ -21,19 +21,17 @@ internal static class LogChecks
             IAppLog legacy = new LegacyLog();
             legacy.Write(AppLogLevel.Warning, "Test", "default method keeps legacy provider compatible");
         });
-        check("Acknowledgment preserves newer errors and survives bounded log eviction", () =>
+        check("Read clears all current errors without deleting records; later errors alert again", () =>
         {
             var log = new AppLog(DirectoryFor("badge"));
             for (var i = 0; i < 350; i++) log.Write(AppLogLevel.Error, "Test", "error " + i);
             var shown = log.Snapshot();
             Assert(shown.Entries.Count == 300 && shown.UnreadErrors == 350);
             log.Write(AppLogLevel.Error, "Test", "new error");
-            log.AcknowledgeErrors(shown.TotalErrors);
-            Assert(log.Snapshot().UnreadErrors == 1);
-            log.AcknowledgeErrors(0);
-            Assert(log.Snapshot().UnreadErrors == 1);
-            log.AcknowledgeErrors(log.Snapshot().TotalErrors);
+            log.AcknowledgeErrors();
             Assert(log.Snapshot().UnreadErrors == 0 && log.Snapshot().Entries.Count == 300);
+            log.Write(AppLogLevel.Error, "Test", "error after read");
+            Assert(log.Snapshot().UnreadErrors == 1);
         });
         check("Faulty display subscribers cannot block logging or later subscribers", () =>
         {

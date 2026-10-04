@@ -75,7 +75,7 @@ Check("Routine navigation stays out of logs and the error badge updates on other
     log.Write(AppLogLevel.Error, "Fixture", "first error"); Dispatcher.UIThread.RunJobs();
     Assert(vm.FooterNavigation[0].UnreadErrors == 1 && vm.FooterNavigation[0].HasErrors);
 });
-Check("Logs filter and paused acknowledgment preserve new errors; tasks share the log page", () =>
+Check("Logs read clears paused and filtered errors; later errors alert and tasks share the page", () =>
 {
     vm.ShowLogsCommand.Execute(null); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
     Assert(vm.CurrentPage is LogsView);
@@ -84,11 +84,13 @@ Check("Logs filter and paused acknowledgment preserve new errors; tasks share th
     Assert(vm.Logs.Entries.Count == 1 && vm.Logs.Entries[0].IsError);
     vm.Logs.IsPaused = true;
     log.Write(AppLogLevel.Error, "Fixture", "second error"); Dispatcher.UIThread.RunJobs();
-    vm.Logs.MarkErrorsReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
-    Assert(vm.FooterNavigation[0].UnreadErrors == 1 && vm.Logs.Entries.Count == 1);
+    vm.Logs.MarkReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+    Assert(vm.FooterNavigation[0].UnreadErrors == 0 && vm.Logs.Entries.Count == 1);
+    log.Write(AppLogLevel.Error, "Fixture", "third error"); Dispatcher.UIThread.RunJobs();
+    Assert(vm.FooterNavigation[0].UnreadErrors == 1);
     vm.Logs.Search = ""; vm.Logs.IsPaused = false;
-    Assert(vm.Logs.Entries.Count == 2);
-    vm.Logs.MarkErrorsReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+    Assert(vm.Logs.Entries.Count == 3 && vm.Logs.Entries.Select(x => x.Entry.Id).SequenceEqual(vm.Logs.Entries.Select(x => x.Entry.Id).Order()));
+    vm.Logs.MarkReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
     Assert(!vm.FooterNavigation[0].HasErrors);
     vm.Logs.SelectedTab = 1; Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
     Assert(vm.CurrentPage!.GetVisualDescendants().OfType<TasksView>().Any());
@@ -483,6 +485,7 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
 AppearanceChecks.Run(Check, Pump, output);
 MotionChecks.Run(Check);
 TaskUiChecks.Run(Check, Pump, output);
+LogViewChecks.Run(Check, output);
 NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
 PluginManagementUiChecks.Run(Check, Pump, output);

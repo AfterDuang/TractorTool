@@ -35,19 +35,30 @@ internal static class PluginManagementChecks
         }
         void Install(PluginManager manager, AppPaths paths)
         {
-            manager.QueueInstall(Zip(paths), []); manager.ApplyPending();
+            Assert(manager.QueueInstall(Zip(paths), []) is null); manager.ApplyPending();
             // State-machine fixture outcome, not a DLL-load integration test.
             manager.RecordLoadResults([new PluginRecord(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0"), Manifest(), PluginState.Loaded, "State fixture")]);
         }
         check("Management stages package until next startup", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
-            var entry = manager.QueueInstall(Zip(paths), []);
+            Assert(manager.QueueInstall(Zip(paths), []) is null); var entry = manager.Snapshot.Single();
             Assert(entry.ActiveVersion is null && entry.Pending?.Version == "1.0.0");
             Assert(!Directory.Exists(Path.Combine(paths.PluginRoot, entry.Id)));
             manager.ApplyPending();
             Assert(manager.Snapshot.Single().ActiveVersion == "1.0.0");
             Assert(File.Exists(Path.Combine(paths.PluginRoot, entry.Id, "1.0.0", "Fixture.dll")));
+        });
+        check("Management pending conflicts return a reason without changing the queued request or staging", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var before = manager.Snapshot.Single();
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), [])?.Contains("待重启") == true);
+            Assert(manager.QueueChange(before.Id, PluginChangeKind.Uninstall, [])?.Contains("待重启") == true);
+            Assert(manager.Snapshot.Single() == before);
+            var staging = Path.Combine(paths.PluginRoot, ".management", "staging");
+            Assert(Directory.GetDirectories(staging).Select(Path.GetFileName).SequenceEqual([before.Pending!.Token]));
         });
         check("Management installation lock spans profiles", () =>
         {
@@ -58,7 +69,7 @@ internal static class PluginManagementChecks
         check("Management cancellation removes only its staging", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
-            var entry = manager.QueueInstall(Zip(paths), []);
+            Assert(manager.QueueInstall(Zip(paths), []) is null); var entry = manager.Snapshot.Single();
             var stage = Path.Combine(paths.PluginRoot, ".management", "staging", entry.Pending!.Token);
             manager.CancelPending(entry.Id);
             Assert(manager.Snapshot.Single().Pending is null && !Directory.Exists(stage));
@@ -89,20 +100,20 @@ internal static class PluginManagementChecks
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
             var original = File.ReadAllBytes(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0", "Fixture.dll"));
-            Reject<IOException>(() => manager.QueueInstall(Zip(paths), []));
+            Assert(manager.QueueInstall(Zip(paths), [])?.Contains("此版本已存在") == true);
             Reject<InvalidDataException>(() => manager.QueueInstall(Zip(paths, Manifest("2.0.0", "checks.management")), []));
             Assert(original.SequenceEqual(File.ReadAllBytes(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0", "Fixture.dll"))));
         });
         check("Management activation detects tampered staged package", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
-            var entry = manager.QueueInstall(Zip(paths), []);
+            Assert(manager.QueueInstall(Zip(paths), []) is null); var entry = manager.Snapshot.Single();
             File.WriteAllText(Path.Combine(paths.PluginRoot, ".management", "staging", entry.Pending!.Token, entry.Id, "1.0.0", "extra.txt"), "tampered");
             manager.ApplyPending();
             Assert(manager.Snapshot.Single().ActiveVersion is null && manager.Snapshot.Single().Error.Length != 0);
             manager.CancelPending(entry.Id);
             Assert(manager.Snapshot.Single().Pending is null && manager.Snapshot.Single().Error.Length == 0);
-            manager.QueueInstall(Zip(paths), []); // Bad install can be replaced through the supported flow.
+            Assert(manager.QueueInstall(Zip(paths), []) is null); // Bad install can be replaced through the supported flow.
         });
         check("Management first adoption preserves original manifest ID casing", () =>
         {
@@ -118,11 +129,11 @@ internal static class PluginManagementChecks
         check("Management selects one version and overrides legacy disabled list", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
-            manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []); manager.ApplyPending();
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
             var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot));
             host.Discover(["Checks.Management"], manager.Snapshot);
             Assert(host.Records.Count == 1 && host.Records[0].Manifest?.Version == "2.0.0" && host.Records[0].State == PluginState.Discovered);
-            manager.QueueChange("Checks.Management", PluginChangeKind.Disable, host.Records); manager.ApplyPending();
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, host.Records) is null); manager.ApplyPending();
             host.Discover([], manager.Snapshot); Assert(host.Records.Single().State == PluginState.Disabled);
         });
         check("Management update snapshots last data and rollback retains failed data", () =>
@@ -130,20 +141,20 @@ internal static class PluginManagementChecks
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
             var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
             var config = Path.Combine(data, "preferences.json"); File.WriteAllText(config, "before request");
-            manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null);
             File.WriteAllText(config, "last old-version save");
             manager.ApplyPending(); File.WriteAllText(config, "new-version format");
             var recovery = manager.Snapshot.Single().Recovery!;
             manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Failed, "Injected outcome")]);
             Assert(manager.Snapshot.Single().Error.Length != 0);
-            manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []); manager.ApplyPending();
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null); manager.ApplyPending();
             Assert(manager.Snapshot.Single().ActiveVersion == "1.0.0" && File.ReadAllText(config) == "last old-version save");
             Assert(File.ReadAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "preferences.json")) == "new-version format");
         });
         check("Management pending change rejects different data profile", () =>
         {
             var paths = Paths();
-            using (var manager = new PluginManager(paths, compatibility)) manager.QueueInstall(Zip(paths), []);
+            using (var manager = new PluginManager(paths, compatibility)) Assert(manager.QueueInstall(Zip(paths), []) is null);
             var other = new AppPaths(paths.AppRoot, paths.DataRoot + "-other"); other.EnsureDataDirectories();
             using var next = new PluginManager(other, compatibility); next.ApplyPending();
             Assert(next.Snapshot.Single().Pending is not null && next.Snapshot.Single().ActiveVersion is null && next.Snapshot.Single().Error.Length != 0);
@@ -153,7 +164,7 @@ internal static class PluginManagementChecks
             var paths = Paths();
             using (var manager = new PluginManager(paths, compatibility))
             {
-                var item = manager.QueueInstall(Zip(paths), []);
+                Assert(manager.QueueInstall(Zip(paths), []) is null); var item = manager.Snapshot.Single();
                 var target = Path.Combine(paths.PluginRoot, item.Id, "1.0.0"); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 Directory.Move(Path.Combine(paths.PluginRoot, ".management", "staging", item.Pending!.Token, item.Id, "1.0.0"), target);
             }
@@ -165,7 +176,7 @@ internal static class PluginManagementChecks
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
             var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
             File.WriteAllText(Path.Combine(data, "keep.txt"), "user fixture");
-            manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []);
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
             Assert(Directory.Exists(Path.Combine(paths.PluginRoot, "Checks.Management")));
             manager.ApplyPending();
             Assert(manager.Snapshot.Single().ActiveVersion is null && !Directory.Exists(Path.Combine(paths.PluginRoot, "Checks.Management")));

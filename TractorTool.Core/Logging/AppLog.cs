@@ -8,7 +8,7 @@ public sealed record LogEntry(long Id, DateTimeOffset Timestamp, AppLogLevel Lev
     public string Text => $"{Timestamp:O} [{LevelName}] [{Source}] {Message}" + (Detail is null ? "" : Environment.NewLine + Detail);
 }
 
-public sealed record LogSnapshot(IReadOnlyList<LogEntry> Entries, long TotalErrors, long UnreadErrors, string? WriteError);
+public sealed record LogSnapshot(IReadOnlyList<LogEntry> Entries, long UnreadErrors, string? WriteError);
 
 public sealed class AppLog : IAppLog
 {
@@ -56,13 +56,13 @@ public sealed class AppLog : IAppLog
 
     public LogSnapshot Snapshot()
     {
-        lock (_gate) return new(_recent.ToArray(), _errors, _errors - _acknowledged, WriteError);
+        lock (_gate) return new(_recent.ToArray(), _errors - _acknowledged, WriteError);
     }
 
-    // Acknowledge only the snapshot the user saw. Concurrent/new errors must keep their badge.
-    public void AcknowledgeErrors(long throughErrorCount)
+    // Acknowledge everything collected so far, including hidden or paused records.
+    public void AcknowledgeErrors()
     {
-        lock (_gate) _acknowledged = Math.Max(_acknowledged, Math.Clamp(throughErrorCount, 0, _errors));
+        lock (_gate) _acknowledged = _errors;
         Notify();
     }
 

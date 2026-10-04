@@ -65,13 +65,15 @@ public sealed class PluginManager : IDisposable
         }
     }
 
-    public ManagedPlugin QueueInstall(string archivePath, IReadOnlyList<PluginRecord> current)
+    // null means queued; a message is an expected state conflict, not a thrown failure.
+    public string? QueueInstall(string archivePath, IReadOnlyList<PluginRecord> current)
     {
         lock (_gate)
         {
             Check();
             var token = Guid.NewGuid().ToString("N");
             var stage = PluginFiles.Under(_root, "staging", token);
+            var queued = false;
             try
             {
                 var manifest = PluginFiles.Extract(archivePath, stage, _compatibility);
@@ -80,38 +82,40 @@ public sealed class PluginManager : IDisposable
                 if (item.ActiveVersion is null && Directory.Exists(PluginFiles.Under(_paths.PluginRoot, item.Id)) &&
                     Directory.EnumerateFileSystemEntries(PluginFiles.Under(_paths.PluginRoot, item.Id)).Any())
                     throw new InvalidDataException("相同 ID 的目录含未能识别的插件；请先修复清单或移走冲突副本。");
-                RequireNoPending(item);
+                if (item.Pending is not null) return PendingConflict;
                 if (item.AwaitingLoad || item.Error.Length != 0)
-                    throw new InvalidOperationException("先处理插件上次加载或变更错误，再更新。");
+                    return "先处理插件上次加载或变更错误，再更新。";
                 var target = VersionPath(manifest.Id, manifest.Version);
-                if (Directory.Exists(target) || File.Exists(target)) throw new IOException("此版本已存在；请使用新版本号，不覆盖已安装代码。");
+                if (Directory.Exists(target) || File.Exists(target)) return "此版本已存在；请使用新版本号，不覆盖已安装代码。";
                 if (item.ActiveVersion is { } active && Version.Parse(manifest.Version) <= Version.Parse(active))
-                    throw new InvalidOperationException("更新包版本必须高于当前版本；恢复旧版本请使用回退。");
+                    return "更新包版本必须高于当前版本；恢复旧版本请使用回退。";
                 var digest = PluginFiles.Digest(PluginFiles.Under(stage, manifest.Id, manifest.Version));
                 item = item with { Name = manifest.Name, Pending = new(PluginChangeKind.Activate, token, _paths.DataRoot, manifest.Version, digest), Error = "" };
                 Save(item);
-                return item;
+                queued = true;
+                return null;
             }
-            catch
+            finally
             {
                 // Staging is never discovered. Leave inaccessible partial files for diagnosis.
-                try { PluginFiles.Delete(_root, stage); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-                throw;
+                if (!queued)
+                    try { PluginFiles.Delete(_root, stage); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             }
         }
     }
 
-    public void QueueChange(string id, PluginChangeKind kind, IReadOnlyList<PluginRecord> current)
+    public string? QueueChange(string id, PluginChangeKind kind, IReadOnlyList<PluginRecord> current)
     {
         lock (_gate)
         {
             Check();
             if (kind == PluginChangeKind.Activate) throw new ArgumentException("安装需要一个已校验的插件包。");
             var item = Find(id) ?? Adopt(id, current, id);
-            RequireNoPending(item);
-            if (item.ActiveVersion is null) throw new InvalidOperationException("插件尚未安装。");
-            if (kind == PluginChangeKind.Rollback && item.Recovery is null) throw new InvalidOperationException("没有可回退版本。");
+            if (item.Pending is not null) return PendingConflict;
+            if (item.ActiveVersion is null) return "插件尚未安装。";
+            if (kind == PluginChangeKind.Rollback && item.Recovery is null) return "没有可回退版本。";
             Save(item with { Pending = new(kind, Guid.NewGuid().ToString("N"), _paths.DataRoot), Error = "" });
+            return null;
         }
     }
 
@@ -266,10 +270,7 @@ public sealed class PluginManager : IDisposable
     private string BackupPath(string token) => PluginFiles.Under(_paths.DataRoot, "Data", ".plugin-backups", token);
     private string VersionPath(string id, string version) => PluginFiles.Under(_paths.PluginRoot, id, version);
     private ManagedPlugin? Find(string id) => _state.Plugins.FirstOrDefault(p => p.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
-    private static void RequireNoPending(ManagedPlugin item)
-    {
-        if (item.Pending is not null) throw new InvalidOperationException("此插件已有待重启变更；先取消或重启完成。");
-    }
+    private const string PendingConflict = "此插件已有待重启变更；先取消或重启完成。";
     private static ManagedPlugin Adopt(string id, IReadOnlyList<PluginRecord> current, string name)
     {
         AppPaths.ValidateId(id);

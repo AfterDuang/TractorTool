@@ -57,7 +57,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public LogsViewModel Logs { get; }
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasPageScroll))] private Control? _currentPage;
     // Only built-in pages with a page-level ScrollViewer opt into the shell's edge layout.
-    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView or LogsView;
+    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView;
     [ObservableProperty] private string _pageTitle = "主页";
     [ObservableProperty] private bool _showPageHeader = true;
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";

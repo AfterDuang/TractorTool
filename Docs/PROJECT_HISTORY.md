@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（用户反馈修正） | [E35 · 日志全部已读、底部跟随与管理冲突（2026-10-04）](#evidence-log-follow) |
 | M4（用户反馈修正） | [E34 · 预设命名、公共任务归属与双代理复审（2026-10-04）](#evidence-preset-task-review) |
 | M4（用户反馈修正） | [E33 · 日志/任务整合、错误提醒与取消诊断（2026-10-04）](#evidence-logs-tasks) |
 | M4（实现补齐，运行待验） | [E32 · 公共有限任务、取消复审与 M4 交接（2026-10-04）](#evidence-m4-tasks) |
@@ -1371,3 +1372,21 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 最终产物为 host/TractorTool.exe 和 video/TractorTool.VideoExport-0.5.2.zip，ZIP SHA256 为 `ABC5CFC9B7263407F000A07633BBE6B459EF205D2D001A952FA86C3FFC76E857`。用户使用新宿主、安装新 ZIP 并显式退出重启；开发编译不自动替换已装 DLL。本轮保留 .vscode/launch.json 已有空白修改，不纳入提交。
 
 真实 Windows 命名/同名竞争/超长名、多个实际插件任务与跳转、恢复摘要及既有日志/取消/媒体/GPU 回归仍交用户运行，M2/M3/M4 不标记验收完成。M5 未开始。
+
+<a id="evidence-log-follow"></a>
+
+## E35：日志全部已读、底部跟随与管理冲突（2026-10-04）
+
+用户明确更正：“已读”清除当前全部红点；日志从旧到新在底部追加，停在底部时跟随，向上翻阅不强制跳转；日志正文/详情存在留白和空间问题。截图明确定位 PluginManager.RequireNoPending 的重复安装异常，本轮仅修复该类可预期状态冲突，不将其当作此前取消异常的根因。
+
+- AppLog.AcknowledgeErrors 改为无参数、锁内确认当前全部 ERROR；按钮为“已读”，暂停和筛选隐藏项一并确认，不删除文件或内存日志。删除旧 TotalErrors 显示快照水位字段和 MarkErrorsRead 命令；之后新错误继续提醒。
+- LogsViewModel 保留稳定条目并按时间正序输出；LogEntriesView 监听集合更新/原生滚动与布局变化，合并调度底部跟随，手动上翻/拖动优先，离页解除模型和滚动订阅。关闭自动滚到选择项；沿用 ListBox 虚拟化，不引入定时器、轮询或另一套日志列表。API 依据参考 [Avalonia ScrollViewer](https://docs.avaloniaui.net/api/avalonia/controls/scrollviewer) 与 [ListBox 虚拟化](https://docs.avaloniaui.net/docs/how-to/listbox-how-to)；这些文档不是本应用运行证据。
+- LogsView 从整页滚动扩边中移除，恢复宿主 28 DIP 两侧留白；内部删除重复的 36 DIP 边距，工具栏可换行、页签字体收紧，详情改为默认折叠的可展开区域。任务页仍复用既有模型与列表。
+- QueueInstall/QueueChange 对待重启、已存在/较旧版本、无活动版本/回退版本返回拒绝原因，判断仍在管理锁内；不改既有请求，拒绝时清理本次暂存。宿主显示具体原因并记录 ERROR，无人为构造的异常堆栈；错误文件类型也直接提示。损坏/越界包、实际 I/O、程序错误保留异常处理，不改 VS Code 异常选项。原 RequireNoPending 已移除，没有保留旧包装入口或建立通用结果框架。
+- 修订 LogChecks 和 Headless 已读检查，覆盖暂停/筛选全部确认、保留记录、之后新错误重新提醒及时间顺序。管理核心新增冲突/原请求/暂存保留检查，管理 VM 夹具补重复安装后 ERROR 无异常堆栈。新增 LogViewChecks 检查底部跟随、上翻阅读/选择、回到底部、暂停恢复和折叠详情。仅编译，未运行检查程序。
+
+证据位于 artifacts/log-follow：build-debug.log、build-final.log 和 build-reviewed.log 均为 Debug 12 工程 0 警告/0 错误；publish-host.log 发布第一份宿主，最终滚动边界修正后 publish-host-final.log 发布 host-final 自包含宿主。静态 verify_static.py 与 static-checks.json 核对 10 份文档 240 处本地链接/锚点及 5 个 AXAML，Issues 为空；git diff --check 通过，排除用户原有 launch.json 空白修改。本轮没有新子代理，主代理复核当前变更；E34 的双代理结论不自动覆盖本轮。
+
+交付 host-final/TractorTool.exe；Contracts API 1.7 / UI 1.3 和视频 0.5.2 不变，未重新打包插件，不需要重复安装同版。用户可使用当前源码 F5 或新发布宿主运行测试。本轮未启动应用、检查程序、FFmpeg、UI 自动化，也未操作真实插件安装目录、媒体或剪贴板。
+
+真实 Windows 滚轮/拖动/键盘、300 条淘汰、不同高度/缩放/窄窗口、点击已读与并发日志、管理拒绝和实际故障提示仍待用户验证。旧取消调试异常、媒体/GPU/任务/生命周期等缺口保持，不能将编译或静态检查记为运行通过。

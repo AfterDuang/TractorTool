@@ -148,10 +148,11 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     private async Task QueueArchiveAsync(string file)
     {
         if (!Path.IsPathFullyQualified(file) || !string.Equals(Path.GetExtension(file), ".zip", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("请选择一个本地 ZIP 插件包。");
+        { ReportRejection("请选择一个本地 ZIP 插件包。"); return; }
         if (ConfirmAsync is null || !await ConfirmAsync("安装或更新此插件包？插件将在重启后执行，请仅选择可信来源。")) return;
         if (_stopping) return;
-        await Task.Run(() => manager!.QueueInstall(file, host.Records));
+        var rejection = await Task.Run(() => manager!.QueueInstall(file, host.Records));
+        if (rejection is not null) { ReportRejection(rejection); return; }
         OperationStatus = "插件包已校验，退出并重新打开软件后生效。";
         log?.Write("Plugins", OperationStatus);
     }
@@ -170,10 +171,17 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
             PluginChangeKind.Rollback => "回退此插件？重启后恢复旧版本及更新前的数据；当前数据另行保留。", _ => "" };
         if (message.Length != 0 && (ConfirmAsync is null || !await ConfirmAsync(message))) return;
         if (_stopping) return;
-        await Task.Run(() => manager!.QueueChange(id, kind, host.Records));
+        var rejection = await Task.Run(() => manager!.QueueChange(id, kind, host.Records));
+        if (rejection is not null) { ReportRejection(rejection); return; }
         OperationStatus = "变更已安排，退出并重新打开软件后生效。";
         log?.Write("Plugins", $"{id} · {kind}：{OperationStatus}");
     });
+
+    private void ReportRejection(string reason)
+    {
+        OperationStatus = reason;
+        log?.Write(AppLogLevel.Error, "Plugins", "插件管理请求未执行：" + reason);
+    }
 
     private Task RunOperationAsync(Func<Task> operation)
     {

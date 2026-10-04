@@ -2,8 +2,8 @@
              xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
              x:Class="TractorTool.Views.LogsView" x:DataType="vm:LogsViewModel">
   <Grid RowDefinitions="Auto,*">
-    <TabStrip x:Name="Sections" Margin="0,0,36,14" SelectedIndex="{Binding SelectedTab}" SelectionChanged="SectionChanged">
-      <TabStripItem Content="运行记录" /><TabStripItem Content="任务进度" />
+    <TabStrip x:Name="Sections" Margin="0,0,0,16" SelectedIndex="{Binding SelectedTab}" SelectionChanged="SectionChanged">
+      <TabStripItem Content="运行记录" FontSize="16" /><TabStripItem Content="任务进度" FontSize="16" />
     </TabStrip>
     <ui:PageHost Grid.Row="1" x:Name="ContentHost" />
   </Grid>

@@ -57,6 +57,11 @@ internal static class PluginManagementUiChecks
             pump(vm.InstallArchiveAsync(file));
             Assert(manager.Snapshot.Single().Pending?.Kind == PluginChangeKind.Activate);
             Assert(!Directory.Exists(Path.Combine(paths.PluginRoot, "Checks.Ui")));
+            var pending = manager.Snapshot.Single();
+            pump(vm.InstallArchiveAsync(file));
+            Assert(vm.OperationStatus.Contains("待重启") && manager.Snapshot.Single() == pending && !vm.IsBusy);
+            var record = File.ReadAllText(Directory.GetFiles(paths.LogRoot, "*.log").Single());
+            Assert(record.Contains("[ERROR]") && record.Contains("待重启") && !record.Contains("InvalidOperationException"));
             pump(vm.BeginShutdown());
         });
         check("Dropped archives reject non-ZIP paths before confirmation", () =>

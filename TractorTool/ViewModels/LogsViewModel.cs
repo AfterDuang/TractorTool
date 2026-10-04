@@ -20,9 +20,10 @@ public sealed record LogRow(LogEntry Entry)
 
 public partial class LogsViewModel(AppPaths paths, AppLog log, TasksViewModel tasks) : ViewModelBase
 {
-    private LogSnapshot _displayed = new([], 0, 0, null);
+    private LogSnapshot _displayed = new([], 0, null);
     public TasksViewModel Tasks { get; } = tasks;
     public ObservableCollection<LogRow> Entries { get; } = [];
+    public event Action? EntriesUpdated;
     public IReadOnlyList<LogFilter> Levels { get; } = [new("全部级别", null), new("INFO", AppLogLevel.Info),
         new("WARNING", AppLogLevel.Warning), new("ERROR", AppLogLevel.Error)];
     [ObservableProperty] private LogFilter? _selectedLevel;
@@ -33,7 +34,7 @@ public partial class LogsViewModel(AppPaths paths, AppLog log, TasksViewModel ta
     [ObservableProperty] private int _selectedTab;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectedText)), NotifyPropertyChangedFor(nameof(HasSelection))]
     private LogRow? _selectedEntry;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasUnreadErrors))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasUnreadErrors)), NotifyCanExecuteChangedFor(nameof(MarkReadCommand))]
     private long _unreadErrors;
     public bool HasUnreadErrors => UnreadErrors > 0;
     public bool HasSelection => SelectedEntry is not null;
@@ -58,7 +59,7 @@ public partial class LogsViewModel(AppPaths paths, AppLog log, TasksViewModel ta
     {
         var selectedId = SelectedEntry?.Entry.Id;
         var visible = _displayed.Entries.Where(e => (SelectedLevel?.Level is not { } level || e.Level == level) &&
-            (string.IsNullOrWhiteSpace(Search) || e.Text.Contains(Search, StringComparison.OrdinalIgnoreCase))).Reverse().ToArray();
+            (string.IsNullOrWhiteSpace(Search) || e.Text.Contains(Search, StringComparison.OrdinalIgnoreCase))).ToArray();
         var ids = visible.Select(e => e.Id).ToHashSet();
         foreach (var row in Entries.Where(r => !ids.Contains(r.Entry.Id)).ToArray()) Entries.Remove(row);
         for (var index = 0; index < visible.Length; index++)
@@ -72,14 +73,14 @@ public partial class LogsViewModel(AppPaths paths, AppLog log, TasksViewModel ta
         SelectedEntry = Entries.FirstOrDefault(r => r.Entry.Id == selectedId);
         OnPropertyChanged(nameof(IsEmpty));
         UpdateStatus();
+        EntriesUpdated?.Invoke();
     }
 
     private void UpdateStatus() => Status = $"{(IsPaused ? "显示已暂停" : "实时更新")} · {Entries.Count} / {_displayed.Entries.Count} 条记录 · {UnreadErrors} 条未读错误";
 
-    [RelayCommand] private void MarkErrorsRead()
+    [RelayCommand(CanExecute = nameof(HasUnreadErrors))] private void MarkRead()
     {
-        // Paused/filtered display never acknowledges errors arriving after its snapshot.
-        log.AcknowledgeErrors(_displayed.TotalErrors);
+        log.AcknowledgeErrors();
         Refresh();
     }
     [RelayCommand] private void OpenDirectory()
