@@ -37,7 +37,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         if (_loadTask is not null || _disposed) throw new InvalidOperationException("插件变更需重启生效。");
         Records.Clear();
         DirectoryError = null;
-        if (startupError is not null) { DirectoryError = startupError; log.Write("Plugins", startupError); return; }
+        if (startupError is not null) { DirectoryError = startupError; log.Write(AppLogLevel.Error, "Plugins", startupError); return; }
         try
         {
             ManifestValidator.CheckNoLinks(paths.PluginRoot);
@@ -73,8 +73,13 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         catch (Exception ex) { DirectoryError = $"无法访问插件目录 {paths.PluginRoot}：{ex.Message}"; }
         foreach (var group in Records.Where(r => r.Manifest is not null).GroupBy(r => r.Manifest!.Id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
             foreach (var record in group) { record.State = PluginState.Duplicate; record.Detail = "同一 ID 有多个候选版本；M1 不猜测活动版本，请仅保留一个。"; }
-        foreach (var record in Records) log.Write("Plugins", record.Summary);
-        if (DirectoryError is not null) log.Write("Plugins", DirectoryError);
+        foreach (var record in Records) log.Write(record.State switch
+        {
+            PluginState.Invalid or PluginState.Duplicate or PluginState.Failed => AppLogLevel.Error,
+            PluginState.Incompatible => AppLogLevel.Warning,
+            _ => AppLogLevel.Info
+        }, "Plugins", record.Summary);
+        if (DirectoryError is not null) log.Write(AppLogLevel.Error, "Plugins", DirectoryError);
     }
 
     private void ReadRecord(string directory, IReadOnlyCollection<string> disabled)
@@ -155,14 +160,19 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                     lifetime.Background = plugin is IPluginBackgroundService service
                         ? Task.Run(async () =>
                         {
-                            try { await service.RunAsync(token); }
-                            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+                            try { log.Write(manifest.Id, "常驻服务开始。"); await service.RunAsync(token); log.Write(manifest.Id, "常驻服务已结束。"); }
+                            catch (OperationCanceledException) when (token.IsCancellationRequested) { log.Write(manifest.Id, "常驻服务已停止。"); }
                             catch (Exception ex) { log.Write(manifest.Id, "常驻服务失败", ex); }
                         }) : null;
                     record.State = PluginState.Loaded;
                     record.Detail = "程序集已独立加载，初始化与页面注册完成。";
                 }
                 log.Write(manifest.Id, record.Detail);
+            }
+            catch (OperationCanceledException) when (Volatile.Read(ref _disposed))
+            {
+                record.Detail = "宿主退出，已停止初始化。";
+                log.Write(record.Manifest!.Id, record.Detail);
             }
             catch (Exception ex)
             {
@@ -175,7 +185,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
             {
                 // A failed plugin's slow cleanup must not block discovery of the next healthy plugin.
                 try { await CleanupAsync(lifetime).WaitAsync(StageTimeout); }
-                catch (TimeoutException) { log.Write(lifetime.Id, "加载失败后的清理仍在等待；资源保留，完成后继续释放。"); }
+                catch (TimeoutException) { log.Write(AppLogLevel.Warning, lifetime.Id, "加载失败后的清理仍在等待；资源保留，完成后继续释放。"); }
             }
         }
     }
@@ -187,6 +197,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
 
     private async Task CleanupCoreAsync(PluginLifetime lifetime)
     {
+        log.Write(lifetime.Id, "开始停止插件及所属任务。");
         // Cancellation callbacks belong to this instance, so one callback cannot block other plugins.
         var cancellation = CancelAndObserveAsync(lifetime.Stopping, lifetime.Id, "生命周期取消回调");
         // Stop processes even if plugin initialization/StopAsync fails to respond. No page owns this runner.
@@ -209,6 +220,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         lifetime.Packages?.Dispose();
         lifetime.Tasks?.Dispose();
         lifetime.Stopping.Dispose();
+        log.Write(lifetime.Id, "插件停止与资源释放流程结束。");
     }
 
     private async Task CancelAndObserveAsync(CancellationTokenSource source, string id, string operation)
@@ -222,7 +234,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         try { await operation.WaitAsync(StageTimeout); }
         catch (TimeoutException)
         {
-            log.Write(id, description + "超时；保留资源并观察后续完成，不并发释放实例。");
+            log.Write(AppLogLevel.Warning, id, description + "超时；保留资源并观察后续完成，不并发释放实例。");
             onTimeout?.Invoke();
             // The host waits a bounded time overall. This continuation safely observes late completion.
             try { await operation; }
@@ -258,7 +270,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         try { await all.WaitAsync(TimeSpan.FromSeconds(9)); }
         catch (TimeoutException)
         {
-            log.Write("Plugins", "插件退出等待达到上限；尚未结束的操作保留资源并继续观察，不强行并发释放。");
+            log.Write(AppLogLevel.Warning, "Plugins", "插件退出等待达到上限；尚未结束的操作保留资源并继续观察，不强行并发释放。");
             _ = ObserveRemainderAsync(all);
         }
         catch (Exception ex) { log.Write("Plugins", "插件退出清理失败", ex); }

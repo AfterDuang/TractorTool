@@ -27,8 +27,15 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
         // Native process creation and initial synchronous pipe reads must never block the caller's UI thread.
         _ = Task.Run(async () =>
         {
-            try { completion.TrySetResult(await ExecuteAsync(snapshot, cancellationToken).ConfigureAwait(false)); }
-            catch (OperationCanceledException ex) { completion.TrySetCanceled(ex.CancellationToken); }
+            try
+            {
+                var operation = ExecuteAsync(snapshot, cancellationToken);
+                // Observe the task state directly; do not throw/catch the same cancellation again at this bridge.
+                await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (operation.IsCanceled) completion.TrySetCanceled(cancellationToken.IsCancellationRequested ? cancellationToken : _stopping.Token);
+                else if (operation.IsFaulted) completion.TrySetException(operation.Exception!.InnerExceptions);
+                else completion.TrySetResult(operation.Result);
+            }
             catch (Exception ex) { completion.TrySetException(ex); }
             finally { lock (_gate) _runs.Remove(completion.Task); }
         });
@@ -86,8 +93,7 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
             }
             if (failure is OperationCanceledException)
             {
-                if (callerToken.IsCancellationRequested) throw new OperationCanceledException(callerToken);
-                if (_stopping.IsCancellationRequested) throw new OperationCanceledException(_stopping.Token);
+                if (callerToken.IsCancellationRequested || _stopping.IsCancellationRequested) throw;
                 if (timeout.IsCancellationRequested) throw new TimeoutException("工具执行超过设定时限。", failure);
                 throw new IOException("工具适配器意外中断操作，并非调用方取消或执行超时。", failure);
             }
@@ -143,6 +149,11 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
             }
             return new(text.ToString(), truncated);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // This private reader token is cancelled only during failure cleanup, never on a success path.
+            return new("", false);
+        }
         catch (Exception ex)
         {
             if (!token.IsCancellationRequested) failure.TrySetResult(ex);
@@ -191,8 +202,8 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
         try
         {
             await _stopping.CancelAsync().ConfigureAwait(false);
-            try { await Task.WhenAll(runs).ConfigureAwait(false); }
-            catch (Exception) { /* Each RunAsync retains its result/error for the plugin; cleanup failures are logged. */ }
+            // Each RunAsync retains its result/error; cleanup failures are already logged.
+            await ((Task)Task.WhenAll(runs)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             _stopping.Dispose();
             completion.TrySetResult();
         }

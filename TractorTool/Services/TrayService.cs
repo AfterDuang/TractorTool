@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Platform;
 using TractorTool.Core.Logging;
+using TractorTool.Contracts;
 
 namespace TractorTool.Services;
 
@@ -27,7 +28,7 @@ public sealed class TrayService : IDisposable
             };
             _icon.Clicked += (_, _) => restore();
             TrayIcon.SetIcons(Application.Current!, new TrayIcons { _icon });
-            log.Write("Tray", Available ? "托盘已创建。" : "托盘不可用，窗口将保留。");
+            log.Write(Available ? AppLogLevel.Info : AppLogLevel.Warning, "Tray", Available ? "托盘已创建。" : "托盘不可用，窗口将保留。");
         }
         catch (Exception ex) { log.Write("Tray", "托盘创建失败，窗口将保留。", ex); Dispose(); }
     }

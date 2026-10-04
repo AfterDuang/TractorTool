@@ -66,7 +66,7 @@ flowchart TD
 | `IExternalPackageService` | 查询依赖、请求安装、获取指定工具路径及使用租约 |
 | `IProcessRunner` | 受管理的外部进程执行、输出读取与取消 |
 
-M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；M4 的 API 1.6 增加 IBackgroundTaskService 与 IBackgroundTask，通过 PluginContext.Tasks 提供按插件生命周期绑定的作用域，保留原构造/解构、程序集身份及旧 API 1.0–1.5 兼容。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
+M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；M4 的 API 1.6 增加 IBackgroundTaskService 与 IBackgroundTask，通过 PluginContext.Tasks 提供按插件生命周期绑定的作用域，保留原构造/解构和程序集身份。当前 API 1.7 增加显式日志级别，接受旧 API 1.0–1.6。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
 
 插件设置页使用同样的注册机制。宿主只知道页面描述与工厂，不知道视频码率等业务字段。插件专属设置必须由插件拥有的服务读写。
 
@@ -121,11 +121,23 @@ M1 每个插件实例持有独立的生命周期取消源与唯一清理任务�
 
 摘要位于 `<DataRoot>/Data/tasks.json`，保留全部活动项及最近 100 条终态。提交和状态保存采用带版本 JSON 原子替换与备份；损坏文件保留并阻止新任务执行，任务页提供记录保存重试。启动时将上次非终态标为 Interrupted；只保存通用摘要，不持久化业务参数、不自动重试或续转码，也不根据摘要删除崩溃遗留输出。
 
-任务回调只在业务校验和最终结果提交后正常返回；正常返回保留 Succeeded 和实际结果，迟到取消不能事后抹掉已提交结果。取消通过令牌和执行结果表达，清理失败仍记为失败，不能假报安全取消。进度只更新内存，UI 合并调度通知；页面不拥有任务或取消源。
+任务回调只在业务校验和最终结果提交后正常返回；正常返回保留 Succeeded 和实际结果，迟到取消不能事后抹掉已提交结果。取消通过令牌和执行结果表达，清理失败仍记为失败，不能假报安全取消。逐次进度更新内存，UI 合并调度通知；日志仅记录阶段变化及每 10% 进度节点，不逐帧写文件。页面不拥有任务或取消源。
 
-宿主标题栏“任务”是跨页面的稳定入口，显示进度、单项/整批取消、结果及返回工具；不增加底部导航或插件页脚。视频读取和依赖准备属于插件入队前预检，不建立公共任务，准备期间由插件页显示状态和取消入口；预检成功后一次登记整批导出。
+宿主“日志 → 任务进度”是跨页面可达的入口，显示进度、单项/整批取消、结果及返回工具；标题栏不放任务按钮，不增加底部导航或插件页脚。视频读取和依赖准备属于插件入队前预检，不建立公共任务，准备期间由插件页显示状态和取消入口；预检成功后一次登记整批导出。
 
-### 3.3 托盘和退出
+### 3.3 结构化日志与错误提醒
+
+公共 IAppLog 保留原 Write(source, message, error) 签名；API 1.7 以默认接口方法增加 AppLogLevel 重载，不要求旧日志实现新增成员。AppLog 将旧调用中无异常的记录映射为 INFO，有异常的映射为 ERROR；WARNING 由调用方显式选择。记录包含序号、时间、级别、来源、消息与异常详情，不分析文本关键词猜级别。
+
+宿主 LogsView 用“运行记录 / 任务进度”页签复用现有任务模型。运行记录内存最多 300 条、最新在前；支持级别/关键词筛选、复制筛选记录、所选记录完整详情和暂停显示。日志文件仍由 AppLog 写入；写入失败在内存报告一次该故障并保留错误提示，恢复写入后清除提示，不声称丢失记录已补写。磁盘保留策略仍归 M5。
+
+AppLog 的事件驱动 UI 刷新，MainViewModel 合并调度，同时更新日志导航图标左上角红色数量角标。未读数是本次启动累计 ERROR 记录减已读水位，不随 300 条窗口淘汰、不因进页自动清零；“标记错误已读”只确认当前显示快照以前的错误（包括被筛选隐藏的错误），不会确认暂停后到达的记录。它表示错误记录数，不做跨模块故障去重；完整旧记录可打开日志文件查看。INFO/WARNING/ERROR 使用 UI SDK 深浅主题中的绿/黄/红语义资源，并保留文字级别。
+
+重要记录包括插件发现、初始化、常驻服务启停、管理请求、依赖安装/清理、任务开始/阶段/取消/结果和实际失败；普通导航、窗口隐藏/恢复不记录。用户取消和宿主正常停止记 INFO，恢复中断摘要或 GPU 回退记 WARNING；意外取消、超时及清理失败不能被“正常取消”吞掉。进程桥接和任务包装通过观察已完成 Task 状态避免重复抛出已确认的取消，公开调用方取消语义不变，不改调试器异常过滤，也不保证第三方/系统代码不产生首次抛出通知。
+
+正常进程退出使用 OS 等待通知；仅 Windows Job 终止后的活跃子进程确认仍使用 20ms 轮询，每次由 Core 限制最多 3 秒。实际进入轮询时宿主每次启动只记录一条开发优化 WARNING，后续改成 Job 事件通知的缺口保留。日志、任务刷新与剪贴板更新不采用定时轮询。
+
+### 3.4 托盘和退出
 
 应用采用显式退出的生命周期，普通窗口关闭改为隐藏，托盘提供显示主窗口和退出命令；重新显示沿用同一宿主和任务状态。Avalonia 提供 `OnExplicitShutdown`，实现时确认当前版本的对应 API。[Avalonia 生命周期](https://docs.avaloniaui.net/api/avalonia/controls/applicationlifetimes/iclassicdesktopstyleapplicationlifetime)
 
@@ -275,14 +287,14 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 实现依据为 [3.1.0 固定源码](https://github.com/amwx/FluentAvalonia/tree/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab)，采用 `FA*` 新版 API，没有直接搬用 Watt 的 Avalonia 11 模板或 GPL 代码。当前复用库内置的符号字体，没有引入此前备选的 FluentIcons 包。第三方 MIT 声明随发布复制，见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
 
 - **窗口与导航**：`FAAppWindow` 提供窗口边框、系统标题栏按钮和命中测试；内容扩展到 48 逻辑单位的标题区。自定义标题区显式设置 Avalonia 12 的 `WindowDecorationProperties.ElementRole="TitleBar"`，其中纯图文内容不参与命中，保留库的窗口按钮。仅设置 `ExtendsContentIntoTitleBar` 不会让覆盖默认标题栏的内容自动成为拖动区；此前遗漏造成用户反馈的无法拖动，已修正源码，实机回归待用户执行。使用框架原生拖动/双击行为，不再另写指针拖动或 Win32 Hook。[Avalonia 窗口说明](https://docs.avaloniaui.net/docs/app-development/window-management)。`FANavigationView` 固定 72 宽图文侧栏，上部为主页和插件、底部为日志/插件/设置；导航图标 28、背景最小高度 64、四周留白 4（均为逻辑单位）。导航标签单行省略，完整名称保留悬停提示和无障碍名称。尺寸适配集中在 ShellStyles 和主窗口导航模板，保留库的键盘、选择与焦点处理。Windows 托盘与实例恢复服务继续由宿主拥有。
-- **页面与设置行**：日志、插件、设置及加载失败分别使用 AXAML View 与 ViewModel。宿主页头和正文使用同一左侧边距，正文随可用宽度伸缩，不再分别限宽居中；滚动页面复用 `ScrollViewer.pageScroll` / `StackPanel.pageBody`，禁止水平滚动并保留底部留白。主页/设置/插件/错误页通过 MainViewModel.HasPageScroll 使 PagePresenter 启用 edgeScroll：右侧 28 外边距移入正文，叠加原有 8 得到正文右边距 36；滚动条贴内容区右边，卡片及页头位置保持。适配集中在宿主 ShellStyles，公共 UI SDK 样式不变。只对空状态说明等局部文字限制阅读宽度，插件卡片按可用宽度换行；日志保留自己的文本滚动区，外部插件保留默认页面边距并自行组织布局。公共 `SettingRow` 包装 `FASettingsExpanderItem`：左侧图标与说明，右侧操作，小于库的 460 宽阈值时操作移到下一行。设置采用外观/存储/插件/关于分组，主题、主题色和动画选择后即时应用并自动保存；仅写入失败时显示重试。目录按钮、插件搜索、日志复制/暂停和错误重试都是实际命令。
+- **页面与设置行**：日志、插件、设置及加载失败分别使用 AXAML View 与 ViewModel。宿主页头和正文使用同一左侧边距，正文随可用宽度伸缩，不再分别限宽居中；滚动页面复用 `ScrollViewer.pageScroll` / `StackPanel.pageBody`，禁止水平滚动并保留底部留白。主页/设置/插件/错误页通过 MainViewModel.HasPageScroll 使 PagePresenter 启用 edgeScroll：右侧 28 外边距移入正文，叠加原有 8 得到正文右边距 36；滚动条贴内容区右边，卡片及页头位置保持。适配集中在宿主 ShellStyles，公共 UI SDK 样式不变。只对空状态说明等局部文字限制阅读宽度，插件卡片按可用宽度换行；日志保留虚拟化记录列表和所选详情滚动区，外部插件保留默认页面边距并自行组织布局。公共 `SettingRow` 包装 `FASettingsExpanderItem`：左侧图标与说明，右侧操作，小于库的 460 宽阈值时操作移到下一行。设置采用外观/存储/插件/关于分组，主题、主题色和动画选择后即时应用并自动保存；仅写入失败时显示重试。目录按钮、插件搜索、日志复制/暂停和错误重试都是实际命令。
 - **公共图标与主题**：`ToolIconKind`/`ToolIcon` 提供宿主与插件同一套符号映射，导航支持本地彩色图片，未提供或加载失败时使用符号。图片保留原色，操作符号随主题调整前景色，具体所有权见第 6.3 节。应用及托盘图标从同一透明母版导出，见第 7.1 节。RequestedThemeVariant 控制浅色/深色/系统，CustomAccentColor 控制统一控件主题色，语义资源区分背景层次。
 - **统一动效**：[Motion](../TractorTool.UI/Motion.cs) 与 [MotionStyles](../TractorTool.UI/Styles/MotionStyles.axaml) 属于公共 UI，由 SharedStyles 加载一次。ThemeService 在变更颜色前统一设置 AppMotionEnabled 动态资源及 FluentAvalonia 应用动画标志。普通控件和模板子元素自动读取该选项，新增页面/窗口不再绑定主窗口 class。开关滑动/按压、按钮悬停、滑杆与展开箭头沿用固定版本控件库的内置过渡，不复制模板或增加计时器。自有窗口/表面/卡片/设置行/文字的颜色过渡统一使用 220 ms、CubicEaseInOut，ShellStyles 仅消费相同时长补充侧栏。
 - **关闭动效的边界**：模板内的局部 Transitions 优先于普通样式，Motion 使用可释放的 Animation 优先级空值覆盖，取消普通属性在途过渡；重新开启时释放覆盖，恢复控件自身的原值。不会覆盖写死开关拖动期间临时清空的底层 Transitions。Expander 后续展开的 ContentTransition 同样禁用；已开始的第三方 CrossFade/页面过渡仍按库自身生命周期结束，不宣称瞬时取消所有动画。进度指示及插件自行创建的 Animation/Composition 不属于普通属性过渡，业务自定义动效须读取公共偏好并自行管理取消；不通过暂停全局时钟冻结业务进度。
 - **列表更新与交互连续性**：插件管理按安装记录目录保留可观察卡片，过滤集合只增删/移动实际变化项；管理结果原位提交状态和命令，不清空重建列表打断滑块或丢弃控件。重复 ID 的不同目录仍独立呈现。写入失败显式恢复开关目标值，不依赖相同值的绑定通知必定重放。忙碌时的串行保护保留，不承诺禁用列表期间保留键盘焦点。新列表应遵循同样的稳定身份原则。
 - **切页与生命周期**：公共 `PageHost` 是内部 `FAFrame` 的薄包装，通过同步 `Present(Control)` 将成功、取消或异常反馈宿主，不再用单向属性绑定吞掉导航结果。只接受未挂载的页面；成功后才提交标题/选择状态并清理旧页，取消保留旧页，异常记录日志并显示错误页。若 Frame 已在异常前改变内部状态，替换该 Frame 后继续导航，不访问其私有状态。`IFANavigationPageFactory` 只接收已注册工厂返回的 Control，不反射具体插件类型。缓存大小为 0、导航历史关闭；进入使用库的轻微上移淡入过渡（位移 18），关闭页面动画时使用 Suppress 过渡。宿主阻止切换重入和退出后创建页面，常驻服务不绑定到 Frame。这里隔离的是工厂/同步导航失败，不保证捕获插件任意异步事件或渲染线程异常；快速切页及真实视觉表现仍待用户验收。
 - **设置持久化**：SettingsViewModel 在 UI 线程应用外观，通过单个保存任务将不可变快照交给后台写入；期间的新选择只保留最新值，旧写入完成不再应用旧主题或覆盖新状态。正常保存不显示常驻提示，保存期间不禁用选择，应用失败与写盘失败分别提示。保存错误只存于 SaveError，HasSaveError 由其派生；错误面板统一控制重试入口可见性，无 DataContext 或无法解析绑定时默认隐藏，避免无模型的 VS Code 预览出现孤立按钮。退出阻止新变更并等待整个队列，对此前最后一次保存失败最多再试一次，仍受宿主 10 秒退出期限约束。同步主题通知重入时重新应用最终有效选择，控件临时空选择不生成配置。沿用 JSON 原子替换及备份，没有新增通用设置框架。可选布尔字段 `enableAnimations` 默认 true，旧 JSON 不含此字段时仍可读取，沿用当前设置 schema；控制范围见上述统一动效边界。
-- **SDK 与加载**：UI API 为 1.3，PluginPageOptions 保留 IconPath，新增 UsesCustomHeader 可选属性；导航页可自己提供标题和功能切换，宿主隐藏默认标题并让出整页视口。默认 false，导航成功后才提交标题状态；失败页恢复默认标题，设置页仍由设置容器组织。保留原两参数构造及旧签名，接受 UI 1.0–1.3，拒绝更高未知版本。Contracts API 为 1.6，接受旧 1.0–1.5，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
+- **SDK 与加载**：UI API 为 1.3，PluginPageOptions 保留 IconPath，新增 UsesCustomHeader 可选属性；导航页可自己提供标题和功能切换，宿主隐藏默认标题并让出整页视口。默认 false，导航成功后才提交标题状态；失败页恢复默认标题，设置页仍由设置容器组织。保留原两参数构造及旧签名，接受 UI 1.0–1.3，拒绝更高未知版本。Contracts API 为 1.7，接受旧 1.0–1.6，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
 
 运行效果及已知限制只在 [开发验收台账](DEVELOPMENT.md#acceptance) 记录，架构描述不代表真实 UI 或动态加载已经通过验收。
 

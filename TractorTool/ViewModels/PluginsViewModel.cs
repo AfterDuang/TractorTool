@@ -153,12 +153,14 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         if (_stopping) return;
         await Task.Run(() => manager!.QueueInstall(file, host.Records));
         OperationStatus = "插件包已校验，退出并重新打开软件后生效。";
+        log?.Write("Plugins", OperationStatus);
     }
 
     private Task CancelChangeAsync(string id) => RunOperationAsync(async () =>
     {
         await Task.Run(() => manager!.CancelPending(id));
         OperationStatus = "变更已取消；已有版本将在重启后继续使用。";
+        log?.Write("Plugins", $"{id}：{OperationStatus}");
     });
 
     private Task ChangeAsync(string id, PluginChangeKind kind) => RunOperationAsync(async () =>
@@ -170,6 +172,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         if (_stopping) return;
         await Task.Run(() => manager!.QueueChange(id, kind, host.Records));
         OperationStatus = "变更已安排，退出并重新打开软件后生效。";
+        log?.Write("Plugins", $"{id} · {kind}：{OperationStatus}");
     });
 
     private Task RunOperationAsync(Func<Task> operation)

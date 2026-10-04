@@ -15,15 +15,17 @@ internal sealed partial class WindowsProcessSession : IProcessSession
     private readonly SafeWaitHandle _process;
     private readonly ProcessWaitHandle _signal;
     private readonly RegisteredWaitHandle _wait;
+    private readonly Action? _pollingWarning;
     private readonly TaskCompletionSource<int> _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public StreamReader StandardOutput { get; }
     public StreamReader StandardError { get; }
     public Task<int> ExitCode => _exit.Task;
 
     private WindowsProcessSession(SafeJobHandle job, SafeWaitHandle process,
-        AnonymousPipeServerStream output, AnonymousPipeServerStream error)
+        AnonymousPipeServerStream output, AnonymousPipeServerStream error, Action? pollingWarning)
     {
         _job = job;
+        _pollingWarning = pollingWarning;
         _process = process;
         StandardOutput = new(output, Encoding.UTF8);
         StandardError = new(error, Encoding.UTF8);
@@ -39,7 +41,9 @@ internal sealed partial class WindowsProcessSession : IProcessSession
         }, null, Timeout.Infinite, executeOnlyOnce: true);
     }
 
-    public static IProcessSession Start(ProcessRequest request)
+    public static IProcessSession Start(ProcessRequest request) => Start(request, null);
+
+    internal static IProcessSession Start(ProcessRequest request, Action? pollingWarning)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10))
             throw new PlatformNotSupportedException("受管理的工具进程当前需要 Windows 10 或更新版本。");
@@ -80,7 +84,7 @@ internal sealed partial class WindowsProcessSession : IProcessSession
             error.DisposeLocalCopyOfClientHandle();
             input.DisposeLocalCopyOfClientHandle();
             // Disposing the remaining input writer at return delivers EOF, never an interactive console.
-            var session = new WindowsProcessSession(job, process, output, error);
+            var session = new WindowsProcessSession(job, process, output, error, pollingWarning);
             transferred = true;
             return session;
         }
@@ -98,13 +102,17 @@ internal sealed partial class WindowsProcessSession : IProcessSession
 
     public async Task StopTreeAsync(CancellationToken cancellationToken)
     {
+        Check(QueryInformationJobObject(_job, 1, out var before, Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
+        if (before.ActiveProcesses == 0) return;
         Check(TerminateJobObject(_job, 0xC000013A));
         // Bounded cleanup only; normal process completion uses the OS wait above, with no idle polling.
+        var warned = false;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Check(QueryInformationJobObject(_job, 1, out var accounting, Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
             if (accounting.ActiveProcesses == 0) return;
+            if (!warned) { _pollingWarning?.Invoke(); warned = true; }
             await Task.Delay(20, cancellationToken).ConfigureAwait(false);
         }
     }

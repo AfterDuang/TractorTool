@@ -244,7 +244,13 @@ public partial class VideoViewModel : ObservableObject
                         return await exporter.ExportAsync(lease.Tools, source, info, job.Data.Options, cover, directory,
                             value => { report.Report(new(value, step)); Update(() => { card.IsIndeterminate = false; card.Progress = value; }); },
                             state => { step = state; report.Report(new(null, state)); Update(() => { card.Status = state; card.IsIndeterminate = true; }); }, itemToken, useGpu,
-                            note => { executionNote = note; Update(() => card.ExecutionInfo = note); }).ConfigureAwait(false);
+                            note =>
+                            {
+                                executionNote = note;
+                                _context.Log.Write(note.StartsWith("使用 CPU：", StringComparison.Ordinal) ? AppLogLevel.Warning : AppLogLevel.Info,
+                                    _context.PluginId, note);
+                                Update(() => card.ExecutionInfo = note);
+                            }).ConfigureAwait(false);
                     });
                     if (result.State == BackgroundTaskState.Succeeded)
                     { card.OutputPath = result.Result ?? ""; card.Progress = 100; card.Status = "已完成"; succeeded++; }
@@ -276,8 +282,12 @@ public partial class VideoViewModel : ObservableObject
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _operation = operation; _running = completion.Task; IsBusy = true; Error = "";
         try { await action(operation.Token); }
-        catch (OperationCanceledException) { Status = "已取消。"; }
-        catch (Exception ex) { Status = "操作未完成。"; Error = ex.Message; _context.Log.Write(_context.PluginId, $"视频操作失败（{ex.GetType().Name}）。"); }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested)
+        {
+            Status = "已取消。";
+            _context.Log.Write(_context.PluginId, "视频操作已按请求取消。");
+        }
+        catch (Exception ex) { Status = "操作未完成。"; Error = ex.Message; _context.Log.Write(AppLogLevel.Error, _context.PluginId, $"视频操作失败（{ex.GetType().Name}）。", ex); }
         finally { _operation = null; IsBusy = false; IsReading = false; completion.TrySetResult(); }
     }
     partial void OnAutoReadOnSelectChanged(bool value) { if (CanEditSettings) QueueSettings(); }

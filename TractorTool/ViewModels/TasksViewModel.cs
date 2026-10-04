@@ -16,7 +16,6 @@ public partial class TasksViewModel : ViewModelBase, IDisposable
     private bool _disposed;
     public ObservableCollection<TaskRow> Items { get; } = [];
     [ObservableProperty] private string _summary = "暂无任务";
-    [ObservableProperty] private string _buttonLabel = "任务";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError))] private string _error = "";
     public bool HasError => Error.Length != 0;
     public bool IsEmpty => Items.Count == 0;
@@ -48,7 +47,6 @@ public partial class TasksViewModel : ViewModelBase, IDisposable
         var interrupted = snapshots.Count(s => s.State == BackgroundTaskState.Interrupted);
         Summary = active > 0 ? $"{active} 个任务进行中" : Items.Count == 0 ? "暂无任务" : $"{Items.Count} 条任务记录";
         if (interrupted > 0) Summary += $" · {interrupted} 个任务中断，返回工具后重新提交";
-        ButtonLabel = active > 0 ? $"任务 · {active}" : "任务";
         Error = _service?.PersistenceError is { } error ? "任务记录读写失败，原记录已保留；新任务在记录恢复前不会执行。" + error : "";
         OnPropertyChanged(nameof(IsEmpty));
     }

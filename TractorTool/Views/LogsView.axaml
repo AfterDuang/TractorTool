@@ -1,18 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
              x:Class="TractorTool.Views.LogsView" x:DataType="vm:LogsViewModel">
-  <Grid RowDefinitions="Auto,*,Auto">
-    <WrapPanel Margin="0,0,0,14">
-      <Button Command="{Binding OpenDirectoryCommand}" Content="打开日志目录" Margin="0,0,10,8" />
-      <Button Click="CopyLogs" Content="复制当前记录" Margin="0,0,18,8" />
-      <CheckBox Content="暂停显示更新" IsChecked="{Binding IsPaused}" Margin="0,0,0,8" VerticalAlignment="Center" />
-    </WrapPanel>
-    <Border Grid.Row="1" Background="{DynamicResource AppCardBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True">
-      <TextBox Text="{Binding Text, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
-               FontFamily="Cascadia Mono, Consolas, Microsoft YaHei UI" FontSize="12" Padding="16" BorderThickness="0"
-               Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
-               AutomationProperties.Name="运行日志" />
-    </Border>
-    <TextBlock Grid.Row="2" Text="{Binding Status}" Classes="caption" Margin="0,12,0,8" />
+  <Grid RowDefinitions="Auto,*">
+    <TabStrip x:Name="Sections" Margin="0,0,36,14" SelectedIndex="{Binding SelectedTab}" SelectionChanged="SectionChanged">
+      <TabStripItem Content="运行记录" /><TabStripItem Content="任务进度" />
+    </TabStrip>
+    <ui:PageHost Grid.Row="1" x:Name="ContentHost" />
   </Grid>
 </UserControl>

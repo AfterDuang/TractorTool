@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（用户反馈修正） | [E33 · 日志/任务整合、错误提醒与取消诊断（2026-10-04）](#evidence-logs-tasks) |
 | M4（实现补齐，运行待验） | [E32 · 公共有限任务、取消复审与 M4 交接（2026-10-04）](#evidence-m4-tasks) |
 | M4（进行中） | [E31 · 视频码率模式、GPU 偏好与紧凑布局（2026-10-04）](#evidence-video-rate-control) |
 | M4（进行中） | [E30 · 视频双功能工作区与多预设串行（2026-10-04）](#evidence-video-workspace) |
@@ -1311,3 +1312,35 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 静态脚本为 artifacts/m4-complete/verify_static.py。文档编辑中的首次检查覆盖 10 份文档 239 处链接、2 个新 AXAML、9 项 ZIP，唯一报告是尚未创建的 E32 锚点；补入锚点并完成文档整理后，最终核对 10 份文档 238 处本地链接、2 个 AXAML、ZIP 清单及 9 项内容均通过，结果保存于 static-checks.json（Issues 为空）。本轮变更的 git diff --check 通过；用户已有 .vscode/launch.json 修改不属于本轮。
 
 真实 UI、整批串行/取消、显式退出/系统退出、重启中断与坏摘要恢复、旧 DLL 兼容、码率/真实输出/首帧/VFR/音画同步/色彩和 GPU 均未运行，由用户最终测试。M5 数据迁移、可靠性回归、CI/安装器仍未开始。
+
+<a id="evidence-logs-tasks"></a>
+
+## E33：日志/任务整合、错误提醒与取消诊断（2026-10-04）
+
+用户要求取消标题栏任务按钮，将任务实时进度合入日志；INFO 绿、WARNING 黄、ERROR 红，只写重要信息，日志图标左上角红色数字提醒错误；轮询作为特例记录开发优化警告。用户对取消异常的具体触发操作回答“暂时不确定”。本轮主代理完成源码复核，没有新建子代理，没有执行应用、检查程序、FFmpeg、UI 或操作用户媒体/剪贴板。
+
+- API 1.7 保留旧 IAppLog.Write 与旧 ABI，新增默认接口重载 AppLogLevel；接受旧插件 API 1.0–1.6，UI API 1.3 不变。AppLog 结构化记录、内存 300 条、文件详情、坏订阅者隔离；写文件失败在内存报告一次该故障，不递归写失败的日志文件。
+- LogsView 内“运行记录 / 任务进度”页签复用原 TasksView/模型，删旧标题栏按钮、命令与 ButtonLabel。记录提供级别/搜索/复制/所选全文/暂停，深浅主题绿黄红语义资源共享。角标统计本次启动未读 ERROR 记录，手动确认显示快照水位，不随进页、暂停或 300 条淘汰丢失新提醒。
+- 普通导航、窗口隐藏/恢复不写日志。插件发现/初始化/常驻启停/清理/管理、依赖安装/清理、任务开始/阶段/每 10% 节点/取消/结果保留；重复取消不重复提交，持续同一任务存盘故障不重复计数。CPU 回退和恢复中断摘要为 WARNING，正常取消为 INFO，真正故障为 ERROR。
+- ProcessRunner 桥接和有限任务包装观察已完成 Task 状态，私有管道读取仅在自己的清理取消中正常返回；减少已确认取消重复抛出，保留公开取消语义及超时/清理失败。插件初始化因宿主退出而取消不再误记加载失败，视频仅在自身令牌取消时报告正常取消，意外取消进入错误分支。
+- Windows 正常进程退出采用 OS 等待事件。终止 Job 后确认活跃进程仍是 20ms 轮询，每次由 Core 约束最多 3 秒；先查零活跃立即返回，真正进入轮询才经宿主每次启动提示一条 WARNING。事件化替换未完成；日志、任务和剪贴板不新增轮询。
+- 视频独立包 0.5.1 / API 1.7，需新宿主；剪贴板包未改。新增 LogChecks 5 组及 Headless 2 组分级/筛选/暂停/角标/页签等检查，均仅编译。既有 TaskChecks 13 项、VideoChecks 23 组和进程/包/剪贴板检查未运行。
+
+取消语义依据：[.NET ConfigureAwaitOptions](https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.configureawaitoptions?view=net-10.0)、[微软调试异常说明](https://learn.microsoft.com/en-us/visualstudio/debugger/managing-exceptions-with-the-debugger?view=vs-2022)。调试器“引发异常”输出本身不证明未处理崩溃；截图未包含足够触发证据，也可能涉及系统/第三方动画，不能声称全部根治。本轮没有关闭异常过滤来掩盖输出。
+
+构建与产物在 artifacts/logs-tasks，沿用仓库 Publish-Host.ps1 与 Build-VideoPlugin.ps1：
+
+| 日志/记录 | 实际结果 |
+| --- | --- |
+| build-debug.log | 首次受 Avalonia BuildServices 写用户目录日志的沙箱权限阻塞；另有 CA2261 警告，Task.WhenAll 泛型任务已显式转非泛型再使用 SuppressThrowing |
+| build-debug-authorized.log | 允许构建任务写日志后编译成功，有 1 个 Watermark 过时警告；已改 PlaceholderText |
+| build-debug-final.log | 编译成功，新 Headless 断言有 1 个可空警告；已明确非空 |
+| publish-host.log | Release 自包含宿主发布通过，未安装、未启动 |
+| build-video.log | 第一份 0.5.1 独立包构建通过；随后复审收紧视频取消筛选，该包不是最终交付 |
+| build-video-final.log | 最终 video-final 独立构建 0 警告/0 错误 |
+| build-source-final.log | 恢复正常源码 SDK 依赖后 Debug 12 工程，0 警告/0 错误 |
+| host-before.json、host-hash-check.json | 独立插件构建前后 235 个宿主文件 Changed=0 |
+
+最终交付 host/TractorTool.exe 和 video-final/TractorTool.VideoExport-0.5.1.zip；ZIP SHA256 为 `1F763F745F6EFB663EA03B95242A3BFCEB44F71EC5E0D5D589886A480888E381`。不会自动覆盖已装 DLL；用户使用新宿主、安装最终 ZIP 并显式退出重启。保留已有 .vscode/launch.json 空白修改、不提交。普通构建不代表运行检查或真实 UI 通过。
+
+静态脚本 artifacts/logs-tasks/verify_static.py 核对通过：10 份文档 238 处本地链接/锚点、5 个 AXAML XML、ZIP 清单及 9 项内容（版本/API/共享二进制排除），static-checks.json 的 Issues 为空。本轮 git diff --check 通过（排除用户已有 launch.json 空白改动）。真实颜色/角标/暂停/筛选/进度、取消异常触发、任务与插件生命周期、旧 DLL 兼容以及全部媒体/GPU 等仍待用户执行，M2/M3/M4 不标为验收完成。

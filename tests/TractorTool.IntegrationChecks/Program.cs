@@ -10,6 +10,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TractorTool;
+using TractorTool.Contracts;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
@@ -62,6 +63,36 @@ Check("Home is the initial page before plugins finish loading", () =>
     Assert(vm.Navigation.First().Key == "home" && vm.FooterNavigation.Count == 3);
     Assert(vm.Home.IsLoading && !vm.Home.IsEmpty);
     Assert(vm.Plugins.IsLoading && !vm.Plugins.IsEmpty && !vm.Plugins.NoMatches);
+});
+Check("Routine navigation stays out of logs and the error badge updates on other pages", () =>
+{
+    var count = log.Snapshot().Entries.Count;
+    vm.ShowSettingsCommand.Execute(null); vm.ShowHomeCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+    Assert(log.Snapshot().Entries.Count == count);
+    log.Write(AppLogLevel.Warning, "Fixture", "warning only"); Dispatcher.UIThread.RunJobs();
+    Assert(!vm.FooterNavigation[0].HasErrors);
+    log.Write(AppLogLevel.Error, "Fixture", "first error"); Dispatcher.UIThread.RunJobs();
+    Assert(vm.FooterNavigation[0].UnreadErrors == 1 && vm.FooterNavigation[0].HasErrors);
+});
+Check("Logs filter and paused acknowledgment preserve new errors; tasks share the log page", () =>
+{
+    vm.ShowLogsCommand.Execute(null); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+    Assert(vm.CurrentPage is LogsView);
+    vm.Logs.SelectedLevel = vm.Logs.Levels.Single(x => x.Level == AppLogLevel.Error);
+    vm.Logs.Search = "first error";
+    Assert(vm.Logs.Entries.Count == 1 && vm.Logs.Entries[0].IsError);
+    vm.Logs.IsPaused = true;
+    log.Write(AppLogLevel.Error, "Fixture", "second error"); Dispatcher.UIThread.RunJobs();
+    vm.Logs.MarkErrorsReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+    Assert(vm.FooterNavigation[0].UnreadErrors == 1 && vm.Logs.Entries.Count == 1);
+    vm.Logs.Search = ""; vm.Logs.IsPaused = false;
+    Assert(vm.Logs.Entries.Count == 2);
+    vm.Logs.MarkErrorsReadCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+    Assert(!vm.FooterNavigation[0].HasErrors);
+    vm.Logs.SelectedTab = 1; Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+    Assert(vm.CurrentPage!.GetVisualDescendants().OfType<TasksView>().Any());
+    vm.Logs.SelectedTab = 0; vm.Logs.SelectedLevel = null;
+    vm.ShowHomeCommand.Execute(null);
 });
 Check("Real published plugin initialized without replacing the user's selected page", () =>
 {

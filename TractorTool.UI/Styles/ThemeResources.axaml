@@ -12,6 +12,7 @@
   <Color x:Key="AppDarkControlColor">#3B393C</Color>
   <Color x:Key="AppDarkBorderColor">#48454A</Color>
   <Color x:Key="AppDarkTextColor">#F1EFF3</Color>
+  <SolidColorBrush x:Key="AppErrorBadgeBrush" Color="#C42B3A" />
 
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
@@ -21,6 +22,9 @@
       <SolidColorBrush x:Key="AppControlBrush" Color="{StaticResource AppLightControlColor}" />
       <SolidColorBrush x:Key="AppBorderBrush" Color="{StaticResource AppLightBorderColor}" />
       <SolidColorBrush x:Key="AppTextBrush" Color="{StaticResource AppLightTextColor}" />
+      <SolidColorBrush x:Key="AppLogInfoBrush" Color="#177245" />
+      <SolidColorBrush x:Key="AppLogWarningBrush" Color="#8A5A00" />
+      <SolidColorBrush x:Key="AppLogErrorBrush" Color="#B42332" />
       <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#686671" />
       <SolidColorBrush x:Key="AppNavHoverBrush" Color="#E4E3E9" />
       <SolidColorBrush x:Key="AppNavSelectedBrush" Color="#DFE6EF" />
@@ -33,6 +37,9 @@
       <SolidColorBrush x:Key="AppControlBrush" Color="{StaticResource AppDarkControlColor}" />
       <SolidColorBrush x:Key="AppBorderBrush" Color="{StaticResource AppDarkBorderColor}" />
       <SolidColorBrush x:Key="AppTextBrush" Color="{StaticResource AppDarkTextColor}" />
+      <SolidColorBrush x:Key="AppLogInfoBrush" Color="#6DDC91" />
+      <SolidColorBrush x:Key="AppLogWarningBrush" Color="#F4CF70" />
+      <SolidColorBrush x:Key="AppLogErrorBrush" Color="#FF8A90" />
       <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="#B5B0BA" />
       <SolidColorBrush x:Key="AppNavHoverBrush" Color="#302D32" />
       <SolidColorBrush x:Key="AppNavSelectedBrush" Color="#343B45" />

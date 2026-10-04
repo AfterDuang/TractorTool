@@ -1,37 +1,36 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-04。**M4 实现、编译及独立包已补齐，M2/M3/M4 运行验收待用户最终测试。** 当前状态只见 [DEVELOPMENT](DEVELOPMENT.md#current-status)，本轮详情归 [E32](PROJECT_HISTORY.md#evidence-m4-tasks)，旧码率/布局详情留在 E31。
+更新日期：2026-10-04。**本轮日志/任务整合与取消诊断补齐实现；M2/M3/M4 运行验收待用户测试，M5 未开始。** 当前台账见 [DEVELOPMENT](DEVELOPMENT.md#current-status)，本轮详情见 [E33](PROJECT_HISTORY.md#evidence-logs-tasks)，M4 任务实现过程按需查 E32。
 
 ## 1. 当前边界
 
-- 用户授权先 Review、解决问题后推进完 M4，最后自己测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化或操作真实剪贴板。必要编译、独立打包和静态核对允许。
-- IDE 为 VS Code；根 slnx 共 12 工程。宿主不静态引用具体插件，源码 SDK 与 HostSdkDir 发布 DLL 引用互斥；开发 bin 不自动安装。子代理显式 GPT-6.1-Sol + high。
-- 框架提供插件连接、资源管理、生命周期及统一交互；媒体与未来 AI 策略归插件。没有新增通用 Worker/IPC、脚本或 Python/AI 平台。
-- 插件在实际 AppRoot/Plugins，数据和工具包在 DataRoot。M5 数据迁移、CI/安装器未开始；profile 仅隔离测试。实质改动保存本地 Git，不配置远程或推送；保留用户已有 .vscode/launch.json 修改。
+- 用户最后确认：截图中的取消异常触发操作暂不确定。不能直接认定全部来自导出取消，也不能说已复现并根治；不改 VS Code 异常过滤。
+- 用户接手运行测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化或操作真实剪贴板/媒体。必要编译、独立打包和静态核对允许。
+- VS Code / 根 slnx 12 工程；宿主不引用具体插件，源码 SDK 与 HostSdkDir 发布 DLL 引用互斥，开发 bin 不自动安装。若使用子代理，显式 GPT-6.1-Sol + high。
+- 框架只提供公共连接、管理、生命周期及交互，媒体/AI 业务留插件。插件在实际 AppRoot/Plugins；数据/工具包在 DataRoot；不建通用 Worker/IPC/Python 平台。
+- 实质改动保存本地 Git，不配置远程或推送；保留用户已有 .vscode/launch.json 空白修改。M5 数据迁移、磁盘日志保留和 CI/安装器未开始。
 
 ## 2. 接续要点
 
-- Contracts API 1.6 接受旧 1.0–1.5，保留原上下文构造/解构和程序集身份；UI API 1.3 不变。API 1.5 stdout 分块回调仍由 worker 顺序发送，Core 不解析媒体进度；Windows 创建时绑定 Job，非 Windows 进程适配器仍无。
-- API 1.6 新增 PluginContext.Tasks：Core BackgroundTaskService/Scope，QueueBatchAsync 一次登记和持久化整批，调用方逐项 RunAsync 决定串行。回调正常返回保留已提交结果，迟到取消不改为已取消；整批登记避免取消遗漏后续版本。
-- 任务摘要为 DataRoot/Data/tasks.json，保留活动项和最近 100 条终态；重启非终态转 Interrupted，无业务参数、不自动重试或续转码、不删除崩溃遗留输出。坏文件保留并阻止新任务执行，任务页可重试记录保存。
-- 标题栏“任务”提供稳定状态入口、进度、单项/整批取消、结果和返回工具，不增底部导航或插件页脚。显式退出有活跃公共任务时确认，关机跳过确认；任务/插件/包清理共用外层 10 秒等待。
-- 视频 0.5.0 / API 1.6 / UI 1.3，FFmpeg 9.0.2；单视频/可选单封面、多预设串行，MP4/MKV/MOV/TS + H.264/AAC、WebM + VP9/Opus，VBR 一次/真正两次/CBR。GPU 默认关闭，失败/不支持自动回退 CPU 并解释，取消不回退；实际编码器写诊断日志。
-- 媒体读取、依赖准备和参数检查仍为入队前预检，插件页显示状态/取消；预检成功后一次入队，失败或拒绝安装不建公共任务。预检中切页/隐藏仍由插件实例续跑。
-- 输入/参数/GPU 在申请依赖前固定，源文件核对大小/修改时间，封面整批只读共享锁且单项临时复制；输出校验后无覆盖提交，取消仅清理自己的产物。运行中锁定输入/预设编辑，失败继续余项。
-- 导出限制为可识别 8 位像素格式、逐行和直角旋转。已补 color_space/color_range，拒绝明确 HDR/广色域/高位深/未支持范围；无色彩标记的 8 位输入按普通 SDR 假设。FFmpeg 自动颜色协商仍需 BT.709、full-range、彩色/透明封面、首帧/后续帧与同步实测，不能声称色彩验收通过。
-- 预设名称/参数/勾选和偏好自动保存，输入/输出路径不入偏好；旧 schema 1 缺 RateControl 默认 vbr，旧 Encoder 忽略并在保存时移除，坏配置保留、写失败可重试。
-- 双功能原生页签、紧凑输入/主要参数、折叠画面选项、右侧预设/输出；信息页为完整可复制 MediaInfo 风格文本，没有播放/预览。宽窄窗口与滚动效果待用户验收；公共 Motion/PageHost 与主题边界不变。
-- M2 管理操作重启生效、数据保留；剪贴板 1.1.1 读取系统历史/事件及激活补刷，不自建库、不轮询，运行缺口保留。API 1.4 TryRequestAsync 拒绝正常返回 null，包引用/租约/同包确认合并不变；禁用仍保护依赖，卸载不联动删包。
-- 软件设置仅通用设置/外部依赖两大类，通用含外观/应用数据/关于，顶部面包屑保留父层级；插件设置按注册生成。Python/pip 与本地 AI 仍是后续方向。
+- Contracts API **1.7** 接受旧 1.0–1.6，原构造/解构/程序集身份不变；UI API 1.3。IAppLog 增加带 AppLogLevel 的默认接口重载，旧 Write 无异常为 INFO、有异常为 ERROR；新重载消费方须声明 API 1.7。
+- **删除标题栏任务按钮**，日志内“运行记录 / 任务进度”页签共用已有模型。记录 INFO 绿、WARNING 黄、ERROR 红；级别/关键词筛选、复制、选中详情、暂停。内存 300 条，磁盘文件保留详细记录。
+- 角标是本次启动未读 ERROR 记录数，日志图标左上角显示具体数字。手动标记已读到显示快照水位（含被筛选隐藏项），暂停后新错误不被确认；进页不自动清零、内存淘汰不扣数。事件驱动、UI 合并调度，无日志/任务轮询。
+- 仅记录插件发现/生命周期/管理、依赖安装与清理、任务开始/阶段/每 10% 节点/取消/终态和实际错误。正常导航、隐藏/恢复无记录。正常取消记 INFO，GPU 回退及启动恢复中断记 WARNING，意外中断/清理失败保留 ERROR。
+- ProcessRunner/任务包装直接观察已取消 Task，减少同一取消反复抛出；公开取消语义不变。**仅 Windows 进程树终止确认仍有 20ms、每次最多 3 秒轮询**，实际进入时每次启动只警告一次，后续 Job 事件化优化仍未完成。正常进程退出为 OS 通知。
+- API 1.6 Tasks 的 QueueBatchAsync 一次持久化整批，插件逐项 RunAsync 决定串行；正常回调返回保留成功结果，迟到取消不覆盖。摘要 DataRoot/Data/tasks.json 保留活动项和最近 100 条终态；重启记 Interrupted，无自动续转码、无自动清理用户输出。坏文件保留并阻止新任务，日志任务页可重试保存。
+- 视频 **0.5.1 / API 1.7 / UI 1.3**，FFmpeg 9.0.2。多格式/VBR 一次/真正两次/CBR、GPU 设置与自动 CPU 回退、多预设串行不变。信息提取为 MediaInfo 风格文本，没有视频播放或首帧预览；实际编码器/回退/失败写日志。
+- 媒体/依赖/参数预检仍在入队前，预检失败或拒绝安装不建公共任务，切页/隐藏不会取消。输入/预设/GPU 批次快照、源身份验证、封面只读锁、隔离临时输出和无覆盖提交继续有效；输出/首帧/VFR/音画同步/色彩/GPU 的实测缺口见插件设计和台账。
+- 剪贴板 1.1.1 读取 Windows 历史，系统事件/激活补刷、选中图片按需预览，不自建库/轮询。M2 管理重启生效；依赖缺失先确认、拒绝正常返回 null，禁用仍保护依赖，卸载不联动删包。
+- 软件设置按通用设置/外部依赖分类，通用含外观/应用数据/关于；插件设置按注册生成，保留面包屑层级。Python/pip 与本地 AI 仍为未来方向。
 
-## 3. 入口、证据与下一步
+## 3. 入口与交接
 
 | 工作 | 入口 |
 | --- | --- |
-| 公共任务 | [任务契约](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)、[任务服务](../TractorTool.Core/Tasks/BackgroundTaskService.cs)、[TasksViewModel](../TractorTool/ViewModels/TasksViewModel.cs)、[TasksView](../TractorTool/Views/TasksView.axaml)、[App](../TractorTool/App.axaml.cs) |
-| 视频处理 | [VideoViewModel](../Plugins/TractorTool.Plugins.VideoExport/VideoViewModel.cs)、[MediaProbe](../Plugins/TractorTool.Plugins.VideoExport/MediaProbe.cs)、[ExportPlan](../Plugins/TractorTool.Plugins.VideoExport/ExportPlan.cs)、[VideoExporter](../Plugins/TractorTool.Plugins.VideoExport/VideoExporter.cs) |
-| 发布与检查 | [Publish-Host](../scripts/Publish-Host.ps1)、[Build-VideoPlugin](../scripts/Build-VideoPlugin.ps1)、[TaskChecks](../tests/TractorTool.Checks/TaskChecks.cs)、[VideoChecks](../tests/TractorTool.VideoChecks/Program.cs) |
+| 日志与角标 | [AppLog](../TractorTool.Core/Logging/AppLog.cs)、[LogsViewModel](../TractorTool/ViewModels/LogsViewModel.cs)、[LogEntriesView](../TractorTool/Views/LogEntriesView.axaml)、[MainViewModel](../TractorTool/ViewModels/MainViewModel.cs) |
+| 公共任务与取消 | [BackgroundTaskService](../TractorTool.Core/Tasks/BackgroundTaskService.cs)、[TasksViewModel](../TractorTool/ViewModels/TasksViewModel.cs)、[ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs)、[WindowsProcessSession](../TractorTool/Platform/WindowsProcessSession.cs) |
+| 插件与检查 | [视频设计](Plugins/VideoExport.md)、[插件规范](PLUGIN_DEVELOPMENT.md)、[LogChecks](../tests/TractorTool.Checks/LogChecks.cs)、[Headless 检查](../tests/TractorTool.IntegrationChecks/Program.cs) |
 
-artifacts/m4-complete/host 为新宿主，video/TractorTool.VideoExport-0.5.0.zip 为独立包；必须配 API 1.6 宿主，E30/E31 旧宿主不能复用。独立插件构建前后 235 个宿主文件未变；Debug 12 工程、Release 宿主发布和发布 SDK 独立视频构建通过，源码依赖图已恢复。13 项任务、23 组视频及既有进程/包检查仅编译，程序和真实集成未运行；文档链接、AXAML、ZIP 清单/内容及变更空白核对通过，详情见 E32。
+产物为 artifacts/logs-tasks/host 与 video-final/TractorTool.VideoExport-0.5.1.zip，使用 API 1.7 新宿主；用户安装 ZIP 后显式退出重启。Debug 12 工程 0 警告/0 错误，Release 宿主发布、发布 SDK 独立插件构建及恢复源码引用后编译通过，235 个宿主文件独立打包前后未变。新增 5 组核心日志和 2 组 Headless 检查仅编译，全部运行验收交用户；不是已通过测试。
 
-下一步由用户按 DEVELOPMENT 验证任务/退出/中断摘要、预设/串行/取消、真实媒体/首帧/VFR/同步/色彩/GPU，再按反馈修复。M2、依赖/设置、旧 DLL 和进程回归缺口保留，不能把本轮编译当作阶段验收通过。
+下一步按 DEVELOPMENT 核对日志分级/角标/暂停/任务状态和异常触发，再完成既有媒体、GPU、进程、依赖、旧 DLL、剪贴板与生命周期回归。未关闭项不随 E33 归档移除。

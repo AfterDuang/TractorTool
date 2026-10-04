@@ -84,6 +84,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 e.Phase = PackagePhase.Downloading; e.Error = ""; e.Downloaded = 0; e.Total = null;
                 e.Operation = StartOperation(async () =>
                 {
+                    _log.Write("Packages", $"{package.Id} {package.Version}：开始下载并安装依赖。");
                     if (repair && e.HasFiles) RemoveFiles(e);
                     lock (_gate) e.Definition = e.SourceDefinition!;
                     await InstallCoreAsync(e, e.InstallCancellation.Token).ConfigureAwait(false);
@@ -114,6 +115,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 RemoveFiles(e);
                 SetState(e, PackagePhase.Missing);
                 lock (_gate) { e.HasFiles = false; e.Requested = false; }
+                _log.Write("Packages", $"{package.Id} {package.Version}：未引用依赖已清理。");
                 return Task.CompletedTask;
             }, e);
         }
@@ -193,7 +195,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             Exception? failure = null;
             try { await _recovery.ConfigureAwait(false); await action().ConfigureAwait(false); }
             catch (OperationCanceledException ex) when (e.InstallCancellation?.IsCancellationRequested == true || _stopping.IsCancellationRequested)
-            { failure = ex; SetState(e, PackagePhase.Missing); }
+            { failure = ex; SetState(e, PackagePhase.Missing); _log.Write("Packages", $"{e.Definition.Package.Id}：安装已取消。"); }
             catch (Exception ex) { failure = ex; SetState(e, PackagePhase.Failed, ex.Message); _log.Write("Packages", $"{e.Definition.Package.Id} 操作失败", ex); }
             finally
             {
@@ -334,6 +336,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     private void SetState(Entry e, PackagePhase phase, string error = "")
     {
         lock (_gate) { e.Phase = phase; e.Error = error; if (phase == PackagePhase.Missing) e.InstalledBytes = null; }
+        if (phase == PackagePhase.Ready) _log.Write("Packages", $"{e.Definition.Package.Id} {e.Definition.Package.Version}：依赖就绪。");
         Notify();
     }
     private Entry Find(PackageReference package) => _entries.TryGetValue(package, out var e) ? e : throw new NotSupportedException("宿主目录不支持此工具版本或平台。");
@@ -351,7 +354,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 await _stopping.CancelAsync();
                 Task[] active; lock (_gate) active = _operations.ToArray();
                 try { await Task.WhenAll(active).ConfigureAwait(false); }
-                catch (Exception ex) { _log.Write("Packages", "退出时结束工具操作", ex); }
+                catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { _log.Write("Packages", "退出时已取消工具操作。"); }
+                catch (Exception ex) { _log.Write("Packages", "退出时结束工具操作失败", ex); }
                 _stopping.Dispose();
             }));
     }

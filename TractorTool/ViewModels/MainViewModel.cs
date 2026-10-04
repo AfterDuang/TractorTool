@@ -16,8 +16,8 @@ using TractorTool.Views;
 
 namespace TractorTool.ViewModels;
 
-public class NavigationItem(string title, IRelayCommand openCommand, string key = "",
-    ToolIconKind icon = ToolIconKind.Tools, string description = "", IImage? imageSource = null)
+public partial class NavigationItem(string title, IRelayCommand openCommand, string key = "",
+    ToolIconKind icon = ToolIconKind.Tools, string description = "", IImage? imageSource = null) : ObservableObject
 {
     public string Title { get; } = title;
     public IRelayCommand OpenCommand { get; } = openCommand;
@@ -25,6 +25,10 @@ public class NavigationItem(string title, IRelayCommand openCommand, string key 
     public ToolIconKind Icon { get; } = icon;
     public string Description { get; } = description;
     public IImage? ImageSource { get; } = imageSource;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasErrors)), NotifyPropertyChangedFor(nameof(ErrorDescription))]
+    private long _unreadErrors;
+    public bool HasErrors => UnreadErrors > 0;
+    public string ErrorDescription => $"{UnreadErrors} 条未读错误";
 }
 
 public partial class MainViewModel : ViewModelBase, IDisposable
@@ -53,7 +57,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public LogsViewModel Logs { get; }
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasPageScroll))] private Control? _currentPage;
     // Only built-in pages with a page-level ScrollViewer opt into the shell's edge layout.
-    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView or TasksView;
+    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView or LogsView;
     [ObservableProperty] private string _pageTitle = "主页";
     [ObservableProperty] private bool _showPageHeader = true;
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
@@ -72,9 +76,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _legacyDisabled = legacyDisabled ?? [];
         if (packages is not null) _packageReferences = new(paths, manager, packages);
         _icons = new NavigationIconStore(log);
-        Tasks = new(tasks, OpenTaskPlugin, id => _plugins.Records.FirstOrDefault(r => r.Manifest?.Id == id)?.Name ?? id);
         Settings.ExitCommand = ExitCommand;
-        Logs = new LogsViewModel(paths, log);
+        Logs = new LogsViewModel(paths, log, new(tasks, OpenTaskPlugin, id => _plugins.Records.FirstOrDefault(r => r.Manifest?.Id == id)?.Name ?? id));
         Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand, manager, log);
         Home = new HomeViewModel(ShowPluginsCommand, new RelayCommand(() =>
         {
@@ -87,6 +90,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             new("插件", ShowPluginsCommand, "plugins", ToolIconKind.Tools, imageSource: _icons.GetHostIcon(ToolIconKind.Tools)),
             new("设置", ShowSettingsCommand, "settings", ToolIconKind.Settings, imageSource: _icons.GetHostIcon(ToolIconKind.Settings))];
         _log.Changed += OnLogChanged;
+        FooterNavigation[0].UnreadErrors = _log.Snapshot().UnreadErrors;
         ShowHome();
     }
 
@@ -164,18 +168,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         finally { _navigating = false; }
     }
 
-    public TasksViewModel Tasks { get; }
     private void OpenTaskPlugin(string id)
     {
         var page = _registered.FirstOrDefault(p => p.PluginId == id && !p.IsSettings);
         if (page is not null) OpenPluginPage(page);
         else ShowPlugins();
-    }
-    [RelayCommand] private void ShowTasks()
-    {
-        if (_detached || _navigating || _pageKey == "tasks") return;
-        Tasks.Refresh();
-        NavigateHostPage("tasks", "任务", "查看处理进度、结果和中断记录。", () => new TasksView { DataContext = Tasks }, ShowTasksCommand);
     }
 
     private void Navigate(string key, string navigationKey, string title, string description, Control view, bool showHeader = true)
@@ -208,7 +205,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         CurrentPage = view;
         // Commit before cleanup; callbacks cannot reenter navigation while it is in progress.
         ReleasePage(previous);
-        _log.Write("Navigation", "打开页面：" + title);
     }
 
     private void ReleasePage(Control? page)
@@ -240,7 +236,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         if (_detached || _navigating || _pageKey == "logs") return;
         Logs.Refresh();
-        NavigateHostPage("logs", "日志", "查看运行记录，定位插件与宿主问题。", () => new LogsView { DataContext = Logs }, ShowLogsCommand);
+        Logs.Tasks.Refresh();
+        NavigateHostPage("logs", "日志", "运行记录与任务进度", () => new LogsView { DataContext = Logs }, ShowLogsCommand);
     }
     private void NavigateHostPage(string key, string title, string description, Func<Control> factory, IRelayCommand retry)
     {
@@ -301,7 +298,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             lock (_logGate) _logUpdateQueued = false;
-            if (!_detached && IsLogsSelected) Logs.Refresh();
+            if (_detached) return;
+            FooterNavigation[0].UnreadErrors = _log.Snapshot().UnreadErrors;
+            if (IsLogsSelected) Logs.Refresh();
         });
     }
     public void Detach()
@@ -309,7 +308,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (_detached) return;
         _detached = true;
         Settings.ExternalTools.Dispose();
-        Tasks.Dispose();
+        Logs.Tasks.Dispose();
         _packageReferences?.Dispose();
         _log.Changed -= OnLogChanged;
         var previous = CurrentPage;

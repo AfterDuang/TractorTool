@@ -65,7 +65,7 @@ public sealed class NavigationIconStore(IAppLog log) : IDisposable
         }
         catch (Exception error)
         {
-            log.Write(source, $"图标加载失败，使用默认符号：{key}", error);
+            log.Write(AppLogLevel.Warning, source, $"图标加载失败，使用默认符号：{key}", error);
         }
         _images.Add(key, image);
         return image;

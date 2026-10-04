@@ -2,7 +2,7 @@ namespace TractorTool.Contracts;
 
 public static class PluginApi
 {
-    public const string Version = "1.6";
+    public const string Version = "1.7";
 }
 
 public interface IPlugin : IAsyncDisposable
@@ -53,4 +53,8 @@ public interface IPluginSettingsStore
 public interface IAppLog
 {
     void Write(string source, string message, Exception? error = null);
+    // API 1.7. Default implementation preserves existing log providers and plugin binaries.
+    void Write(AppLogLevel level, string source, string message, Exception? error = null) => Write(source, message, error);
 }
+
+public enum AppLogLevel { Info, Warning, Error }

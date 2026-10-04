@@ -2,10 +2,19 @@ using TractorTool.Contracts;
 
 namespace TractorTool.Core.Logging;
 
+public sealed record LogEntry(long Id, DateTimeOffset Timestamp, AppLogLevel Level, string Source, string Message, string? Detail)
+{
+    public string LevelName => Level.ToString().ToUpperInvariant();
+    public string Text => $"{Timestamp:O} [{LevelName}] [{Source}] {Message}" + (Detail is null ? "" : Environment.NewLine + Detail);
+}
+
+public sealed record LogSnapshot(IReadOnlyList<LogEntry> Entries, long TotalErrors, long UnreadErrors, string? WriteError);
+
 public sealed class AppLog : IAppLog
 {
     private readonly object _gate = new();
-    private readonly Queue<string> _recent = new();
+    private readonly Queue<LogEntry> _recent = new();
+    private long _sequence, _errors, _acknowledged;
     public string FilePath { get; }
     public string? WriteError { get; private set; }
     public event Action? Changed;
@@ -16,21 +25,53 @@ public sealed class AppLog : IAppLog
         FilePath = Path.Combine(directory, $"host-{DateTime.Now:yyyyMMdd-HHmmss}-{Environment.ProcessId}.log");
     }
 
-    public void Write(string source, string message, Exception? error = null)
+    public void Write(string source, string message, Exception? error = null) =>
+        Write(error is null ? AppLogLevel.Info : AppLogLevel.Error, source, message, error);
+
+    public void Write(AppLogLevel level, string source, string message, Exception? error = null)
     {
-        var line = $"{DateTimeOffset.Now:O} [{source}] {message}" + (error is null ? "" : $"\n{error}");
+        if (!Enum.IsDefined(level)) throw new ArgumentOutOfRangeException(nameof(level));
         lock (_gate)
         {
-            _recent.Enqueue(line);
-            while (_recent.Count > 300) _recent.Dequeue();
-            try { File.AppendAllText(FilePath, line + Environment.NewLine); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { WriteError = ex.Message; }
+            var entry = Append(level, source, message, error?.ToString());
+            try { File.AppendAllText(FilePath, entry.Text + Environment.NewLine); WriteError = null; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Surface a failed sink without recursively writing to that same sink.
+                if (WriteError != ex.Message) Append(AppLogLevel.Error, "Logging", "日志文件写入失败；当前记录暂存于内存。", ex.Message);
+                WriteError = ex.Message;
+            }
         }
-        Changed?.Invoke();
+        Notify();
     }
 
-    public string ReadRecent()
+    private LogEntry Append(AppLogLevel level, string source, string message, string? detail)
     {
-        lock (_gate) return (WriteError is null ? "" : "日志写入失败：" + WriteError + "\n") + string.Join(Environment.NewLine, _recent);
+        var entry = new LogEntry(++_sequence, DateTimeOffset.Now, level, source, message, detail);
+        _recent.Enqueue(entry);
+        while (_recent.Count > 300) _recent.Dequeue();
+        if (level == AppLogLevel.Error) _errors++;
+        return entry;
+    }
+
+    public LogSnapshot Snapshot()
+    {
+        lock (_gate) return new(_recent.ToArray(), _errors, _errors - _acknowledged, WriteError);
+    }
+
+    // Acknowledge only the snapshot the user saw. Concurrent/new errors must keep their badge.
+    public void AcknowledgeErrors(long throughErrorCount)
+    {
+        lock (_gate) _acknowledged = Math.Max(_acknowledged, Math.Clamp(throughErrorCount, 0, _errors));
+        Notify();
+    }
+
+    public string ReadRecent() => string.Join(Environment.NewLine, Snapshot().Entries.Select(e => e.Text));
+
+    private void Notify()
+    {
+        foreach (Action handler in Changed?.GetInvocationList() ?? [])
+            try { handler(); }
+            catch { /* A display subscriber cannot break logging or the operation being recorded. */ }
     }
 }

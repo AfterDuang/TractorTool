@@ -106,7 +106,12 @@ public sealed class BackgroundTaskService
             _loaded = true;
             TrimHistory();
         }
-        if (history.Tasks.Any(s => Active(s.State))) await SaveAsync();
+        var interrupted = history.Tasks.Count(s => Active(s.State));
+        if (interrupted > 0)
+        {
+            await SaveAsync();
+            _log.Write(AppLogLevel.Warning, "Tasks", $"上次运行有 {interrupted} 个任务中断；已保留摘要，请返回工具重新提交。");
+        }
         else ClearPersistenceError();
     }
 
@@ -154,6 +159,7 @@ public sealed class BackgroundTaskService
             bool stopped;
             lock (_sync) stopped = owner.Closed || _closed;
             if (stopped) foreach (var entry in entries) entry.Cancel();
+            foreach (var entry in entries) _log.Write("Tasks", $"{entry.Value.PluginId} · {entry.Value.Title}：已加入任务，批次 {entry.Value.BatchId:N}。");
             return entries;
         }
         finally { _writes.Release(); Notify(); }
@@ -176,7 +182,7 @@ public sealed class BackgroundTaskService
         bool queued;
         lock (_sync)
         {
-            if (!Active(entry.Value.State)) return;
+            if (!Active(entry.Value.State) || entry.Value.State == BackgroundTaskState.Cancelling) return;
             queued = entry.Value.State == BackgroundTaskState.Queued;
             entry.Value = entry.Value with
             {
@@ -191,6 +197,7 @@ public sealed class BackgroundTaskService
             if (queued) entry.Finishing ??= Task.Run(() => FinishAsync(entry));
             else _ = Task.Run(PersistObservedAsync);
         }
+        _log.Write("Tasks", $"{entry.Value.PluginId} · {entry.Value.Title}：已收到取消请求。");
         Notify();
     }
 
@@ -227,10 +234,20 @@ public sealed class BackgroundTaskService
             }
             finally { _writes.Release(); Notify(); }
             lock (_sync)
-                if (entry.Value.State == BackgroundTaskState.Cancelling)
-                    throw new OperationCanceledException(entry.Stop.Token);
-            entry.Stop.Token.ThrowIfCancellationRequested();
-            var result = await execute(new DirectProgress(p => ReportProgress(entry, p)), entry.Stop.Token);
+                if (entry.Value.State == BackgroundTaskState.Cancelling || entry.Stop.IsCancellationRequested)
+                {
+                    entry.Value = entry.Value with { State = BackgroundTaskState.Cancelled, Message = "已取消", FinishedAt = DateTimeOffset.UtcNow };
+                    return;
+                }
+            _log.Write("Tasks", $"{entry.Value.PluginId} · {entry.Value.Title}：开始执行。");
+            var execution = execute(new DirectProgress(p => ReportProgress(entry, p)), entry.Stop.Token);
+            await ((Task)execution).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            if (execution.IsCanceled && (entry.Stop.IsCancellationRequested || entry.Value.State == BackgroundTaskState.Cancelling))
+            {
+                lock (_sync) entry.Value = entry.Value with { State = BackgroundTaskState.Cancelled, Message = "已取消", FinishedAt = DateTimeOffset.UtcNow };
+                return;
+            }
+            var result = await execution.ConfigureAwait(false);
             lock (_sync)
                 entry.Value = entry.Value with
                 {
@@ -245,7 +262,7 @@ public sealed class BackgroundTaskService
         catch (Exception ex)
         {
             lock (_sync) entry.Value = entry.Value with { State = BackgroundTaskState.Failed, Message = "执行失败", Error = Limit(ex.GetBaseException().Message), FinishedAt = DateTimeOffset.UtcNow };
-            _log.Write(entry.Value.PluginId, "有限任务失败", ex);
+            entry.Failure = ex;
         }
         finally
         {
@@ -258,11 +275,22 @@ public sealed class BackgroundTaskService
     private void ReportProgress(Entry entry, BackgroundTaskProgress progress)
     {
         if (progress is null) return;
+        string? milestone = null;
         lock (_sync)
         {
             if (entry.Value.State != BackgroundTaskState.Running) return;
             entry.Value = entry.Value with { Percent = progress.Percent is double p && double.IsFinite(p) ? Math.Clamp(p, 0, 100) : null, Message = Limit(progress.Message) ?? "" };
+            // Persist meaningful stages and 10% milestones, never every frame/progress notification.
+            var band = (int)(entry.Value.Percent ?? 0) / 10;
+            if (entry.LastStage != entry.Value.Message || band > entry.LastProgressBand)
+            {
+                milestone = $"{entry.Value.PluginId} · {entry.Value.Title}：{entry.Value.Message}" +
+                    (entry.Value.Percent is double percent ? $" · {percent:0}%" : "");
+                entry.LastStage = entry.Value.Message;
+                entry.LastProgressBand = band;
+            }
         }
+        if (milestone is not null) _log.Write("Tasks", milestone);
         Notify(); // Progress is coalesced in memory, not written for each frame.
     }
 
@@ -270,6 +298,9 @@ public sealed class BackgroundTaskService
     {
         if (entry.Cancellation is not null) await entry.Cancellation;
         await PersistObservedAsync();
+        _log.Write(entry.Value.State == BackgroundTaskState.Failed ? AppLogLevel.Error : AppLogLevel.Info, "Tasks",
+            $"{entry.Value.PluginId} · {entry.Value.Title}：{entry.Value.Message}" +
+            (entry.Value.Result is { } result ? $" · {result}" : ""), entry.Failure);
         entry.DisposeResources();
         lock (_sync) { entry.Completion.TrySetResult(entry.Value); TrimHistory(); }
         Notify();
@@ -305,7 +336,12 @@ public sealed class BackgroundTaskService
 
     private void ReportPersistence(Exception error)
     {
-        lock (_sync) _persistenceError = error.GetBaseException().Message;
+        lock (_sync)
+        {
+            var message = error.GetBaseException().Message;
+            if (_persistenceError == message) return;
+            _persistenceError = message;
+        }
         _log.Write("Tasks", "任务记录保存或读取失败；原文件保留，新任务必须成功记录后才能执行。", error);
     }
     private void ClearPersistenceError() { lock (_sync) _persistenceError = null; }
@@ -339,6 +375,9 @@ public sealed class BackgroundTaskService
         public Task? Finishing { get; set; }
         public bool Ready { get; set; }
         public bool Started { get; set; }
+        public Exception? Failure { get; set; }
+        public string LastStage { get; set; } = "正在执行";
+        public int LastProgressBand { get; set; }
         public void Cancel() => service.Cancel(this);
         public Task<BackgroundTaskSnapshot> RunAsync(Func<IProgress<BackgroundTaskProgress>, CancellationToken, Task<string?>> execute) => service.RunAsync(this, execute);
         public void Dispose() => Cancel();
