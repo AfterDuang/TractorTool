@@ -8,7 +8,7 @@
 
 解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 12 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务和视频真实导出入口，M4 已接插件预设工作区、串行执行、公共有限任务和中断摘要，运行验证状态集中在开发文档。
 
-职责结构如下。表中的任务/包管理为 M3-M4 职责，不先创建空实现：
+现行职责与依赖边界如下：
 
 | 项目或目录 | 职责 | 允许的项目依赖 |
 | --- | --- | --- |
@@ -49,24 +49,25 @@ flowchart TD
 
 插件包是 ZIP，包含根清单 `plugin.json`、入口 DLL、私有依赖、资源和许可说明。插件根目录为 `Path.Combine(AppContext.BaseDirectory, "Plugins")`，安装目录按 `PluginId/Version` 隔离。运行时只读取已完整安装并选定的版本，不从临时解压目录或用户数据目录加载插件代码。
 
-清单是加载前校验的元数据边界，包含稳定标识、版本、入口、平台与 SDK 兼容要求。字段、当前版本规则和示例统一维护在 [插件开发规范](PLUGIN_DEVELOPMENT.md#2-插件清单与兼容性)，本节不重复协议表。已纳入管理的插件只扫描明确选定的活动版本；未纳入管理的同 ID 多版本候选仍报冲突，不猜测最高版本。外部包需求在 M3 前仍拒绝加载。
+清单是加载前校验的元数据边界，包含稳定标识、版本、入口、平台与 SDK 兼容要求。字段、当前版本规则和示例统一维护在 [插件开发规范](PLUGIN_DEVELOPMENT.md#2-插件清单与兼容性)，本节不重复协议表。已纳入管理的插件只扫描明确选定的活动版本；未纳入管理的同 ID 多版本候选仍报冲突，不猜测最高版本。有效的外部包声明不要求提前安装，插件在实际使用时向宿主申请；源暂未提供时仍允许页面加载，申请时明确报告原因。
 
 清单只声明元数据，禁止把插件名称、类型名或包路径当作 shell 命令执行。禁用或不兼容插件仅展示清单信息，不为读取名称而执行其 DLL。
 
 ### 2.2 公开扩展点
 
-| 契约（M1 已实现的见下文） | 作用 |
+| 公开契约 | 作用 |
 | --- | --- |
 | `IPlugin` | 初始化、停止与释放插件实例 |
 | `PluginContext` | 提供该插件可用的宿主服务、生命周期令牌与稳定标识 |
 | `IPluginUiModule`，位于 UI 工程 | 注册导航页、设置页的工厂与元数据 |
 | `IPluginBackgroundService`，可选 | 应用驻留期间的可取消常驻活动 |
+| `IAppLog` | 写入带级别、来源和异常详情的重要运行记录 |
 | `IBackgroundTaskService`、`IBackgroundTask` | 登记有限任务/整批、执行句柄、报告进度与取消；宿主任务页查询公共摘要 |
 | `IAppPaths`、`IPluginSettingsStore` | 获取所属目录及保存带版本的配置 |
 | `IExternalPackageService` | 查询依赖、请求安装、获取指定工具路径及使用租约 |
 | `IProcessRunner` | 受管理的外部进程执行、输出读取与取消 |
 
-M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；M4 的 API 1.6 增加 IBackgroundTaskService 与 IBackgroundTask，通过 PluginContext.Tasks 提供按插件生命周期绑定的作用域，保留原构造/解构和程序集身份。当前 API 1.7 增加显式日志级别，接受旧 API 1.0–1.6。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
+PluginContext 按插件生命周期提供进程、依赖和有限任务作用域，保留旧构造/解构和程序集身份。当前 Contracts API 1.7 接受旧 API 1.0–1.6；接口版本要求以插件规范为准。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
 
 插件设置页使用同样的注册机制。宿主只知道页面描述与工厂，不知道视频码率等业务字段。插件专属设置必须由插件拥有的服务读写。
 
@@ -74,7 +75,7 @@ M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundServic
 
 ### 2.3 装载顺序与版本隔离
 
-1. 分别解析软件目录、插件根目录、启动配置和数据根目录。取得固定启动目录、必要的自定义数据根实例锁及实际插件安装目录独占锁；锁持有到进程终止，避免超时退出后的迟到清理与新实例写入重叠。
+1. 分别解析软件目录、插件根目录、启动配置和数据根目录。取得固定启动目录、必要的自定义数据根实例锁及实际插件安装目录独占锁；如有数据迁移请求，先按 [迁移事务](#storage) 完成准备与恢复，再创建业务写入服务。锁持有到进程终止，避免超时退出后的迟到清理与新实例写入重叠。
 2. 在任何插件 DLL 装载前应用待处理变更，然后扫描 `<AppRoot>/Plugins`，校验路径、ID、平台、宿主 API 与 UI SDK。管理状态不可读取或安装目录锁不可取得时显示原因并停止此次插件装载，宿主仍可查看日志。
 3. 管理记录决定活动版本和启用状态；未管理的单版本插件兼容旧 `disabledPlugins` 配置。禁用、不兼容、损坏或变更失败的插件记录状态，不加载代码。
 4. 为启用插件创建加载上下文，解析其私有托管依赖与本机库。入口与解析出的私有依赖共用版本包边界校验：路径必须位于版本目录内，从文件到版本根逐级拒绝链接/重解析点。系统本机库仍由系统解析。
@@ -182,7 +183,7 @@ Windows 注销或关机跳过交互确认并执行有界清理，不能因无限
 
 状态按缺失、下载中、校验中、安装中、就绪、失败展示。流程为下载临时文件、验证校验值、在暂存目录安全解压、验证工具存在和版本、提交就绪标记。解压校验路径越界及链接，失败保留可重试状态，不破坏已安装版本。
 
-相同包版本的并发请求合并，同一安装事务串行。任务持有包版本使用租约，直到进程退出并读取完输出才释放。移除被使用的版本时拒绝操作或排队至下次启动。
+相同包版本的并发请求合并，同一安装事务串行。任务持有包版本使用租约，直到进程退出并读取完输出才释放。清理时仍有引用、请求或使用租约就拒绝操作，不安排重启后自动删除。
 
 SHA256 用于核对内容，不单独证明发布者可信；包清单和来源本身也需要可信。FFmpeg 构建中的编码器和分发许可随构建选项变化，发布前记录采用的二进制来源和许可证。
 
@@ -294,8 +295,8 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 
 实现依据为 [3.1.0 固定源码](https://github.com/amwx/FluentAvalonia/tree/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab)，采用 `FA*` 新版 API，没有直接搬用 Watt 的 Avalonia 11 模板或 GPL 代码。当前复用库内置的符号字体，没有引入此前备选的 FluentIcons 包。第三方 MIT 声明随发布复制，见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。
 
-- **窗口与导航**：`FAAppWindow` 提供窗口边框、系统标题栏按钮和命中测试；内容扩展到 48 逻辑单位的标题区。自定义标题区显式设置 Avalonia 12 的 `WindowDecorationProperties.ElementRole="TitleBar"`，其中纯图文内容不参与命中，保留库的窗口按钮。仅设置 `ExtendsContentIntoTitleBar` 不会让覆盖默认标题栏的内容自动成为拖动区；此前遗漏造成用户反馈的无法拖动，已修正源码，实机回归待用户执行。使用框架原生拖动/双击行为，不再另写指针拖动或 Win32 Hook。[Avalonia 窗口说明](https://docs.avaloniaui.net/docs/app-development/window-management)。`FANavigationView` 固定 72 宽图文侧栏，上部为主页和插件、底部为日志/插件/设置；导航图标 28、背景最小高度 64、四周留白 4（均为逻辑单位）。导航标签单行省略，完整名称保留悬停提示和无障碍名称。尺寸适配集中在 ShellStyles 和主窗口导航模板，保留库的键盘、选择与焦点处理。Windows 托盘与实例恢复服务继续由宿主拥有。
-- **页面与设置行**：日志、插件、设置及加载失败分别使用 AXAML View 与 ViewModel。宿主页头和正文使用同一左侧边距，正文随可用宽度伸缩，不再分别限宽居中；滚动页面复用 `ScrollViewer.pageScroll` / `StackPanel.pageBody`，禁止水平滚动并保留底部留白。主页/设置/插件/错误页通过 MainViewModel.HasPageScroll 使 PagePresenter 启用 edgeScroll：右侧 28 外边距移入正文，叠加原有 8 得到正文右边距 36；滚动条贴内容区右边，卡片及页头位置保持。适配集中在宿主 ShellStyles，公共 UI SDK 样式不变。只对空状态说明等局部文字限制阅读宽度，插件卡片按可用宽度换行；日志保留虚拟化记录列表和所选详情滚动区，外部插件保留默认页面边距并自行组织布局。公共 `SettingRow` 包装 `FASettingsExpanderItem`：左侧图标与说明，右侧操作，小于库的 460 宽阈值时操作移到下一行。设置采用外观/存储/插件/关于分组，主题、主题色和动画选择后即时应用并自动保存；仅写入失败时显示重试。目录按钮、插件搜索、日志复制/暂停和错误重试都是实际命令。
+- **窗口与导航**：`FAAppWindow` 提供窗口边框、系统标题栏按钮和命中测试；内容扩展到 48 逻辑单位的标题区。自定义标题区显式设置 Avalonia 12 的 `WindowDecorationProperties.ElementRole="TitleBar"`，其中纯图文内容不参与命中，保留库的窗口按钮。扩展内容覆盖默认标题栏时，仍须显式标记拖动区。使用框架原生拖动/双击行为，不再另写指针拖动或 Win32 Hook。[Avalonia 窗口说明](https://docs.avaloniaui.net/docs/app-development/window-management)。`FANavigationView` 固定 72 宽图文侧栏，上部为主页和插件、底部为日志/插件/设置；导航图标 28、背景最小高度 64、四周留白 4（均为逻辑单位）。导航标签单行省略，完整名称保留悬停提示和无障碍名称。尺寸适配集中在 ShellStyles 和主窗口导航模板，保留库的键盘、选择与焦点处理。Windows 托盘与实例恢复服务继续由宿主拥有。
+- **页面与设置行**：日志、插件、设置及加载失败分别使用 AXAML View 与 ViewModel。宿主页头和正文使用同一左侧边距，正文随可用宽度伸缩，不再分别限宽居中；滚动页面复用 `ScrollViewer.pageScroll` / `StackPanel.pageBody`，禁止水平滚动并保留底部留白。主页/设置/插件/错误页通过 MainViewModel.HasPageScroll 使 PagePresenter 启用 edgeScroll：右侧 28 外边距移入正文，叠加原有 8 得到正文右边距 36；滚动条贴内容区右边，卡片及页头位置保持。适配集中在宿主 ShellStyles，公共 UI SDK 样式不变。只对空状态说明等局部文字限制阅读宽度，插件卡片按可用宽度换行；日志保留虚拟化记录列表和所选详情滚动区，外部插件保留默认页面边距并自行组织布局。公共 `SettingRow` 包装 `FASettingsExpanderItem`：左侧图标与说明，右侧操作，小于库的 460 宽阈值时操作移到下一行。设置层级遵循本节开头的包含关系；主题、主题色和动画选择后即时应用并自动保存，写入失败时显示重试。目录按钮、插件搜索、日志复制/暂停和错误重试都是实际命令。
 - **公共图标与主题**：`ToolIconKind`/`ToolIcon` 提供宿主与插件同一套符号映射，导航支持本地彩色图片，未提供或加载失败时使用符号。图片保留原色，操作符号随主题调整前景色，具体所有权见第 6.3 节。应用及托盘图标从同一透明母版导出，见第 7.1 节。RequestedThemeVariant 控制浅色/深色/系统，CustomAccentColor 控制统一控件主题色，语义资源区分背景层次。
 - **统一动效**：[Motion](../TractorTool.UI/Motion.cs) 与 [MotionStyles](../TractorTool.UI/Styles/MotionStyles.axaml) 属于公共 UI，由 SharedStyles 加载一次。ThemeService 在变更颜色前统一设置 AppMotionEnabled 动态资源及 FluentAvalonia 应用动画标志。普通控件和模板子元素自动读取该选项，新增页面/窗口不再绑定主窗口 class。开关滑动/按压、按钮悬停、滑杆与展开箭头沿用固定版本控件库的内置过渡，不复制模板或增加计时器。自有窗口/表面/卡片/设置行/文字的颜色过渡统一使用 220 ms、CubicEaseInOut，ShellStyles 仅消费相同时长补充侧栏。
 - **关闭动效的边界**：模板内的局部 Transitions 优先于普通样式，Motion 使用可释放的 Animation 优先级空值覆盖，取消普通属性在途过渡；重新开启时释放覆盖，恢复控件自身的原值。不会覆盖写死开关拖动期间临时清空的底层 Transitions。Expander 后续展开的 ContentTransition 同样禁用；已开始的第三方 CrossFade/页面过渡仍按库自身生命周期结束，不宣称瞬时取消所有动画。进度指示及插件自行创建的 Animation/Composition 不属于普通属性过渡，业务自定义动效须读取公共偏好并自行管理取消；不通过暂停全局时钟冻结业务进度。
