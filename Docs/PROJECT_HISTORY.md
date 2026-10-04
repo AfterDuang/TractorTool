@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M3（进行中） | [E29 · 框架边界复审与视频单次导出（2026-10-04）](#evidence-video-export) |
 | 后续规划 | [E28 · Python / pip 依赖扩展边界（2026-10-04）](#evidence-python-plan) |
 | M3（进行中） | [E27 · 依赖拒绝/缺失路径异常与全局计数修正（2026-10-04）](#evidence-dependency-feedback) |
 | M3（进行中） | [E26 · 设置层级与视频读取入口（2026-10-04）](#evidence-settings-hierarchy) |
@@ -1184,3 +1185,35 @@ dotnet build TractorTool.slnx -c Debug --no-restore -m:1 -nr:false
 方案保留宿主统一申请/确认/引用/清理，由 Core 在实际接入 Python 时区分安装流程，增加解释器和隔离环境的管理。重点记录版本冲突、间接依赖保护、完整环境复用条件，以及 venv 在数据根迁移时需重建的限制。官方依据留在[架构方案](ARCHITECTURE.md#python-dependencies)，尚未决定环境共享粒度、锁定格式或源码分发包支持策略。
 
 5 份改动文档的 165 处本地链接/锚点与文档范围 diff 空白检查通过。不构建、不运行应用或测试，不安装 Python/pip 依赖；本轮不产生功能通过结论。已有 `.vscode/launch.json` 工作区修改保持原样，不纳入文档提交。
+
+<a id="evidence-video-export"></a>
+
+## E29：框架边界复审与视频单次导出（2026-10-04）
+
+用户强调框架精干、业务归插件，要求再次 Review 后继续。两路 GPT-6.1-Sol/high 静态复审现有公共层和插件生命周期，未发现确定阻塞；保留有实际用途的进程实例分工与旧 API 兼容入口，不把它们误当死代码删除。随后按 M3 接入单次真实导出，没有提前实现 Python/AI 或通用 Worker/IPC。
+
+- 公共改动限定为 API 1.5 的 ProcessRequest 可选 stdout 分块回调：保留原构造/解构和程序集身份，worker 顺序回调，捕获限制不截断通知，回调失败仍清理进程。宿主不解析 FFmpeg 参数或进度，旧 API 1.0–1.4 清单继续兼容。
+- 视频 0.2.0 自己实现结构化探测、容器/编码参数、码率估算、可选首帧封面、进度解析、GPU 短片编码检查和完整导出、取消、输出探测与无覆盖提交。MP4/MKV/MOV 的 H.264/AAC 为当前实现范围；多预设和公共有限任务仍在 M4。
+- 文件操作限定为用户指定目录中的独有事务目录和指定临时文件；输入不覆盖，封面快照，源文件变更检查，失败保留其他文件。包租约覆盖整个导出；切页/隐藏继续，停止时取消并等待。
+- 新代码复审发现透明封面可能透出原首帧、高位深识别遗漏，以及新增接受 API 1.5 检查与旧拒绝 1.5 检查相冲突。分别改为封面先铺黑合成不透明画面、明确 8 位 SDR 格式/色彩白名单、未知协议拒绝用例升为 1.6。两位复核未发现其他确定阻塞，均未运行程序。
+- 新增 stdout 到达时机/超出捕获上限与回调异常清理检查，进程检查合计 19 项（6 个替身、13 个 Windows）。视频检查合计 12 组，覆盖 JSON/旋转/SAR、输入拒绝、实际流映射与参数、分块进度、输出元数据拒绝、隔离无覆盖提交与取消清理；29 项 Windows 包用例保留。以上全部只编译，未执行。
+
+实际构建与独立打包：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/video-export/host
+./scripts/Build-VideoPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/video-export/host -Output H:/ProjH/TractorTool/artifacts/video-export/video
+# 正式 SDK 模式打包后，恢复日常源码依赖图并作最终构建
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+```
+
+首次受限构建因 Avalonia BuildServices 用户日志权限失败，并出现 NU1900 数据源不可达；使用正常构建缓存权限后编译成功，中间两次 Debug 日志各保留 4 个 NU1900 警告。最后一次正常源码 restore/build **12 工程 0 警告/0 错误**，Release 宿主发布和只引用发布 SDK 的插件独立构建成功。日志位于 artifacts/video-export/{build-debug.log,build-debug-final.log,publish-host.log,build-video.log,build-source-final.log}，早期受限失败仅保留工具输出。
+
+独立构建前后 **235 个宿主文件哈希未变**，记录为 host-before.json、host-hash-check.json。ZIP 为 video/TractorTool.VideoExport-0.2.0.zip，含 9 项、无共享 SDK/FFmpeg 副本，SHA256 为 `C6F334EA16027DA0A58E1BFFF74B28769EC693997A8212794D4F334DE2B4DFA0`。新插件要求 API 1.5，测试时必须搭配本轮新宿主；未覆盖用户已安装目录。已有用户 `.vscode/launch.json` 改动保持原样并排除提交。
+
+实现时核对 [FFmpeg 参数文档](https://ffmpeg.org/ffmpeg.html)及[滤镜文档](https://ffmpeg.org/ffmpeg-filters.html)；使用实际 stdout 进度，提交前最多 99%，输出探测只是元数据检查，不证明画面/音画正确。封面在第 0 帧覆盖、VFR 保留时间戳、8 帧 GPU 检查均是待验证的实现，不记为真实结果。
+
+静态核对 10 份 Markdown 的 234 处本地链接/锚点、修改的 AXAML XML、ZIP 9 项及版本/API/共享 DLL 排除通过；本轮 diff 空白检查通过，排除用户已有的 launch.json 空白改动。结果保存在 artifacts/video-export/static-checks.json。
+
+本轮未启动应用、检查程序、FFmpeg 或 UI，没有读写真实剪贴板/安装插件/修改用户数据。CFR/VFR、旋转、透明封面首帧和后续画面、时长/音画同步、不同容器及实际 GPU 链、取消/退出仍待用户实测；M3 尚未关闭，M2 和旧依赖/设置运行缺口继续留在 DEVELOPMENT。

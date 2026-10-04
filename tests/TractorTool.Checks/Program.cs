@@ -119,13 +119,15 @@ Check("API 1.4 accepts existing process and legacy plugins", () =>
     Assert(compatibility.Check(manifest with { ApiVersion = "1.2" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.3" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.4" }) is null);
-    Assert(compatibility.Check(manifest with { ApiVersion = "1.5" }) is not null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.5" }) is null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.6" }) is not null);
 });
 Check("Package dependencies validate shape and API without requiring an available source", () =>
 {
     var packageManifest = manifest with { ApiVersion = "1.2", Dependencies = [new("FFmpeg", "9.0.2")] };
     Assert(compatibility.Check(packageManifest) is null);
     Assert(compatibility.Check(packageManifest with { ApiVersion = "1.4" }) is null);
+    Assert(compatibility.Check(packageManifest with { ApiVersion = "1.5" }) is null);
     Assert(compatibility.Check(packageManifest with { ApiVersion = "1.1" }) is not null);
     Assert(compatibility.Check(packageManifest with { Dependencies = [new("Unknown", "1.0.0")] }) is null);
     Throws<InvalidDataException>(() => ManifestValidator.Validate(packageManifest with { Dependencies = [new("../escape", "1.0.0")] }, dir));

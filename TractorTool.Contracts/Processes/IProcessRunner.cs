@@ -13,6 +13,9 @@ public sealed record ProcessRequest(string ExecutablePath, IReadOnlyList<string>
     public TimeSpan? Timeout { get; init; }
     /// <summary>Maximum retained UTF-16 characters per stream. Excess output is drained and discarded.</summary>
     public int OutputLimit { get; init; } = 1024 * 1024;
+    /// <summary>API 1.5. Sequential stdout chunks on a worker thread, including output beyond the capture limit.
+    /// Return promptly; marshal UI updates yourself. A thrown exception fails the run and stops its process tree.</summary>
+    public Action<string>? StandardOutputReceived { get; init; }
 }
 
 /// <summary>A nonzero exit code is returned unchanged. Cancellation and timeout throw after cleanup.</summary>

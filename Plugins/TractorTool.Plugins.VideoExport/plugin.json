@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "id": "TractorTool.VideoExport",
   "name": "视频导出",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "entryAssembly": "TractorTool.Plugins.VideoExport.dll",
   "entryType": "TractorTool.Plugins.VideoExport.VideoPlugin",
-  "apiVersion": "1.4",
+  "apiVersion": "1.5",
   "uiApiVersion": "1.2",
   "avaloniaVersion": "12.1.2",
   "supportedPlatforms": ["win-x64"],
   "dependencies": [{"id":"FFmpeg","version":"9.0.2"}],
-  "description": "读取源视频的媒体信息；导出功能开发中。",
+  "description": "读取媒体信息，调整格式、尺寸与码率并导出视频，可替换第一帧。",
   "author": "TractorTool"
 }

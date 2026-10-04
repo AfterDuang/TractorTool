@@ -13,7 +13,7 @@
 | 常驻活动 | `IPluginBackgroundService` | 按插件生命周期运行，与页面显示独立 |
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
-| 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1；上下文 Processes 按插件生命周期提供，当前 Windows 10+ 适配；见下文 |
+| 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1 执行，API 1.5 可选 stdout 实时数据块；上下文按插件生命周期提供，当前 Windows 10+ 适配 |
 | 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2 查询/取得已装版本，API 1.4 TryRequestAsync 申请缺失包；确认、下载与安装统一由宿主处理 |
 | 有限任务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
 
@@ -33,7 +33,7 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.4，仍接受 1.0/1.1/1.2/1.3；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4 |
+| `apiVersion` | 当前 1.5，仍接受 1.0/1.1/1.2/1.3/1.4；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5 |
 | `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -88,7 +88,7 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 
 执行等待与页面无关，传入业务取消令牌；宿主退出/插件加载失败时服务封闭新调用并取消已有调用。根进程结束时其后代也会结束，不得用此接口启动应独立常驻的软件。返回非零退出码时由插件展示业务失败；调用取消为 OperationCanceledException，执行超时为 TimeoutException，清理失败为 IOException，不能把清理异常显示成“已安全取消”。
 
-输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
+输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。API 1.5 的可选 `ProcessRequest.StandardOutputReceived` 接收 worker 顺序发送的数据块，不保证完整行，超过最终捕获上限也继续通知；插件自行有界组行、解析和投递 UI，回调必须快速返回，不同步等待 UI，抛异常会终止本次进程。进度达到结束标记不代表输出已校验成功；未使用回调的旧调用保持原行为。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
 
 ### 外部工具接入（API 1.4）
 

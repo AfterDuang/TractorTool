@@ -49,7 +49,7 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
         {
             token.ThrowIfCancellationRequested();
             process = startProcess(request);
-            var output = ReadAsync(process.StandardOutput, request.OutputLimit, reading.Token, readFailure);
+            var output = ReadAsync(process.StandardOutput, request.OutputLimit, reading.Token, readFailure, request.StandardOutputReceived);
             var error = ReadAsync(process.StandardError, request.OutputLimit, reading.Token, readFailure);
             readers = Task.WhenAll(output, error);
             var first = await Task.WhenAny(process.ExitCode, readFailure.Task).WaitAsync(token).ConfigureAwait(false);
@@ -126,7 +126,7 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
         TaskScheduler.Default);
 
     private static async Task<CapturedOutput> ReadAsync(StreamReader reader, int limit, CancellationToken token,
-        TaskCompletionSource<Exception> failure)
+        TaskCompletionSource<Exception> failure, Action<string>? received = null)
     {
         try
         {
@@ -136,6 +136,7 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
             int count;
             while ((count = await reader.ReadAsync(buffer.AsMemory(), token).ConfigureAwait(false)) != 0)
             {
+                received?.Invoke(new string(buffer, 0, count));
                 var retain = Math.Min(count, limit - text.Length);
                 text.Append(buffer, 0, retain);
                 truncated |= retain != count;

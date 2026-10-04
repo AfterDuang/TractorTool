@@ -12,6 +12,26 @@ internal static class ProcessChecks
         var directory = Path.Combine(root, "process fixtures 中文");
         Directory.CreateDirectory(directory);
         void Case(string name, Func<Task> run) => check(name, () => run().GetAwaiter().GetResult());
+        Case("Stdout callback receives data before exit and beyond capture limit", async () =>
+        {
+            var session = new FakeSession { StandardOutput = new(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("一段实时输出"))) };
+            var received = "";
+            await using var runner = new ProcessRunner("Test", new TestLog(), _ => session);
+            var result = await runner.RunAsync(Request("echo") with
+            {
+                OutputLimit = 1,
+                StandardOutputReceived = chunk => { Assert(!session.Exit.Task.IsCompleted); received += chunk; session.Exit.TrySetResult(0); }
+            });
+            Assert(received == "一段实时输出" && result.StandardOutput == "一" && result.StandardOutputTruncated && session.Disposed);
+        });
+        Case("Stdout callback failure stops and disposes the active process", async () =>
+        {
+            var session = new FakeSession { StandardOutput = new(new MemoryStream([65])) };
+            await using var runner = new ProcessRunner("Test", new TestLog(), _ => session);
+            await Throws<IOException>(() => runner.RunAsync(Request("echo") with
+                { StandardOutputReceived = _ => throw new InvalidDataException("fixture consumer failure") }));
+            Assert(session.StopCalls == 1 && session.Disposed);
+        });
         Case("Internal cleanup cancellation cannot masquerade as caller cancellation", async () =>
         {
             var session = new FakeSession();
