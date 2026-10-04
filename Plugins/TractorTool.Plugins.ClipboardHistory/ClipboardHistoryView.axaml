@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:TractorTool.Plugins.ClipboardHistory"
              x:Class="TractorTool.Plugins.ClipboardHistory.ClipboardHistoryView" x:DataType="local:ClipboardHistoryViewModel">
-  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
+  <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12" Margin="0,0,0,24">
     <Grid ColumnDefinitions="*,Auto">
       <StackPanel Spacing="4" VerticalAlignment="Center" Margin="0,0,12,0">
         <TextBlock Text="{Binding Status}" Classes="muted" />

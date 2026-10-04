@@ -13,7 +13,7 @@
 | 工程与版本 | VS Code，根 slnx 12 工程；global.json 固定 .NET SDK 10.0.401，分发脚本要求 PowerShell 7.4+。Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0；产品默认 0.1.0，统一来自 Directory.Build.props |
 | 公共接口 | Contracts API 1.7 / UI API 1.3，接受此前版本并保留旧 ABI；宿主不静态引用具体插件，正式插件独立引用发布 SDK |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑已有，专属布局留在各页面 |
-| 剪贴板 | 正式插件 1.1.1：系统历史、左列表/右预览、复制原项、事件与激活刷新；无自建历史库或定时轮询 |
+| 剪贴板 | 正式插件 1.1.2：系统历史、左列表/右预览、复制原项、事件与激活刷新；补齐页面底部留白。无自建历史库或定时轮询 |
 | 依赖与进程 | 软件维护可信 JSON 源，缺包首次确认、已装复用、引用/租约保护、主动清理；卸载插件保留包。FFmpeg 9.0.2 / win-x64；公共进程支持参数向量、双流、超时/取消和 Windows Job |
 | 视频 | 正式插件 0.5.2：MediaInfo 风格报告，无播放/预览；MP4/MKV/MOV/WebM/TS，VBR 一次/两次/CBR，多预设串行；GPU 偏好在插件设置，失败/不支持回退 CPU 并说明。输出“原文件名_预设名”，冲突追加数字、不覆盖 |
 | 公共任务 | 整批持久化登记、逐项执行、单项/整批取消；日志汇总全部插件任务并按 PluginId 打开所属工具。Data/tasks.json 保留活动项和最近 100 条终态，重启标中断、不自动续跑；坏摘要保留并阻止新执行，可重试保存 |
@@ -39,6 +39,8 @@
 文档入口：[项目 README](../README.md) 已补齐 GitHub 首页说明、安装/开发/插件入口及开发中状态，详见 [E44](PROJECT_HISTORY.md#evidence-project-readme)。该轮仅核对文档，不增加构建或运行通过项；未配置远程、上传或发布。
 
 脚本整理：[E45](PROJECT_HISTORY.md#evidence-script-cleanup) 删除两个重复的插件打包包装脚本，统一使用 `Build-Plugin.ps1 -Project ...`；独立宿主验证改名为 `Verify-PluginHost.ps1`，覆盖保持不变。9 份脚本语法、现行引用与文档链接核对通过，本轮未构建或运行检查程序。
+
+剪贴板布局：[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 根据截图补上插件页面底部 24 个逻辑像素留白；1.1.2 引用既有发布 SDK 独立打包，0 警告/0 错误，发布目录原有 312 文件哈希未变。AXAML/清单、更新包及文档静态核对通过；未启动应用、检查程序或读取系统剪贴板，实际窗口效果待用户验证。
 
 <a id="workflow"></a>
 
@@ -66,7 +68,9 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 
 `--profile-root` 要求绝对路径，隔离启动指针及默认数据；不带参数访问真实 `%LOCALAPPDATA%\TractorTool`，该参数不等于迁移。插件仍在所启动宿主的 AppRoot/Plugins，不随 profile 切换。**迁移/故障测试使用独立发布副本、隔离 profile 与新的空目标，不修改真实 bootstrap 或用户文件。**
 
-当前分发产物在 `artifacts/m5-installer/delivery/assets`：宿主 ZIP 0.1.0、剪贴板 ZIP 1.1.1、视频 ZIP 0.5.2、setup.exe、release.json、installer.json 和 SHA256SUMS；同级 `layout/TractorTool-0.1.0-win-x64` 已含两个独立插件。SDK 版本由根 global.json 与 CI 共用。ZIP 仍只解压到新目录，不覆盖旧安装；setup 默认安装到 `%LOCALAPPDATA%\Programs\TractorTool`，仅接管其管理的安装或新空目录。用户接手验证时显式选择独立测试安装位置，安装后用隔离 profile 启动，不直接覆盖日常环境。相同已装插件版本无需重装；日常源码构建不会替换已装 DLL。独立打包见 [插件规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)，变更后显式退出重启，关闭窗口仅隐藏。
+现存 ZIP 分发在 `artifacts/local-distribution/assets`：宿主 0.1.0、剪贴板 1.1.1、视频 0.5.2；同级 `layout/TractorTool-0.1.0-win-x64` 为本轮使用的发布 SDK。剪贴板 **1.1.2 更新包**在 `artifacts/clipboard-ui-1.1.2/package`，尚未安装或合入上述整包。E43 安装器产物已被外部清理，构建证据保留在历史。
+
+SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆盖旧安装；setup 默认安装到 `%LOCALAPPDATA%\Programs\TractorTool`，仅接管其管理的安装或新空目录。用户接手验证时显式选择独立测试安装位置，安装后用隔离 profile 启动，不直接覆盖日常环境。相同已装插件版本无需重装；日常源码构建不会替换已装 DLL。独立打包见 [插件规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)，变更后显式退出重启，关闭窗口仅隐藏。
 
 ### 当前人工回归重点
 
@@ -124,7 +128,7 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 公共任务接入及日志内任务进度入口已编译；历史常驻活动切页/隐藏 Headless 检查通过，当前真实视频任务、任务页和托盘仍待用户验证 |
 | A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | E37 实现迁移，E38 修正空间/取消，E39 改同窗呈现；15 组关联检查只编译，原生选择/重启/跨卷/近满盘重试/ACL/块内取消与现有插件完整闭环未运行 |
 | A07 | 外部包事务及依赖管理 | 首次确认、已有复用、失败可重试、多版本共存，引用/使用中不可删，卸载插件保留包 | 集成、UI | 新申请、来源、引用与清理及对应 Windows 用例已编译，尚未运行；ZIP 来源/哈希/结构仍仅 E24 静态核对 |
-| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | 最新管理页截图显示 1.1.1；不据此认定旧空选择错误及全部系统行为通过。模型检查已编译，Windows 完整行为仍待验收 |
+| A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | E46 修正截图中卡片贴窗口底框的问题，1.1.2 独立编译/打包通过，UI 待用户验证；不据旧截图认定空选择错误及全部系统行为通过。模型检查未重新运行，Windows 完整行为仍待验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 0.5.2 完整报告、预设命名及任务接入已独立打包；媒体/参数/进度/隔离输出检查只编译，真实媒体/中文路径/取消尚未运行 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
 | A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | 预设增删改/复制、勾选与原子保存已编译；旧偏好兼容检查未执行，实际重启待验 |
@@ -159,4 +163,4 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 
 <a id="evidence"></a>
 
-历史入口：[E01–E45 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E46 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

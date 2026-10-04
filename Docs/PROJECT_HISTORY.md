@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（剪贴板布局） | [E46 · 剪贴板底部留白与独立更新包（2026-10-05）](#evidence-clipboard-bottom-spacing) |
 | 维护（脚本精简） | [E45 · 删除重复打包入口与验证脚本改名（2026-10-05）](#evidence-script-cleanup) |
 | 文档（GitHub 首页） | [E44 · 项目 README 与文档入口（2026-10-05）](#evidence-project-readme) |
 | M5（用户级安装器） | [E43 · 安装、升级/卸载保留与双代理复审（2026-10-05）](#evidence-installer) |
@@ -1608,3 +1609,20 @@ try {
 Verify-M1.ps1 改名为 Verify-PluginHost.ps1，证据目录前缀从 artifacts/m1- 改为 artifacts/plugin-host-；构建、核心检查、独立机制插件、Headless 及宿主哈希验证内容保持不变。同步检查工程注释、插件规范示例、当前台账与交接；历史记录中的旧命令保留，并在阅读约定中指向现行入口。图标生成和其他分发脚本继续保留，没有新增兼容包装或抽象。
 
 静态验证：9 份 PowerShell 脚本及文档中的插件打包命令语法通过；现行文件无被删/改名入口的残留引用，文档本地链接和锚点有效；改名脚本除证据目录前缀外与原文件一致。结果记录于 artifacts/script-cleanup/static-checks.json。未执行构建、发布、应用、检查程序或安装器，不增加运行验收通过项；用户 .gitignore 和 .vscode/launch.json 修改保留且不纳入提交。下一项开发仍为 M5 GitHub Release 流程。
+
+<a id="evidence-clipboard-bottom-spacing"></a>
+
+## E46：剪贴板底部留白与独立更新包（2026-10-05）
+
+用户截图中历史列表与预览卡片贴住窗口底框。源码核对显示：宿主 PageHost 没有底边距，普通 pageBody 提供 24 个逻辑像素底部留白；剪贴板使用固定 Grid 与两个独立滚动区，未包含该留白。仅在插件根 Grid 增加 Margin="0,0,0,24"，让星号行使用缩减后的剩余高度，保留原有左右独立滚动及预览逻辑，不增加包装控件或修改宿主布局。
+
+插件清单版本由 1.1.1 升至 1.1.2，便于走正常更新；API 和宿主不变。引用既有发布 SDK 独立 Rebuild 成功，0 警告/0 错误；构建前后发布目录原有 312 个文件哈希一致。AXAML、清单/程序集产品版本、ZIP 内容与 SHA256、共享 DLL 排除、4 份许可文件、11 份文档的 275 处本地链接及 A01–A23 编号静态核对通过。证据位于 `artifacts/clipboard-ui-1.1.2`：build.log、host-before.json、static-checks.json；交付为 package/TractorTool.ClipboardHistory-1.1.2.zip。
+
+```powershell
+./scripts/Build-Plugin.ps1 `
+    -Project ./Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj `
+    -HostSdkDir ./artifacts/local-distribution/layout/TractorTool-0.1.0-win-x64 `
+    -Output ./artifacts/clipboard-ui-1.1.2/package
+```
+
+未运行应用、检查程序、安装器或 UI 自动化，未访问系统剪贴板；实际窗口留白、缩放及滚动效果待用户安装更新包、退出重启后验证。未替换用户安装或既有分发包；.gitignore 和 .vscode/launch.json 修改保留。当前文档同步现存产物路径，E43 等旧产物清理不抹去其历史证据。M5 下一项仍为 Release 流程，运行验收缺口不变。
