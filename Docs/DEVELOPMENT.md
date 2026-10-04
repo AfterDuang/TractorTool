@@ -129,6 +129,10 @@ M2 待用户验收：
 
 本地与 GitHub Actions 复用发布流程，提供 Windows 安装包/压缩包、SHA256 和许可，验证无开发 SDK 的机器启动和加载。最低系统、架构、安装器、签名和设备支持由真实证据落实；不照搬参考软件结论。
 
+### 后续计划（未排期）
+
+用户已确认 Python / pip 依赖支持作为后续计划：由宿主统一准备解释器和隔离环境，通过 PyPI / 兼容源安装，保留首次确认、依赖复用、引用保护和主动清理语义。具体边界见 [架构方案](ARCHITECTURE.md#python-dependencies)。本轮仅修正文档，未实现 Python 安装或改变当前包协议；M3–M5 出口及现有验收结果不变，文档核对记录见 [E28](PROJECT_HISTORY.md#evidence-python-plan)。
+
 <a id="acceptance"></a>
 
 ## 4. 验收台账

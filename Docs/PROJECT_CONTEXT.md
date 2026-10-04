@@ -10,6 +10,7 @@
 - 插件在真实 AppRoot/Plugins；数据/工具包在 DataRoot。M5 数据根迁移尚无 UI，不能把测试 profile 当迁移功能。
 - 公共 UI / 宿主 ShellStyles / 插件局部布局的职责保持不变；普通动效使用 Motion/MotionStyles 和现有控件主题，不逐页面复制动画。
 - 用户已纠正：设置图表达包含关系。左侧软件组只有通用设置/外部依赖；通用下有外观/应用数据/关于，包列表进入详情；顶部面包屑可返回、左侧保持父类。插件组按真实注册产生入口。保持旧流程替换后的代码干净。
+- Python / pip 依赖支持已列入[后续计划](ARCHITECTURE.md#python-dependencies)，尚未排期；未来由宿主管理解释器和隔离环境，沿用统一申请/确认/清理入口。当前便携包范围及 M3 接续不变，不提前添加空接口或实现 Python 安装。本次仅改文档，记录见 [E28](PROJECT_HISTORY.md#evidence-python-plan)。
 
 ## 2. 接续要点
 

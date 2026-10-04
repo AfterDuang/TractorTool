@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 后续规划 | [E28 · Python / pip 依赖扩展边界（2026-10-04）](#evidence-python-plan) |
 | M3（进行中） | [E27 · 依赖拒绝/缺失路径异常与全局计数修正（2026-10-04）](#evidence-dependency-feedback) |
 | M3（进行中） | [E26 · 设置层级与视频读取入口（2026-10-04）](#evidence-settings-hierarchy) |
 | M3（进行中） | [E25 · 依赖申请、引用清理与设置分类（2026-10-04）](#evidence-dependency-flow) |
@@ -1173,3 +1174,13 @@ dotnet build TractorTool.slnx -c Debug --no-restore -m:1 -nr:false
 静态核对 186 个本地文档链接、ZIP 9 个条目、清单版本/API、无共享 DLL 副本及 diff 空白均通过（static-checks.json）。独立打包后正常 restore 恢复源码 SDK 依赖图；首次受限 restore 无诊断退出 1，授权缓存访问后还原成功，证据在 restore-development.log。
 
 未启动应用、检查程序、UI 自动化或 FFmpeg，没有改用户实际依赖、已安装插件或数据。用户截图是问题定位证据，源码修正/构建不等于实机问题已验收；新宿主与新 ZIP 需一同使用，修复复测和已有阶段缺口仍留在 DEVELOPMENT。
+
+<a id="evidence-python-plan"></a>
+
+## E28：Python / pip 依赖扩展边界（2026-10-04）
+
+用户询问未来能否使用 pip 安装源，并确认将其列入后续计划。本轮核对现有包契约、本地源与分层后，只修正产品需求、架构、开发计划及交接快照；首版便携包范围与 M3 媒体工作不变。
+
+方案保留宿主统一申请/确认/引用/清理，由 Core 在实际接入 Python 时区分安装流程，增加解释器和隔离环境的管理。重点记录版本冲突、间接依赖保护、完整环境复用条件，以及 venv 在数据根迁移时需重建的限制。官方依据留在[架构方案](ARCHITECTURE.md#python-dependencies)，尚未决定环境共享粒度、锁定格式或源码分发包支持策略。
+
+5 份改动文档的 165 处本地链接/锚点与文档范围 diff 空白检查通过。不构建、不运行应用或测试，不安装 Python/pip 依赖；本轮不产生功能通过结论。已有 `.vscode/launch.json` 工作区修改保持原样，不纳入文档提交。
