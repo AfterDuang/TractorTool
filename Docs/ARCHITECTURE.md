@@ -6,7 +6,7 @@
 
 ## 1. 当前代码与目标结构
 
-解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 12 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务和视频真实导出入口，M4 已接插件预设工作区与串行执行，公共有限任务仍为后续设计，运行验证状态集中在开发文档。
+解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 12 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务和视频真实导出入口，M4 已接插件预设工作区、串行执行、公共有限任务和中断摘要，运行验证状态集中在开发文档。
 
 职责结构如下。表中的任务/包管理为 M3-M4 职责，不先创建空实现：
 
@@ -61,12 +61,12 @@ flowchart TD
 | `PluginContext` | 提供该插件可用的宿主服务、生命周期令牌与稳定标识 |
 | `IPluginUiModule`，位于 UI 工程 | 注册导航页、设置页的工厂与元数据 |
 | `IPluginBackgroundService`，可选 | 应用驻留期间的可取消常驻活动 |
-| `IBackgroundTaskService` | 提交有限任务、报告进度、取消、查询状态 |
+| `IBackgroundTaskService`、`IBackgroundTask` | 登记有限任务/整批、执行句柄、报告进度与取消；宿主任务页查询公共摘要 |
 | `IAppPaths`、`IPluginSettingsStore` | 获取所属目录及保存带版本的配置 |
 | `IExternalPackageService` | 查询依赖、请求安装、获取指定工具路径及使用租约 |
 | `IProcessRunner` | 受管理的外部进程执行、输出读取与取消 |
 
-M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；IBackgroundTaskService 仍未实现。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
+M1 已实现 IPlugin、PluginContext、IPluginUiModule、IPluginBackgroundService、IAppPaths、IPluginSettingsStore 和 IAppLog。M3 增加 IProcessRunner 和 IExternalPackageService；M4 的 API 1.6 增加 IBackgroundTaskService 与 IBackgroundTask，通过 PluginContext.Tasks 提供按插件生命周期绑定的作用域，保留原构造/解构、程序集身份及旧 API 1.0–1.5 兼容。通用契约不包含 `Control`、窗口或媒体专属模型；UI 工程负责 Avalonia 页面工厂，插件业务内部可直接使用自己的库。
 
 插件设置页使用同样的注册机制。宿主只知道页面描述与工厂，不知道视频码率等业务字段。插件专属设置必须由插件拥有的服务读写。
 
@@ -113,13 +113,17 @@ M1 每个插件实例持有独立的生命周期取消源与唯一清理任务�
 
 ### 3.2 任务状态
 
-建议有限任务状态：`Queued`、`Running`、`Cancelling`、`Succeeded`、`Failed`、`Cancelled`、`Interrupted`。状态转换必须可追踪，成功只能在输出校验及最终文件提交后写入。
+有限任务状态为 `Queued`、`Running`、`Cancelling`、`Succeeded`、`Failed`、`Cancelled`、`Interrupted`。公开契约位于 [Contracts/Tasks](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)，实现位于 [Core/Tasks](../TractorTool.Core/Tasks/BackgroundTaskService.cs)。QueueAsync 提交单项，QueueBatchAsync 一次登记并持久化整批摘要后返回可执行句柄，避免整批取消遗漏正在提交的后续项。调用方逐项 RunAsync 决定执行顺序；Core 不设视频队列或媒体参数。
 
 任务至少包含 `TaskId`、`PluginId`、`BatchId`、显示名称、进度、时间、结果或错误摘要。任务的具体参数由插件解释，宿主不反序列化任意插件类型或把视频参数塞入通用核心。
 
 任务的并发额度、批次失败策略和参数快照由业务插件定义；通用服务提供状态、取消和资源所有权，不硬编码某个工具的串行规则。
 
-首版可持久化任务摘要，启动时将上次未完成任务标记为中断，供用户重新提交；不承诺从编码中间位置恢复。
+摘要位于 `<DataRoot>/Data/tasks.json`，保留全部活动项及最近 100 条终态。提交和状态保存采用带版本 JSON 原子替换与备份；损坏文件保留并阻止新任务执行，任务页提供记录保存重试。启动时将上次非终态标为 Interrupted；只保存通用摘要，不持久化业务参数、不自动重试或续转码，也不根据摘要删除崩溃遗留输出。
+
+任务回调只在业务校验和最终结果提交后正常返回；正常返回保留 Succeeded 和实际结果，迟到取消不能事后抹掉已提交结果。取消通过令牌和执行结果表达，清理失败仍记为失败，不能假报安全取消。进度只更新内存，UI 合并调度通知；页面不拥有任务或取消源。
+
+宿主标题栏“任务”是跨页面的稳定入口，显示进度、单项/整批取消、结果及返回工具；不增加底部导航或插件页脚。视频读取和依赖准备属于插件入队前预检，不建立公共任务，准备期间由插件页显示状态和取消入口；预检成功后一次登记整批导出。
 
 ### 3.3 托盘和退出
 
@@ -131,7 +135,7 @@ M1 每个插件实例持有独立的生命周期取消源与唯一清理任务�
 
 显式退出有任务时提供取消退出或停止任务后退出的选择。退出按“停止接收任务、取消任务和常驻活动、等待有界清理、关闭子进程、保存状态、退出”的顺序执行。超时处理仅针对本应用创建的进程树，不按进程名结束所有 FFmpeg。
 
-Windows 注销或关机也应执行有界清理，不能因无限等待阻止系统退出。M1 使用 Avalonia TrayIcon；异常或无 NativeMenuExporter 时保持窗口可见并提示显式退出。Windows 适配在宿主 `Platform/WindowsRestoreSignal.cs`：同一固定配置目录的再次启动通过命名事件恢复原窗口，为系统托盘图标丢失提供恢复入口。没有扩展为通用 IPC 平台。`--no-tray` 可进行不可用分支验收。托盘对象创建成功不保证系统实际显示正常，因此真实点击/恢复需人工验收。M1 已有常驻活动取消和有界清理（宿主总等待最多 10 秒）；有限任务询问、子进程和中断恢复在后续阶段实现。
+Windows 注销或关机跳过交互确认并执行有界清理，不能因无限等待阻止系统退出；正常显式退出有活跃公共任务时允许继续处理或停止任务后退出。停止任务、插件和包服务共用宿主外层最多 10 秒等待，生命周期作用域停止新提交并取消所属任务，后台工作结束后再释放插件资源。M1 使用 Avalonia TrayIcon；异常或无 NativeMenuExporter 时保持窗口可见并提示显式退出。Windows 适配在宿主 `Platform/WindowsRestoreSignal.cs`：同一固定配置目录的再次启动通过命名事件恢复原窗口，为系统托盘图标丢失提供恢复入口。没有扩展为通用 IPC 平台。`--no-tray` 可进行不可用分支验收。托盘对象创建成功不保证系统实际显示正常，因此真实点击/恢复需人工验收。
 
 <a id="packages"></a>
 
@@ -209,12 +213,13 @@ API 1.5 在现有 ProcessRequest 上追加可选 `StandardOutputReceived`，不�
   Config/                         # 宿主外观等用户配置
   Packages/<PackageId>/<Version>/<RID>/
   Data/Plugins/<PluginId>/         # 插件配置、预设、持久数据
+  Data/tasks.json                  # 活动任务及最近 100 条终态摘要
   Data/.plugin-backups/<Token>/    # 更新前快照与回退时保留的新版数据
   Cache/                          # 可重建缓存、下载和迁移暂存
   Logs/                           # 有保留策略的运行日志
 ```
 
-M1 路径服务已按上述布局创建数据目录和扫描插件目录；M3 包服务使用 Packages，当前证据见开发台账。用户输出文件位于其指定目录，既不属于缓存，也不能由软件清理功能删除。`bootstrap.json` 不随业务数据迁移；公开 IAppPaths 不暴露启动指针。M1 支持读取已有有效的自定义 dataRoot，设置页只展示位置并说明迁移尚未提供，不允许绕过 M5 直接切换。开发参数 `--profile-root <绝对路径>` 将启动位置和默认数据一起隔离到测试目录，生产默认仍为 LocalApplicationData/TractorTool。
+M1 路径服务已按上述布局创建数据目录和扫描插件目录；M3 包服务使用 Packages，M4 任务摘要使用 Data/tasks.json，当前证据见开发台账。用户输出文件位于其指定目录，既不属于缓存，也不能由软件清理功能删除。`bootstrap.json` 不随业务数据迁移；公开 IAppPaths 不暴露启动指针。M1 支持读取已有有效的自定义 dataRoot，设置页只展示位置并说明迁移尚未提供，不允许绕过 M5 直接切换。开发参数 `--profile-root <绝对路径>` 将启动位置和默认数据一起隔离到测试目录，生产默认仍为 LocalApplicationData/TractorTool。
 
 设置优先采用带 `schemaVersion` 的 JSON；少量预设无需先引入数据库。真正需要大量检索的数据再采用 SQLite。M1 写文件采用同目录临时文件、Flush、File.Replace 和 `.bak`，进程内按完整路径串行写入。格式损坏、版本未知或保存失败保留原数据并报错，不自动重置为默认值。日志文件位于 Logs，界面只保留最近 300 条；磁盘日志保留策略在 M5。外部数据根目录不可用时显示恢复选项，不静默创建空配置冒充原数据。
 
@@ -277,7 +282,7 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 - **列表更新与交互连续性**：插件管理按安装记录目录保留可观察卡片，过滤集合只增删/移动实际变化项；管理结果原位提交状态和命令，不清空重建列表打断滑块或丢弃控件。重复 ID 的不同目录仍独立呈现。写入失败显式恢复开关目标值，不依赖相同值的绑定通知必定重放。忙碌时的串行保护保留，不承诺禁用列表期间保留键盘焦点。新列表应遵循同样的稳定身份原则。
 - **切页与生命周期**：公共 `PageHost` 是内部 `FAFrame` 的薄包装，通过同步 `Present(Control)` 将成功、取消或异常反馈宿主，不再用单向属性绑定吞掉导航结果。只接受未挂载的页面；成功后才提交标题/选择状态并清理旧页，取消保留旧页，异常记录日志并显示错误页。若 Frame 已在异常前改变内部状态，替换该 Frame 后继续导航，不访问其私有状态。`IFANavigationPageFactory` 只接收已注册工厂返回的 Control，不反射具体插件类型。缓存大小为 0、导航历史关闭；进入使用库的轻微上移淡入过渡（位移 18），关闭页面动画时使用 Suppress 过渡。宿主阻止切换重入和退出后创建页面，常驻服务不绑定到 Frame。这里隔离的是工厂/同步导航失败，不保证捕获插件任意异步事件或渲染线程异常；快速切页及真实视觉表现仍待用户验收。
 - **设置持久化**：SettingsViewModel 在 UI 线程应用外观，通过单个保存任务将不可变快照交给后台写入；期间的新选择只保留最新值，旧写入完成不再应用旧主题或覆盖新状态。正常保存不显示常驻提示，保存期间不禁用选择，应用失败与写盘失败分别提示。保存错误只存于 SaveError，HasSaveError 由其派生；错误面板统一控制重试入口可见性，无 DataContext 或无法解析绑定时默认隐藏，避免无模型的 VS Code 预览出现孤立按钮。退出阻止新变更并等待整个队列，对此前最后一次保存失败最多再试一次，仍受宿主 10 秒退出期限约束。同步主题通知重入时重新应用最终有效选择，控件临时空选择不生成配置。沿用 JSON 原子替换及备份，没有新增通用设置框架。可选布尔字段 `enableAnimations` 默认 true，旧 JSON 不含此字段时仍可读取，沿用当前设置 schema；控制范围见上述统一动效边界。
-- **SDK 与加载**：UI API 为 1.3，PluginPageOptions 保留 IconPath，新增 UsesCustomHeader 可选属性；导航页可自己提供标题和功能切换，宿主隐藏默认标题并让出整页视口。默认 false，导航成功后才提交标题状态；失败页恢复默认标题，设置页仍由设置容器组织。保留原两参数构造及旧签名，接受 UI 1.0–1.3，拒绝更高未知版本。Contracts API 为 1.5，接受旧 1.0–1.4，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
+- **SDK 与加载**：UI API 为 1.3，PluginPageOptions 保留 IconPath，新增 UsesCustomHeader 可选属性；导航页可自己提供标题和功能切换，宿主隐藏默认标题并让出整页视口。默认 false，导航成功后才提交标题状态；失败页恢复默认标题，设置页仍由设置容器组织。保留原两参数构造及旧签名，接受 UI 1.0–1.3，拒绝更高未知版本。Contracts API 为 1.6，接受旧 1.0–1.5，程序集身份不随协议升版。共享加载清单包含 `FluentAvalonia`，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
 
 运行效果及已知限制只在 [开发验收台账](DEVELOPMENT.md#acceptance) 记录，架构描述不代表真实 UI 或动态加载已经通过验收。
 

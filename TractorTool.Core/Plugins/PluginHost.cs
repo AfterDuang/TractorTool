@@ -3,6 +3,7 @@ using TractorTool.Core.Processes;
 using TractorTool.Contracts.Processes;
 using TractorTool.Core.Storage;
 using TractorTool.Core.Packages;
+using TractorTool.Core.Tasks;
 
 namespace TractorTool.Core.Plugins;
 
@@ -19,7 +20,8 @@ public sealed class PluginRecord(string directory, PluginManifest? manifest, Plu
 }
 
 public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, IAppLog log,
-    Func<ProcessRequest, IProcessSession>? startProcess = null, ExternalPackageService? packages = null) : IAsyncDisposable
+    Func<ProcessRequest, IProcessSession>? startProcess = null, ExternalPackageService? packages = null,
+    BackgroundTaskService? tasks = null) : IAsyncDisposable
 {
     private static readonly TimeSpan StageTimeout = TimeSpan.FromSeconds(3);
     private readonly object _lifecycleGate = new();
@@ -132,6 +134,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 lock (_lifecycleGate) _instances.Add(lifetime);
                 var token = lifetime.Stopping.Token;
                 lifetime.Packages = packages?.CreateScope(manifest.Id, manifest.Dependencies, token);
+                lifetime.Tasks = tasks?.CreateScope(manifest.Id, token);
                 if (manifest.Dependencies.Length != 0 && lifetime.Packages is null)
                     throw new InvalidOperationException("宿主未组装外部工具服务。");
                 if (Volatile.Read(ref _disposed)) throw new OperationCanceledException("宿主正在退出。");
@@ -140,7 +143,8 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 await plugin.InitializeAsync(new(manifest.Id, paths, new PluginSettingsStore(data), log, token)
                 {
                     Processes = lifetime.Processes,
-                    Packages = lifetime.Packages
+                    Packages = lifetime.Packages,
+                    Tasks = lifetime.Tasks
                 }, token);
                 // Commit registration and the background task together; shutdown must not race this handoff.
                 lock (_lifecycleGate)
@@ -187,6 +191,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         var cancellation = CancelAndObserveAsync(lifetime.Stopping, lifetime.Id, "生命周期取消回调");
         // Stop processes even if plugin initialization/StopAsync fails to respond. No page owns this runner.
         var processes = lifetime.Processes.DisposeAsync().AsTask();
+        var finiteTasks = lifetime.Tasks?.BeginShutdownAsync() ?? Task.CompletedTask;
         await ObserveStageAsync(lifetime.Initialized.Task, lifetime.Id, "等待初始化结束");
         using var stopCancellation = new CancellationTokenSource();
         Task stopCallbacks = Task.CompletedTask;
@@ -199,8 +204,10 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         await cancellation;
         await stopCallbacks;
         await ObserveStageAsync(processes, lifetime.Id, "停止工具进程");
+        await ObserveStageAsync(finiteTasks, lifetime.Id, "等待有限任务结束");
         await ObserveStageAsync(Task.Run(async () => await lifetime.Plugin.DisposeAsync()), lifetime.Id, "释放插件");
         lifetime.Packages?.Dispose();
+        lifetime.Tasks?.Dispose();
         lifetime.Stopping.Dispose();
     }
 
@@ -289,6 +296,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         public IPlugin Plugin { get; } = plugin;
         public ProcessRunner Processes { get; } = new(id, log, startProcess);
         public PackageScope? Packages { get; set; }
+        public BackgroundTaskScope? Tasks { get; set; }
         public CancellationTokenSource Stopping { get; } = new();
         public TaskCompletionSource Initialized { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? Background { get; set; }

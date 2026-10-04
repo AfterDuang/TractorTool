@@ -15,7 +15,7 @@
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
 | 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1 执行，API 1.5 可选 stdout 实时数据块；上下文按插件生命周期提供，当前 Windows 10+ 适配 |
 | 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2 查询/取得已装版本，API 1.4 TryRequestAsync 申请缺失包；确认、下载与安装统一由宿主处理 |
-| 有限任务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
+| 有限任务 | `IBackgroundTaskService`、`IBackgroundTask` | API 1.6；上下文 Tasks 按插件生命周期绑定，持久化公共摘要和取消；业务负责参数、执行顺序、校验与结果提交 |
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
 
@@ -33,7 +33,7 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.5，仍接受 1.0/1.1/1.2/1.3/1.4；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5 |
+| `apiVersion` | 当前 1.6，仍接受 1.0–1.5；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6 |
 | `uiApiVersion` | 当前为 1.3；宿主仍接受旧 1.0、1.1、1.2 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -80,7 +80,15 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 5. 可选常驻活动实现 `IPluginBackgroundService.RunAsync`，响应停止令牌。清理必须兼容初始化部分失败和退出竞争，不能留下未观察的后台异常。
 6. 停止并等待插件拥有的工作结束后再释放资源。宿主有有界退出等待，不能把它当作安全强杀线程或保证磁盘写入成功的机制；同步卡死的可信插件仍可能影响进程。
 
-有限任务服务的后续接入遵循相同所有权规则，具体业务的并发和失败策略写在各插件文档；不把业务队列参数塞进通用协议。
+有限任务遵循相同所有权规则，具体业务的并发和失败策略写在各插件文档；不把业务队列参数塞进通用协议。
+
+### 有限任务（API 1.6）
+
+使用 `context.Tasks` 的 [任务契约](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)。QueueAsync 提交单项，QueueBatchAsync 一次登记整批并持久化摘要后返回句柄；业务按自己的顺序逐项等待 RunAsync，不以并行提交绕过串行要求。任务申请只包含批次标识和名称，具体参数快照及结果校验由插件拥有。
+
+RunAsync 在后台线程调用业务回调，回调通过 IProgress 报告百分比和状态，使用提供的令牌响应取消；UI 状态自行经调度投递。回调只能在输出校验、最终提交和所属资源清理结束后正常返回实际结果。正常返回记成功并保留结果；提交后的迟到取消不把结果改成已取消。清理失败须抛出实际错误，不伪装成取消。
+
+页面切换和隐藏不释放任务句柄或包租约；插件停止时响应生命周期取消并等待工作。宿主任务页提供查询、单项/整批取消和返回工具；活跃任务的显式退出先确认，系统退出跳过确认并有界停止。任务摘要仅保存通用状态和结果，重启将未完成项记为中断，插件引导用户重新提交，不自动恢复编码或删除遗留用户输出。损坏摘要文件保留并阻止新执行，任务页可重试记录保存。原 PluginContext 构造/解构及旧程序集身份保留，手工测试上下文仍可能没有 Tasks，使用新能力的插件需声明 API 1.6。
 
 ### 工具进程（API 1.1）
 

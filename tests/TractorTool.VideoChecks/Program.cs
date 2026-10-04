@@ -53,6 +53,16 @@ Check("Structured media keeps stream identity, rotation, SAR and timebase", () =
     var info = MediaProbe.Parse("""{"streams":[{"index":3,"codec_type":"video","width":720,"height":576,"sample_aspect_ratio":"16:15","time_base":"1/90000","side_data_list":[{"rotation":-90}]}]}""");
     Require(info.VideoIndex == 3 && info.DisplayWidth == 576 && info.DisplayHeight == 768 && info.TimeBase == "1/90000");
 });
+Check("Color-space and range tags survive probing while ordinary untagged SDR stays exportable", () =>
+{
+    var tagged = MediaProbe.Parse("""{"format":{"duration":"12.5"},"streams":[{"index":0,"codec_type":"video","width":1920,"height":1080,"pix_fmt":"yuv420p","color_space":"bt709","color_range":"pc"}]}""");
+    Require(tagged.ColorSpace == "bt709" && tagged.ColorRange == "pc");
+    ExportPlan.Validate(tagged, settings, null);
+    var untagged = Sample();
+    Require(untagged.ColorSpace == "" && untagged.ColorRange == "");
+    ExportPlan.Validate(untagged, settings, null);
+    ExportPlan.Validate(untagged with { ColorSpace = "unknown", ColorRange = "unknown" }, settings, null);
+});
 Check("Export rejects invalid dimensions and unsupported HDR or interlacing", () =>
 {
     void Invalid(MediaInfo info, ExportOptions options)
@@ -65,6 +75,11 @@ Check("Export rejects invalid dimensions and unsupported HDR or interlacing", ()
     Invalid(Sample(), settings with { Width = 0, Height = 720 });
     Invalid(Sample(), settings with { VideoKbps = 0 });
     Invalid(Sample() with { ColorTransfer = "smpte2084" }, settings);
+    Invalid(Sample() with { ColorTransfer = "arib-std-b67" }, settings);
+    Invalid(Sample() with { ColorSpace = "bt2020nc" }, settings);
+    Invalid(Sample() with { ColorSpace = "bt2020c" }, settings);
+    Invalid(Sample() with { ColorSpace = "ictcp" }, settings);
+    Invalid(Sample() with { ColorRange = "unrecognized" }, settings);
     Invalid(Sample() with { PixelFormat = "yuv420p9le" }, settings);
     Invalid(Sample() with { PixelFormat = "yuv420p14le" }, settings);
     Invalid(Sample() with { PixelFormat = "gbrpf32le" }, settings);
@@ -230,7 +245,9 @@ async Task BatchFixture()
         });
         var store = new FixtureSettings(new() { Presets = Enumerable.Range(1, 3).Select(i => new ExportPresetData(Guid.NewGuid(), "Name " + i, settings)).ToArray() });
         var packages = new FixturePackages();
-        var vm = new VideoViewModel(new("Fixture", new FixturePaths(root), store, new FixtureLog(), CancellationToken.None) { Processes = runner, Packages = packages })
+        var tasks = new TractorTool.Core.Tasks.BackgroundTaskService(Path.Combine(root, "tasks.json"), new FixtureLog());
+        using var scope = tasks.CreateScope("Fixture");
+        var vm = new VideoViewModel(new("Fixture", new FixturePaths(root), store, new FixtureLog(), CancellationToken.None) { Processes = runner, Packages = packages, Tasks = scope })
             { SourcePath = source, OutputDirectory = root };
         var export = vm.ExportCommand.ExecuteAsync(null);
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -242,6 +259,10 @@ async Task BatchFixture()
         Require(vm.Presets[0].Status == "导出失败" && vm.Presets[1].Status == "已取消" && vm.Presets[2].Status == "已完成");
         Require(File.Exists(vm.Presets[2].OutputPath) && await File.ReadAllTextAsync(source) == "source");
         await vm.StopAsync();
+        await tasks.BeginShutdownAsync();
+        Require(tasks.Snapshot.Count(t => t.State == TractorTool.Contracts.Tasks.BackgroundTaskState.Succeeded) == 1);
+        Require(tasks.Snapshot.Count(t => t.State == TractorTool.Contracts.Tasks.BackgroundTaskState.Cancelled) == 1);
+        Require(tasks.Snapshot.Count(t => t.State == TractorTool.Contracts.Tasks.BackgroundTaskState.Failed) == 1);
     }
     finally { Directory.Delete(root, recursive: true); }
 }

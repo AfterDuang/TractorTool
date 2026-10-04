@@ -2,7 +2,7 @@ namespace TractorTool.Contracts;
 
 public static class PluginApi
 {
-    public const string Version = "1.5";
+    public const string Version = "1.6";
 }
 
 public interface IPlugin : IAsyncDisposable
@@ -25,6 +25,8 @@ public sealed record PluginContext(string PluginId, IAppPaths Paths,
     public Processes.IProcessRunner? Processes { get; init; }
     // API 1.2; host-owned downloads, plugin-owned usage leases.
     public Packages.IExternalPackageService? Packages { get; init; }
+    // API 1.6; finite tasks are owned by the plugin lifetime rather than a page.
+    public Tasks.IBackgroundTaskService? Tasks { get; init; }
 }
 
 public interface IAppPaths

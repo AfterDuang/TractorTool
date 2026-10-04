@@ -28,11 +28,14 @@ public static class ExportPlan
             throw new NotSupportedException("暂不支持非直角旋转的视频。");
         if (info.ColorTransfer is not ("" or "unknown" or "bt709" or "bt470m" or "bt470bg" or "smpte170m" or "smpte240m" or "gamma22" or "gamma28" or "iec61966-2-1") ||
             info.ColorPrimaries is not ("" or "unknown" or "bt709" or "bt470m" or "bt470bg" or "smpte170m" or "smpte240m") ||
+            info.ColorSpace is not ("" or "unknown" or "rgb" or "gbr" or "bt709" or "fcc" or "bt470bg" or "smpte170m" or "smpte240m") ||
             info.PixelFormat is not ("yuv420p" or "yuv422p" or "yuv444p" or "yuvj420p" or "yuvj422p" or "yuvj444p" or
                 "nv12" or "nv21" or "yuyv422" or "uyvy422" or "rgb24" or "bgr24" or "rgba" or "bgra" or "argb" or "abgr" or "gray" or "gbrp"))
             throw new NotSupportedException("当前导出支持 8 位 SDR 视频；HDR、广色域或高位深素材尚未接入色彩转换。");
         if (info.FieldOrder is not ("" or "unknown" or "progressive"))
             throw new NotSupportedException("当前导出暂不支持隔行视频。");
+        if (info.ColorRange is not ("" or "unknown" or "tv" or "pc"))
+            throw new NotSupportedException("当前导出暂不支持此视频色彩范围。");
         var width = options.Width == 0 && options.Height == 0 ? info.DisplayWidth : options.Width;
         var height = options.Width == 0 && options.Height == 0 ? info.DisplayHeight : options.Height;
         if (width < 2 || height < 2 || width > 8192 || height > 8192 || width % 2 != 0 || height % 2 != 0)

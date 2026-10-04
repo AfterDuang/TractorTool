@@ -18,7 +18,7 @@ public sealed record FileStamp(string Path, long Length, DateTime Modified)
 }
 
 // All media policy remains in this plugin; the host owns only package leases and process execution.
-public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cleanupError)
+public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cleanupError, Action<string>? diagnostics = null)
 {
     public async Task<MediaInfo> ProbeAsync(string ffprobe, string path, CancellationToken token)
     {
@@ -119,6 +119,7 @@ public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cl
 
             Task<ProcessResult> EncodeAsync(int pass, Action<double> report)
             {
+                diagnostics?.Invoke($"导出编码：格式={options.Container}，模式={options.RateControl}，编码器={encoder}，遍次={pass}。");
                 var parser = new ExportProgress(info.Duration!.Value, report);
                 return processes.RunAsync(new(tools["ffmpeg"],
                     ExportPlan.Arguments(source.Path, info, options, coverCopy, temporary, encoder: encoder, pass: pass, passLog: passLog))

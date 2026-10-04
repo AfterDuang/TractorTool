@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Contracts;
 using TractorTool.Contracts.Packages;
+using TractorTool.Contracts.Tasks;
 namespace TractorTool.Plugins.VideoExport;
 
 public sealed record VideoSettings : IVersionedSettings
@@ -20,8 +21,10 @@ public partial class VideoViewModel : ObservableObject
 {
     private readonly PluginContext _context;
     private static readonly PackageReference MediaPackage = new("FFmpeg", "9.0.2");
-    private CancellationTokenSource? _operation, _itemOperation;
-    private ExportPreset? _activePreset, _editingPreset;
+    private CancellationTokenSource? _operation;
+    private ExportPreset? _editingPreset;
+    private readonly Dictionary<Guid, IBackgroundTask> _tasks = [];
+    private IBackgroundTask? _activeTask;
     private Task _running = Task.CompletedTask, _saving = Task.CompletedTask;
     private VideoSettings? _pendingSettings;
     private bool _saveActive, _settingsLoaded, _stopped;
@@ -114,7 +117,11 @@ public partial class VideoViewModel : ObservableObject
     private bool CanCancel() => IsBusy && !_stopped;
     private bool CanExport() => CanRead() && OutputDirectory.Length != 0 && Presets.Any(p => p.Selected);
     [RelayCommand(CanExecute = nameof(CanCancel))] private void Cancel() => _operation?.Cancel();
-    public void CancelPreset(ExportPreset preset) { if (ReferenceEquals(_activePreset, preset)) _itemOperation?.Cancel(); }
+    public void CancelPreset(ExportPreset preset)
+    {
+        if (!_tasks.TryGetValue(preset.Data.Id, out var task)) return;
+        task.Cancel(); preset.Status = ReferenceEquals(_activeTask, task) ? "正在取消" : "已取消";
+    }
     [RelayCommand(CanExecute = nameof(CanRead))]
     private Task ReadAsync() => RunOperationAsync(async token =>
     {
@@ -131,7 +138,8 @@ public partial class VideoViewModel : ObservableObject
     });
     private IExternalPackageService Packages => _context.Packages ?? throw new NotSupportedException("宿主未提供依赖服务。");
     private VideoExporter Exporter => new(_context.Processes ?? throw new NotSupportedException("宿主未提供工具进程服务。"),
-        ex => _context.Log.Write(_context.PluginId, $"导出临时文件清理未完成（{ex.GetType().Name}）。"));
+        ex => _context.Log.Write(_context.PluginId, "导出临时文件清理未完成。", ex),
+        message => _context.Log.Write(_context.PluginId, message));
     private void SetMedia(MediaInfo info, FileStamp source)
     {
         _media = info; _readStamp = source;
@@ -207,38 +215,52 @@ public partial class VideoViewModel : ObservableObject
         // Keep the shared cover stable across versions. The exporter still owns each temporary copy.
         using var coverLock = coverStamp is null ? null : new FileStream(coverStamp.Path, FileMode.Open, FileAccess.Read, FileShare.Read);
         coverStamp?.Verify();
-        foreach (var job in jobs) job.Card.Prepare();
         var succeeded = 0; var failed = 0;
         try
         {
+            var service = _context.Tasks ?? throw new NotSupportedException("此版本视频插件需要提供任务服务的新宿主。");
+            var batchId = Guid.NewGuid();
+            var registered = await service.QueueBatchAsync(jobs.Select(j => new BackgroundTaskRequest(batchId, j.Data.Name)).ToArray(), token);
+            for (var index = 0; index < jobs.Length; index++)
+            {
+                _tasks.Add(jobs[index].Data.Id, registered[index]);
+                jobs[index].Card.Prepare();
+            }
             foreach (var job in jobs)
             {
                 token.ThrowIfCancellationRequested();
-                if (job.Card.CancelRequested) continue;
-                using var item = CancellationTokenSource.CreateLinkedTokenSource(token);
-                _itemOperation = item; _activePreset = job.Card;
+                var task = _tasks[job.Data.Id]; _activeTask = task;
                 var card = job.Card;
                 var executionNote = "";
                 void Update(Action action) => Dispatcher.UIThread.Post(() =>
-                { if (ReferenceEquals(_itemOperation, item) && !item.IsCancellationRequested && !_stopped) action(); });
+                { if (ReferenceEquals(_activeTask, task) && !_stopped) action(); });
                 try
                 {
-                    if (job.Data.Options.UseCover) coverStamp!.Verify();
                     card.Status = "准备导出"; card.IsIndeterminate = true; Status = "正在导出：" + job.Data.Name;
-                    card.OutputPath = await exporter.ExportAsync(lease.Tools, source, info, job.Data.Options, cover, directory,
-                        value => Update(() => { card.IsIndeterminate = false; card.Progress = value; }),
-                        state => Update(() => { card.Status = state; card.IsIndeterminate = true; }), item.Token, useGpu,
-                        note => { executionNote = note; Update(() => card.ExecutionInfo = note); });
-                    card.Progress = 100; card.Status = "已完成"; succeeded++;
+                    var result = await task.RunAsync(async (report, itemToken) =>
+                    {
+                        if (job.Data.Options.UseCover) coverStamp!.Verify();
+                        var step = "准备导出";
+                        return await exporter.ExportAsync(lease.Tools, source, info, job.Data.Options, cover, directory,
+                            value => { report.Report(new(value, step)); Update(() => { card.IsIndeterminate = false; card.Progress = value; }); },
+                            state => { step = state; report.Report(new(null, state)); Update(() => { card.Status = state; card.IsIndeterminate = true; }); }, itemToken, useGpu,
+                            note => { executionNote = note; Update(() => card.ExecutionInfo = note); }).ConfigureAwait(false);
+                    });
+                    if (result.State == BackgroundTaskState.Succeeded)
+                    { card.OutputPath = result.Result ?? ""; card.Progress = 100; card.Status = "已完成"; succeeded++; }
+                    else if (result.State == BackgroundTaskState.Cancelled) card.Status = "已取消";
+                    else { card.Status = "导出失败"; card.Error = result.Error ?? "任务未完成。"; failed++; }
                 }
                 catch (OperationCanceledException) { card.Status = "已取消"; if (token.IsCancellationRequested) throw; }
                 catch (Exception ex) { card.Status = "导出失败"; card.Error = ex.Message; failed++; }
-                finally { card.ExecutionInfo = executionNote; card.CanCancel = false; card.IsIndeterminate = false; _activePreset = null; _itemOperation = null; }
+                finally { card.ExecutionInfo = executionNote; card.CanCancel = false; card.IsIndeterminate = false; _activeTask = null; }
             }
             Status = $"导出结束：{succeeded} 个完成，{failed} 个失败，{jobs.Length - succeeded - failed} 个取消。";
         }
         finally
         {
+            foreach (var task in _tasks.Values) task.Dispose();
+            _tasks.Clear();
             foreach (var job in jobs) if (job.Card.CanCancel) { job.Card.CanCancel = false; job.Card.Status = "已取消"; }
         }
     });

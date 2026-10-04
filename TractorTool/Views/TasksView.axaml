@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" x:Class="TractorTool.Views.TasksView" x:DataType="vm:TasksViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <TextBlock Text="{Binding Summary}" Classes="muted" />
+      <TextBlock Text="{Binding Error}" Classes="muted" IsVisible="{Binding HasError}" />
+      <Button Content="重试读取 / 保存记录" Command="{Binding RetrySaveCommand}" IsVisible="{Binding HasError}" HorizontalAlignment="Left" />
+      <Border Classes="card" Padding="24" IsVisible="{Binding IsEmpty}">
+        <TextBlock Text="开始处理后，可以在这里查看进度和结果。" Classes="muted" />
+      </Border>
+      <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:TaskRow">
+            <Border Classes="card" Padding="20" Margin="0,0,0,12">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="{Binding Snapshot.Title}" Classes="sectionTitle" TextTrimming="CharacterEllipsis" Margin="0,0,16,0" />
+                  <TextBlock Grid.Column="1" Text="{Binding StateLabel}" Classes="caption" VerticalAlignment="Center" />
+                </Grid>
+                <WrapPanel>
+                  <TextBlock Text="{Binding PluginName}" Classes="caption" Margin="0,0,16,0" />
+                  <TextBlock Text="{Binding CreatedLabel}" Classes="caption" />
+                </WrapPanel>
+                <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsActive}" Height="4" />
+                <TextBlock Text="{Binding Snapshot.Message}" Classes="muted" IsVisible="{Binding HasMessage}" />
+                <TextBlock Text="{Binding Snapshot.Error}" Classes="muted" IsVisible="{Binding HasError}" />
+                <SelectableTextBlock Text="{Binding Snapshot.Result}" TextWrapping="Wrap" IsVisible="{Binding HasResult}" />
+                <WrapPanel>
+                  <Button Content="返回工具" Command="{Binding OpenCommand}" Margin="0,0,8,0" />
+                  <Button Content="取消此项" Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}" Margin="0,0,8,0" />
+                  <Button Content="取消整批" Command="{Binding CancelBatchCommand}" IsVisible="{Binding IsActive}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

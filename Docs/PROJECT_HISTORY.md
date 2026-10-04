@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（实现补齐，运行待验） | [E32 · 公共有限任务、取消复审与 M4 交接（2026-10-04）](#evidence-m4-tasks) |
 | M4（进行中） | [E31 · 视频码率模式、GPU 偏好与紧凑布局（2026-10-04）](#evidence-video-rate-control) |
 | M4（进行中） | [E30 · 视频双功能工作区与多预设串行（2026-10-04）](#evidence-video-workspace) |
 | M3（进行中） | [E29 · 框架边界复审与视频单次导出（2026-10-04）](#evidence-video-export) |
@@ -1278,3 +1279,35 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 依据：[FFmpeg 两次编码选项](https://ffmpeg.org/ffmpeg.html#Video-Options)、[FFmpeg 编码器文档](https://ffmpeg.org/ffmpeg-codecs.html)、[NVENC 逐帧 multipass](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/)、[FFmpeg libvpx 码率映射源码](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/libvpxenc.c)及 [x264 filler 参数](https://github.com/mirror/x264/blob/master/common/base.c)。Apple Layout 页面仍仅返回 JavaScript 提示；未将未读取的正文当作验证依据。
 
 没有运行应用、检查程序、FFmpeg 或 Windows UI。新布局实际视觉、帧率/首帧/音画同步、VBR/CBR 实际码率与大小、两遍结果、WebM/TS 播放、GPU 及回退都仍待用户测试；不以编译或参数检查关闭媒体/GPU 验收。
+
+<a id="evidence-m4-tasks"></a>
+
+## E32：公共有限任务、取消复审与 M4 交接（2026-10-04）
+
+用户要求先 Review 代码、解决问题后推进完 M4，最后由用户测试。本轮子代理显式使用 GPT-6.1-Sol / high 做媒体链路和预设/生命周期只读复审，补齐公共任务后再核对整合；没有启动应用、检查程序、FFmpeg 或 Windows UI，也没有安装插件、读写真实剪贴板或用户媒体。M4 实现补齐不改变 M2/M3/M4 运行待验状态。
+
+- Contracts API 1.6 增加 Tasks 契约，PluginContext 追加 Tasks 属性，保留原构造/解构和程序集身份，兼容旧 API 1.0–1.5；UI API 仍为 1.3。Core BackgroundTaskService/Scope 负责通用摘要、状态、取消与插件生命周期，视频参数、快照和串行策略仍留插件。
+- QueueBatchAsync 原子登记并持久化整批，插件逐项等待 RunAsync。整合复审发现原先逐项 QueueAsync 期间“取消整批”仅覆盖已经发布的快照，会漏掉之后登记的版本，已改整批一次登记；公共回调正常返回前视频已校验和提交结果，原先迟到取消会改成 Cancelled 丢掉真实结果路径，已改为正常返回保留成功和结果。再次静态复核取消竞争、Core 存盘/关停未发现新阻塞，没有将静态复核记成运行回归。
+- 摘要保存在 DataRoot/Data/tasks.json，保留活动项和最近 100 条终态；启动把非终态标为 Interrupted，不持久化业务参数、不自动重试/续转码、不删除崩溃遗留输出。坏文件保留并阻止新任务执行，任务页可重试记录保存。页面切换和隐藏不拥有或取消任务。
+- 宿主标题栏“任务”稳定可达，显示进度、单项/整批取消、结果及返回工具，不增加底部导航或插件页脚。显式退出有活跃公共任务时允许继续处理或停止任务后退出；系统退出跳过确认并执行有界停止，任务、插件和包服务仍共用外层最多 10 秒等待。
+- 视频升为 0.5.0 / API 1.6 / UI 1.3，必须使用本轮新宿主。媒体读取、依赖准备和参数检查仍为入队前预检；失败/拒绝安装不建公共任务，准备期间在插件页显示状态/取消，预检成功后一次入队。没有把所有读取、下载都声称为公共任务。
+- MediaProbe 补 color_space/color_range，ExportPlan 拒绝明确广色域及未支持范围；无色彩标记的 8 位输入仍按普通 SDR 假设，FFmpeg 自动颜色协商未做实测。BT.709/full-range、彩色/透明封面、首帧/后续画面和同步仍需用户验证。VideoExporter 补实际编码器诊断日志，供 GPU 验收定位；修正文档第 5 节仍要求手动改 CPU 的旧语义，沿用用户已确认自动回退。
+- TaskChecks 新增 13 项有限任务状态、取消、摘要和关停用例，VideoChecks 现为 23 组；均仅编译未运行，旧进程/包/剪贴板/Headless 用例没有自动执行。用户已有 .vscode/launch.json 修改保留。
+
+构建、发布和独立插件打包沿用仓库现有脚本，输出至新的 artifacts/m4-complete。实际日志与结果：
+
+| 日志/记录 | 实际结果 |
+| --- | --- |
+| build-debug.log | Debug 解决方案 12 工程，0 警告/0 错误 |
+| publish-host.log | Release 宿主发布通过，输出 host；公开 SDK 同时供独立插件构建 |
+| build-video.log | 使用本轮已发布 HostSdkDir 独立构建视频 0.5.0，通过，0 警告/0 错误 |
+| build-source-final.log | 恢复正常源码依赖图后 Debug 12 工程通过，0 警告/0 错误 |
+| host-before.json、host-hash-check.json | 独立插件构建前后 235 个宿主文件 Changed=0；这证明本轮新宿主发布后独立插件构建没有改动它，不代表 E31 旧宿主可继续使用 |
+
+早期媒体复审代理的必要编译受 Avalonia BuildServices 本地日志权限阻塞，允许构建日志写入后重试通过；Core 任务初稿单独构建成功。检查工程曾有一次构建失败，输出为 0 警告/0 错误、没有错误明细，也未留独立日志；原因未确认，随后最终完整构建通过覆盖当前编译状态，不隐去这一失败。
+
+产物为 host/TractorTool.exe 与 video/TractorTool.VideoExport-0.5.0.zip，ZIP SHA256 为 `D9E032CEF2AFB87727CA943BCD94768CCA7F20119EA580E574BD6944D5D5025C`。用户需更新为 API 1.6 宿主，再拖入 ZIP、确认、显式退出并重启；本轮没有自动安装或替换用户 DLL。
+
+静态脚本为 artifacts/m4-complete/verify_static.py。文档编辑中的首次检查覆盖 10 份文档 239 处链接、2 个新 AXAML、9 项 ZIP，唯一报告是尚未创建的 E32 锚点；补入锚点并完成文档整理后，最终核对 10 份文档 238 处本地链接、2 个 AXAML、ZIP 清单及 9 项内容均通过，结果保存于 static-checks.json（Issues 为空）。本轮变更的 git diff --check 通过；用户已有 .vscode/launch.json 修改不属于本轮。
+
+真实 UI、整批串行/取消、显式退出/系统退出、重启中断与坏摘要恢复、旧 DLL 兼容、码率/真实输出/首帧/VFR/音画同步/色彩和 GPU 均未运行，由用户最终测试。M5 数据迁移、可靠性回归、CI/安装器仍未开始。

@@ -8,6 +8,8 @@ using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
 using TractorTool.Core.Packages;
 using TractorTool.Core.Processes;
+using TractorTool.Core.Tasks;
+using TractorTool.Contracts.Tasks;
 using System.Net.Http;
 using TractorTool.Platform;
 using TractorTool.Services;
@@ -33,6 +35,9 @@ public partial class App : Application
     private ExternalPackageService? _packages;
     private ProcessRunner? _packageProcesses;
     private HttpClient? _packageHttp;
+    private BackgroundTaskService? _tasks;
+    private bool _confirmingExit;
+    private CancellationTokenSource? _exitConfirmation;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -53,6 +58,7 @@ public partial class App : Application
                 _log.Write("Host", $"启动：Version={AppInfo.Version}; AppRoot={paths.AppRoot}; DataRoot={paths.DataRoot}; Bootstrap={paths.BootstrapFile}");
                 var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate);
                 var settings = store.Load();
+                _tasks = new BackgroundTaskService(Path.Combine(paths.DataRoot, "Data", "tasks.json"), _log);
                 ThemeService.Apply(settings);
                 var compatibility = new HostCompatibility(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
                     System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion);
@@ -64,17 +70,17 @@ public partial class App : Application
                 try { _pluginManager = new PluginManager(paths, compatibility); }
                 catch (Exception ex) { managementError = "插件管理不可用：" + ex.Message; _log.Write("Plugins", managementError, ex); }
                 _plugins = new PluginHost(paths, compatibility, _log,
-                    OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null, _packages);
+                    OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null, _packages, _tasks);
                 if (managementError is not null) _plugins.Discover([], startupError: managementError);
                 _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log, _packages), ExitAsync,
-                    managementError is null ? _pluginManager : null, settings.DisabledPlugins, _packages);
+                    managementError is null ? _pluginManager : null, settings.DisabledPlugins, _packages, _tasks);
                 var window = new MainWindow { DataContext = _vm };
                 desktop.MainWindow = window;
                 window.Closing += (_, e) =>
                 {
                     if (_exiting) return;
                     e.Cancel = true;
-                    if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitAsync(); return; }
+                    if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitCoreAsync(systemExit: true); return; }
                     if (_tray?.Available == true) { window.Hide(); _log.Write("Tray", "主窗口已隐藏；插件生命周期保持运行。"); }
                     else { _vm.NotifyTrayUnavailable(); Restore(); }
                 };
@@ -92,7 +98,7 @@ public partial class App : Application
                     }
                     if (!_exiting && _tray.Available != true) _vm.NotifyTrayUnavailable();
                 };
-                desktop.ShutdownRequested += (_, e) => { if (!_exiting) { e.Cancel = true; _ = ExitAsync(); } };
+                desktop.ShutdownRequested += (_, e) => { if (!_exiting) { e.Cancel = true; _ = ExitCoreAsync(systemExit: true); } };
                 desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); };
             }
             catch (Exception ex)
@@ -118,20 +124,39 @@ public partial class App : Application
         _log?.Write("Tray", "主窗口已恢复。");
     }
 
-    private async Task ExitAsync()
+    private Task ExitAsync() => ExitCoreAsync(systemExit: false);
+    private async Task ExitCoreAsync(bool systemExit)
     {
+        if (_exiting) return;
+        if (systemExit) _exitConfirmation?.Cancel();
+        else
+        {
+            if (_confirmingExit) return;
+            _confirmingExit = true;
+            using var confirmation = new CancellationTokenSource();
+            _exitConfirmation = confirmation;
+            try
+            {
+                if (_tasks?.HasActive == true && _desktop?.MainWindow is MainWindow owner &&
+                    !await owner.ConfirmExitAsync(_tasks.Snapshot.Count(t => t.State is BackgroundTaskState.Queued or BackgroundTaskState.Running or BackgroundTaskState.Cancelling), confirmation.Token)) return;
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex) { _log?.Write("Host", "退出确认失败，保持运行。", ex); return; }
+            finally { _confirmingExit = false; _exitConfirmation = null; }
+        }
         if (_exiting) return;
         _exiting = true;
         if (_desktop?.MainWindow is { } window) window.IsEnabled = false;
         var pendingSave = _vm?.Settings.BeginShutdown() ?? Task.CompletedTask;
         var pendingManagement = _vm?.Plugins.BeginShutdown() ?? Task.CompletedTask;
         _vm?.Detach();
-        _log?.Write("Host", "显式退出：等待设置保存并停止插件和常驻服务。");
+        _log?.Write("Host", "退出：等待设置保存并停止任务、插件和常驻服务。");
         try
         {
+            var stopTasks = _tasks?.BeginShutdownAsync() ?? Task.CompletedTask;
             var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
             var stopPackages = StopPackagesAsync();
-            await Task.WhenAll(pendingSave, pendingManagement, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(pendingSave, pendingManagement, stopTasks, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
         }
         catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
         finally { _tray?.Dispose(); _desktop?.Shutdown(); }

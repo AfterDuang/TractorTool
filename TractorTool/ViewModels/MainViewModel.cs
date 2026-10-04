@@ -9,6 +9,7 @@ using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Packages;
 using TractorTool.Core.Storage;
+using TractorTool.Core.Tasks;
 using TractorTool.Services;
 using TractorTool.UI;
 using TractorTool.Views;
@@ -52,7 +53,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public LogsViewModel Logs { get; }
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasPageScroll))] private Control? _currentPage;
     // Only built-in pages with a page-level ScrollViewer opt into the shell's edge layout.
-    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView;
+    public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView or TasksView;
     [ObservableProperty] private string _pageTitle = "主页";
     [ObservableProperty] private bool _showPageHeader = true;
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
@@ -65,12 +66,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public bool IsLogsSelected => ActiveNavigation == "logs";
 
     public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit, PluginManager? manager = null,
-        IReadOnlyCollection<string>? legacyDisabled = null, ExternalPackageService? packages = null)
+        IReadOnlyCollection<string>? legacyDisabled = null, ExternalPackageService? packages = null, BackgroundTaskService? tasks = null)
     {
         _plugins = plugins; _log = log; Settings = settings; _exit = exit; _manager = manager;
         _legacyDisabled = legacyDisabled ?? [];
         if (packages is not null) _packageReferences = new(paths, manager, packages);
         _icons = new NavigationIconStore(log);
+        Tasks = new(tasks, OpenTaskPlugin, id => _plugins.Records.FirstOrDefault(r => r.Manifest?.Id == id)?.Name ?? id);
         Settings.ExitCommand = ExitCommand;
         Logs = new LogsViewModel(paths, log);
         Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand, manager, log);
@@ -160,6 +162,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 new RelayCommand(() => OpenPluginPage(page)));
         }
         finally { _navigating = false; }
+    }
+
+    public TasksViewModel Tasks { get; }
+    private void OpenTaskPlugin(string id)
+    {
+        var page = _registered.FirstOrDefault(p => p.PluginId == id && !p.IsSettings);
+        if (page is not null) OpenPluginPage(page);
+        else ShowPlugins();
+    }
+    [RelayCommand] private void ShowTasks()
+    {
+        if (_detached || _navigating || _pageKey == "tasks") return;
+        Tasks.Refresh();
+        NavigateHostPage("tasks", "任务", "查看处理进度、结果和中断记录。", () => new TasksView { DataContext = Tasks }, ShowTasksCommand);
     }
 
     private void Navigate(string key, string navigationKey, string title, string description, Control view, bool showHeader = true)
@@ -293,6 +309,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (_detached) return;
         _detached = true;
         Settings.ExternalTools.Dispose();
+        Tasks.Dispose();
         _packageReferences?.Dispose();
         _log.Changed -= OnLogChanged;
         var previous = CurrentPage;

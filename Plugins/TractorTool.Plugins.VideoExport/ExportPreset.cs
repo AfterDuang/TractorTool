@@ -31,7 +31,6 @@ public partial class ExportPreset : ObservableObject
     [ObservableProperty] private double _progress;
     [ObservableProperty] private bool _isIndeterminate;
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(CancelCommand))] private bool _canCancel;
-    public bool CancelRequested { get; private set; }
     public IRelayCommand EditCommand { get; }
     public IRelayCommand CopyCommand { get; }
     public IRelayCommand DeleteCommand { get; }
@@ -52,8 +51,8 @@ public partial class ExportPreset : ObservableObject
     public void ResetResult()
     { Status = "待导出"; Error = ""; OutputPath = ""; ExecutionInfo = ""; Progress = 0; HasProgress = false; }
     public void Prepare()
-    { ResetResult(); CancelRequested = false; Status = "等待导出"; HasProgress = true; IsIndeterminate = false; CanCancel = true; }
+    { ResetResult(); Status = "等待导出"; HasProgress = true; IsIndeterminate = false; CanCancel = true; }
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
-    { CancelRequested = true; Status = "已取消"; CanCancel = false; _owner.CancelPreset(this); }
+    { CanCancel = false; _owner.CancelPreset(this); }
 }

@@ -9,11 +9,16 @@
     <!-- Avalonia 12 needs an explicit non-client role on the custom surface above the default title bar. -->
     <Border x:Name="TitleBarDragRegion" Classes="themeSurface" WindowDecorationProperties.ElementRole="TitleBar"
             Background="{DynamicResource AppSidebarBrush}" Padding="20,0,160,0">
+      <Grid ColumnDefinitions="*,Auto">
       <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" IsHitTestVisible="False">
         <Image Source="/Assets/tractortool.png" Width="24" Height="24" />
         <TextBlock Text="TractorTool" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
         <TextBlock Text="桌面工具箱" Classes="caption" Margin="8,0,0,0" VerticalAlignment="Center" />
       </StackPanel>
+      <Button Grid.Column="1" Content="{Binding Tasks.ButtonLabel}" Command="{Binding ShowTasksCommand}"
+              VerticalAlignment="Center" Margin="12,0,0,0" WindowDecorationProperties.ElementRole="User"
+              AutomationProperties.Name="查看任务" />
+      </Grid>
     </Border>
     <nav:FANavigationView x:Name="NavigationView" Grid.Row="1" Classes="shell"
           MenuItemsSource="{Binding Navigation}" FooterMenuItemsSource="{Binding FooterNavigation}"
