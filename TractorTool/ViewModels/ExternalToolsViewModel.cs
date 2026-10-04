@@ -22,10 +22,12 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status }.Where(s => !string.IsNullOrEmpty(s)));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }
+    public IRelayCommand<PackageCardViewModel> OpenCommand { get; }
 
-    public ExternalToolsViewModel(ExternalPackageService? service)
+    public ExternalToolsViewModel(ExternalPackageService? service, Action<PackageCardViewModel> open)
     {
         _service = service;
+        OpenCommand = new RelayCommand<PackageCardViewModel>(card => { if (!_disposed && card is not null) open(card); });
         CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && Cards.Any(c => c.CanRemove));
         if (service is not null) service.Changed += OnChanged;
         Refresh();

@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.Plugins.VideoExport" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Plugins.VideoExport.VideoSettingsView" x:DataType="vm:VideoViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <ui:SettingRow Header="选择视频后读取信息" Description="选择文件后自动读取时长、尺寸和音轨。" Icon="Video">
+        <ToggleSwitch IsChecked="{Binding AutoReadOnSelect}" IsEnabled="{Binding CanEditSettings}" />
+      </ui:SettingRow>
+      <StackPanel IsVisible="{Binding HasSettingsError, FallbackValue=False}" Spacing="8">
+        <TextBlock Text="{Binding SettingsError}" />
+        <Button Content="重试保存" Command="{Binding RetrySettingsCommand}" IsVisible="{Binding CanEditSettings}" />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

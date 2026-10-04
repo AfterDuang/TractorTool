@@ -75,7 +75,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         Home = new HomeViewModel(ShowPluginsCommand, new RelayCommand(() =>
         {
             ShowSettings();
-            if (CurrentPage is SettingsView) Settings.SelectedPage = Settings.SoftwareSettings[0];
+            if (CurrentPage is SettingsView) Settings.SelectedPage = Settings.AppearancePage;
         }));
         Navigation.Add(new("主页", ShowHomeCommand, "home", ToolIconKind.Home, imageSource: _icons.GetHostIcon(ToolIconKind.Home)));
         FooterNavigation = [

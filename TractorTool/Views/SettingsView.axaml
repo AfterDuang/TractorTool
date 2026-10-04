@@ -7,19 +7,35 @@
     </DataTemplate>
   </UserControl.Resources>
   <Grid x:Name="Layout" ColumnDefinitions="180,*" RowDefinitions="Auto,*">
-    <ComboBox x:Name="CompactNavigation" Grid.ColumnSpan="2" IsVisible="False" Margin="0,0,28,16"
-              HorizontalAlignment="Stretch" ItemsSource="{Binding Pages}" SelectedItem="{Binding SelectedPage}"
-              ItemTemplate="{StaticResource CategoryTemplate}" AutomationProperties.Name="设置分类" />
+    <ComboBox x:Name="CompactNavigation" Grid.ColumnSpan="2" IsVisible="False" Margin="0,0,8,16"
+              HorizontalAlignment="Stretch" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
+              SelectionChanged="CategoryChanged" ItemTemplate="{StaticResource CategoryTemplate}" AutomationProperties.Name="设置分类" />
     <ScrollViewer x:Name="Sidebar" Grid.Row="1" Margin="0,0,20,0" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Spacing="8">
         <TextBlock Text="软件设置" Classes="caption" Margin="8,0,0,4" />
-        <ListBox ItemsSource="{Binding SoftwareSettings}" SelectedItem="{Binding SelectedPage, Mode=OneWay}"
+        <ListBox ItemsSource="{Binding SoftwareSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
                  ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" />
         <TextBlock Text="插件设置" Classes="caption" Margin="8,20,0,4" IsVisible="{Binding HasPluginSettings}" />
-        <ListBox ItemsSource="{Binding PluginSettings}" SelectedItem="{Binding SelectedPage, Mode=OneWay}"
+        <ListBox ItemsSource="{Binding PluginSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
                  ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" />
       </StackPanel>
     </ScrollViewer>
-    <ui:PageHost x:Name="SectionPresenter" Grid.Row="1" Grid.Column="1" />
+    <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*">
+      <ItemsControl ItemsSource="{Binding Breadcrumbs}" Margin="0,0,8,16">
+        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SettingsBreadcrumb">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="›" Classes="muted" IsVisible="{Binding !IsFirst}" VerticalAlignment="Center" FontSize="22" />
+              <Button Content="{Binding Page.Title}" Classes="quiet" IsVisible="{Binding !IsCurrent}"
+                      Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).NavigateCommand}"
+                      CommandParameter="{Binding Page}" FontSize="20" Padding="0,4" Margin="0,0,8,0" />
+              <TextBlock Text="{Binding Page.Title}" IsVisible="{Binding IsCurrent}" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,4" />
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <ui:PageHost x:Name="SectionPresenter" Grid.Row="1" />
+    </Grid>
   </Grid>
 </UserControl>

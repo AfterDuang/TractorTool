@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:TractorTool.ViewModels"
+             x:Class="TractorTool.Views.PackageDetailsView" x:DataType="vm:PackageCardViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Binding Attribution}" Classes="caption" />
+          <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" />
+          <TextBlock Text="{Binding SizeText}" Classes="caption" />
+          <TextBlock Text="{Binding RequiredBy}" />
+          <TextBlock Text="{Binding Users}" IsVisible="{Binding HasUsers}" />
+          <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+          <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" />
+          <WrapPanel>
+            <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" />
+            <Button Content="取消下载" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="8">
+          <TextBlock Text="来源" FontWeight="SemiBold" />
+          <SelectableTextBlock Text="{Binding Source}" TextWrapping="Wrap" />
+          <TextBlock Text="存储位置" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <SelectableTextBlock Text="{Binding Directory}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

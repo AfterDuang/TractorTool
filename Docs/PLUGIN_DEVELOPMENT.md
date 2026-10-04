@@ -14,7 +14,7 @@
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
 | 工具进程 | `IProcessRunner`、`ProcessRequest`、`ProcessResult` | API 1.1；上下文 Processes 按插件生命周期提供，当前 Windows 10+ 适配；见下文 |
-| 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2；只查询/取得声明的固定版本，下载由宿主设置显式触发 |
+| 外部工具 | `IExternalPackageService`、`IPackageLease` | API 1.2 查询/取得已装版本，API 1.3 申请缺失包；确认、下载与安装统一由宿主处理 |
 | 有限任务 | 后续阶段设计，当前尚无公开接口 | 不伪造已存在的 API，不引用 Core 内部类绕过缺失能力 |
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
@@ -195,3 +195,5 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 - 验证页面与设置注册、深浅色/主题色、重启持久化和相关生命周期；有限任务与常驻服务各自验收。
 - 仅使用隔离数据和临时发布副本。静态检查、构建、自动化、集成、真实系统/UI/硬件分别报告。
 - 业务特有的用例和实现范围放各插件文档；当前结果和限制写 DEVELOPMENT.md，已完成轮次的执行详情归 PROJECT_HISTORY.md。用户接手运行测试，未经新指示不自动启动验收程序。
+
+视频插件通过 [Build-VideoPlugin.ps1](../scripts/Build-VideoPlugin.ps1) 使用同一 HostSdkDir/空输出目录约定独立打包，源码为 [VideoExport 工程](../Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj)。ZIP 不捆绑 FFmpeg；首次功能使用交给宿主申请。具体版本/可测范围只见开发台账，不能以 JSON 夹具或独立编译代替真实工具执行。

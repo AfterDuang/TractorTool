@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Plugins/">
     <Project Path="Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj" />
+    <Project Path="Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FixtureDependency/FixtureDependency.csproj" />
@@ -8,6 +9,7 @@
     <Project Path="tests/TractorTool.Checks/TractorTool.Checks.csproj" />
     <Project Path="tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj" />
     <Project Path="tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj" />
+    <Project Path="tests/TractorTool.VideoChecks/TractorTool.VideoChecks.csproj" />
   </Folder>
   <Project Path="TractorTool.Contracts/TractorTool.Contracts.csproj" />
   <Project Path="TractorTool.Core/TractorTool.Core.csproj" />

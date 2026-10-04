@@ -98,6 +98,36 @@ internal static class NavigationChecks
             finally { settings.OnNavigatedFrom(); vm.ExternalTools.Dispose(); window.Close(); }
         });
 
+        check("Settings descendants retain category selection and breadcrumbs return to the parent", () =>
+        {
+            var root = Path.Combine(output, "settings-hierarchy-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "profile")); paths.EnsureDataDirectories();
+            var vm = new SettingsViewModel(paths, new(Path.Combine(paths.ConfigRoot, "settings.json")), new(), new AppLog(paths.LogRoot));
+            var view = new SettingsView { DataContext = vm };
+            var window = new Window { Content = view, Width = 1000, Height = 600 };
+            window.Show();
+            try
+            {
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                Require(vm.SoftwareSettings.Count == 2 && vm.GeneralPages.Count == 3);
+                foreach (var child in vm.GeneralPages)
+                {
+                    vm.NavigateCommand.Execute(child); window.UpdateLayout();
+                    Require(vm.SelectedPage == child && vm.SelectedCategory == vm.SoftwareSettings[0]);
+                    Require(vm.Breadcrumbs.Count == 2 && vm.Breadcrumbs[1].IsCurrent && !vm.Breadcrumbs[0].IsCurrent);
+                    vm.NavigateCommand.Execute(vm.Breadcrumbs[0].Page);
+                    Require(vm.SelectedPage == vm.SoftwareSettings[0] && vm.Breadcrumbs.Count == 1);
+                }
+                vm.NavigateCommand.Execute(vm.AppearancePage);
+                window.Width = 600; window.UpdateLayout();
+                var compact = view.FindControl<ComboBox>("CompactNavigation")!;
+                Require(compact.IsVisible && ReferenceEquals(compact.SelectedItem, vm.SoftwareSettings[0]));
+                compact.SelectedItem = vm.SoftwareSettings[1];
+                Require(vm.SelectedPage == vm.SoftwareSettings[1] && vm.Breadcrumbs.Count == 1);
+            }
+            finally { view.OnNavigatedFrom(); vm.ExternalTools.Dispose(); window.Close(); }
+        });
+
         check("View model commits and cleans up only after presentation succeeds", () =>
         {
             var root = Path.Combine(output, "navigation-" + Guid.NewGuid().ToString("N"));

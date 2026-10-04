@@ -4,6 +4,7 @@ using System.ComponentModel;
 using TractorTool.UI;
 using TractorTool.ViewModels;
 using FluentAvalonia.UI.Controls;
+using Avalonia.Controls.Primitives;
 namespace TractorTool.Views;
 public partial class SettingsView : UserControl, IPluginPageLifetime
 {
@@ -46,8 +47,9 @@ public partial class SettingsView : UserControl, IPluginPageLifetime
     { if (e.PropertyName == nameof(SettingsViewModel.SelectedPage)) Present(); }
     private void CategoryChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (sender is ListBox { SelectedItem: SettingsPage selected } && DataContext is SettingsViewModel vm)
-            vm.SelectedPage = selected;
+        if (!_navigating && sender is SelectingItemsControl { SelectedItem: SettingsPage selected } &&
+            DataContext is SettingsViewModel vm && selected != vm.SelectedCategory)
+            vm.NavigateCommand.Execute(selected);
     }
     private void Present()
     {

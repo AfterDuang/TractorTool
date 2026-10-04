@@ -2,45 +2,35 @@
              x:Class="TractorTool.Views.ExternalToolsView" x:DataType="vm:ExternalToolsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="16">
-      <TextBlock Text="外部依赖" Classes="sectionTitle" />
-      <Grid ColumnDefinitions="*,Auto">
+      <DockPanel LastChildFill="True">
+        <Button DockPanel.Dock="Right" Content="清理未引用依赖" Command="{Binding CleanCommand}" Margin="12,0,0,0" />
         <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" />
-        <Button Grid.Column="1" Content="清理未引用依赖" Command="{Binding CleanCommand}" />
-      </Grid>
-      <TextBlock Text="{Binding Error}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
+      </DockPanel>
+      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" />
       <Border Classes="card" IsVisible="{Binding IsEmpty}">
         <StackPanel Spacing="8">
           <TextBlock Text="暂时没有外部依赖" FontWeight="SemiBold" />
-          <TextBlock Text="插件需要的工具会显示在这里，首次下载前会请你确认。" Classes="caption" TextWrapping="Wrap" />
+          <TextBlock Text="插件需要的工具会显示在这里，首次下载前会请你确认。" Classes="caption" />
         </StackPanel>
       </Border>
       <ItemsControl ItemsSource="{Binding Cards}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PackageCardViewModel">
-            <Border Classes="card" Margin="0,0,0,12">
-              <StackPanel Spacing="10">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
-                <WrapPanel>
-                  <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
-                  <TextBlock Text="{Binding StatusText}" Classes="caption" Margin="0,0,16,0" />
-                  <TextBlock Text="{Binding SizeText}" Classes="caption" />
-                </WrapPanel>
-                <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding Users}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasUsers}" />
-                <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
-                <TextBlock Text="{Binding Error}" Classes="caption" TextWrapping="Wrap" IsVisible="{Binding HasError}" />
-                <Expander Header="来源与存储位置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                  <StackPanel Spacing="8">
-                    <SelectableTextBlock Text="{Binding Source}" TextWrapping="Wrap" />
-                    <SelectableTextBlock Text="{Binding Directory}" TextWrapping="Wrap" />
-                  </StackPanel>
-                </Expander>
-                <WrapPanel HorizontalAlignment="Right">
-                  <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" />
-                  <Button Content="取消下载" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" />
-                </WrapPanel>
-              </StackPanel>
-            </Border>
+            <Button Classes="toolCard" Margin="0,0,0,8" HorizontalAlignment="Stretch"
+                    Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).OpenCommand}" CommandParameter="{Binding}">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
+                  <WrapPanel>
+                    <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
+                    <TextBlock Text="{Binding StatusText}" Classes="caption" />
+                  </WrapPanel>
+                  <TextBlock Text="{Binding RequiredBy}" Classes="caption" />
+                  <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="›" FontSize="22" Margin="16,0,0,0" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

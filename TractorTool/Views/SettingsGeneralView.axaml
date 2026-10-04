@@ -1,36 +1,25 @@
-<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls" x:Class="TractorTool.Views.SettingsGeneralView" x:DataType="vm:SettingsViewModel">
-<ScrollViewer Classes="pageScroll"><StackPanel Classes="pageBody" Spacing="20">
-<StackPanel Spacing="8">
-  <TextBlock Text="外观" Classes="sectionTitle" Margin="0,0,0,4" />
-  <ui:SettingRow Header="主题" Description="选择明亮或柔和的深色界面，也可以跟随系统。" Icon="Theme">
-    <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding SelectedTheme}" AutomationProperties.Name="主题">
-      <ComboBox.ItemTemplate>
-        <DataTemplate x:DataType="vm:ThemeChoice">
-          <TextBlock Text="{Binding Name}" />
-        </DataTemplate>
-      </ComboBox.ItemTemplate>
-    </ComboBox>
-  </ui:SettingRow>
-  <ui:SettingRow Header="主题色" Description="应用于选中状态和主要操作，彩色图标保留原色。" Icon="Palette">
-    <ComboBox ItemsSource="{Binding Accents}" SelectedItem="{Binding SelectedAccent}" AutomationProperties.Name="主题色">
-      <ComboBox.ItemTemplate>
-        <DataTemplate x:DataType="vm:AccentChoice">
-          <StackPanel Orientation="Horizontal" Spacing="10">
-            <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Value}" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-          </StackPanel>
-        </DataTemplate>
-      </ComboBox.ItemTemplate>
-    </ComboBox>
-  </ui:SettingRow>
-  <ui:SettingRow Header="界面动画" Description="主题过渡、页面切换与控件反馈。" Icon="Motion">
-    <ToggleSwitch IsChecked="{Binding EnableAnimations}" AutomationProperties.Name="界面动画" />
-  </ui:SettingRow>
-  <WrapPanel x:Name="SaveErrorPanel" IsVisible="{Binding HasSaveError, FallbackValue=False, TargetNullValue=False}" Margin="0,8,0,0">
-    <TextBlock Text="{Binding SaveError}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" MaxWidth="620" />
-    <Button Content="重试保存" Command="{Binding RetrySaveCommand}" Margin="12,0,0,8" />
-  </WrapPanel>
-  <TextBlock Text="{Binding ApplyError}" Classes="caption" IsVisible="{Binding HasApplyError, FallbackValue=False, TargetNullValue=False}" />
-</StackPanel>
-</StackPanel></ScrollViewer>
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Views.SettingsGeneralView" x:DataType="vm:SettingsViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody">
+      <ItemsControl ItemsSource="{Binding GeneralPages}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:SettingsPage">
+            <Button Classes="toolCard" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                    Command="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).NavigateCommand}" CommandParameter="{Binding}">
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <ui:ToolIcon Kind="{Binding Icon}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                <StackPanel Grid.Column="1" Spacing="4">
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Description}" Classes="caption" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="›" FontSize="22" Margin="16,0,0,0" VerticalAlignment="Center" />
+              </Grid>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

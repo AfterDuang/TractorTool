@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.Plugins.VideoExport" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Plugins.VideoExport.VideoView" x:DataType="vm:VideoViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <ui:SettingRow Header="源视频" Description="{Binding SourcePath}" Icon="Video">
+        <Button Content="选择视频" Click="ChooseVideo" IsEnabled="{Binding !IsBusy}" />
+      </ui:SettingRow>
+      <TextBlock x:Name="PickerError" IsVisible="False" />
+      <WrapPanel>
+        <Button Content="读取媒体信息" Command="{Binding ReadCommand}" Classes="accent" Margin="0,0,12,8" />
+        <Button Content="取消" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" Margin="0,0,12,8" />
+        <TextBlock Text="{Binding Status}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
+      </WrapPanel>
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" />
+      <ItemsControl ItemsSource="{Binding Fields}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:MediaField">
+            <Border Classes="card" Padding="18,12" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="120,*">
+                <TextBlock Text="{Binding Name}" Classes="caption" VerticalAlignment="Center" />
+                <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

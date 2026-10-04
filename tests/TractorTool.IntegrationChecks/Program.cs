@@ -113,9 +113,9 @@ Check("Plugin settings write through registered page", () =>
 Check("Host settings render and immediately apply dark accent without a save button", () =>
 {
     vm.ShowSettingsCommand.Execute(null); window.UpdateLayout();
-    vm.Settings.SelectedPage = vm.Settings.SoftwareSettings[0]; window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+    vm.Settings.SelectedPage = vm.Settings.AppearancePage; window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
     var settingsPage = vm.CurrentPage ?? throw new InvalidOperationException("Settings page missing");
-    Assert(settingsPage.GetVisualDescendants().OfType<SettingsGeneralView>().Single().GetVisualDescendants().OfType<ComboBox>().Count() == 2);
+    Assert(settingsPage.GetVisualDescendants().OfType<SettingsAppearanceView>().Single().GetVisualDescendants().OfType<ComboBox>().Count() == 2);
     vm.Settings.SelectedTheme = vm.Settings.Themes.Single(t => t.Id == "Dark");
     vm.Settings.SelectedAccent = vm.Settings.Accents.Single(a => a.Value == "#0F766E");
     Assert(Application.Current!.RequestedThemeVariant == ThemeVariant.Dark);

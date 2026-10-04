@@ -9,8 +9,11 @@ using Avalonia.Threading;
 using TractorTool.Core.Packages;
 using Avalonia.Controls;
 using TractorTool.Views;
+using TractorTool.UI;
 namespace TractorTool.ViewModels;
-public sealed record SettingsPage(string Title, Func<Control> Factory);
+public sealed record SettingsPage(string Title, Func<Control> Factory, SettingsPage? Parent = null,
+    string Description = "", ToolIconKind Icon = ToolIconKind.Settings);
+public sealed record SettingsBreadcrumb(SettingsPage Page, bool IsFirst, bool IsCurrent);
 public sealed record ThemeChoice(string Id, string Name);
 public sealed record AccentChoice(string Value, string Name);
 public partial class SettingsViewModel : ViewModelBase
@@ -41,29 +44,50 @@ public partial class SettingsViewModel : ViewModelBase
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDirectoryStatus))] private string _directoryStatus = "";
     public bool HasDirectoryStatus => DirectoryStatus.Length != 0;
     public ObservableCollection<SettingsPage> PluginSettings { get; } = [];
-    public ObservableCollection<SettingsPage> Pages { get; } = [];
+    public ObservableCollection<SettingsPage> Categories { get; } = [];
     public IReadOnlyList<SettingsPage> SoftwareSettings { get; }
-    [ObservableProperty] private SettingsPage? _selectedPage;
+    public IReadOnlyList<SettingsPage> GeneralPages { get; }
+    public SettingsPage AppearancePage => GeneralPages[0];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectedCategory), nameof(Breadcrumbs))]
+    private SettingsPage? _selectedPage;
+    public SettingsPage? SelectedCategory
+    {
+        get { var page = SelectedPage; while (page?.Parent is { } parent) page = parent; return page; }
+    }
+    public IReadOnlyList<SettingsBreadcrumb> Breadcrumbs
+    {
+        get
+        {
+            var path = new List<SettingsPage>();
+            for (var page = SelectedPage; page is not null; page = page.Parent) path.Add(page);
+            path.Reverse();
+            return path.Select((page, index) => new SettingsBreadcrumb(page, index == 0, index == path.Count - 1)).ToArray();
+        }
+    }
     public bool HasPluginSettings => PluginSettings.Count != 0;
     public IAsyncRelayCommand? ExitCommand { get; internal set; }
     public SettingsViewModel(AppPaths paths, JsonFileStore<HostSettings> store, HostSettings settings, AppLog log,
         ExternalPackageService? packages = null)
     {
         Paths = paths; _store = store; _settings = settings; _log = log;
-        ExternalTools = new(packages);
+        ExternalTools = new(packages, OpenPackage);
         SoftwareSettings = [new("通用设置", () => new SettingsGeneralView { DataContext = this }),
-            new("应用数据", () => new SettingsDataView { DataContext = this }),
-            new("外部依赖", () => new ExternalToolsView { DataContext = ExternalTools }),
-            new("关于软件", () => new SettingsAboutView { DataContext = this })];
-        foreach (var page in SoftwareSettings) Pages.Add(page);
-        _selectedPage = Pages[0];
+            new("外部依赖", () => new ExternalToolsView { DataContext = ExternalTools })];
+        GeneralPages = [new("外观", () => new SettingsAppearanceView { DataContext = this }, SoftwareSettings[0], "主题、主题色与界面动画", ToolIconKind.Palette),
+            new("应用数据", () => new SettingsDataView { DataContext = this }, SoftwareSettings[0], "数据目录与存储位置", ToolIconKind.Folder),
+            new("关于软件", () => new SettingsAboutView { DataContext = this }, SoftwareSettings[0], "版本信息与退出应用", ToolIconKind.Info)];
+        foreach (var page in SoftwareSettings) Categories.Add(page);
+        _selectedPage = Categories[0];
         _enableAnimations = settings.EnableAnimations;
         PluginSettings.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPluginSettings));
         _selectedTheme = Themes.Single(t => t.Id == settings.Theme);
         _selectedAccent = Accents.FirstOrDefault(a => a.Value.Equals(settings.Accent, StringComparison.OrdinalIgnoreCase)) ?? new(settings.Accent, settings.Accent);
         if (!Accents.Contains(_selectedAccent)) Accents = [.. Accents, _selectedAccent];
     }
-    public void AddPluginPage(SettingsPage page) { PluginSettings.Add(page); Pages.Add(page); }
+    public void AddPluginPage(SettingsPage page) { PluginSettings.Add(page); Categories.Add(page); }
+    [RelayCommand] private void Navigate(SettingsPage? page) { if (!_stopping && page is not null) SelectedPage = page; }
+    private void OpenPackage(PackageCardViewModel card) => Navigate(new(card.Name,
+        () => new PackageDetailsView { DataContext = card }, SoftwareSettings[1]));
     internal void LogPageError(Exception error) => _log.Write("Settings", "设置页面加载或清理失败", error);
     partial void OnSelectedThemeChanged(ThemeChoice value) => ApplyAppearance();
     partial void OnSelectedAccentChanged(AccentChoice value) => ApplyAppearance();

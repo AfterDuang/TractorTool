@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M3（进行中） | [E26 · 设置层级与视频读取入口（2026-10-04）](#evidence-settings-hierarchy) |
 | M3（进行中） | [E25 · 依赖申请、引用清理与设置分类（2026-10-04）](#evidence-dependency-flow) |
 | M1 | [E01 · 首轮工作与证据（2026-10-03）](#evidence-baseline) |
 | M1 | [E02 · 用户截图反馈后的修正（2026-10-03）](#evidence-adjustment) |
@@ -1120,3 +1121,27 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore
 构建过程与证据：首次沙箱构建因 Avalonia 用户缓存日志访问被拒失败；允许构建缓存访问后发现拆分 AXAML 子元素的重复 xmlns，移到根声明后修复；随后修正新增测试缺 using。最终命令为 `dotnet build .\TractorTool.slnx -c Debug --no-restore -m:1 -nr:false`，全方案 0 错误、2 个 NU1900（NuGet 漏洞数据源不可达）警告，日志 `artifacts/m3-dependency-flow/build-debug.log`。静态确认宿主输出含 PackageSources/default.json，文档本地链接及 diff 空白检查通过。
 
 本轮未启动应用、检查程序、FFmpeg 或 UI 自动化，没有读写真实剪贴板/已安装插件/用户数据；未发布、未配置远程或推送。首次确认、来源失效后复用、卸载后清理、窗口分类布局/动画/退出、旧 DLL 兼容及真实网络/媒体行为仍待运行验收；编译和静态复审不替代这些证据。当前状态只维护 DEVELOPMENT.md。
+
+<a id="evidence-settings-hierarchy"></a>
+
+## E26：设置层级与视频读取入口（2026-10-04）
+
+用户用 Windows 设置/PowerToys 截图澄清原图为包含关系，并确认理解：左侧软件/插件分组、通用与外部依赖两个软件大类、通用下三个子页及包详情、顶部面包屑返回。并指出没有实际依赖消费插件使功能无法验收。
+
+- SettingsPage 加父关系，SelectedCategory 与当前子页分离；入口行进入子页、面包屑返回。保留 PageHost 动画、窄窗口及取消离页，替换旧四项平级入口/Pages 集合；外观页移至 SettingsAppearanceView，主页快捷入口直达。包列表只展示摘要，原详情移入 PackageDetailsView。
+- 新增正式视频插件 0.1.0，API 1.3、win-x64、FFmpeg 9.0.2：单视频选择、RequestAsync 申请、真实 ffprobe 命令与 JSON 解析，取消、文件变化检查、错误与未知信息。实例共享模型使离页不取消，停止经 UI dispatcher 取消并等待。插件偏好是选择后自动读取，通过公开 Settings 自动保存，坏配置不覆盖。无导出/封面/GPU 或模拟结果。
+- 阅读 [ffprobe 官方文档](https://ffmpeg.org/ffprobe.html)，使用 show_format/show_streams/of json；工具运行与返回内容本轮未实际执行验证。纯音频及只有附加封面不当视频，平均帧率与编码尺寸标签不冒充 VFR 时间轴/旋转后的尺寸。
+- 两位 GPT-6.1-Sol/high 只读复审，设置层级未发现确定阻塞缺陷；视频退出工作线程访问模型/取消源的竞争已通过 Dispatcher 调度修复，复核关闭。新增层级回归及 5 组纯 JSON 断言，仅编译未运行。
+- 本轮没有改 Core 包服务/进程事务，没有创建通用 Worker/IPC；没有运行应用/检查程序/ffprobe/FFmpeg，没有安装插件或写真实用户数据。
+
+实际构建/静态证据：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\settings-hierarchy\host
+./scripts/Build-VideoPlugin.ps1 -HostSdkDir H:\ProjH\TractorTool\artifacts\settings-hierarchy\host -Output H:\ProjH\TractorTool\artifacts\settings-hierarchy\video
+```
+
+首次受限构建因 Avalonia 用户缓存日志权限失败；授权构建缓存访问后通过。修复退出调度时多 await 层次造成 CS0815，按本地 Avalonia Func<Task> 重载自动展开规则改为一次 await 后编译通过。最终 Debug 共 12 工程，0 错误/0 警告；Release 宿主发布、只引用发布 DLL 的视频插件独立构建同样成功。235 个原宿主文件哈希全部未变。日志及哈希在 artifacts/settings-hierarchy/{build-debug.log,publish-host.log,build-video.log,host-hash-check.json}；插件 ZIP 与 SHA256 在 video 子目录。
+
+本地 Markdown 链接、JSON/ZIP 结构与共享 SDK 排除、Git diff 空白检查通过。运行验收仍由用户执行；真实网络下载、ffprobe 媒体内容、设置交互、卸载保留/清理、退出并发，以及先前 M2/进程/包测试仍未取得运行证据。当前状态集中在 DEVELOPMENT，不把信息读取入口当视频导出验收完成。
