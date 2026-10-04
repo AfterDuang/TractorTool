@@ -14,6 +14,11 @@ public sealed class PluginManager : IDisposable
     private PluginManagementState _state;
     private bool _disposed;
     public IReadOnlyList<ManagedPlugin> Snapshot { get { lock (_gate) return _state.Plugins.ToArray(); } }
+    // Invalidate dependency cleanup before committing a new selection; rebuild before returning.
+    internal event Action? StateChanging;
+    internal event Action? StateChanged;
+    internal void ReadState(Action<IReadOnlyList<ManagedPlugin>> read)
+    { lock (_gate) read(_state.Plugins); }
 
     public PluginManager(AppPaths paths, HostCompatibility compatibility)
     {
@@ -277,8 +282,9 @@ public sealed class PluginManager : IDisposable
     {
         PluginFiles.Under(_root, "state.json"); PluginFiles.Under(_root, "state.json.bak");
         var next = _state with { Plugins = [.. _state.Plugins.Where(p => !p.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)), item] };
-        _store.Save(next);
-        _state = next;
+        StateChanging?.Invoke();
+        try { _store.Save(next); _state = next; }
+        finally { StateChanged?.Invoke(); }
     }
     private void Check() => ObjectDisposedException.ThrowIf(_disposed, this);
     // Production keeps this handle until process exit, including late plugin cleanup after the timeout.

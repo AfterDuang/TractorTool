@@ -10,15 +10,22 @@ internal static class PackageFiles
 
     internal static string SafePath(string root, string relative)
     {
+        var parts = RelativeParts(relative);
+        var result = Path.GetFullPath(Path.Combine(root, Path.Combine(parts)));
+        if (result == root || !AppPaths.Contains(root, result)) throw new InvalidDataException("工具包路径越界。");
+        CheckPath(result);
+        return result;
+    }
+
+    internal static string[] RelativeParts(string relative)
+    {
+        if (string.IsNullOrWhiteSpace(relative)) throw new InvalidDataException("工具路径为空。");
         var parts = relative.Replace('\\', '/').Split('/');
         if (relative.Length > 240 || parts.Length > 32 || parts.Any(p => p.Length == 0 || p is "." or ".." ||
             p.EndsWith(' ') || p.EndsWith('.') || p.Any(c => c < 32 || "<>:\"|?*".Contains(c)) ||
             System.Text.RegularExpressions.Regex.IsMatch(p, @"^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase)))
             throw new InvalidDataException("工具包包含不安全的相对路径。");
-        var result = Path.GetFullPath(Path.Combine(root, Path.Combine(parts)));
-        if (result == root || !AppPaths.Contains(root, result)) throw new InvalidDataException("工具包路径越界。");
-        CheckPath(result);
-        return result;
+        return parts;
     }
 
     internal static void CheckPath(string path)

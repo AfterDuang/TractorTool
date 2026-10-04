@@ -5,6 +5,9 @@ using TractorTool.Contracts;
 using TractorTool.Contracts.Packages;
 using TractorTool.Contracts.Processes;
 using TractorTool.Core.Packages;
+using TractorTool.Core.Plugins;
+using TractorTool.Core.Storage;
+using System.Text.Json;
 
 internal static class PackageChecks
 {
@@ -35,6 +38,136 @@ internal static class PackageChecks
             await reload.RemoveAsync(Key);
             Equal(reload.GetStatus(Key).Phase, PackagePhase.Missing);
         });
+        Test("declining consent performs no download; retry and installed reuse work", async path =>
+        {
+            var calls = 0; var prompts = 0;
+            using var http = new HttpClient(new Handler((request, _) =>
+            { calls++; return Task.FromResult(Response(request, Archive())); }));
+            await using var service = Create(path, http, new Probe());
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(false); };
+            using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
+            await Throws<OperationCanceledException>(() => scope.RequestAsync(Key));
+            Require(calls == 0 && prompts == 1);
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(true); };
+            using (await scope.RequestAsync(Key)) { }
+            using (await scope.RequestAsync(Key)) { }
+            Require(calls == 1 && prompts == 2);
+        });
+        Test("concurrent requests share consent and survive one caller cancelling", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var approve = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var prompts = 0;
+            service.ConfirmInstallAsync = async (_, token) => { prompts++; entered.TrySetResult(); return await approve.Task.WaitAsync(token); };
+            using var cancel = new CancellationTokenSource();
+            using var firstScope = service.CreateScope("First", [Key], CancellationToken.None);
+            using var secondScope = service.CreateScope("Second", [Key], CancellationToken.None);
+            var first = firstScope.RequestAsync(Key, cancel.Token);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var second = secondScope.RequestAsync(Key);
+            cancel.Cancel(); await Throws<OperationCanceledException>(() => first);
+            approve.TrySetResult(true);
+            using var lease = await second.WaitAsync(TimeSpan.FromSeconds(5));
+            Require(prompts == 1 && service.GetStatus(Key).Users.Single() == "Second");
+            await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+        });
+        Test("declared or uncertain references prevent cleanup without a running lease", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            await service.InstallAsync(Key);
+            service.UpdateReferences(new([new(Key, "Disabled.Plugin", "Disabled")], true));
+            Require(service.GetPackages().Single().RequiredBy.Count == 1 && !service.GetPackages().Single().CanRemove);
+            await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+            service.UpdateReferences(new([], false, "Unreadable manifest"));
+            await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+            service.UpdateReferences(new([], true));
+            Require(service.GetPackages().Single().CanRemove);
+            await service.RemoveAsync(Key); Require(service.GetPackages().Count == 0);
+        });
+        Test("installed receipt remains reusable and cleanable after source removal", async path =>
+        {
+            using var http = Client(Archive());
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            await using var service = new ExternalPackageService(path, "win-x64", http, new Probe(), new Log(), []);
+            service.UpdateReferences(new([], true));
+            using (await service.RequestAsync(Key, "Test.Plugin")) { }
+            Require(service.GetPackages().Single().IsInstalled && service.GetPackages().Single().CanRemove);
+            await service.RemoveAsync(Key);
+        });
+        if (OperatingSystem.IsWindows()) Test("locked legacy receipt remains usable when metadata upgrade fails", async path =>
+        {
+            using var http = Client(Archive());
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            var file = Path.Combine(path, Key.Id, Key.Version, "win-x64", "receipt.json");
+            var legacy = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!.AsObject();
+            legacy["Schema"] = 1; legacy.Remove("Definition"); File.WriteAllText(file, legacy.ToJsonString());
+            using var locked = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            await using var service = Create(path, http, new Probe());
+            Equal(service.GetStatus(Key).Phase, PackagePhase.Ready);
+            Require(service.SourceError.Contains("暂未升级"));
+            using var lease = await service.RequestAsync(Key, "Test.Plugin");
+        });
+        Test("repair uses revised trusted source and keeps persistent references", async path =>
+        {
+            using (var http = Client(Archive()))
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            File.WriteAllText(Path.Combine(path, Key.Id, Key.Version, "win-x64", "bin", "tool.exe"), "tampered");
+            var revised = Definition(Archive()) with { DownloadUri = new("https://example.invalid/revised.zip") };
+            using var updatedHttp = new HttpClient(new Handler((request, _) =>
+            { Require(request.RequestUri == revised.DownloadUri); return Task.FromResult(Response(request, Archive())); }));
+            await using var service = Create(path, updatedHttp, new Probe(), revised);
+            service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
+            using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
+            await Throws<InvalidDataException>(() => scope.AcquireAsync(Key));
+            service.ConfirmInstallAsync = (prompt, _) => { Require(prompt.IsRepair); return Task.FromResult(true); };
+            using var repaired = await scope.RequestAsync(Key);
+            Require(service.GetStatus(Key).Phase == PackagePhase.Ready && !service.GetPackages().Single().CanRemove);
+        });
+        Test("source catalog is not an installed catalog; missing dependency stays visible", async path =>
+        {
+            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
+            Require(service.GetPackages().Count == 0);
+            var missing = new PackageReference("Unavailable", "1.0.0");
+            service.UpdateReferences(new([new(missing, "Test.Plugin", "Plugin")], true));
+            Require(service.GetPackages().Single().Package == missing && !service.GetPackages().Single().CanInstall);
+            using var scope = service.CreateScope("Test.Plugin", [missing], CancellationToken.None);
+            Equal(scope.GetStatus(missing).Phase, PackagePhase.Missing);
+            await Throws<NotSupportedException>(() => scope.RequestAsync(missing));
+        });
+        Test("reference reconstruction includes disabled, pending and recovery manifests", async path =>
+        {
+            var paths = new AppPaths(Path.Combine(path, "app"), Path.Combine(path, "data"));
+            var compatibility = new HostCompatibility("windows", "win-x64", "1.2", "12.1.2");
+            var token = Guid.NewGuid().ToString("N");
+            PluginManifest WriteManifest(string root, string version, string dependency)
+            {
+                var directory = Path.Combine(root, "Test.Plugin", version); Directory.CreateDirectory(directory);
+                var manifest = new PluginManifest { SchemaVersion = 1, Id = "Test.Plugin", Name = "Plugin", Version = version,
+                    ApiVersion = "1.3", UiApiVersion = "1.2", AvaloniaVersion = "12.1.2", EntryAssembly = "plugin.dll",
+                    EntryType = "Plugin", SupportedPlatforms = ["windows"], Dependencies = [new(dependency, "1.0.0")] };
+                File.WriteAllText(Path.Combine(directory, "plugin.json"), JsonSerializer.Serialize(manifest, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+                return manifest;
+            }
+            var active = WriteManifest(paths.PluginRoot, "2.0.0", "Active");
+            WriteManifest(paths.PluginRoot, "1.0.0", "Recovery");
+            WriteManifest(Path.Combine(paths.PluginRoot, ".management", "staging", token), "3.0.0", "Pending");
+            new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+            {
+                Plugins = [new() { Id = "Test.Plugin", Name = "Plugin", ActiveVersion = "2.0.0", Enabled = false,
+                    Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), paths.DataRoot, false),
+                    Pending = new(PluginChangeKind.Activate, token, paths.DataRoot, "3.0.0", new string('0', 64)) }]
+            });
+            using var manager = new PluginManager(paths, compatibility);
+            using var http = Client(Archive()); await using var service = Create(paths.PackageRoot, http, new Probe());
+            using var references = new PluginPackageReferences(paths, manager, service);
+            references.SetDiscovered([new(Path.Combine(paths.PluginRoot, "Test.Plugin", "2.0.0"), active, PluginState.Disabled, "")], null);
+            Require(service.ReferenceError == "" && service.GetPackages().Select(p => p.Package.Id).Order().SequenceEqual(new[] { "Active", "Pending", "Recovery" }));
+            manager.CancelPending("Test.Plugin");
+            Require(service.GetPackages().All(p => p.Package.Id != "Pending"));
+            references.SetDiscovered([new("broken", null, PluginState.Invalid, "broken")], null);
+            Require(service.ReferenceError.Length != 0);
+        });
         Test("bad hash never executes tools or commits", async path =>
         {
             var bytes = Archive(); using var http = Client(bytes); var probe = new Probe();
@@ -48,6 +181,7 @@ internal static class PackageChecks
             var bytes = Archive(); using var http = Client(bytes);
             var first = Definition(bytes); var second = first with { Package = new(Key.Id, "2.0.0") };
             await using var service = new ExternalPackageService(path, "win-x64", http, new Probe(), new Log(), [first, second]);
+            service.UpdateReferences(new([], true));
             await Task.WhenAll(service.InstallAsync(Key), service.InstallAsync(second.Package));
             await service.RemoveAsync(Key);
             using var scope = service.CreateScope("Test.Plugin", [second.Package], CancellationToken.None);
@@ -196,8 +330,12 @@ internal static class PackageChecks
     private static PackageDefinition Definition(byte[] bytes) => new(Key, "win-x64", "Fixture", "Fixture",
         new("https://example.invalid/tool.zip"), Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), "Fixture",
         new("https://example.invalid/source"), new Dictionary<string, PackageTool> { ["tool"] = new("bin/tool.exe", "tool version 1.0.0") });
-    private static ExternalPackageService Create(string root, HttpClient http, Probe runner, PackageDefinition? definition = null) =>
-        new(root, "win-x64", http, runner, new Log(), [definition ?? Definition(Archive())]);
+    private static ExternalPackageService Create(string root, HttpClient http, Probe runner, PackageDefinition? definition = null)
+    {
+        var service = new ExternalPackageService(root, "win-x64", http, runner, new Log(), [definition ?? Definition(Archive())]);
+        service.UpdateReferences(new([], true));
+        return service;
+    }
     private static HttpClient Client(byte[] bytes) => new(new Handler((request, _) => Task.FromResult(Response(request, bytes))));
     private static HttpResponseMessage Response(HttpRequestMessage request, byte[] bytes) => new(HttpStatusCode.OK)
     { RequestMessage = request, Content = new ByteArrayContent(bytes) };

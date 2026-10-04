@@ -33,11 +33,11 @@
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.2，仍接受 1.0/1.1；Processes 从 1.1 提供，Packages 要求 1.2 |
+| `apiVersion` | 当前 1.3，仍接受 1.0/1.1/1.2；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3 |
 | `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
-| `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复，版本和当前 RID 必须在宿主目录中 |
+| `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复；清单有效但源未提供时页面仍可加载，申请时明确报告不可用 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
@@ -90,24 +90,24 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 
 输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。当前没有实时进度回调，后续媒体链路再接入；包安装及版本校验没有完成前，不宣称依赖已可用。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
 
-### 外部工具接入（API 1.2）
+### 外部工具接入（API 1.3）
 
-以下描述当前 API 能力，尚未完成 [产品规定的插件申请安装流程](TractorTool.md#5-外部依赖管理)。后续由宿主解析可信源、首次下载确认及维护引用；插件卸载保留包，统一设置清理未引用包。请求接口尚未发布，不得在插件中自行下载来补缺口。
+插件在用户使用功能时调用 `RequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。取消抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`；失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
 
-清单只声明包 ID 与固定版本。宿主支持的依赖缺失时仍允许插件显示页面，应引导用户到设置下载安装；不在初始化中取得长期租约或自动下载。未知版本/平台被判为不兼容。当前目录提供 FFmpeg 9.0.2 / win-x64，其他平台没有该包。
+清单只声明包 ID 与固定版本，不传入下载 URL、哈希或安装脚本。不在初始化中取得长期租约或自动下载。源缺失不使插件整体不兼容；需要依赖的操作不可继续，但其他页面仍可用。软件维护的索引为 `PackageSources/default.json`，当前提供 FFmpeg 9.0.2 / win-x64，尚无远程索引刷新和自定义源。
 
 通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
 
 ```csharp
-var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.2 的宿主。");
-using var lease = await packages.AcquireAsync(new("FFmpeg", "9.0.2"), cancellationToken);
+var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.3 的宿主。");
+using var lease = await packages.RequestAsync(new("FFmpeg", "9.0.2"), cancellationToken);
 var result = await context.Processes!.RunAsync(
     new(lease.Tools["ffprobe"], ["-v", "error", "-show_format", "-show_streams", "-of", "json", inputPath]),
     cancellationToken);
 // 检查退出码、截断状态，再解析 JSON；退出 using 之后才释放该版本占用。
 ```
 
-不能缓存租约外的工具路径再启动进程，不能在进程/输出读取仍活跃时释放租约。页面切换不应释放后台任务拥有的租约。宿主按插件生命周期收回遗漏租约，但这不替代插件正确的 using/取消逻辑。下载和移除在宿主管理界面完成，公开插件接口没有隐式安装能力；可信进程内插件也不应绕过公共约定。存储/事务边界见 [包管理](ARCHITECTURE.md#41-包管理)。
+不能缓存租约外的工具路径再启动进程，不能在进程/输出读取仍活跃时释放租约。页面切换不应释放后台任务拥有的租约。宿主按插件生命周期收回遗漏租约，但这不替代正确的 using/取消逻辑。并发申请合并确认与安装；取消自己的等待不取消其他插件的下载。原 `AcquireAsync` 保持只获取已安装包的语义。禁用插件仍保留依赖引用，卸载重启后才解除，包文件不会联动删除。存储/事务边界见 [包管理](ARCHITECTURE.md#41-包管理)。
 
 ## 5. 统一 UI 与设置
 

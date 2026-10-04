@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 using FluentAvalonia.UI.Controls;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
@@ -6,6 +7,7 @@ using TractorTool.Core.Storage;
 using TractorTool.UI;
 using TractorTool.UI.Controls;
 using TractorTool.ViewModels;
+using TractorTool.Views;
 
 internal static class NavigationChecks
 {
@@ -66,6 +68,34 @@ internal static class NavigationChecks
             Require(ReferenceEquals(owner.Child, foreign));
             Require(ReferenceEquals(((FAFrame)presenter.Child!).Content, current));
             presenter.Clear();
+        });
+
+        check("Nested settings preserve cancellation and factory failure does not dispose a visible page", () =>
+        {
+            var root = Path.Combine(output, "settings-navigation-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "profile")); paths.EnsureDataDirectories();
+            var vm = new SettingsViewModel(paths, new(Path.Combine(paths.ConfigRoot, "settings.json")), new(), new AppLog(paths.LogRoot));
+            var lifetime = new PageLifetimeProbe();
+            var pluginPage = new Border { DataContext = lifetime };
+            var allow = false;
+            pluginPage.AddHandler(FAFrame.NavigatingFromEvent, (_, e) => e.Cancel = !allow);
+            var category = new SettingsPage("Plugin", () => pluginPage); vm.AddPluginPage(category); vm.SelectedPage = category;
+            var settings = new SettingsView { DataContext = vm };
+            var outer = new PageHost(); var window = new Window { Content = outer, Width = 1000, Height = 600 };
+            window.Show();
+            try
+            {
+                Require(outer.Present(settings)); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+                Require(!outer.Present(new Border()) && lifetime.LeaveCount == 0);
+                vm.SelectedPage = new("Broken", () => throw new InvalidOperationException("fixture factory failure"));
+                Require(vm.SelectedPage == category && lifetime.LeaveCount == 0 && pluginPage.Parent is not null);
+                allow = true;
+                Require(outer.Present(new Border())); window.UpdateLayout();
+                // Exercise the same explicit lifetime cleanup as MainViewModel (Unloaded is idempotent).
+                settings.OnNavigatedFrom();
+                Require(lifetime.LeaveCount == 1);
+            }
+            finally { settings.OnNavigatedFrom(); vm.ExternalTools.Dispose(); window.Close(); }
         });
 
         check("View model commits and cleans up only after presentation succeeds", () =>

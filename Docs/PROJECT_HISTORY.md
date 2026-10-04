@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M3（进行中） | [E25 · 依赖申请、引用清理与设置分类（2026-10-04）](#evidence-dependency-flow) |
 | M1 | [E01 · 首轮工作与证据（2026-10-03）](#evidence-baseline) |
 | M1 | [E02 · 用户截图反馈后的修正（2026-10-03）](#evidence-adjustment) |
 | M1 | [E03 · 进一步 UI 反馈与参考源码调研（2026-10-03）](#evidence-research) |
@@ -1102,3 +1103,20 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false --no-restore
 文档核对：183 个仓库本地链接无缺失，E24 锚点唯一，记录在 artifacts/m3-packages/docs-links.json；Git 差异空白检查通过。
 
 当前验收与下一步继续维护在 [开发台账](DEVELOPMENT.md#current-status)。接续为视频插件的真实探测/执行/进度，不能将本轮 ZIP 静态核对记为安装或转码已通过。
+
+<a id="evidence-dependency-flow"></a>
+
+## E25：依赖申请、引用清理与设置分类（2026-10-04）
+
+用户确认：首次缺失依赖经确认下载、已装复用；首版软件统一维护可信源，插件卸载保留包，设置可清理未引用包。按图将软件设置和插件设置分组。补充要求是替换流程时清除旧命令/绑定，保持框架边界干净。
+
+- Contracts API 1.3 新增 RequestAsync（默认接口实现兼容既有实现类），原 AcquireAsync 语义不变。Core 合并确认/安装，申请预留覆盖直到获取租约；宿主确认对话框统一排队，退出可取消。
+- C# 固定源目录改成软件目录 PackageSources/default.json，构建/发布复制；无远程索引服务或自定义源功能。receipt v2 固化安装定义，源移除仍可复用和清理；修复使用当前源，旧 v1 可选升级失败保留有效 Ready 状态。
+- 引用由清单与管理日志重建，保护活动、禁用、失败、待激活和回退版本；不可读暂停清理。管理锁内同步到包服务，Core 同锁检查引用、请求、租约和事务。卸载重启前后正确分离引用与包文件，清理前展示具体清单并重新检查保护条件。
+- SettingsView 变为分类容器，正文拆通用/数据/依赖/关于，动态添加实际插件设置。宽窗口分栏、窄窗口分类选择，复用 PageHost 动画与边缘滚动。旧长页、返回设置命令、目录全量卡片入口已移除。嵌套页转发直接路由的离页取消，失败工厂不得清理仍显示的页面。
+- GPT-6.1-Sol/high 分 Core/UI 静态复审，修复：DirectoryError 正常 null；单坏目录终止恢复；安装定义与当前源混用；旧 receipt 迁移写失败误报坏包；错误页导航取消后的过早清理；嵌套取消传递；旧控件定位及 Loaded 异步调度的测试适配。审查未运行程序。
+- 包用例新增 8 项，Windows 合计 26 项（旧 receipt 占用仅 Windows）；加入设置嵌套导航回归，更新协议与未知源兼容检查。全部只编译，未执行。
+
+构建过程与证据：首次沙箱构建因 Avalonia 用户缓存日志访问被拒失败；允许构建缓存访问后发现拆分 AXAML 子元素的重复 xmlns，移到根声明后修复；随后修正新增测试缺 using。最终命令为 `dotnet build .\TractorTool.slnx -c Debug --no-restore -m:1 -nr:false`，全方案 0 错误、2 个 NU1900（NuGet 漏洞数据源不可达）警告，日志 `artifacts/m3-dependency-flow/build-debug.log`。静态确认宿主输出含 PackageSources/default.json，文档本地链接及 diff 空白检查通过。
+
+本轮未启动应用、检查程序、FFmpeg 或 UI 自动化，没有读写真实剪贴板/已安装插件/用户数据；未发布、未配置远程或推送。首次确认、来源失效后复用、卸载后清理、窗口分类布局/动画/退出、旧 DLL 兼容及真实网络/媒体行为仍待运行验收；编译和静态复审不替代这些证据。当前状态只维护 DEVELOPMENT.md。

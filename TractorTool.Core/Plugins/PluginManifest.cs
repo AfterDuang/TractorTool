@@ -3,7 +3,6 @@ using System.Text.RegularExpressions;
 using TractorTool.Contracts;
 using TractorTool.Core.Storage;
 using TractorTool.Contracts.Packages;
-using TractorTool.Core.Packages;
 
 namespace TractorTool.Core.Plugins;
 
@@ -34,7 +33,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
             _ => false
         };
-        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1";
+        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2";
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
@@ -42,9 +41,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
         if (!manifest.SupportedPlatforms.Contains(Platform, StringComparer.OrdinalIgnoreCase) &&
             !manifest.SupportedPlatforms.Contains(Rid, StringComparer.OrdinalIgnoreCase))
             return $"不支持当前平台 {Rid}";
-        if (manifest.Dependencies.Length != 0 && manifest.ApiVersion != "1.2") return "使用外部工具必须声明 API 1.2。";
-        foreach (var package in manifest.Dependencies)
-            if (!PackageCatalog.Supports(package, Rid)) return $"宿主尚不提供外部工具 {package.Id} {package.Version} / {Rid}。";
+        if (manifest.Dependencies.Length != 0 && manifest.ApiVersion is not ("1.2" or "1.3")) return "使用外部工具必须声明 API 1.2 或更高。";
         return null;
     }
 }

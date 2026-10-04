@@ -16,6 +16,7 @@ using TractorTool.Core.Storage;
 using TractorTool.Services;
 using TractorTool.UI;
 using TractorTool.ViewModels;
+using TractorTool.Views;
 
 if (args.Length != 2) throw new ArgumentException("Usage: checks <published-host> <isolated-evidence-directory>");
 var published = Path.GetFullPath(args[0]);
@@ -101,9 +102,10 @@ Check("Real page and private dependency render", () =>
 });
 Check("Plugin settings write through registered page", () =>
 {
-    vm.Settings.PluginSettings.Single().OpenCommand.Execute(null); window.UpdateLayout();
+    vm.ShowSettingsCommand.Execute(null);
+    vm.Settings.SelectedPage = vm.Settings.PluginSettings.Single(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
     vm.CurrentPage!.GetVisualDescendants().OfType<TextBox>().Single().Text = "integration-persisted";
-    vm.CurrentPage!.GetVisualDescendants().OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    vm.CurrentPage!.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "保存插件设置")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     Assert(File.ReadAllText(Path.Combine(paths.GetPluginDataDirectory("Test.Independent"), "settings.json")).Contains("integration-persisted"));
     vm.Navigation.Single(n => n.Key == "Test.Independent/home").OpenCommand.Execute(null); window.UpdateLayout();
     Assert(vm.CurrentPage!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "备注：integration-persisted"));
@@ -111,8 +113,9 @@ Check("Plugin settings write through registered page", () =>
 Check("Host settings render and immediately apply dark accent without a save button", () =>
 {
     vm.ShowSettingsCommand.Execute(null); window.UpdateLayout();
+    vm.Settings.SelectedPage = vm.Settings.SoftwareSettings[0]; window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
     var settingsPage = vm.CurrentPage ?? throw new InvalidOperationException("Settings page missing");
-    Assert(settingsPage.GetVisualDescendants().OfType<ComboBox>().Count() == 2);
+    Assert(settingsPage.GetVisualDescendants().OfType<SettingsGeneralView>().Single().GetVisualDescendants().OfType<ComboBox>().Count() == 2);
     vm.Settings.SelectedTheme = vm.Settings.Themes.Single(t => t.Id == "Dark");
     vm.Settings.SelectedAccent = vm.Settings.Accents.Single(a => a.Value == "#0F766E");
     Assert(Application.Current!.RequestedThemeVariant == ThemeVariant.Dark);

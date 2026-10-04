@@ -4,14 +4,17 @@ using Avalonia.Platform.Storage;
 using FluentAvalonia.UI.Controls;
 using FluentAvalonia.UI.Windowing;
 using TractorTool.ViewModels;
+using TractorTool.Services;
 
 namespace TractorTool.Views;
 public partial class MainWindow : FAAppWindow
 {
     private MainViewModel? _presentedViewModel;
+    private readonly HostDialogs _dialogs;
     public MainWindow()
     {
         InitializeComponent();
+        _dialogs = new(this);
         TitleBar.Height = 48;
         TitleBar.ExtendsContentIntoTitleBar = true;
         NavigationView.ItemInvoked += (_, e) =>
@@ -23,7 +26,7 @@ public partial class MainWindow : FAAppWindow
                 NavigationView.SetCurrentValue(FANavigationView.SelectedItemProperty, vm.SelectedNavigation);
         };
         DataContextChanged += (_, _) => ConnectPagePresenter();
-        Closed += (_, _) => _presentedViewModel?.Dispose();
+        Closed += (_, _) => { _dialogs.Dispose(); Disconnect(); _presentedViewModel?.Dispose(); };
         ActualThemeVariantChanged += (_, _) => ApplyCaptionColors();
         Opened += (_, _) => ApplyCaptionColors();
     }
@@ -31,7 +34,7 @@ public partial class MainWindow : FAAppWindow
     {
         var next = DataContext as MainViewModel;
         if (ReferenceEquals(next, _presentedViewModel)) return;
-        _presentedViewModel?.DetachPagePresenter();
+        Disconnect();
         _presentedViewModel = next;
         if (next is not null)
         {
@@ -45,13 +48,18 @@ public partial class MainWindow : FAAppWindow
                 return files.Count == 0 ? null : files[0].TryGetLocalPath()
                     ?? throw new InvalidOperationException("请选择本地插件 ZIP 文件。");
             };
-            next.Plugins.ConfirmAsync = async message => await new FAContentDialog
-            {
-                Title = "插件变更", Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
-                PrimaryButtonText = "确认", CloseButtonText = "取消", DefaultButton = FAContentDialogButton.Close
-            }.ShowAsync(this) == FAContentDialogResult.Primary;
+            next.Plugins.ConfirmAsync = message => _dialogs.ConfirmAsync("插件变更", message);
+            next.Settings.ExternalTools.ConnectConfirmation(_dialogs.ConfirmAsync);
         }
         next?.AttachPagePresenter(PagePresenter.Present, PagePresenter.Clear);
+    }
+    private void Disconnect()
+    {
+        if (_presentedViewModel is not { } previous) return;
+        previous.Plugins.PickArchiveAsync = null;
+        previous.Plugins.ConfirmAsync = null;
+        previous.Settings.ExternalTools.ConnectConfirmation(null);
+        previous.DetachPagePresenter();
     }
     private void ApplyCaptionColors()
     {

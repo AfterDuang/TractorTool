@@ -83,7 +83,7 @@ internal static class AppearanceChecks
                 if (Volatile.Read(ref failWrite)) throw new IOException("fixture storage unavailable");
             });
             var vm = new SettingsViewModel(paths, store, reader.Load(), new AppLog(paths.LogRoot));
-            var view = new SettingsView();
+            var view = new SettingsGeneralView();
             var errorPanel = view.FindControl<WrapPanel>("SaveErrorPanel")!;
             // VS Code preview constructs the view without a runtime data context.
             Require(!errorPanel.IsVisible);

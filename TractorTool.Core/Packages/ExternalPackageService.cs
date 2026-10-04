@@ -9,7 +9,7 @@ using TractorTool.Core.Storage;
 namespace TractorTool.Core.Packages;
 
 /// <summary>One host-owned service per data root. The host holds its data-root instance lock.</summary>
-public sealed class ExternalPackageService : IAsyncDisposable
+public sealed partial class ExternalPackageService : IAsyncDisposable
 {
     private readonly string _root;
     private readonly HttpClient _http;
@@ -23,23 +23,25 @@ public sealed class ExternalPackageService : IAsyncDisposable
     private readonly Task _recovery;
     private const string WorkMarker = "TractorTool.PackageWork.v1";
     public event Action? Changed;
-    public IReadOnlyList<PackageDefinition> Definitions { get; }
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
         IEnumerable<PackageDefinition>? definitions = null)
     {
         _root = AppPaths.Absolute(root); PackageFiles.CheckPath(_root);
         _http = http; _processes = processes; _log = log;
-        Definitions = Array.AsReadOnly((definitions ?? PackageCatalog.All).Where(d => d.Rid == rid)
-            .Select(d => d with { Tools = new ReadOnlyDictionary<string, PackageTool>(new Dictionary<string, PackageTool>(d.Tools)) }).ToArray());
+        _rid = rid;
+        var source = (definitions ?? LoadSource()).ToArray();
+        foreach (var definition in source) PackageCatalog.Validate(definition);
+        var catalog = (source).Where(d => d.Rid == rid)
+            .Select(d => d with { Tools = new ReadOnlyDictionary<string, PackageTool>(new Dictionary<string, PackageTool>(d.Tools)) }).ToArray();
         _entries = [];
-        foreach (var d in Definitions)
+        foreach (var d in catalog)
         {
-            AppPaths.ValidateId(d.Package.Id); AppPaths.ValidateId(d.Package.Version); AppPaths.ValidateId(d.Rid);
-            if (d.DownloadUri.Scheme != "https" || d.Sha256.Length != 64 || !d.Sha256.All(Uri.IsHexDigit) || d.Tools.Count == 0)
-                throw new InvalidDataException("外部工具目录元数据无效。");
+            PackageCatalog.Validate(d);
             var entry = new Entry(d, Path.Combine(_root, d.Package.Id, d.Package.Version, d.Rid));
             if (!_entries.TryAdd(d.Package, entry)) throw new InvalidDataException("外部工具目录重复。");
+            entry.SourceDefinition = d;
+            entry.HasFiles = Directory.Exists(entry.Directory);
             try
             {
                 foreach (var tool in d.Tools.Values) _ = PackageFiles.SafePath(entry.Directory, tool.Path);
@@ -49,6 +51,7 @@ public sealed class ExternalPackageService : IAsyncDisposable
             }
             catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
         }
+        RestoreInstalledDefinitions();
         _recovery = Task.Run(RecoverWork);
         _operations.Add(_recovery);
     }
@@ -57,14 +60,15 @@ public sealed class ExternalPackageService : IAsyncDisposable
     {
         lock (_gate)
         {
-            var e = Find(package);
-            return new(package, e.Definition.Rid, e.Phase, e.Downloaded, e.Total, e.Error,
-                Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes);
+            return Status(package);
         }
     }
 
     // Caller cancellation only cancels waiting. Explicit CancelInstall cancels the shared transfer for all waiters.
     public Task InstallAsync(PackageReference package, CancellationToken cancellationToken = default)
+        => InstallAsync(package, cancellationToken, repair: false);
+
+    private Task InstallAsync(PackageReference package, CancellationToken cancellationToken, bool repair)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Task task;
@@ -72,13 +76,20 @@ public sealed class ExternalPackageService : IAsyncDisposable
         {
             EnsureRunning(); var e = Find(package);
             if (e.Phase == PackagePhase.Ready && e.Operation is null) return Task.CompletedTask;
+            if (!e.SourceAvailable) throw new NotSupportedException("可信安装源暂未提供此包版本。");
             if (e.Operation is null)
             {
                 if (e.Users.Count != 0) throw new InvalidOperationException("工具仍被使用，不能重新安装。");
                 e.InstallCancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
                 e.Phase = PackagePhase.Downloading; e.Error = ""; e.Downloaded = 0; e.Total = null;
-                e.Operation = StartOperation(() => InstallCoreAsync(e, e.InstallCancellation.Token), e);
+                e.Operation = StartOperation(async () =>
+                {
+                    if (repair && e.HasFiles) RemoveFiles(e);
+                    lock (_gate) e.Definition = e.SourceDefinition!;
+                    await InstallCoreAsync(e, e.InstallCancellation.Token).ConfigureAwait(false);
+                }, e);
             }
+            else if (e.InstallCancellation is null) throw new InvalidOperationException("依赖正在清理。");
             task = e.Operation;
         }
         Notify();
@@ -96,24 +107,34 @@ public sealed class ExternalPackageService : IAsyncDisposable
         lock (_gate)
         {
             EnsureRunning(); var e = Find(package);
-            if (e.Operation is not null || e.Users.Count != 0) throw new InvalidOperationException("工具正在安装或使用中，暂时不能移除。");
+            if (!CanRemove(e)) throw new InvalidOperationException("依赖仍被插件引用、正在使用或引用状态不可确认，不能清理。");
             e.Phase = PackagePhase.Installing; e.Error = "";
             task = e.Operation = StartOperation(() =>
             {
-                PackageFiles.CheckPath(e.Directory);
-                if (Directory.Exists(e.Directory))
-                {
-                    // Detach atomically before deleting, so a partial delete can never remain Ready.
-                    var trash = NewWorkDirectory();
-                    var detached = Path.Combine(trash, "removed");
-                    try { Directory.Move(e.Directory, detached); PackageFiles.DeleteOwnedTree(_root, trash, "owner.txt"); }
-                    catch { Cleanup(trash); throw; }
-                }
+                RemoveFiles(e);
                 SetState(e, PackagePhase.Missing);
+                lock (_gate) { e.HasFiles = false; e.Requested = false; }
                 return Task.CompletedTask;
             }, e);
         }
         Notify(); return task;
+    }
+
+    private void RemoveFiles(Entry e)
+    {
+        PackageFiles.CheckPath(e.Directory);
+        if (Directory.Exists(e.Directory))
+        {
+            var trash = NewWorkDirectory();
+            try
+            {
+                Directory.Move(e.Directory, Path.Combine(trash, "removed"));
+                lock (_gate) e.HasFiles = false;
+                PackageFiles.DeleteOwnedTree(_root, trash, "owner.txt");
+            }
+            catch { Cleanup(trash); throw; }
+        }
+        lock (_gate) e.HasFiles = false;
     }
 
     internal Task<IPackageLease> AcquireAsync(PackageReference package, string owner, CancellationToken token)
@@ -137,7 +158,7 @@ public sealed class ExternalPackageService : IAsyncDisposable
                     {
                         linked.Token.ThrowIfCancellationRequested();
                         var path = PackageFiles.SafePath(e.Directory, tool.Path);
-                        if (await HashAsync(path, linked.Token) != receipt.Tools[name]) throw new InvalidDataException("工具文件校验失败，请移除后重新安装。");
+                        if (await HashAsync(path, linked.Token) != receipt.Tools[name]) throw new InvalidDataException("工具文件校验失败，请在外部依赖设置中重新安装。");
                     }
                     linked.Token.ThrowIfCancellationRequested();
                     completion.TrySetResult(new Lease(e.Directory, new ReadOnlyDictionary<string, string>(e.Definition.Tools.ToDictionary(
@@ -239,12 +260,12 @@ public sealed class ExternalPackageService : IAsyncDisposable
                 hashes[name] = await HashAsync(path, token);
             }
             await File.WriteAllTextAsync(Path.Combine(staging, "receipt.json"), JsonSerializer.Serialize(
-                new Receipt(1, e.Definition.Sha256, hashes, installedBytes)), token);
+                new Receipt(2, e.Definition.Sha256, hashes, installedBytes, e.Definition)), token);
             token.ThrowIfCancellationRequested();
             PackageFiles.CheckPath(e.Directory);
             Directory.CreateDirectory(Path.GetDirectoryName(e.Directory)!);
             Directory.Move(staging, e.Directory);
-            lock (_gate) e.InstalledBytes = installedBytes;
+            lock (_gate) { e.InstalledBytes = installedBytes; e.HasFiles = true; }
             SetState(e, PackagePhase.Ready);
         }
         catch (OperationCanceledException ex) when (!callerToken.IsCancellationRequested)
@@ -297,7 +318,7 @@ public sealed class ExternalPackageService : IAsyncDisposable
         var path = PackageFiles.SafePath(e.Directory, "receipt.json");
         if (!File.Exists(path) || new FileInfo(path).Length > 65536) throw new InvalidDataException("工具安装记录缺失或过大。");
         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path));
-        if (receipt is null || receipt.Schema != 1 || receipt.ArchiveHash != e.Definition.Sha256 || receipt.Tools is null ||
+        if (receipt is null || receipt.Schema is not (1 or 2) || receipt.ArchiveHash != e.Definition.Sha256 || receipt.Tools is null ||
             receipt.Tools.Count != e.Definition.Tools.Count || receipt.InstalledBytes <= 0 || receipt.InstalledBytes > 1024L * 1024 * 1024)
             throw new InvalidDataException("工具安装记录与目录不符。");
         foreach (var (name, tool) in e.Definition.Tools)
@@ -336,7 +357,7 @@ public sealed class ExternalPackageService : IAsyncDisposable
     }
     private sealed class Entry(PackageDefinition definition, string directory)
     {
-        public PackageDefinition Definition { get; } = definition;
+        public PackageDefinition Definition { get; set; } = definition;
         public string Directory { get; } = directory;
         public PackagePhase Phase;
         public string Error = "";
@@ -346,8 +367,15 @@ public sealed class ExternalPackageService : IAsyncDisposable
         public Dictionary<string, int> Users { get; } = [];
         public Task? Operation;
         public CancellationTokenSource? InstallCancellation;
+        public PackageDefinition? SourceDefinition;
+        public bool SourceAvailable => SourceDefinition is not null;
+        public bool HasFiles;
+        public bool Requested;
+        public int Requests;
+        public Task? Preparation;
     }
-    private sealed record Receipt(int Schema, string ArchiveHash, Dictionary<string, string> Tools, long InstalledBytes);
+    private sealed record Receipt(int Schema, string ArchiveHash, Dictionary<string, string> Tools, long InstalledBytes,
+        PackageDefinition? Definition = null);
     private sealed class Lease(string directory, IReadOnlyDictionary<string, string> tools, Action release) : IPackageLease
     {
         private Action? _release = release;

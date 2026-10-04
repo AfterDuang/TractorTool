@@ -1,0 +1,19 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls" x:Class="TractorTool.Views.SettingsAboutView" x:DataType="vm:SettingsViewModel">
+<ScrollViewer Classes="pageScroll"><StackPanel Classes="pageBody" Spacing="20">
+<StackPanel Spacing="8">
+  <TextBlock Text="关于" Classes="sectionTitle" Margin="0,0,0,4" />
+  <Border Classes="card">
+    <Grid ColumnDefinitions="Auto,*,Auto">
+      <Image Source="/Assets/tractortool.png" Width="48" Height="48" Margin="0,0,16,0" />
+      <StackPanel Grid.Column="1" Spacing="6">
+        <TextBlock Text="TractorTool" FontSize="18" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding ApplicationVersion, StringFormat='版本 {0} · 你的桌面工具箱'}" Classes="caption" TextWrapping="Wrap" />
+      </StackPanel>
+    </Grid>
+  </Border>
+  <ui:SettingRow Header="退出应用" Description="关闭窗口会隐藏到托盘；在此完全退出并停止后台服务。" Icon="Info">
+    <Button Content="退出应用" Command="{Binding ExitCommand}" />
+  </ui:SettingRow>
+</StackPanel>
+</StackPanel></ScrollViewer>
+</UserControl>

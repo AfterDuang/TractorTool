@@ -6,11 +6,14 @@ public sealed record PackageStatus(PackageReference Package, string Rid, Package
     long DownloadedBytes, long? TotalBytes, string Error, IReadOnlyList<string> Users, bool CanCancel,
     string Directory, long? InstalledBytes);
 
-/// <summary>Read/acquire only. Downloads are an explicit user operation in host settings.</summary>
+/// <summary>Plugin-scoped dependencies. The host owns sources, installation consent and storage.</summary>
 public interface IExternalPackageService
 {
     PackageStatus GetStatus(PackageReference package);
     Task<IPackageLease> AcquireAsync(PackageReference package, CancellationToken cancellationToken = default);
+    /// <summary>Reuse an installed package, or ask the host to confirm and install it. API 1.3.</summary>
+    Task<IPackageLease> RequestAsync(PackageReference package, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("此宿主尚不支持依赖安装申请。");
 }
 
 /// <summary>Hold until all processes and output reads using these tools have completed.</summary>

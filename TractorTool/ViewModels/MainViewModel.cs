@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
+using TractorTool.Core.Packages;
 using TractorTool.Core.Storage;
 using TractorTool.Services;
 using TractorTool.UI;
@@ -32,6 +33,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private readonly Func<Task> _exit;
     private readonly NavigationIconStore _icons;
     private readonly PluginManager? _manager;
+    private readonly PluginPackageReferences? _packageReferences;
     private readonly IReadOnlyCollection<string> _legacyDisabled;
     private Task? _initialization;
     private readonly List<RegisteredPage> _registered = [];
@@ -55,22 +57,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
     [ObservableProperty] private string _status = "正在加载插件…";
     [ObservableProperty] private NavigationItem? _selectedNavigation;
-    [ObservableProperty] private bool _canGoBack;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLogsSelected))]
     private string _activeNavigation = "";
     public bool IsLogsSelected => ActiveNavigation == "logs";
 
     public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit, PluginManager? manager = null,
-        IReadOnlyCollection<string>? legacyDisabled = null)
+        IReadOnlyCollection<string>? legacyDisabled = null, ExternalPackageService? packages = null)
     {
         _plugins = plugins; _log = log; Settings = settings; _exit = exit; _manager = manager;
         _legacyDisabled = legacyDisabled ?? [];
+        if (packages is not null) _packageReferences = new(paths, manager, packages);
         _icons = new NavigationIconStore(log);
         Settings.ExitCommand = ExitCommand;
         Logs = new LogsViewModel(paths, log);
         Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand, manager, log);
-        Home = new HomeViewModel(ShowPluginsCommand, ShowSettingsCommand);
+        Home = new HomeViewModel(ShowPluginsCommand, new RelayCommand(() =>
+        {
+            ShowSettings();
+            if (CurrentPage is SettingsView) Settings.SelectedPage = Settings.SoftwareSettings[0];
+        }));
         Navigation.Add(new("主页", ShowHomeCommand, "home", ToolIconKind.Home, imageSource: _icons.GetHostIcon(ToolIconKind.Home)));
         FooterNavigation = [
             new("日志", ShowLogsCommand, "logs", ToolIconKind.Logs, imageSource: _icons.GetHostIcon(ToolIconKind.Logs)),
@@ -103,6 +109,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             }
             if (_detached) return;
         }
+        _packageReferences?.SetDiscovered(_plugins.Records, _plugins.DirectoryError);
         await _plugins.LoadAsync((record, plugin) =>
         {
             if (_detached) return;
@@ -119,11 +126,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (_detached) return;
         foreach (var page in _registered)
         {
+            if (page.IsSettings)
+            {
+                Settings.AddPluginPage(new(page.Title, page.Factory));
+                continue;
+            }
             var record = _plugins.Records.Single(r => r.Manifest?.Id == page.PluginId && r.State == PluginState.Loaded);
             var item = new NavigationItem(page.Title, new RelayCommand(() => OpenPluginPage(page)),
                 page.PluginId + "/" + page.Id, page.Options.Icon, page.Options.Description,
                 _icons.GetPluginIcon(record.Directory, page.Options.IconPath, page.PluginId));
-            if (page.IsSettings) Settings.PluginSettings.Add(item); else Navigation.Add(item);
+            Navigation.Add(item);
         }
         Plugins.Update(_registered, Navigation);
         Home.Update(Plugins.Items, Plugins.Summary, Plugins.DirectoryError);
@@ -135,22 +147,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     {
         var key = page.PluginId + "/" + page.Id;
         if (_detached || _navigating || _pageKey == key) return;
-        var navigationKey = page.IsSettings ? "settings" : key;
         _navigating = true;
         try
         {
-            Navigate(key, navigationKey, page.Title, page.Options.Description,
-                page.Factory() ?? throw new InvalidDataException("页面工厂返回空值。"), page.IsSettings);
+            Navigate(key, key, page.Title, page.Options.Description,
+                page.Factory() ?? throw new InvalidDataException("页面工厂返回空值。"));
         }
         catch (Exception ex)
         {
-            ShowNavigationError(key, navigationKey, page.Title, page.PluginId, ex,
-                new RelayCommand(() => OpenPluginPage(page)), page.IsSettings);
+            ShowNavigationError(key, key, page.Title, page.PluginId, ex,
+                new RelayCommand(() => OpenPluginPage(page)));
         }
         finally { _navigating = false; }
     }
 
-    private void Navigate(string key, string navigationKey, string title, string description, Control view, bool back = false)
+    private void Navigate(string key, string navigationKey, string title, string description, Control view)
     {
         // A parented control belongs to someone else; never clean it up as our candidate.
         if (view.Parent is not null || view.GetVisualParent() is not null)
@@ -176,7 +187,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         _pageKey = key;
         ActiveNavigation = navigationKey;
         SelectedNavigation = Navigation.Concat(FooterNavigation).FirstOrDefault(p => p.Key == navigationKey);
-        PageTitle = title; PageDescription = description; CanGoBack = back;
+        PageTitle = title; PageDescription = description;
         CurrentPage = view;
         // Commit before cleanup; callbacks cannot reenter navigation while it is in progress.
         ReleasePage(previous);
@@ -222,7 +233,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         finally { _navigating = false; }
     }
     private void ShowNavigationError(string key, string navigationKey, string title, string source,
-        Exception error, IRelayCommand retry, bool back = false)
+        Exception error, IRelayCommand retry)
     {
         if (_detached) return;
         _log.Write(source, "页面创建或呈现失败", error);
@@ -231,7 +242,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             Navigate(key + "/error", navigationKey, title, "页面暂时无法打开",
                 new MessageView { DataContext = new MessageViewModel("页面加载失败",
-                    error.GetBaseException().Message, retry, ShowLogsCommand) }, back);
+                    error.GetBaseException().Message, retry, ShowLogsCommand) });
         }
         catch (Exception ex) { _log.Write("Navigation", "错误页呈现失败", ex); Status = "页面呈现失败，请查看日志后重试。"; }
     }
@@ -246,7 +257,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         {
             if (!present(initial)) Status = "当前页面取消了切换。";
         }
-        catch (Exception ex) { ShowNavigationError(_pageKey, ActiveNavigation, PageTitle, "Navigation", ex, SelectedNavigation?.OpenCommand ?? ShowHomeCommand, CanGoBack); }
+        catch (Exception ex) { ShowNavigationError(_pageKey, ActiveNavigation, PageTitle, "Navigation", ex, SelectedNavigation?.OpenCommand ?? ShowHomeCommand); }
         finally { _navigating = false; }
     }
     public void DetachPagePresenter()
@@ -260,7 +271,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         try { _clearPage?.Invoke(); }
         catch (Exception ex) { _log.Write("Navigation", "退出页面呈现清理失败", ex); }
     }
-    [RelayCommand] private void GoBack() => ShowSettings();
     [RelayCommand] private Task ExitAsync() => _exit();
     public void NotifyTrayUnavailable() => Status = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
     private void OnLogChanged()
@@ -282,6 +292,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (_detached) return;
         _detached = true;
         Settings.ExternalTools.Dispose();
+        _packageReferences?.Dispose();
         _log.Changed -= OnLogChanged;
         var previous = CurrentPage;
         CurrentPage = null;

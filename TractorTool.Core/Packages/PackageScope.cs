@@ -12,10 +12,16 @@ public sealed class PackageScope(ExternalPackageService service, string owner,
     private bool _disposed;
     public PackageStatus GetStatus(PackageReference package) { Check(package); return service.GetStatus(package); }
     public async Task<IPackageLease> AcquireAsync(PackageReference package, CancellationToken cancellationToken = default)
+        => await TakeLeaseAsync(package, false, cancellationToken).ConfigureAwait(false);
+    public async Task<IPackageLease> RequestAsync(PackageReference package, CancellationToken cancellationToken = default)
+        => await TakeLeaseAsync(package, true, cancellationToken).ConfigureAwait(false);
+    private async Task<IPackageLease> TakeLeaseAsync(PackageReference package, bool request, CancellationToken cancellationToken)
     {
         Check(package);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stoppingToken);
-        var inner = await service.AcquireAsync(package, owner, linked.Token).ConfigureAwait(false);
+        var inner = request
+            ? await service.RequestAsync(package, owner, linked.Token).ConfigureAwait(false)
+            : await service.AcquireAsync(package, owner, linked.Token).ConfigureAwait(false);
         lock (_gate)
         {
             if (_disposed || linked.IsCancellationRequested) { inner.Dispose(); throw new OperationCanceledException(linked.Token); }

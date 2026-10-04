@@ -42,10 +42,8 @@
       </nav:FANavigationView.MenuItemTemplate>
       <Border Classes="themeSurface" Background="{DynamicResource AppBackgroundBrush}" BorderThickness="1,0,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
         <Grid RowDefinitions="Auto,*,Auto">
-          <Grid Margin="28,26,28,20" ColumnDefinitions="Auto,*">
-            <Button IsVisible="{Binding CanGoBack}" Command="{Binding GoBackCommand}" Classes="quiet"
-                    Width="36" Height="36" Margin="0,0,12,0" VerticalAlignment="Center" AutomationProperties.Name="返回设置" Content="←" />
-            <StackPanel Grid.Column="1" Spacing="6">
+          <Grid Margin="28,26,28,20">
+            <StackPanel Spacing="6">
               <TextBlock Text="{Binding PageTitle}" Classes="pageTitle" />
               <TextBlock Text="{Binding PageDescription}" Classes="muted" />
             </StackPanel>

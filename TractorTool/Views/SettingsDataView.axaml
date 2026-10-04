@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:TractorTool.ViewModels" xmlns:ui="using:TractorTool.UI.Controls" x:Class="TractorTool.Views.SettingsDataView" x:DataType="vm:SettingsViewModel">
+<ScrollViewer Classes="pageScroll"><StackPanel Classes="pageBody" Spacing="20">
+<StackPanel Spacing="8">
+  <TextBlock Text="存储位置" Classes="sectionTitle" Margin="0,0,0,4" />
+  <ui:SettingRow Header="数据目录" Description="{Binding Paths.DataRoot}" Icon="Folder">
+    <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.DataRoot}" />
+  </ui:SettingRow>
+  <ui:SettingRow Header="插件目录" Description="{Binding Paths.PluginRoot}" Icon="Tools">
+    <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.PluginRoot}" />
+  </ui:SettingRow>
+  <TextBlock Text="插件程序与用户数据分别存放。当前版本暂不提供数据目录迁移。" Classes="caption" Margin="4,4" />
+  <Expander Header="更多位置" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+    <StackPanel Spacing="12">
+      <TextBlock Text="软件目录" Classes="caption" />
+      <SelectableTextBlock Text="{Binding Paths.AppRoot}" TextWrapping="Wrap" />
+      <TextBlock Text="启动配置" Classes="caption" />
+      <SelectableTextBlock Text="{Binding Paths.BootstrapFile}" TextWrapping="Wrap" />
+      <TextBlock Text="外部工具目录" Classes="caption" />
+      <SelectableTextBlock Text="{Binding Paths.PackageRoot}" TextWrapping="Wrap" />
+    </StackPanel>
+  </Expander>
+  <TextBlock Text="{Binding DirectoryStatus}" Classes="caption" IsVisible="{Binding HasDirectoryStatus, FallbackValue=False, TargetNullValue=False}" />
+</StackPanel>
+</StackPanel></ScrollViewer>
+</UserControl>

@@ -67,7 +67,7 @@ public partial class App : Application
                     OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null, _packages);
                 if (managementError is not null) _plugins.Discover([], startupError: managementError);
                 _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log, _packages), ExitAsync,
-                    managementError is null ? _pluginManager : null, settings.DisabledPlugins);
+                    managementError is null ? _pluginManager : null, settings.DisabledPlugins, _packages);
                 var window = new MainWindow { DataContext = _vm };
                 desktop.MainWindow = window;
                 window.Closing += (_, e) =>
