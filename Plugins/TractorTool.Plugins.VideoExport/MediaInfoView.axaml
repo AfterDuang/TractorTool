@@ -1,17 +1,20 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.Plugins.VideoExport" x:Class="TractorTool.Plugins.VideoExport.MediaInfoView" x:DataType="vm:VideoViewModel">
-  <Grid x:Name="Columns" ColumnDefinitions="360,16,*" Margin="28,0,0,0">
-    <ScrollViewer x:Name="InputScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch">
-      <vm:VideoInputView Margin="0,0,8,12" />
+  <Grid x:Name="Columns" ColumnDefinitions="320,20,*" Margin="28,0,28,0">
+    <ScrollViewer x:Name="InputScroll" Classes="pageScroll">
+      <vm:VideoInputView Margin="0,0,4,12" />
     </ScrollViewer>
-    <Grid x:Name="ReportPanel" Grid.Column="2" RowDefinitions="Auto,*" Margin="0,0,0,4">
-      <Grid ColumnDefinitions="*,Auto" Margin="0,0,28,12">
-        <TextBlock Text="视频信息" Classes="sectionTitle" VerticalAlignment="Center" />
-        <Button Grid.Column="1" Content="复制全部" Click="CopyReport" IsEnabled="{Binding HasMediaReport}" />
+    <Border x:Name="ReportPanel" Grid.Column="2" Classes="card" Padding="0" ClipToBounds="True">
+      <Grid RowDefinitions="Auto,*">
+        <Grid ColumnDefinitions="*,Auto" Margin="18,14">
+          <TextBlock Text="视频信息" Classes="sectionTitle" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="复制全部" Click="CopyReport" IsEnabled="{Binding HasMediaReport}" Classes="quiet" />
+        </Grid>
+        <TextBox Grid.Row="1" Text="{Binding MediaReport, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True"
+                 PlaceholderText="拖入视频后，在这里查看媒体信息。" FontFamily="Cascadia Mono, Consolas" FontSize="13"
+                 Background="Transparent" BorderThickness="0" CornerRadius="0" Padding="18,4,18,18"
+                 TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" AutomationProperties.Name="完整视频信息" />
       </Grid>
-      <TextBox Grid.Row="1" Text="{Binding MediaReport, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True"
-               PlaceholderText="将视频拖入左侧，识别结果会显示在这里。" FontFamily="Cascadia Mono, Consolas" FontSize="13"
-               TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" Padding="18" AutomationProperties.Name="完整视频信息" />
-    </Grid>
+    </Border>
   </Grid>
 </UserControl>

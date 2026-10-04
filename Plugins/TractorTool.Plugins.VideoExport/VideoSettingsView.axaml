@@ -3,6 +3,9 @@
              x:Class="TractorTool.Plugins.VideoExport.VideoSettingsView" x:DataType="vm:VideoViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="16">
+      <ui:SettingRow Header="GPU 加速" Description="可用时优先使用 GPU；不支持的格式、VBR 两次或硬件失败时，自动使用 CPU 并显示原因。" Icon="Video">
+        <ToggleSwitch IsChecked="{Binding UseGpuAcceleration}" IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="GPU 加速" />
+      </ui:SettingRow>
       <ui:SettingRow Header="选择视频后读取信息" Description="选择文件后自动读取时长、尺寸和音轨。" Icon="Video">
         <ToggleSwitch IsChecked="{Binding AutoReadOnSelect}" IsEnabled="{Binding CanEditSettings}" />
       </ui:SettingRow>

@@ -5,14 +5,13 @@
     <Grid x:Name="Header" ColumnDefinitions="*,Auto" Margin="28,24,28,18" RowDefinitions="Auto,Auto">
       <TextBlock Text="视频工具" Classes="pageTitle" />
       <TextBlock Grid.Row="1" Text="多格式导出与视频信息提取" Classes="muted" Margin="0,4,0,0" />
-      <StackPanel x:Name="Functions" Grid.Column="1" Grid.RowSpan="2" Orientation="Horizontal" Spacing="18" VerticalAlignment="Center">
-        <RadioButton Content="多格式导出" GroupName="VideoFunction" IsChecked="{Binding !IsInformation, Mode=OneWay}" Click="ShowExport" />
-        <RadioButton Content="视频信息" GroupName="VideoFunction" IsChecked="{Binding IsInformation, Mode=OneWay}" Click="ShowInformation" />
-      </StackPanel>
+      <TabStrip x:Name="Functions" Grid.Column="1" Grid.RowSpan="2" VerticalAlignment="Center" SelectionChanged="FunctionChanged">
+        <TabStripItem Content="多格式导出" /><TabStripItem Content="视频信息" />
+      </TabStrip>
     </Grid>
     <ui:PageHost x:Name="Workspace" Grid.Row="1" />
     <StackPanel Grid.Row="2" Margin="28,8,28,12" Spacing="4">
-      <Grid ColumnDefinitions="*,Auto">
+      <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasStatus}">
         <TextBlock Text="{Binding Status}" Classes="caption" VerticalAlignment="Center" />
         <Button Grid.Column="1" Content="取消当前操作" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
       </Grid>

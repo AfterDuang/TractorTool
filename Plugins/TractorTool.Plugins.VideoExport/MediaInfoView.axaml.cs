@@ -10,8 +10,8 @@ public partial class MediaInfoView : UserControl
         SizeChanged += (_, e) =>
         {
             var narrow = e.NewSize.Width < 850;
-            Columns.ColumnDefinitions = new(narrow ? "*" : "360,16,*");
-            Columns.RowDefinitions = new(narrow ? "180,12,*" : "*");
+            Columns.ColumnDefinitions = new(narrow ? "*" : "320,20,*");
+            Columns.RowDefinitions = new(narrow ? "Auto,16,*" : "*");
             Grid.SetColumn(ReportPanel, narrow ? 0 : 2); Grid.SetRow(ReportPanel, narrow ? 2 : 0);
         };
     }

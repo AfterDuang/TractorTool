@@ -21,14 +21,14 @@
 - 可信源是随宿主分发的 PackageSources/default.json，目前 Gyan FFmpeg 9.0.2 essentials/win-x64；无远程刷新/自定义源。receipt v2 保留独立安装定义，v1 可读、升级失败只警告。
 - PluginPackageReferences 从清单/管理日志重建引用，含禁用、失败、待激活及回退版本；不可确认则禁止清理。插件卸载不删除包，重启生效后才解除引用，清理同时检查声明/申请/租约/事务。
 - SettingsPage.Parent 表达层级；SelectedPage、SelectedCategory 和 Breadcrumbs 分离。SettingsView 仍只负责页呈现/生命周期，复用 PageHost 动画、取消和错误处理；窄窗口只折叠大类列表。主页外观快捷入口直接到外观子页。
-- 视频插件 0.3.0 / API 1.5 / UI 1.3 声明 FFmpeg 9.0.2，支持单视频、多预设串行导出：MP4/MKV/MOV + H.264/AAC，CPU/NVIDIA/Intel/AMD 选择，可选首帧封面，真实 stdout 进度、取消与无覆盖提交。GPU 先实际编码 8 帧检查所选链，再完整导出，不静默切回 CPU。
-- 用户明确视频信息是拖入文件识别并展示 MediaInfo 风格报告，不播放/预览。右上切换导出/信息；导出页左输入与参数、右预设卡片，信息页左拖放、右完整可复制文本。窄窗口分上下，区域独立滚动。UI 1.3 UsesCustomHeader 仅为导航页让出标题/视口，默认旧布局；功能切换复用 PageHost。
+- 视频插件 0.4.0 / API 1.5 / UI 1.3 声明 FFmpeg 9.0.2，支持单视频、多预设串行导出：MP4/MKV/MOV/TS + H.264/AAC、WebM + VP9/Opus，VBR 一次/真正两次/CBR，可选首帧封面，真实 stdout 进度、取消与无覆盖提交。GPU 偏好移到插件设置（默认关闭），由插件检查硬件；用户确认不支持或失败时自动使用 CPU 并保留原因。VBR 两次与 WebM 当前使用 CPU，码率模式不改变源帧率。
+- 用户明确视频信息是拖入文件识别并展示 MediaInfo 风格报告，不播放/预览。右上原生页签切换导出/信息；导出页左侧紧凑输入与主要参数（画面选项折叠）、右预设卡片，输出路径/按钮统一在右下；未开始的进度和空结果隐藏。信息页左拖放、右完整可复制文本，左右外边距对齐。窄窗口分上下，区域独立滚动。UI 1.3 UsesCustomHeader 仅为导航页让出标题/视口，默认旧布局；功能切换复用 PageHost。
 - 当前仅支持已识别的 8 位 SDR、逐行、直角旋转素材；高位深/HDR/广色域/隔行等明确拒绝。封面先铺黑合成不透明画面再覆盖第 0 帧。首帧/后续画面、VFR 时间轴、音画同步及硬件效果仍待真实验收。
 - 导出快照参数、检查源文件大小/修改时间、复制封面到独有事务目录；输出探测后无覆盖提交，只清理自己创建的指定文件，进度提交前最多 99%。切页/隐藏不取消，停止经 UI dispatcher 取消并等待；生命周期和包租约覆盖整个操作。
-- 视频偏好和预设名称/参数/勾选自动保存，不持久化输入或输出路径；旧偏好兼容、坏配置保留、写失败可重试。批次快照勾选项，失败继续余项，支持逐项/整批取消，运行中锁定编辑；封面只读共享锁覆盖整批。公共有限任务与中断恢复尚未实现。拒绝安装正常保留输入、退出忙碌，可再次申请；没有模拟结果。
+- 视频偏好和预设名称/参数/勾选自动保存，不持久化输入或输出路径；旧 schema 1 预设兼容（默认 VBR 一次，忽略旧 Encoder，保存时移除），坏配置保留、写失败可重试。批次快照勾选项，失败继续余项，支持逐项/整批取消，运行中锁定编辑；封面只读共享锁覆盖整批。公共有限任务与中断恢复尚未实现。拒绝安装正常保留输入、退出忙碌，可再次申请；没有模拟结果。
 - E27 修正拒绝安装的异常控制流，以及 File.GetAttributes 对正常缺失路径抛出再捕获造成的调试噪声。改用 FileInfo.Attributes 的 -1 缺失值，仍向上检查重解析点，权限等其他错误保留。未改插件/依赖卸载分离及清理保护。
 - 全局计数及正常页脚空白移除，统计仍在主页/插件管理摘要；Notice 仅用于实际初始化/呈现失败、托盘不可用提示。
-- 本轮只做源码/绑定与静态检查，先前 GPT-6.1-Sol/high 复审仅覆盖 E29。最终 Debug 12 工程 0 错误/0 警告，Release 宿主/视频独立构建通过，235 个宿主文件哈希未变。19 项进程、15 组视频、29 项 Windows 包检查均只编译；没有运行程序、FFmpeg 或 UI，不据此关闭 M3。
+- 本轮修改仅在视频插件和文档，先前 GPT-6.1-Sol/high 复审仅覆盖 E29。Debug 12 工程 0 错误/0 警告；复用 E30 发布 SDK 独立构建视频插件通过，宿主未修改。19 项进程、22 组视频、29 项 Windows 包检查均只编译；没有运行程序、FFmpeg 或 UI，不据此关闭 M3。
 
 ## 3. 入口与产物
 
@@ -39,8 +39,8 @@
 | 依赖/进程 | [PackageManagement](../TractorTool.Core/Packages/PackageManagement.cs)、[PluginPackageReferences](../TractorTool.Core/Plugins/PluginPackageReferences.cs)、[ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs) |
 | 打包/检查 | [Build-VideoPlugin](../scripts/Build-VideoPlugin.ps1)、[VideoChecks](../tests/TractorTool.VideoChecks/Program.cs)、[NavigationChecks](../tests/TractorTool.IntegrationChecks/NavigationChecks.cs) |
 
-当前可供用户测试：artifacts/video-workspace/host；插件 ZIP 为 artifacts/video-workspace/video/TractorTool.VideoExport-0.3.0.zip。需搭配 API 1.5 / UI 1.3 新宿主，拖 ZIP 后显式退出重启，不自动安装；源码编译不会替换旧 DLL。构建/发布/文件检查证据在 artifacts/video-workspace，完整步骤只见 DEVELOPMENT。已有用户 `.vscode/launch.json` 修改保持原样，不纳入本轮提交。
+当前可供用户测试：复用 artifacts/video-workspace/host；插件 ZIP 为 artifacts/video-rate-control/video/TractorTool.VideoExport-0.4.0.zip。要求 API 1.5 / UI 1.3，E30 宿主已满足，本轮不用更换；拖 ZIP 后显式退出重启，不自动安装，源码编译不会替换旧 DLL。本轮构建/独立包/静态证据在 artifacts/video-rate-control，完整步骤只见 DEVELOPMENT。已有用户 `.vscode/launch.json` 修改保持原样，不纳入本轮提交。
 
 下一步按用户测试反馈收敛真实输出、首帧/VFR、音画同步、GPU 与取消，收敛 M4 预设/串行行为，再接公共有限任务与中断恢复；保留 M2、依赖/设置、旧 DLL 及进程等未验收项。独立打包后已正常 restore/build 恢复源码依赖图。
 
-后续替换本快照，详细过程归 [E30](PROJECT_HISTORY.md#evidence-video-workspace)。
+后续替换本快照，详细过程归 [E31](PROJECT_HISTORY.md#evidence-video-rate-control)。

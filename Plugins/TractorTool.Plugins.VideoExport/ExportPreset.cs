@@ -10,7 +10,7 @@ public partial class ExportPreset : ObservableObject
     public ExportPresetData Data { get; private set; }
     public string Name => Data.Name;
     public string Summary => $"{ExportPlan.Containers.First(c => c.Value == Data.Options.Container).Name} · " +
-        ExportPlan.Encoders.First(c => c.Value == Data.Options.Encoder).Name + Environment.NewLine +
+        ExportPlan.RateControls.First(c => c.Value == Data.Options.RateControl).Name + Environment.NewLine +
         (Data.Options.Width == 0 ? "保持源尺寸" : $"{Data.Options.Width} × {Data.Options.Height}") +
         $" · {Data.Options.VideoKbps / 1000d:0.###} Mbps / {Data.Options.AudioKbps} kbps" + Environment.NewLine +
         (Data.Options.UseCover ? "替换第一帧" : "保留原始第一帧");
@@ -18,10 +18,16 @@ public partial class ExportPreset : ObservableObject
     public bool CanEdit => _owner.CanEditPresets;
     public void NotifyEditing() => OnPropertyChanged(nameof(CanEdit));
     [ObservableProperty] private bool _selected;
-    [ObservableProperty] private string _estimatedSize = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasEstimate))] private string _estimatedSize = "";
+    public bool HasEstimate => EstimatedSize.Length != 0;
     [ObservableProperty] private string _status = "待导出";
-    [ObservableProperty] private string _error = "";
-    [ObservableProperty] private string _outputPath = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError))] private string _error = "";
+    public bool HasError => Error.Length != 0;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasOutput))] private string _outputPath = "";
+    public bool HasOutput => OutputPath.Length != 0;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasExecutionInfo))] private string _executionInfo = "";
+    public bool HasExecutionInfo => ExecutionInfo.Length != 0;
+    [ObservableProperty] private bool _hasProgress;
     [ObservableProperty] private double _progress;
     [ObservableProperty] private bool _isIndeterminate;
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(CancelCommand))] private bool _canCancel;
@@ -40,11 +46,13 @@ public partial class ExportPreset : ObservableObject
     public ExportPresetData Snapshot() => Data with { Selected = Selected };
     public void Update(ExportPresetData data)
     {
-        Data = data; Status = "待导出"; Error = ""; OutputPath = ""; Progress = 0;
+        Data = data; ResetResult();
         OnPropertyChanged(nameof(Name)); OnPropertyChanged(nameof(Summary));
     }
+    public void ResetResult()
+    { Status = "待导出"; Error = ""; OutputPath = ""; ExecutionInfo = ""; Progress = 0; HasProgress = false; }
     public void Prepare()
-    { CancelRequested = false; Status = "等待导出"; Error = ""; OutputPath = ""; Progress = 0; IsIndeterminate = false; CanCancel = true; }
+    { ResetResult(); CancelRequested = false; Status = "等待导出"; HasProgress = true; IsIndeterminate = false; CanCancel = true; }
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     { CancelRequested = true; Status = "已取消"; CanCancel = false; _owner.CancelPreset(this); }

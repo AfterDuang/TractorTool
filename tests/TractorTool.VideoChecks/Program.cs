@@ -47,7 +47,7 @@ Check("Malformed and missing stream data is rejected", () =>
     Reject(""); Reject("{"); Reject("{}"); Reject("[]"); Reject("""{"streams":[]}"""); Reject("""{"streams":{}}""");
 });
 MediaInfo Sample() => MediaProbe.Parse("""{"format":{"duration":"12.5"},"streams":[{"index":2,"codec_type":"video","width":1920,"height":1080,"codec_name":"h264","pix_fmt":"yuv420p","field_order":"progressive","avg_frame_rate":"25/1","time_base":"1/12800"},{"codec_type":"audio"}]}""");
-var settings = new ExportOptions("mp4", "libx264", 0, 0, 8000, 192, false);
+var settings = new ExportOptions("mp4", 0, 0, 8000, 192, false);
 Check("Structured media keeps stream identity, rotation, SAR and timebase", () =>
 {
     var info = MediaProbe.Parse("""{"streams":[{"index":3,"codec_type":"video","width":720,"height":576,"sample_aspect_ratio":"16:15","time_base":"1/90000","side_data_list":[{"rotation":-90}]}]}""");
@@ -105,18 +105,41 @@ Check("Cancelled export keeps source and previous output intact", () =>
 {
     ExportFixture(true).GetAwaiter().GetResult();
 });
-async Task ExportFixture(bool cancel)
+Check("Two passes reuse their private statistics and clean up on success", () => ExportFixture(false, twoPass: true).GetAwaiter().GetResult());
+Check("Cancellation during analysis never starts pass two and removes statistics", () => ExportFixture(true, twoPass: true).GetAwaiter().GetResult());
+Check("Unavailable GPUs fall back to CPU with a visible reason", () => ExportFixture(false, gpu: true).GetAwaiter().GetResult());
+Check("GPU failure after capability check retries once on CPU", () => ExportFixture(false, gpu: true, gpuFailsAfterCheck: true).GetAwaiter().GetResult());
+Check("Two-pass mode uses CPU despite GPU preference and explains why", () => ExportFixture(false, twoPass: true, gpu: true).GetAwaiter().GetResult());
+async Task ExportFixture(bool cancel, bool twoPass = false, bool gpu = false, bool gpuFailsAfterCheck = false)
 {
     var root = Directory.CreateTempSubdirectory("TractorTool-VideoChecks-").FullName;
     try
     {
         var source = Path.Combine(root, "sample.mp4"); await File.WriteAllTextAsync(source, "source");
         var prior = Path.Combine(root, "sample_导出.mp4"); await File.WriteAllTextAsync(prior, "existing");
+        var passes = new List<int>(); var gpuChecks = 0; var cpuRuns = 0; var note = ""; string? statistics = null;
         var runner = new FixtureRunner(async request =>
         {
             if (request.ExecutablePath.EndsWith("ffmpeg.exe"))
             {
-                await File.WriteAllTextAsync(request.Arguments.Last(), "encoded");
+                var args = request.Arguments.ToList();
+                if (args.Contains("-frames:v"))
+                {
+                    gpuChecks++;
+                    if (gpuFailsAfterCheck) { await File.WriteAllTextAsync(args.Last(), "sample"); return new(0, "", "", false, false); }
+                    return new(1, "", "hardware unavailable", false, false);
+                }
+                if (args[args.IndexOf("-c:v") + 1] == "h264_nvenc")
+                { await File.WriteAllTextAsync(args.Last(), "partial"); return new(1, "", "driver failed after check", false, false); }
+                cpuRuns++;
+                if (args.Contains("-pass"))
+                {
+                    var pass = int.Parse(args[args.IndexOf("-pass") + 1]); passes.Add(pass);
+                    var current = args[args.IndexOf("-passlogfile") + 1];
+                    if (pass == 1) { statistics = current; await File.WriteAllTextAsync(current + "-0.log", "statistics"); }
+                    else Require(current == statistics && File.Exists(current + "-0.log"));
+                }
+                if (!args.Contains("-pass") || passes.Last() == 2) await File.WriteAllTextAsync(args.Last(), "encoded");
                 if (cancel) throw new OperationCanceledException();
                 request.StandardOutputReceived?.Invoke("out_time_us=12500000\nprogress=end\n");
                 return new(0, "", "", false, false);
@@ -128,12 +151,15 @@ async Task ExportFixture(bool cancel)
         try
         {
             output = await exporter.ExportAsync(new Dictionary<string, string> { ["ffmpeg"] = "C:/ffmpeg.exe", ["ffprobe"] = "C:/ffprobe.exe" },
-                FileStamp.Read(source), Sample(), settings, null, root, _ => { }, _ => { }, CancellationToken.None);
+                FileStamp.Read(source), Sample(), settings with { RateControl = twoPass ? "vbr2" : "vbr" }, null, root, _ => { }, _ => { }, CancellationToken.None,
+                useGpu: gpu, executionInfo: text => note = text);
             Require(!cancel);
         }
         catch (OperationCanceledException) when (cancel) { }
         Require(await File.ReadAllTextAsync(source) == "source" && await File.ReadAllTextAsync(prior) == "existing");
         Require(!Directory.EnumerateDirectories(root).Any());
+        if (twoPass) Require(passes.SequenceEqual(cancel ? new[] { 1 } : new[] { 1, 2 }));
+        if (gpu) Require(gpuChecks == (twoPass ? 0 : gpuFailsAfterCheck ? 1 : 3) && cpuRuns == (twoPass ? 2 : 1) && note.Contains("使用 CPU"));
         if (!cancel) Require(output != prior && File.Exists(output));
     }
     finally { Directory.Delete(root, recursive: true); }
@@ -153,6 +179,30 @@ Check("Old preferences acquire reusable presets without persisting input paths",
     var loaded = System.Text.Json.JsonSerializer.Deserialize<VideoSettings>(json)!;
     Require(loaded.Presets[0] == changed.Presets[0] && !json.Contains("SourcePath") && !json.Contains("CoverPath"));
     Require(loaded.Presets[0].Options.Width == 0 && loaded.Presets[0].Options.VideoKbps == 8000);
+});
+Check("Legacy encoder preference is removed while preset parameters and identity survive", () =>
+{
+    var legacy = System.Text.Json.JsonSerializer.Deserialize<VideoSettings>("""{"SchemaVersion":1,"Presets":[{"Id":"00000000-0000-0000-0000-000000000001","Name":"旧预设","Options":{"Container":"mp4","Encoder":"h264_nvenc","Width":1280,"Height":720,"VideoKbps":4000,"AudioKbps":128,"UseCover":true},"Selected":false}]}""")!;
+    var preset = legacy.Presets.Single();
+    ExportPlan.ValidateOptions(preset.Options);
+    Require(preset.Options.RateControl == "vbr" && preset.Options.Width == 1280 && !preset.Selected);
+    var json = System.Text.Json.JsonSerializer.Serialize(legacy with { UseGpuAcceleration = true });
+    Require(!json.Contains("Encoder") && json.Contains("UseGpuAcceleration"));
+});
+Check("Every output format selects matching codecs and rate control without changing frame rate", () =>
+{
+    foreach (var format in ExportPlan.Containers)
+    foreach (var mode in ExportPlan.RateControls)
+    {
+        var options = settings with { Container = format.Value, RateControl = mode.Value };
+        var args = ExportPlan.Arguments("C:/input.mp4", Sample(), options, null, "C:/output" + format.Extension,
+            pass: mode.Value == "vbr2" ? 2 : 0, passLog: "C:/task/pass").ToList();
+        Require(args[args.IndexOf("-c:v") + 1] == format.VideoEncoder && args[args.IndexOf("-c:a") + 1] == format.AudioEncoder);
+        Require(args[args.IndexOf("-f") + 1] == format.Value && !args.Contains("-r") && args.Contains("passthrough"));
+        Require(args.Contains("-minrate") == (mode.Value == "cbr") && args.Contains("-pass") == (mode.Value == "vbr2"));
+    }
+    var first = ExportPlan.Arguments("C:/input.mp4", Sample(), settings with { RateControl = "vbr2" }, null, "unused", pass: 1, passLog: "C:/task/pass");
+    Require(first.Contains("-an") && first.Contains("null") && first.Last() == "-" && !first.Contains("-c:a"));
 });
 Check("Batch stays serial, skips a cancelled queued item and continues after one failure", () => BatchFixture().GetAwaiter().GetResult());
 async Task BatchFixture()

@@ -1,28 +1,30 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.Plugins.VideoExport" xmlns:ui="using:TractorTool.UI.Controls"
              x:Class="TractorTool.Plugins.VideoExport.VideoInputView" x:DataType="vm:VideoViewModel">
-  <StackPanel Spacing="12">
-    <Border x:Name="VideoDrop" Classes="card" DragDrop.AllowDrop="True" Padding="20" MinHeight="160">
+  <StackPanel Spacing="10">
+    <Border x:Name="VideoDrop" Classes="card" DragDrop.AllowDrop="True" Padding="16">
       <StackPanel Spacing="12">
-        <ui:ToolIcon Kind="Video" FontSize="30" HorizontalAlignment="Left" />
-        <TextBlock Text="{Binding SourceName}" FontSize="16" FontWeight="SemiBold" />
-        <TextBlock Text="{Binding SourcePath}" Classes="caption" IsVisible="{Binding HasSource}" />
-        <TextBlock Text="{Binding MediaSummary}" Classes="caption" />
+        <Grid ColumnDefinitions="28,*" ColumnSpacing="10">
+          <ui:ToolIcon Kind="Video" VerticalAlignment="Center" />
+          <StackPanel Grid.Column="1" Spacing="3">
+            <TextBlock Text="输入视频" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding SourceName}" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SourcePath}" />
+          </StackPanel>
+        </Grid>
+        <TextBlock Text="{Binding MediaSummary}" Classes="caption" IsVisible="{Binding HasMediaReport}" />
         <WrapPanel ItemSpacing="8" LineSpacing="8">
-          <Button Content="选择视频" Click="ChooseVideo" IsEnabled="{Binding !IsBusy}" />
-          <Button Content="读取信息" Command="{Binding ReadCommand}" />
+          <Button Content="选择文件" Click="ChooseVideo" IsEnabled="{Binding !IsBusy}" />
+          <Button Content="识别信息" Command="{Binding ReadCommand}" IsVisible="{Binding HasSource}" Classes="quiet" />
         </WrapPanel>
         <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsReading}" />
       </StackPanel>
     </Border>
     <Border x:Name="CoverDrop" Classes="card" DragDrop.AllowDrop="True" IsVisible="{Binding !IsInformation}" Padding="16">
-      <StackPanel Spacing="8">
-        <TextBlock Text="封面图片" Classes="sectionTitle" />
-        <TextBlock Text="拖入一张图片，用于需要替换第一帧的预设。" Classes="caption" />
-        <TextBlock Text="{Binding CoverPath}" Classes="caption" />
+      <StackPanel Spacing="10">
+        <TextBlock Text="{Binding CoverName}" Classes="caption" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CoverPath}" />
         <WrapPanel ItemSpacing="8" LineSpacing="8">
           <Button Content="选择图片" Click="ChooseCover" IsEnabled="{Binding !IsBusy}" />
-          <Button Content="移除图片" Click="ClearCover" IsEnabled="{Binding !IsBusy}" />
+          <Button Content="移除" Click="ClearCover" IsEnabled="{Binding !IsBusy}" IsVisible="{Binding HasCover}" Classes="quiet" />
         </WrapPanel>
       </StackPanel>
     </Border>

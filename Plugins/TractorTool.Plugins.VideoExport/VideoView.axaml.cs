@@ -1,12 +1,11 @@
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 namespace TractorTool.Plugins.VideoExport;
 public partial class VideoView : UserControl
 {
     public VideoView()
     {
         InitializeComponent();
-        Loaded += (_, _) => Present();
+        Loaded += (_, _) => { if (DataContext is VideoViewModel vm) Functions.SelectedIndex = vm.IsInformation ? 1 : 0; Present(); };
         SizeChanged += (_, e) =>
         {
             var narrow = e.NewSize.Width < 700;
@@ -16,8 +15,8 @@ public partial class VideoView : UserControl
             Header.RowDefinitions = new(narrow ? "Auto,Auto,Auto" : "Auto,Auto");
         };
     }
-    private void ShowExport(object? sender, RoutedEventArgs e) => Switch(false);
-    private void ShowInformation(object? sender, RoutedEventArgs e) => Switch(true);
+    private void FunctionChanged(object? sender, SelectionChangedEventArgs e)
+    { if (IsLoaded && Functions.SelectedIndex >= 0) Switch(Functions.SelectedIndex == 1); }
     private void Switch(bool information)
     {
         if (DataContext is not VideoViewModel vm || vm.IsInformation == information) return;

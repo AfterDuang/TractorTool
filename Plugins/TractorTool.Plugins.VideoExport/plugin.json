@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.VideoExport",
   "name": "视频导出",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "entryAssembly": "TractorTool.Plugins.VideoExport.dll",
   "entryType": "TractorTool.Plugins.VideoExport.VideoPlugin",
   "apiVersion": "1.5",

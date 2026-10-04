@@ -55,7 +55,7 @@ public partial class VideoInputView : UserControl
             {
                 Title = cover ? "选择封面图片" : "选择源视频", AllowMultiple = false,
                 FileTypeFilter = cover ? [new("图片") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp"] }]
-                    : [new("视频") { Patterns = ["*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts"] }, FilePickerFileTypes.All]
+                    : [FilePickerFileTypes.All]
             });
             try
             {

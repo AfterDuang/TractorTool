@@ -18,7 +18,7 @@ public sealed class VideoPlugin : IPlugin, IPluginUiModule
         registry.AddNavigationPage("video", "视频导出", () => new VideoView { DataContext = model },
             new(ToolIconKind.Video, "多预设导出与视频信息提取。") { UsesCustomHeader = true });
         registry.AddSettingsPage("settings", "视频导出", () => new VideoSettingsView { DataContext = model },
-            new(ToolIconKind.Video, "视频信息读取偏好。"));
+            new(ToolIconKind.Video, "GPU 加速与视频信息读取偏好。"));
     }
     public async ValueTask StopAsync(CancellationToken cancellationToken)
     {

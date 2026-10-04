@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（进行中） | [E31 · 视频码率模式、GPU 偏好与紧凑布局（2026-10-04）](#evidence-video-rate-control) |
 | M4（进行中） | [E30 · 视频双功能工作区与多预设串行（2026-10-04）](#evidence-video-workspace) |
 | M3（进行中） | [E29 · 框架边界复审与视频单次导出（2026-10-04）](#evidence-video-export) |
 | 后续规划 | [E28 · Python / pip 依赖扩展边界（2026-10-04）](#evidence-python-plan) |
@@ -1246,3 +1247,34 @@ Release 宿主发布和插件独立构建通过（publish-host.log、build-video
 静态检查通过：10 份 Markdown 的 235 处本地链接/锚点、7 个相关 AXAML 的 XML、ZIP 9 项及版本/API/共享二进制排除，以及本轮 diff 空白检查（排除用户已有 launch.json 改动）。结果保存在 artifacts/video-workspace/static-checks.json。
 
 本轮核对 [ffprobe 官方信息输出选项](https://ffmpeg.org/ffprobe.html)。Apple Layout 页面只返回需 JavaScript 的提示，未将其当作新读取的设计证据；布局依据用户草图及仓库既有对齐/分组/适配约定。没有运行应用、自动化检查、FFmpeg 或 Windows UI，也没有读取真实视频或剪贴板；拖放路由、缩放布局、复制、持久化/串行/取消及真实媒体结果仍由用户验收。已有 `.vscode/launch.json` 用户空白修改保留、不提交。
+
+<a id="evidence-video-rate-control"></a>
+
+## E31：视频码率模式、GPU 偏好与紧凑布局（2026-10-04）
+
+用户反馈 E30 的卡片/报告排版松散，要求导出主要参数为格式、VBR 一次/两次/CBR、视频/音频码率，GPU 加速移到插件设置；确认不支持时自动使用 CPU 并显示原因。澄清 VBR/CBR 是码率而非帧率。业务修改均在视频插件，不修改宿主/SDK/Core、不引入新依赖。
+
+- 0.4.0 以原生 TabStrip 切换功能；输入区压缩，文件名省略并悬浮显示完整路径；未输入路径、未开始进度及空错误不占卡片空间，预设卡片按可用宽度排列。输出位置/导出按钮集中右下，尺寸及首帧替换折叠在画面选项；信息报告的边框/工具条和外边距统一。
+- 输出格式由插件配套：MP4/MKV/MOV/TS → H.264/AAC，WebM → VP9/Opus。文件选择不再过滤输入扩展名；ffprobe/FFmpeg 负责识别，导出仍保留明确的 SDR/位深/隔行限制，未承诺所有格式。码率模式不添加 -r，不等同 CFR/VFR。
+- VBR 两次在独有事务目录写统计文件，完整分析后再第二遍编码；第一遍 null muxer 不写视频，第二遍映射音轨，两遍共享滤镜/首帧规则，进度分段，取消不启动下一遍，清理已知统计产物。CBR 配置 VBV 与后端码率控制，x264 filler 避开 MP4 的 nal-hrd=cbr 限制。
+- GPU 开关默认关闭、自动保存；批次开始快照。开启时先检查 H.264 GPU 后端，失败/不支持用 CPU；已通过短检查但完整导出失败也最多重试一次 CPU。卡片保留使用方式/回退原因，取消不回退。VBR 两次为真正文件级两遍，使用 CPU；WebM 暂用软件 VP9，不把 NVENC 内部 multipass 当整段两遍。
+- 旧 schema 1、预设 ID/名称/参数/勾选保留；缺少 RateControl 默认 VBR 一次，旧 Encoder 字段只被读取器忽略、下次保存不再输出，没有遗留旧选择器或 VM Encoder/Encoders。宿主 JsonFileStore 严格检查 schema，因此没有为了字段调整升高 schema 后拒绝旧设置。
+- 回归共 22 组，新增旧字段转换、格式/模式参数组合、分析统计复用/取消清理、GPU 不可用与完整失败回退、VBR 两次绕过 GPU；仅编译，未执行。本轮由主代理静态核对，没有调用新的模型子代理复审。
+
+实际构建/打包命令：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+./scripts/Build-VideoPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/video-workspace/host -Output H:/ProjH/TractorTool/artifacts/video-rate-control/video
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+```
+
+日志在 artifacts/video-rate-control：build-debug.log 首次成功但有 1 个 CS8604（passLog 可空）警告，补显式空值检查后 build-final.log 为 0 警告/0 错误；build-video.log 独立 Release 构建通过；恢复正常源码依赖后的 build-source-final.log 为 **12 工程 0 警告/0 错误**。复用的 E30 宿主 **235 个文件哈希未变**（host-before.json、host-hash-check.json），本轮没有重新发布或修改宿主。
+
+新包为 video/TractorTool.VideoExport-0.4.0.zip，SHA256 为 `982C0AE5E0B01D5D887F91D6783B91FA6733861D9BD4BBD5E156E6D7228357E4`，API 1.5 / UI 1.3 需求不变；用户安装后显式退出重启。本轮不安装插件、不覆盖用户目录，保留已有 .vscode/launch.json 改动。
+
+静态检查通过：10 份 Markdown 的 236 处本地链接/锚点、5 个插件 AXAML 的 XML、ZIP 9 项及版本/API/共享二进制排除，以及本轮 diff 空白检查（排除用户已有 launch.json 改动）。结果保存在 artifacts/video-rate-control/static-checks.json。
+
+依据：[FFmpeg 两次编码选项](https://ffmpeg.org/ffmpeg.html#Video-Options)、[FFmpeg 编码器文档](https://ffmpeg.org/ffmpeg-codecs.html)、[NVENC 逐帧 multipass](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/)、[FFmpeg libvpx 码率映射源码](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/libvpxenc.c)及 [x264 filler 参数](https://github.com/mirror/x264/blob/master/common/base.c)。Apple Layout 页面仍仅返回 JavaScript 提示；未将未读取的正文当作验证依据。
+
+没有运行应用、检查程序、FFmpeg 或 Windows UI。新布局实际视觉、帧率/首帧/音画同步、VBR/CBR 实际码率与大小、两遍结果、WebM/TS 播放、GPU 及回退都仍待用户测试；不以编译或参数检查关闭媒体/GPU 验收。
