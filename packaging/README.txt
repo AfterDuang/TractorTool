@@ -12,6 +12,11 @@ TractorTool · Windows x64
 现有自行安装的插件不会自动复制到新目录；保留原安装以便返回。
 测试时使用 --profile-root <绝对空目录> 隔离数据，避免影响日常配置。
 
+使用 setup.exe 安装版时，默认安装到当前用户 Programs/TractorTool。
+后续运行安装器升级宿主会保留 Plugins 及管理状态，不更新或恢复已有插件。
+卸载保留插件、配置、下载包及自定义数据，不自动启动软件或结束任务。
+安装器只接受新空目录或自己管理的安装，不能直接接管 ZIP 解压目录。
+
 release.json：版本、源码提交及工作区是否有未提交改动。
 files.json：包内文件的大小和 SHA256（不包含清单自身）。
 Licenses/dependencies.json、各插件 Licenses 和 THIRD-PARTY-NOTICES.md：第三方许可材料。

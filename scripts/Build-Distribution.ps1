@@ -1,7 +1,8 @@
 #requires -Version 7.4
 param(
     [Parameter(Mandatory)][string]$Output,
-    [string]$Version
+    [string]$Version,
+    [string]$CompilerPath
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot
@@ -62,7 +63,7 @@ foreach ($path in $hostHashes.Keys) {
     if ((Get-FileHash -LiteralPath (Join-Path $bundle $path)).Hash -ne $hostHashes[$path]) { throw "插件构建修改了宿主：$path" }
 }
 $release = [ordered]@{
-    schemaVersion = 1; product = 'TractorTool'; version = $Version; runtime = 'win-x64'
+    schemaVersion = 1; product = 'TractorTool'; version = $Version; runtime = 'win-x64'; installationProtocol = 1
     informationalVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $bundle 'TractorTool.dll')).ProductVersion
     sourceCommit = $sourceCommit; sourceDirty = ($sourceChanges.Count -gt 0); sdkVersion = $sdk
     createdUtc = [DateTimeOffset]::UtcNow.ToString('O'); archive = "$bundleName.zip"; bundleDirectory = $bundleName
@@ -78,5 +79,13 @@ ConvertTo-Json -InputObject $files -Depth 4 | Set-Content -LiteralPath (Join-Pat
 Get-ChildItem -LiteralPath $assetsDir -File | Where-Object Name -ne 'SHA256SUMS' | Sort-Object Name | ForEach-Object {
     "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName).Hash, $_.Name
 } | Set-Content -LiteralPath (Join-Path $assetsDir 'SHA256SUMS') -Encoding ascii
+if ($CompilerPath) {
+    $installerOutput = Join-Path $destination 'work/installer'
+    & (Join-Path $PSScriptRoot 'Build-Installer.ps1') -AssetsDir $assetsDir -Output $installerOutput -CompilerPath $CompilerPath
+    Copy-Item -LiteralPath (Join-Path $installerOutput "assets/$bundleName-setup.exe"), (Join-Path $installerOutput 'assets/installer.json') -Destination $assetsDir
+    Get-ChildItem -LiteralPath $assetsDir -File | Where-Object Name -ne 'SHA256SUMS' | Sort-Object Name | ForEach-Object {
+        '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName).Hash, $_.Name
+    } | Set-Content -LiteralPath (Join-Path $assetsDir 'SHA256SUMS') -Encoding ascii
+}
 & (Join-Path $PSScriptRoot 'Verify-Distribution.ps1') -AssetsDir $assetsDir
 Write-Output "分发产物：$assetsDir"

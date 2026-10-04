@@ -11,6 +11,8 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        using var installationSignal = OperatingSystem.IsWindows() ? Platform.WindowsMaintenance.RegisterApplication() : null;
+        if (OperatingSystem.IsWindows() && installationSignal is null) return;
         LaunchArguments = args;
         var profile = ProfileRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
         if (OperatingSystem.IsWindows() && Path.IsPathFullyQualified(profile))

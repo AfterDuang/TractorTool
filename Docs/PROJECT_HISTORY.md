@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（用户级安装器） | [E43 · 安装、升级/卸载保留与双代理复审（2026-10-05）](#evidence-installer) |
 | M5（三代理分发复审） | [E42 · 路径、ZIP 校验和构建环境修正（2026-10-04）](#evidence-distribution-review) |
 | M5（统一分发） | [E41 · 本地/CI 共用 ZIP、许可及静态校验（2026-10-04）](#evidence-distribution) |
 | M5（复核与文档整理） | [E40 · 启动复核与当前台账整理（2026-10-04）](#evidence-doc-review) |
@@ -1546,3 +1547,43 @@ try {
 当前 assets 与 layout 位于 `artifacts/m5-distribution-review/delivery-final`，包内基线为 `9dcb9afc171bea640d848e4d7b6f0d29f2f940e2`、sourceDirty=true；不声称与随后提交逐字对应。首次验证用了相对 Tee-Object 文件路径，日志目标错误导致命令失败，前面的宿主发布已执行，留下 `delivery` 的部分产物；第二次同目录重试被新目录保护拒绝。两次失败未覆盖旧产物，随后改用新目录 delivery-final 和绝对日志路径才完成。失败尝试没有被记成构建成功，也没有删除用户文件来重试。
 
 三位子代理最终复审未提出新的确定缺陷；此结论限于当前分发及关联边界，不代表整个产品无缺陷或运行验收通过。M5 的下一项仍是安装器与升级/卸载保留逻辑；真实运行继续交用户。用户 `.vscode/launch.json` 空白改动保留且不纳入本轮提交。
+
+<a id="evidence-installer"></a>
+
+## E43：安装、升级/卸载保留与双代理复审（2026-10-05）
+
+用户要求继续。依据当前台账推进 M5 Windows 安装器，沿用两位此前显式配置为 gpt-6.1-sol / high 的子代理，分别审查完整性/恢复和 CI/许可；只读复审，不执行安装器、应用或检查程序。没有扩展公共服务或插件业务，Contracts/UI API、插件版本不变。C# 仅新增宿主 Windows 平台维护保护并接入 Program，安装流程仍由专用工具完成。
+
+实施与复审修正：
+
+1. 固定 Inno Setup 6.7.3。Get-InnoCompiler 核对官方安装文件 SHA256 `9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732` 及 Authenticode 签名，以 `/PORTABLE=1 /CURRENTUSER` 展开到新的 artifacts 构建工具目录；保留版权与许可证。中文语言来自官方源码固定提交，原文哈希和来源见 packaging/Languages/SOURCE.txt。未系统级安装编译器，未创建工具文件关联。
+2. Build-Installer 先静态验证 ZIP，再提取到新快照，从精确文件列表编译；不读取或覆盖真实安装。安装版默认 `%LOCALAPPDATA%\Programs\TractorTool`，用户级权限，稳定 AppId；拒绝目录链接、非安装版非空目录及数字版本降级。安装版卸载删除宿主自身安装记录中的文件，保留 Plugins 和所有应用数据，不使用递归清空安装目录规则。
+3. Plugins 只在首次不存在时播种；正常升级/重装跳过已有 Plugins，不覆盖用户更新、不恢复卸载项、不改 .management。子代理发现“首次中断留下插件目录，重试误以为已完整安装”，补入绑定来源 ZIP 哈希的 .plugin-seed 标记；只允许同包且未由插件管理接管时恢复。标记存在时应用不启动。
+4. 单靠安装开始前检测运行状态不足以阻止安装中再次启动。WindowsMaintenance 和 Inno 脚本共用维护门，登记应用存活信号和开始维护相互排斥；维护期间保持门，不强杀进程或轮询。保护范围为同一 Windows 会话，跨会话未取得保证，继续留在当前台账。
+5. Inno 的 ssPostInstall 回调抛异常不保证失败退出。标记删除失败改为非零自定义退出码及完成页失败提示，同时应用仍因残留标记拒绝启动；不会生成 .management 阻断同包重试。子代理静态复审确认修复闭合。
+6. 编译器自身 FileVersion 为 0.0.0.0，不能拿它判断工具版本，改用 Inno 预处理版本门。安装产物显式写数字版本 0.1.0.0。installer.json 与 setup.exe 必须成对提供；校验版本、源 ZIP 哈希、提交和 dirty，避免仅校验外层文件后漏掉来源绑定。旧宿主 ZIP 缺少启动维护保护时禁止编译，要求 installationProtocol=1。
+7. CI 准备固定便携编译器后调用同一 Build-Distribution，输出三个 ZIP、setup.exe、release.json、installer.json、SHA256SUMS。仍只上传 artifact，未加发布权限、远程、推送或 Release。公开发布前本项目授权和签名安排仍待确认。
+
+证据（均位于 `artifacts/m5-installer`，历史 artifacts 部分已被外部清理，不保证旧路径继续存在）：
+
+| 层级 | 本轮结果 |
+| --- | --- |
+| 编译工具 | prepare-compiler.log：固定文件哈希、有效签名、便携展开成功，ISCC 位于 inno/compiler；仅用于构建，不作为应用运行证据 |
+| 早期编译 | compile-check.log 首次因错误的 INI 标志失败；改用普通 installation.ini 文件记录归属。compile-check-2.log 成功，仅以旧 ZIP 验证安装脚本可编译，不能交付缺启动保护的旧宿主 |
+| 完整构建 | build-delivery.log：当前宿主 Release win-x64 自包含发布成功，两插件独立构建均 0 警告/0 错误；原宿主文件哈希未变，311 个文件/2 个插件一致性通过；安装器成功编译，数字文件版本 0.1.0.0。delivery/assets 为当前交付，源码基线 af47817dfbd3e234c93477a8557c0defffd33237、sourceDirty=true，不冒充干净提交产物 |
+| 静态坏样本 | check-installer-artifacts.ps1 / artifact-checks.json：只操作复制的样本，基线接受；分别移出 installer.json、移出 setup.exe、修改来源 SHA256 后重算外层清单，三种坏样本均被预期检查拒绝；复原基线再次接受，交付目录未改动 |
+| 脚本/文档 | static-checks.json：11 份 PowerShell 语法、10 份文档/248 处本地链接与锚点、A01–A23 编号核对通过；当前台账/交接替换为 E43，运行缺口保留 |
+| 子代理 | 两代理最终复审未提出其他确定缺陷。审查了门与存活信号顺序、首次恢复/收尾、来源/版本、中文编码/固定来源、共享脚本；该结论不等于运行验证 |
+| 未执行 | 安装器/卸载器、应用/检查程序、FFmpeg、UI、硬件、GitHub CI/Release。未操作真实配置、媒体、剪贴板或日常安装；取消/权限/半安装恢复及维护并发由用户隔离验证 |
+
+完整成功构建命令（PowerShell 7.6.5、SDK 10.0.401）：
+
+```powershell
+./scripts/Get-InnoCompiler.ps1 -Output artifacts/m5-installer/inno
+./scripts/Build-Distribution.ps1 -Output artifacts/m5-installer/delivery `
+    -CompilerPath artifacts/m5-installer/inno/compiler/ISCC.exe `
+    *> H:/ProjH/TractorTool/artifacts/m5-installer/build-delivery.log
+./artifacts/m5-installer/check-installer-artifacts.ps1
+```
+
+下一项开发为 GitHub Release 流程；安装/升级/卸载与中断恢复、最低系统/无 SDK 机器及前述 M2–M5 运行缺口继续保留。没有把编译通过改写为产品验收通过，也没有修改用户已有 `.vscode/launch.json` 空白改动。

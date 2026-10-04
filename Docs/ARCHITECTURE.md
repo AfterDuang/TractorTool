@@ -1,6 +1,6 @@
 # TractorTool 软件架构
 
-更新日期：2026-10-04。本文负责宿主和公共服务的结构设计，不包含单个插件的内部业务方案。
+更新日期：2026-10-05。本文负责宿主和公共服务的结构设计，不包含单个插件的内部业务方案。
 
 本文说明如何落实[产品需求](TractorTool.md)。插件作者遵循 [插件开发规范](PLUGIN_DEVELOPMENT.md)；首版业务设计分别见 [剪贴板插件](Plugins/ClipboardHistory.md) 和 [视频插件](Plugins/VideoExport.md)。文档分工见 [导航](README.md)，实现与验证状态以 [开发文档](DEVELOPMENT.md#current-status) 为准，后续阶段设计不能当作现有功能。
 
@@ -100,7 +100,7 @@ PluginContext 按插件生命周期提供进程、依赖和有限任务作用域
 
 卸载在下次启动将代码移入 `.management/removed/<Token>` 后删除，用户数据和快照保留；状态墓碑防止旧目录被隐式重新接管。文件移动与恢复标记支持部分中断后的重试，失败保留请求及错误。尚未执行的请求可取消；失败的安装/更新也可取消以恢复旧选择，只清理能确认属于该请求的代码。已尝试的卸载/回退不可丢弃恢复日志，需修复原因后重启。崩溃断点及真实 ACL/文件占用仍需运行验收，不能把实现机制当作验证结果。
 
-安装到当前用户可写的软件目录时可直接管理插件。软件目录不可写时显示实际位置和写入失败原因，保留原安装状态，不静默改装到用户数据目录，也不要求整个宿主长期以管理员权限运行。机器级安装的授权写入方式由安装器阶段落实。修改插件根目录需要按实际安装路径互斥；文件仍被其他实例占用时保留待处理状态。
+安装到当前用户可写的软件目录时可直接管理插件。软件目录不可写时显示实际位置和写入失败原因，保留原安装状态，不静默改装到用户数据目录，也不要求整个宿主长期以管理员权限运行。首版安装器采用用户级安装，机器级安装及授权写入不在当前实现中。修改插件根目录需要按实际安装路径互斥；文件仍被其他实例占用时保留待处理状态。
 
 原生代码、事件、页面和后台线程会增加热卸载难度，因此首版不实现即时卸载。[.NET 卸载机制](https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability)
 
@@ -335,7 +335,7 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 
 ### 7.2 发布边界
 
-动态 C# 插件宿主采用常规 .NET 发布。当前分发入口生成 Windows x64 自包含目录 ZIP，不启用 Native AOT、裁剪或单文件布局。Native AOT 不支持此类动态程序集加载。[微软说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)
+动态 C# 插件宿主采用常规 .NET 发布。当前分发入口生成 Windows x64 自包含目录 ZIP，可同时生成用户级安装程序，不启用 Native AOT、裁剪或单文件布局。Native AOT 不支持此类动态程序集加载。[微软说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)
 
 压缩包和安装程序使用同一组验证过的文件。内置工具插件按正常插件包结构部署到软件目录的 `Plugins`，与后来本地安装的插件使用相同装载流程，无需首启复制到用户数据目录。软件升级时保留用户安装的插件和已升级版本，不能整目录清空 `Plugins`。FFmpeg 按需下载到数据根目录的 `Packages`，不默认重复捆绑到每个插件中。
 
@@ -343,7 +343,15 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 
 分发脚本使用 PowerShell 7.4+；根 [global.json](../global.json) 固定 .NET SDK，CI 从同一文件安装，禁止滚动选用其他 SDK。脚本按调用方的 PowerShell 当前位置解析输入路径，在仓库/插件工程目录内执行 dotnet 后恢复位置。宿主与插件构建输出保留在普通输出流，可统一收集日志；产品版本与 SDK 版本仍独立管理。
 
-[Verify-Distribution](../scripts/Verify-Distribution.ps1) 只静态核对清单、ZIP 路径/内容、版本及整包与独立插件的一致性，不装载 DLL 或启动程序。按 Windows 规则拒绝非法路径段、大小写重复文件及文件/目录冲突，并排除共享 DLL 副本与用户 bootstrap。SHA256 不证明发布者身份，也不替代运行验收。新包仅写入新目录，不能当作覆盖升级器；安装器负责的插件/数据保留逻辑仍待实现。当前 CI 只上传构建产物，GitHub Release 发布尚待接入，实际验证状态统一见开发台账。
+[Verify-Distribution](../scripts/Verify-Distribution.ps1) 只静态核对清单、ZIP 路径/内容、版本及整包与独立插件的一致性，不装载 DLL 或启动程序。按 Windows 规则拒绝非法路径段、大小写重复文件及文件/目录冲突，并排除共享 DLL 副本与用户 bootstrap。安装器与 installer.json 必须成对提供，来源 ZIP 哈希、版本、提交和 dirty 状态必须匹配。SHA256 不证明发布者身份，也不替代运行验收；ZIP 仍只解压到新目录，不用于覆盖升级。
+
+[Build-Installer](../scripts/Build-Installer.ps1) 使用固定 Inno Setup 6.7.3，仅从已校验 ZIP 的独立快照生成精确文件列表，不扫描用户安装目录或使用清空目录脚本。[编译工具准备](../scripts/Get-InnoCompiler.ps1) 核对官方安装文件的固定 SHA256 和 Authenticode 签名，以便携模式放进新构建目录；不成为运行时依赖。中文来源和许可保留在 packaging。默认安装到 `%LOCALAPPDATA%\Programs\TractorTool`，不请求提权、不自动运行应用；稳定 AppId 和 installation.ini 识别安装归属，拒绝目录链接、非安装版目录及数字版本降级。
+
+首次安装在 Plugins 不存在时附带两个正式插件；后续升级完全保留已有 Plugins 和管理状态，不恢复用户已卸载插件、不降级插件，也不修改 .management。卸载保留插件、默认/自定义数据、依赖包；只按安装记录移除宿主文件和快捷方式。首次插件写入前记录来源 ZIP 哈希，安装取消或失败留下的部分内容仅允许同包恢复；收尾失败返回非零退出码并提示。标记存在时宿主停止启动，避免把半安装内容交给插件管理服务。
+
+宿主 [WindowsMaintenance](../TractorTool/Platform/WindowsMaintenance.cs) 与安装/卸载脚本通过同一命名互斥协调：应用启动短暂持有维护门，登记存活信号后释放；维护期间持有门至结束，已有应用则拒绝维护，不强制终止任务、不定时轮询。此保护限同一 Windows 会话，不能据此保证跨会话维护安全。安装器只接受声明 installationProtocol=1 的当前宿主 ZIP，避免将缺少启动保护的旧包用于该流程。上述适配不进入 Contracts/Core，不扩建宿主安装平台。
+
+当前 CI 只上传 ZIP/安装器和校验材料，GitHub Release 发布尚待接入；实际验证状态统一见开发台账。
 
 自动更新宿主、插件在线市场、多平台安装器、不可信插件沙箱均不属于首版；不能把未来扩展预留变成当前需要实现的大型基础设施。
 

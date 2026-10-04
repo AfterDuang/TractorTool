@@ -8,6 +8,17 @@ Upstream license texts missing from NuGet packages are tracked in
 its own `NOTICE.md` and `Licenses` directory. These notices do not grant a license
 to TractorTool's own code.
 
+## Windows installer build tool
+
+The optional Windows installer is built with Inno Setup 6.7.3 by Jordan Russell
+and Martijn Laan. The compiler is a build-time tool, not an application dependency.
+Original license: https://github.com/jrsoftware/issrc/blob/is-6_7_3/license.txt
+The source repository retains that text in `packaging/licenses/InnoSetup.txt`.
+The Simplified Chinese installer translation is from the official repository,
+revision `6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2`,
+`Files/Languages/ChineseSimplified.isl`; author attribution is preserved in the
+translation file and the installer's About dialog.
+
 ## Optional external tools: FFmpeg / ffprobe
 
 The host catalog pins Gyan's FFmpeg 9.0.2 essentials build for Windows x64.

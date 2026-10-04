@@ -28,7 +28,9 @@ jobs:
         with:
           global-json-file: global.json
       - name: Build and statically verify distribution
-        run: ./scripts/Build-Distribution.ps1 -Output "$env:GITHUB_WORKSPACE/artifacts/distribution"
+        run: |
+          $compiler = ./scripts/Get-InnoCompiler.ps1 -Output "$env:GITHUB_WORKSPACE/artifacts/inno"
+          ./scripts/Build-Distribution.ps1 -Output "$env:GITHUB_WORKSPACE/artifacts/distribution" -CompilerPath $compiler
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: TractorTool-win-x64

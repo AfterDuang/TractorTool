@@ -15,6 +15,14 @@ $actual = @(Get-ChildItem -LiteralPath $root -File | Where-Object Name -ne 'SHA2
 if ($actual.Count -ne $checksums.Count) { throw '产物存在未登记文件。' }
 $release = Get-Content -LiteralPath (Join-Path $root 'release.json') -Raw | ConvertFrom-Json
 if (!$checksums.ContainsKey($release.archive)) { throw '宿主 ZIP 未登记。' }
+if ($checksums.ContainsKey('installer.json') -ne $checksums.ContainsKey("TractorTool-$($release.version)-win-x64-setup.exe")) { throw '安装器与来源记录必须成对提供。' }
+if ($checksums.ContainsKey('installer.json')) {
+    $installer = Get-Content -LiteralPath (Join-Path $root 'installer.json') -Raw | ConvertFrom-Json
+    if ($installer.version -ne $release.version -or $installer.archive -ne "TractorTool-$($release.version)-win-x64-setup.exe" -or
+        !$checksums.ContainsKey($installer.archive) -or $installer.sourceArchive -ne $release.archive -or
+        $installer.sourceSha256 -ne $checksums[$release.archive] -or $installer.sourceCommit -ne $release.sourceCommit -or
+        $installer.sourceDirty -ne $release.sourceDirty) { throw '安装器来源与 ZIP 分发不一致。' }
+}
 function Read-ZipText($Entry) {
     if (!$Entry) { throw 'ZIP 缺少必要文件。' }
     $reader = [IO.StreamReader]::new($Entry.Open())
