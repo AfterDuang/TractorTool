@@ -1,59 +1,31 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 namespace TractorTool.Plugins.VideoExport;
 public partial class VideoView : UserControl
 {
-    private bool _picking;
-    public VideoView() => InitializeComponent();
-    private async void ChooseVideo(object? sender, RoutedEventArgs e)
-        => await ChooseFileAsync(false);
-    private async void ChooseCover(object? sender, RoutedEventArgs e)
-        => await ChooseFileAsync(true);
-    private async Task ChooseFileAsync(bool cover)
+    public VideoView()
     {
-        if (_picking || DataContext is not VideoViewModel model || model.IsBusy) return;
-        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
-        if (storage is null) return;
-        _picking = true; PickerError.IsVisible = false;
-        try
+        InitializeComponent();
+        Loaded += (_, _) => Present();
+        SizeChanged += (_, e) =>
         {
-            var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = cover ? "选择封面图片" : "选择源视频", AllowMultiple = false,
-                FileTypeFilter = cover ? [new("图片") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp"] }]
-                    : [new("视频") { Patterns = ["*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm", "*.m4v", "*.ts"] }, FilePickerFileTypes.All]
-            });
-            try
-            {
-                if (!IsLoaded || !ReferenceEquals(DataContext, model) || model.IsBusy || files.Count == 0) return;
-                var path = files[0].TryGetLocalPath() ?? throw new NotSupportedException("请选择本地文件。");
-                if (cover) model.CoverPath = path;
-                else await model.SelectSourceAsync(path);
-            }
-            finally { foreach (var file in files) file.Dispose(); }
-        }
-        catch (Exception ex) { PickerError.Text = "无法选择文件：" + ex.Message; PickerError.IsVisible = true; }
-        finally { _picking = false; }
+            var narrow = e.NewSize.Width < 700;
+            Grid.SetColumn(Functions, narrow ? 0 : 1); Grid.SetRow(Functions, narrow ? 2 : 0);
+            Grid.SetRowSpan(Functions, narrow ? 1 : 2);
+            Functions.Margin = new(0, narrow ? 12 : 0, 0, 0);
+            Header.RowDefinitions = new(narrow ? "Auto,Auto,Auto" : "Auto,Auto");
+        };
     }
-
-    private async void ChooseOutput(object? sender, RoutedEventArgs e)
+    private void ShowExport(object? sender, RoutedEventArgs e) => Switch(false);
+    private void ShowInformation(object? sender, RoutedEventArgs e) => Switch(true);
+    private void Switch(bool information)
     {
-        if (_picking || DataContext is not VideoViewModel model || model.IsBusy) return;
-        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
-        if (storage is null) return;
-        _picking = true; PickerError.IsVisible = false;
-        try
-        {
-            var folders = await storage.OpenFolderPickerAsync(new() { Title = "选择输出文件夹", AllowMultiple = false });
-            try
-            {
-                if (!IsLoaded || !ReferenceEquals(DataContext, model) || model.IsBusy || folders.Count == 0) return;
-                model.OutputDirectory = folders[0].TryGetLocalPath() ?? throw new NotSupportedException("请选择本地文件夹。");
-            }
-            finally { foreach (var folder in folders) folder.Dispose(); }
-        }
-        catch (Exception ex) { PickerError.Text = "无法选择文件夹：" + ex.Message; PickerError.IsVisible = true; }
-        finally { _picking = false; }
+        if (DataContext is not VideoViewModel vm || vm.IsInformation == information) return;
+        vm.IsInformation = information; Present();
+    }
+    private void Present()
+    {
+        if (DataContext is not VideoViewModel vm) return;
+        Workspace.Present(vm.IsInformation ? new MediaInfoView { DataContext = vm } : new ExportWorkspaceView { DataContext = vm });
     }
 }

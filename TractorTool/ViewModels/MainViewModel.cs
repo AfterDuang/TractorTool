@@ -54,6 +54,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     // Only built-in pages with a page-level ScrollViewer opt into the shell's edge layout.
     public bool HasPageScroll => CurrentPage is HomeView or SettingsView or PluginsView or MessageView;
     [ObservableProperty] private string _pageTitle = "主页";
+    [ObservableProperty] private bool _showPageHeader = true;
     [ObservableProperty] private string _pageDescription = "你的桌面工具箱，从这里开始。";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasNotice))] private string _notice = "";
     public bool HasNotice => Notice.Length != 0;
@@ -151,7 +152,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         try
         {
             Navigate(key, key, page.Title, page.Options.Description,
-                page.Factory() ?? throw new InvalidDataException("页面工厂返回空值。"));
+                page.Factory() ?? throw new InvalidDataException("页面工厂返回空值。"), !page.Options.UsesCustomHeader);
         }
         catch (Exception ex)
         {
@@ -161,7 +162,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         finally { _navigating = false; }
     }
 
-    private void Navigate(string key, string navigationKey, string title, string description, Control view)
+    private void Navigate(string key, string navigationKey, string title, string description, Control view, bool showHeader = true)
     {
         // A parented control belongs to someone else; never clean it up as our candidate.
         if (view.Parent is not null || view.GetVisualParent() is not null)
@@ -187,6 +188,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         ActiveNavigation = navigationKey;
         SelectedNavigation = Navigation.Concat(FooterNavigation).FirstOrDefault(p => p.Key == navigationKey);
         PageTitle = title; PageDescription = description;
+        ShowPageHeader = showHeader;
         CurrentPage = view;
         // Commit before cleanup; callbacks cannot reenter navigation while it is in progress.
         ReleasePage(previous);

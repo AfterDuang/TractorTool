@@ -1,74 +1,25 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.Plugins.VideoExport" xmlns:ui="using:TractorTool.UI.Controls"
              x:Class="TractorTool.Plugins.VideoExport.VideoView" x:DataType="vm:VideoViewModel">
-  <ScrollViewer Classes="pageScroll">
-    <StackPanel Classes="pageBody" Spacing="16">
-      <ui:SettingRow Header="源视频" Description="{Binding SourcePath}" Icon="Video">
-        <Button Content="选择视频" Click="ChooseVideo" IsEnabled="{Binding !IsBusy}" />
-      </ui:SettingRow>
-      <TextBlock x:Name="PickerError" IsVisible="False" />
-      <WrapPanel>
-        <Button Content="读取媒体信息" Command="{Binding ReadCommand}" Margin="0,0,12,8" />
-        <Button Content="取消" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" Margin="0,0,12,8" />
-        <TextBlock Text="{Binding Status}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
-      </WrapPanel>
-      <ProgressBar IsIndeterminate="{Binding IsIndeterminate}" Value="{Binding Progress}" Maximum="100" IsVisible="{Binding IsBusy}" />
-      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" />
-      <StackPanel Spacing="8" IsEnabled="{Binding !IsBusy}">
-        <TextBlock Text="导出设置" Classes="sectionTitle" />
-        <ui:SettingRow Header="容器格式" Description="视频使用 H.264，音轨转为 AAC。" Icon="Video">
-          <ComboBox ItemsSource="{Binding Containers}" SelectedItem="{Binding Container}">
-            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-          </ComboBox>
-        </ui:SettingRow>
-        <ui:SettingRow Header="编码方式" Description="GPU 会在导出前检查；不可用时可以改用 CPU。" Icon="Video">
-          <ComboBox ItemsSource="{Binding Encoders}" SelectedItem="{Binding Encoder}">
-            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-          </ComboBox>
-        </ui:SettingRow>
-        <ui:SettingRow Header="保持源显示尺寸" Description="调整尺寸时保持画面比例，必要时补边。" Icon="Video">
-          <ToggleSwitch IsChecked="{Binding KeepSize}" />
-        </ui:SettingRow>
-        <ui:SettingRow Header="输出尺寸" Description="宽 × 高，单位为像素。" Icon="Video" IsVisible="{Binding !KeepSize}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <NumericUpDown Value="{Binding OutputWidth}" Minimum="2" Maximum="8192" Increment="2" Width="105" AutomationProperties.Name="输出宽度" />
-            <TextBlock Text="×" VerticalAlignment="Center" />
-            <NumericUpDown Value="{Binding OutputHeight}" Minimum="2" Maximum="8192" Increment="2" Width="105" AutomationProperties.Name="输出高度" />
-          </StackPanel>
-        </ui:SettingRow>
-        <ui:SettingRow Header="视频码率" Description="Mbps" Icon="Video">
-          <NumericUpDown Value="{Binding VideoMbps}" Minimum="0.1" Maximum="200" Increment="0.5" FormatString="0.###" Width="150" AutomationProperties.Name="视频码率 Mbps" />
-        </ui:SettingRow>
-        <ui:SettingRow Header="音频码率" Description="kbps，每条音轨分别使用此码率。" Icon="Video">
-          <NumericUpDown Value="{Binding AudioKbps}" Minimum="32" Maximum="512" Increment="32" Width="150" AutomationProperties.Name="音频码率 kbps" />
-        </ui:SettingRow>
-        <ui:SettingRow Header="替换第一帧" Description="图片等比缩放并居中裁剪，后续画面保持原时间轴。" Icon="Video">
-          <ToggleSwitch IsChecked="{Binding ReplaceFirstFrame}" />
-        </ui:SettingRow>
-        <ui:SettingRow Header="封面图片" Description="{Binding CoverPath}" Icon="Folder" IsVisible="{Binding ReplaceFirstFrame}">
-          <Button Content="选择图片" Click="ChooseCover" />
-        </ui:SettingRow>
-        <ui:SettingRow Header="输出文件夹" Description="{Binding OutputDirectory}" Icon="Folder">
-          <Button Content="选择文件夹" Click="ChooseOutput" />
-        </ui:SettingRow>
-        <TextBlock Text="{Binding EstimatedSize}" Classes="caption" Margin="4,4" />
-        <Button Content="导出视频" Command="{Binding ExportCommand}" Classes="accent" HorizontalAlignment="Left" />
+  <Grid RowDefinitions="Auto,*,Auto">
+    <Grid x:Name="Header" ColumnDefinitions="*,Auto" Margin="28,24,28,18" RowDefinitions="Auto,Auto">
+      <TextBlock Text="视频工具" Classes="pageTitle" />
+      <TextBlock Grid.Row="1" Text="多格式导出与视频信息提取" Classes="muted" Margin="0,4,0,0" />
+      <StackPanel x:Name="Functions" Grid.Column="1" Grid.RowSpan="2" Orientation="Horizontal" Spacing="18" VerticalAlignment="Center">
+        <RadioButton Content="多格式导出" GroupName="VideoFunction" IsChecked="{Binding !IsInformation, Mode=OneWay}" Click="ShowExport" />
+        <RadioButton Content="视频信息" GroupName="VideoFunction" IsChecked="{Binding IsInformation, Mode=OneWay}" Click="ShowInformation" />
       </StackPanel>
-      <SelectableTextBlock Text="{Binding OutputPath}" TextWrapping="Wrap" />
-      <Expander Header="媒体信息" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-      <ItemsControl ItemsSource="{Binding Fields}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:MediaField">
-            <Border Classes="card" Padding="18,12" Margin="0,0,0,8">
-              <Grid ColumnDefinitions="120,*">
-                <TextBlock Text="{Binding Name}" Classes="caption" VerticalAlignment="Center" />
-                <SelectableTextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" />
-              </Grid>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-      </Expander>
+    </Grid>
+    <ui:PageHost x:Name="Workspace" Grid.Row="1" />
+    <StackPanel Grid.Row="2" Margin="28,8,28,12" Spacing="4">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding Status}" Classes="caption" VerticalAlignment="Center" />
+        <Button Grid.Column="1" Content="取消当前操作" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+      </Grid>
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" />
+      <StackPanel IsVisible="{Binding HasSettingsError, FallbackValue=False}" Spacing="4">
+        <TextBlock Text="{Binding SettingsError}" /><Button Content="重试保存预设" Command="{Binding RetrySettingsCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
     </StackPanel>
-  </ScrollViewer>
+  </Grid>
 </UserControl>

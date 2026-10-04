@@ -7,6 +7,7 @@ public sealed record MediaInfo(int VideoIndex, int Width, int Height, double Sam
     double? Duration, double? FrameRate, int AudioTracks, string Codec, string PixelFormat,
     string ColorTransfer, string ColorPrimaries, string FieldOrder, string TimeBase, IReadOnlyList<MediaField> Fields)
 {
+    public string Report { get; init; } = "";
     public int DisplayWidth => (int)Math.Round(Math.Abs(Rotation % 180) == 90 ? Height : Width * SampleAspectRatio);
     public int DisplayHeight => (int)Math.Round(Math.Abs(Rotation % 180) == 90 ? Width * SampleAspectRatio : Height);
 }
@@ -38,7 +39,7 @@ public static class MediaProbe
             duration, rate, audio.Length, Text(video, "codec_name") ?? "", Text(video, "pix_fmt") ?? "",
             Text(video, "color_transfer") ?? "", Text(video, "color_primaries") ?? "", Text(video, "field_order") ?? "",
             Text(video, "time_base") ?? "", []);
-        return info with { Fields = [new("容器", Text(format, "format_long_name") ?? Text(format, "format_name") ?? "未知"),
+        return info with { Report = MediaReport.Format(root), Fields = [new("容器", Text(format, "format_long_name") ?? Text(format, "format_name") ?? "未知"),
             new("时长", duration is >= 0 ? $"{duration:0.###} 秒" : "未知"),
             new("编码尺寸", width is > 0 && height is > 0 ? $"{width:0} × {height:0}" : "未知"),
             new("显示尺寸", width is > 0 && height is > 0 ? $"{info.DisplayWidth} × {info.DisplayHeight} · 旋转 {rotation:0.##}°" : "未知"),

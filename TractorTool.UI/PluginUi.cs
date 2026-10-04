@@ -2,7 +2,7 @@ using Avalonia.Controls;
 namespace TractorTool.UI;
 public static class UiApi
 {
-    public const string Version = "1.2";
+    public const string Version = "1.3";
     public const string AvaloniaVersion = "12.1.2";
 }
 public interface IPluginUiModule { void RegisterPages(IPluginPageRegistry registry); }
@@ -18,6 +18,8 @@ public interface IPluginPageRegistry
 }
 public sealed record PluginPageOptions(ToolIconKind Icon = ToolIconKind.Tools, string Description = "")
 {
+    /// <summary>UI API 1.3. The page supplies its own heading and local navigation.</summary>
+    public bool UsesCustomHeader { get; init; }
     /// <summary>Optional PNG path relative to this plugin's version directory (UI API 1.2).</summary>
     public string? IconPath { get; init; }
 }

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.Plugins.VideoExport" xmlns:ui="using:TractorTool.UI.Controls"
+             x:Class="TractorTool.Plugins.VideoExport.VideoInputView" x:DataType="vm:VideoViewModel">
+  <StackPanel Spacing="12">
+    <Border x:Name="VideoDrop" Classes="card" DragDrop.AllowDrop="True" Padding="20" MinHeight="160">
+      <StackPanel Spacing="12">
+        <ui:ToolIcon Kind="Video" FontSize="30" HorizontalAlignment="Left" />
+        <TextBlock Text="{Binding SourceName}" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding SourcePath}" Classes="caption" IsVisible="{Binding HasSource}" />
+        <TextBlock Text="{Binding MediaSummary}" Classes="caption" />
+        <WrapPanel ItemSpacing="8" LineSpacing="8">
+          <Button Content="选择视频" Click="ChooseVideo" IsEnabled="{Binding !IsBusy}" />
+          <Button Content="读取信息" Command="{Binding ReadCommand}" />
+        </WrapPanel>
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsReading}" />
+      </StackPanel>
+    </Border>
+    <Border x:Name="CoverDrop" Classes="card" DragDrop.AllowDrop="True" IsVisible="{Binding !IsInformation}" Padding="16">
+      <StackPanel Spacing="8">
+        <TextBlock Text="封面图片" Classes="sectionTitle" />
+        <TextBlock Text="拖入一张图片，用于需要替换第一帧的预设。" Classes="caption" />
+        <TextBlock Text="{Binding CoverPath}" Classes="caption" />
+        <WrapPanel ItemSpacing="8" LineSpacing="8">
+          <Button Content="选择图片" Click="ChooseCover" IsEnabled="{Binding !IsBusy}" />
+          <Button Content="移除图片" Click="ClearCover" IsEnabled="{Binding !IsBusy}" />
+        </WrapPanel>
+      </StackPanel>
+    </Border>
+    <TextBlock x:Name="PickerError" IsVisible="False" />
+  </StackPanel>
+</UserControl>

@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（进行中） | [E30 · 视频双功能工作区与多预设串行（2026-10-04）](#evidence-video-workspace) |
 | M3（进行中） | [E29 · 框架边界复审与视频单次导出（2026-10-04）](#evidence-video-export) |
 | 后续规划 | [E28 · Python / pip 依赖扩展边界（2026-10-04）](#evidence-python-plan) |
 | M3（进行中） | [E27 · 依赖拒绝/缺失路径异常与全局计数修正（2026-10-04）](#evidence-dependency-feedback) |
@@ -1217,3 +1218,31 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 静态核对 10 份 Markdown 的 234 处本地链接/锚点、修改的 AXAML XML、ZIP 9 项及版本/API/共享 DLL 排除通过；本轮 diff 空白检查通过，排除用户已有的 launch.json 空白改动。结果保存在 artifacts/video-export/static-checks.json。
 
 本轮未启动应用、检查程序、FFmpeg 或 UI，没有读写真实剪贴板/安装插件/修改用户数据。CFR/VFR、旋转、透明封面首帧和后续画面、时长/音画同步、不同容器及实际 GPU 链、取消/退出仍待用户实测；M3 尚未关闭，M2 和旧依赖/设置运行缺口继续留在 DEVELOPMENT。
+
+<a id="evidence-video-workspace"></a>
+
+## E30：视频双功能工作区与多预设串行（2026-10-04）
+
+用户提供草图：右上切换功能，导出页左侧输入/参数、右侧预设/进度/导出。用户进一步明确“放视频”指拖入文件识别，信息页应类似 MediaInfo 提取信息，而不是视频播放器或首帧预览。按最终更正实现，无媒体播放依赖或预览任务。
+
+- 视频插件 0.3.0 / Contracts 1.5 / UI 1.3，拆为 VideoView 导航、ExportWorkspaceView、MediaInfoView、共用 VideoInputView，替换旧单列设置行/摘要 Expander。复用 PageHost 切换动效，宽窗口左右、窄窗口上下，区域滚动独立，右侧列表底部保留导出按钮。
+- 左侧拖放一次一个本地文件，和文件选择走相同模型入口；图片区仅接指定图片扩展名。信息模式拖入即识别，右侧只读文本支持全选/复制；ffprobe show_format/show_streams/show_chapters/show_programs 的字段全部保留，按容器/媒体轨/章节/节目和嵌套层级格式化，不枚举逐帧/逐包内容。
+- 左侧编辑器新增/修改卡片；右侧勾选、复制、删除，名称不解析成参数。VideoSettings 使用新增可选 Presets 字段兼容旧偏好，保存稳定 ID、名称、参数、勾选，不保存输入/输出路径；写失败可重试，坏配置不覆盖。编辑已有预设清除旧输出状态。
+- 插件实例持有单批次和每项取消源，快照勾选项后串行执行，失败继续，取消等待项跳过，取消整批终止当前/后续；运行中不允许编辑输入/预设。包租约覆盖整批，封面只读共享锁防止版本之间变化，单项输出仍用原事务与无覆盖提交。没有扩展公共媒体任务协议；公共有限任务及中断恢复仍待接续。
+- 宿主只新增可选 UsesCustomHeader（默认 false），让插件提供标题与局部导航；导航成功后才提交隐藏状态，错误页默认恢复标题，设置容器不受影响。UI API 1.3 接受旧 1.0–1.2，保留旧构造/签名与程序集身份；新插件需配套新宿主。
+- 静态复核修正预检部分失败遗留卡片等待态、编辑后旧结果状态，以及批次封面变化窗口。增加 UI 协议兼容、完整报告、旧偏好/参数无路径持久化、串行/取消等待项/失败继续回归；视频检查共 15 组，仅编译未运行。本轮没有再调用子代理，E29 的模型复审结果不套用本轮代码。
+
+构建/打包在 artifacts/video-workspace：初次 Debug 成功但有 AVLN5001 Watermark 过时警告，改用 PlaceholderText 后 build-final.log 和独立打包后的 build-source-final.log 均为 **12 工程 0 错误/0 警告**。实际命令：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/video-workspace/host
+./scripts/Build-VideoPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/video-workspace/host -Output H:/ProjH/TractorTool/artifacts/video-workspace/video
+dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
+```
+
+Release 宿主发布和插件独立构建通过（publish-host.log、build-video.log），独立构建前后 **235 个宿主文件 SHA256 未变**（host-before.json、host-hash-check.json）。video/TractorTool.VideoExport-0.3.0.zip 的 SHA256 为 `E80E625CFBA71A92027CE2C1211A457D8434F1A246CE6163B4D1DE9370997120`；未安装到用户 Plugins。正常源码 restore/build 已恢复开发依赖图。
+
+静态检查通过：10 份 Markdown 的 235 处本地链接/锚点、7 个相关 AXAML 的 XML、ZIP 9 项及版本/API/共享二进制排除，以及本轮 diff 空白检查（排除用户已有 launch.json 改动）。结果保存在 artifacts/video-workspace/static-checks.json。
+
+本轮核对 [ffprobe 官方信息输出选项](https://ffmpeg.org/ffprobe.html)。Apple Layout 页面只返回需 JavaScript 的提示，未将其当作新读取的设计证据；布局依据用户草图及仓库既有对齐/分组/适配约定。没有运行应用、自动化检查、FFmpeg 或 Windows UI，也没有读取真实视频或剪贴板；拖放路由、缩放布局、复制、持久化/串行/取消及真实媒体结果仍由用户验收。已有 `.vscode/launch.json` 用户空白修改保留、不提交。

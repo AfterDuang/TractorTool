@@ -23,7 +23,7 @@ public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cl
     public async Task<MediaInfo> ProbeAsync(string ffprobe, string path, CancellationToken token)
     {
         var result = await processes.RunAsync(new(ffprobe,
-            ["-v", "error", "-show_format", "-show_streams", "-of", "json", "-i", path])
+            ["-v", "error", "-show_format", "-show_streams", "-show_chapters", "-show_programs", "-of", "json", "-i", path])
             { Timeout = TimeSpan.FromSeconds(30), OutputLimit = 2 * 1024 * 1024 }, token).ConfigureAwait(false);
         CheckResult(result, "读取媒体信息");
         if (result.StandardOutputTruncated) throw new InvalidDataException("媒体信息超出读取上限，未使用不完整结果。");

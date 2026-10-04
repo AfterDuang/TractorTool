@@ -146,6 +146,11 @@ Check("UI 1.2 accepts existing SDKs and rejects unknown icon contracts", () => {
     Assert(current.Check(manifest with { UiApiVersion = "1.3" }) is not null);
     Assert(new HostCompatibility("windows", "win-x64", "1.1", "12.1.2").Check(manifest with { UiApiVersion = "1.2" }) is not null);
 });
+Check("UI 1.3 retains old pages and rejects future header contracts", () => {
+    var current = new HostCompatibility("windows", "win-x64", "1.3", "12.1.2");
+    foreach (var ui in new[] { "1.0", "1.1", "1.2", "1.3" }) Assert(current.Check(manifest with { UiApiVersion = ui }) is null);
+    Assert(current.Check(manifest with { UiApiVersion = "1.4" }) is not null);
+});
 Check("Platform compatibility", () => { Assert(compatibility.Check(manifest with { SupportedPlatforms = ["linux"] }) is not null); Assert(compatibility.Check(manifest with { SupportedPlatforms = ["win-x64"] }) is null); });
 Check("Missing DLL becomes load failure", () => { WriteManifest(manifest); var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot)); host.Discover([]); host.LoadAsync((_, _) => throw new Exception("must not register")).GetAwaiter().GetResult(); Assert(host.Records.Single().State == PluginState.Failed); host.DisposeAsync().AsTask().GetAwaiter().GetResult(); });
 Check("Disabled plugin never opens bad DLL", () => { File.WriteAllText(Path.Combine(dir, "Test.dll"), "bad"); var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot)); host.Discover([manifest.Id]); host.LoadAsync((_, _) => throw new Exception()).GetAwaiter().GetResult(); Assert(host.Records.Single().State == PluginState.Disabled); });

@@ -31,6 +31,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
         {
             "1.1" => manifest.UiApiVersion == "1.0",
             "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
+            "1.3" => manifest.UiApiVersion is "1.0" or "1.1" or "1.2",
             _ => false
         };
         var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4";

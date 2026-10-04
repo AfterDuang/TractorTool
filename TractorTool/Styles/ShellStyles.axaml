@@ -12,6 +12,9 @@
   <Style Selector="ui|PageHost#PagePresenter.edgeScroll StackPanel.pageBody">
     <Setter Property="Margin" Value="0,0,36,24" />
   </Style>
+  <Style Selector="ui|PageHost#PagePresenter.workspace">
+    <Setter Property="Margin" Value="0" />
+  </Style>
   <!-- Adapt the navigation template while retaining its keyboard, selection and focus behavior. -->
   <Style Selector="fa|FANavigationView.shell">
     <Setter Property="Background" Value="{DynamicResource AppSidebarBrush}" />

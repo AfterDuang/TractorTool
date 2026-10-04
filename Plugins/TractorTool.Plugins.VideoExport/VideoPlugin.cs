@@ -16,7 +16,7 @@ public sealed class VideoPlugin : IPlugin, IPluginUiModule
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("video", "视频导出", () => new VideoView { DataContext = model },
-            new(ToolIconKind.Video, "调整视频格式、尺寸与码率，可替换第一帧。"));
+            new(ToolIconKind.Video, "多预设导出与视频信息提取。") { UsesCustomHeader = true });
         registry.AddSettingsPage("settings", "视频导出", () => new VideoSettingsView { DataContext = model },
             new(ToolIconKind.Video, "视频信息读取偏好。"));
     }

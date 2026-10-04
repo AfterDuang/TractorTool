@@ -14,8 +14,7 @@ public static class ExportPlan
 
     public static (int Width, int Height) Validate(MediaInfo info, ExportOptions options, string? cover)
     {
-        if (!Containers.Any(c => c.Value == options.Container) || !Encoders.Any(c => c.Value == options.Encoder))
-            throw new InvalidDataException("请选择支持的输出容器和 H.264 编码方式。");
+        ValidateOptions(options);
         if (info.Duration is not > 0 || info.Width <= 0 || info.Height <= 0)
             throw new InvalidDataException("此视频缺少有效时长或尺寸，暂不能导出。");
         if (Math.Abs(info.Rotation % 90) > 0.001)
@@ -31,11 +30,20 @@ public static class ExportPlan
         var height = options.Width == 0 && options.Height == 0 ? info.DisplayHeight : options.Height;
         if (width < 2 || height < 2 || width > 8192 || height > 8192 || width % 2 != 0 || height % 2 != 0)
             throw new InvalidDataException("输出宽高须为 2–8192 内的偶数；源显示尺寸不符合时请指定尺寸。");
-        if (options.VideoKbps is < 100 or > 200000 || options.AudioKbps is < 32 or > 512)
-            throw new InvalidDataException("视频码率须为 100–200000 kbps，音频码率须为 32–512 kbps。");
         if (options.UseCover && (string.IsNullOrWhiteSpace(cover) || !File.Exists(cover)))
             throw new InvalidDataException("请先选择封面，或关闭替换第一帧。");
         return (width, height);
+    }
+
+    public static void ValidateOptions(ExportOptions options)
+    {
+        if (!Containers.Any(c => c.Value == options.Container) || !Encoders.Any(c => c.Value == options.Encoder))
+            throw new InvalidDataException("请选择支持的输出容器和 H.264 编码方式。");
+        if ((options.Width != 0 || options.Height != 0) &&
+            (options.Width is < 2 or > 8192 || options.Height is < 2 or > 8192 || options.Width % 2 != 0 || options.Height % 2 != 0))
+            throw new InvalidDataException("输出宽高须为 2–8192 内的偶数。");
+        if (options.VideoKbps is < 100 or > 200000 || options.AudioKbps is < 32 or > 512)
+            throw new InvalidDataException("视频码率须为 100–200000 kbps，音频码率须为 32–512 kbps。");
     }
 
     public static string Extension(string container) => container == "matroska" ? ".mkv" : "." + container;

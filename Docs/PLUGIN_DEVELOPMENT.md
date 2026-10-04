@@ -34,13 +34,13 @@
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
 | `apiVersion` | 当前 1.5，仍接受 1.0/1.1/1.2/1.3/1.4；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5 |
-| `uiApiVersion` | 当前为 1.2；宿主仍接受旧 1.0、1.1 页面注册 |
+| `uiApiVersion` | 当前为 1.3；宿主仍接受旧 1.0、1.1、1.2 页面注册 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复；清单有效但源未提供时页面仍可加载，申请时明确报告不可用 |
 | `description`、`author` | 可选展示信息 |
 
-图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
+图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。UI API 1.3 允许 PluginPageOptions.UsesCustomHeader=true，由插件自己提供标题和局部功能切换，宿主收起默认标题并让出整页视口；只对导航页生效，设置页仍由设置容器组织。默认 false 保留旧布局。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
 
 管理页已提供本地 ZIP 安装/更新、启用/禁用、卸载与可用时回退，重启生效。活动版本由安装目录的管理记录明确指定；未纳入管理的多个同 ID 候选仍报告冲突，不自动选最高版本。旧 `disabledPlugins` 只用于未管理插件，接管后的状态以管理记录为准。禁用、不兼容、损坏的插件只显示清单状态，不为了获取名称而执行入口。
 

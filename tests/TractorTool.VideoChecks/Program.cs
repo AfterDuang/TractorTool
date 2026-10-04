@@ -138,6 +138,63 @@ async Task ExportFixture(bool cancel)
     }
     finally { Directory.Delete(root, recursive: true); }
 }
+Check("Full report retains secondary tracks, chapters, unknown tags and side data", () =>
+{
+    var info = MediaProbe.Parse("""{"streams":[{"index":0,"codec_type":"video","side_data_list":[{"custom":"数据"}]},{"index":1,"codec_type":"audio","channels":6},{"index":2,"codec_type":"subtitle","tags":{"language":"zho"}}],"format":{"tags":{"custom_metadata":"作者"}},"chapters":[{"id":1,"start_time":"1.25"}],"programs":[]}""");
+    foreach (var value in new[] { "视频轨 #0", "音频轨 #1", "字幕轨 #2", "channels : 6", "language : zho", "custom_metadata : 作者", "start_time : 1.25", "custom : 数据", "节目" })
+        Require(info.Report.Contains(value));
+});
+Check("Old preferences acquire reusable presets without persisting input paths", () =>
+{
+    var old = System.Text.Json.JsonSerializer.Deserialize<VideoSettings>("""{"SchemaVersion":1,"AutoReadOnSelect":false}""")!;
+    Require(!old.AutoReadOnSelect && old.Presets.Length == 1);
+    var changed = old with { Presets = [old.Presets[0] with { Name = "4K 200MB 只是名称", Selected = false }] };
+    var json = System.Text.Json.JsonSerializer.Serialize(changed);
+    var loaded = System.Text.Json.JsonSerializer.Deserialize<VideoSettings>(json)!;
+    Require(loaded.Presets[0] == changed.Presets[0] && !json.Contains("SourcePath") && !json.Contains("CoverPath"));
+    Require(loaded.Presets[0].Options.Width == 0 && loaded.Presets[0].Options.VideoKbps == 8000);
+});
+Check("Batch stays serial, skips a cancelled queued item and continues after one failure", () => BatchFixture().GetAwaiter().GetResult());
+async Task BatchFixture()
+{
+    var root = Directory.CreateTempSubdirectory("TractorTool-BatchChecks-").FullName;
+    try
+    {
+        var source = Path.Combine(root, "input.mp4"); await File.WriteAllTextAsync(source, "source");
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0; var active = 0; var maximumActive = 0;
+        var runner = new FixtureRunner(async request =>
+        {
+            if (request.ExecutablePath.EndsWith("ffprobe.exe"))
+                return new(0, """{"format":{"duration":"12.5"},"streams":[{"codec_type":"video","index":0,"width":1920,"height":1080,"codec_name":"h264","pix_fmt":"yuv420p"},{"codec_type":"audio"}]}""", "", false, false);
+            maximumActive = Math.Max(maximumActive, ++active);
+            try
+            {
+                if (++calls == 1)
+                { firstStarted.TrySetResult(); await releaseFirst.Task; return new(1, "", "fixture encoding failure", false, false); }
+                await File.WriteAllTextAsync(request.Arguments.Last(), "encoded");
+                return new(0, "", "", false, false);
+            }
+            finally { active--; }
+        });
+        var store = new FixtureSettings(new() { Presets = Enumerable.Range(1, 3).Select(i => new ExportPresetData(Guid.NewGuid(), "Name " + i, settings)).ToArray() });
+        var packages = new FixturePackages();
+        var vm = new VideoViewModel(new("Fixture", new FixturePaths(root), store, new FixtureLog(), CancellationToken.None) { Processes = runner, Packages = packages })
+            { SourcePath = source, OutputDirectory = root };
+        var export = vm.ExportCommand.ExecuteAsync(null);
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Require(calls == 1 && vm.IsBusy && !packages.Lease.Disposed);
+        vm.Presets[1].CancelCommand.Execute(null);
+        vm.DeletePreset(vm.Presets[0]); Require(vm.Presets.Count == 3);
+        releaseFirst.TrySetResult(); await export.WaitAsync(TimeSpan.FromSeconds(5));
+        Require(maximumActive == 1 && calls == 2 && packages.Lease.Disposed && !vm.IsBusy);
+        Require(vm.Presets[0].Status == "导出失败" && vm.Presets[1].Status == "已取消" && vm.Presets[2].Status == "已完成");
+        Require(File.Exists(vm.Presets[2].OutputPath) && await File.ReadAllTextAsync(source) == "source");
+        await vm.StopAsync();
+    }
+    finally { Directory.Delete(root, recursive: true); }
+}
 return failed == 0 ? 0 : 1;
 
 sealed class FixtureRunner(Func<TractorTool.Contracts.Processes.ProcessRequest, Task<TractorTool.Contracts.Processes.ProcessResult>> run)
@@ -145,4 +202,30 @@ sealed class FixtureRunner(Func<TractorTool.Contracts.Processes.ProcessRequest, 
 {
     public Task<TractorTool.Contracts.Processes.ProcessResult> RunAsync(TractorTool.Contracts.Processes.ProcessRequest request, CancellationToken cancellationToken = default)
         => run(request);
+}
+
+sealed class FixtureSettings(VideoSettings value) : TractorTool.Contracts.IPluginSettingsStore
+{
+    public T Load<T>(string name) where T : TractorTool.Contracts.IVersionedSettings, new() => (T)(object)value;
+    public void Save<T>(string name, T settings) where T : TractorTool.Contracts.IVersionedSettings, new() { }
+}
+sealed class FixturePaths(string root) : TractorTool.Contracts.IAppPaths
+{
+    public string AppRoot => root; public string PluginRoot => root; public string DataRoot => root; public string PackageRoot => root;
+    public string GetPluginDataDirectory(string pluginId) => root;
+}
+sealed class FixtureLog : TractorTool.Contracts.IAppLog { public void Write(string source, string message, Exception? error = null) { } }
+sealed class FixturePackages : TractorTool.Contracts.Packages.IExternalPackageService
+{
+    public FixtureLease Lease { get; } = new();
+    public TractorTool.Contracts.Packages.PackageStatus GetStatus(TractorTool.Contracts.Packages.PackageReference package) => throw new NotSupportedException();
+    public Task<TractorTool.Contracts.Packages.IPackageLease> AcquireAsync(TractorTool.Contracts.Packages.PackageReference package, CancellationToken cancellationToken = default) => Task.FromResult<TractorTool.Contracts.Packages.IPackageLease>(Lease);
+    public Task<TractorTool.Contracts.Packages.IPackageLease?> TryRequestAsync(TractorTool.Contracts.Packages.PackageReference package, CancellationToken cancellationToken = default) => Task.FromResult<TractorTool.Contracts.Packages.IPackageLease?>(Lease);
+}
+sealed class FixtureLease : TractorTool.Contracts.Packages.IPackageLease
+{
+    public string Directory => "C:/fixture";
+    public IReadOnlyDictionary<string, string> Tools { get; } = new Dictionary<string, string> { ["ffmpeg"] = "C:/fixture/ffmpeg.exe", ["ffprobe"] = "C:/fixture/ffprobe.exe" };
+    public bool Disposed { get; private set; }
+    public void Dispose() => Disposed = true;
 }
