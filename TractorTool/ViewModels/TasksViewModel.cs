@@ -12,6 +12,7 @@ public partial class TasksViewModel : ViewModelBase, IDisposable
     private readonly BackgroundTaskService? _service;
     private readonly Action<string> _openPlugin;
     private readonly Func<string, string> _pluginName;
+    private readonly Func<string, bool> _canOpenPlugin;
     private int _refreshQueued;
     private bool _disposed;
     public ObservableCollection<TaskRow> Items { get; } = [];
@@ -20,9 +21,10 @@ public partial class TasksViewModel : ViewModelBase, IDisposable
     public bool HasError => Error.Length != 0;
     public bool IsEmpty => Items.Count == 0;
 
-    public TasksViewModel(BackgroundTaskService? service, Action<string> openPlugin, Func<string, string> pluginName)
+    public TasksViewModel(BackgroundTaskService? service, Action<string> openPlugin, Func<string, string> pluginName,
+        Func<string, bool> canOpenPlugin)
     {
-        _service = service; _openPlugin = openPlugin; _pluginName = pluginName;
+        _service = service; _openPlugin = openPlugin; _pluginName = pluginName; _canOpenPlugin = canOpenPlugin;
         if (service is not null) service.Changed += OnChanged;
         Refresh();
     }
@@ -51,6 +53,7 @@ public partial class TasksViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsEmpty));
     }
     internal string PluginName(string id) => _pluginName(id);
+    internal bool CanOpenPlugin(string id) => _canOpenPlugin(id);
     [RelayCommand] private async Task RetrySaveAsync()
     {
         if (_service is null) return;
@@ -73,6 +76,9 @@ public sealed class TaskRow : ObservableObject
     private readonly TasksViewModel _owner;
     public BackgroundTaskSnapshot Snapshot { get; private set; }
     public string PluginName => _owner.PluginName(Snapshot.PluginId);
+    public string OpenLabel => _owner.CanOpenPlugin(Snapshot.PluginId) ? "打开" + PluginName : "查看插件";
+    public string OpenDescription => _owner.CanOpenPlugin(Snapshot.PluginId)
+        ? "打开此任务所属工具：" + PluginName : "此任务所属工具不可用，前往插件管理：" + PluginName;
     public string StateLabel => Snapshot.State switch
     {
         BackgroundTaskState.Queued => "等待中", BackgroundTaskState.Running => "进行中",

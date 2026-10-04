@@ -125,13 +125,23 @@ Check("Cancellation during analysis never starts pass two and removes statistics
 Check("Unavailable GPUs fall back to CPU with a visible reason", () => ExportFixture(false, gpu: true).GetAwaiter().GetResult());
 Check("GPU failure after capability check retries once on CPU", () => ExportFixture(false, gpu: true, gpuFailsAfterCheck: true).GetAwaiter().GetResult());
 Check("Two-pass mode uses CPU despite GPU preference and explains why", () => ExportFixture(false, twoPass: true, gpu: true).GetAwaiter().GetResult());
-async Task ExportFixture(bool cancel, bool twoPass = false, bool gpu = false, bool gpuFailsAfterCheck = false)
+Check("Output combines source and preset names without a fixed export suffix", () =>
+    ExportFixture(false, presetName: "中文 1080P", expectedStem: "sample_中文 1080P", occupied: false).GetAwaiter().GetResult());
+Check("Preset path separators and Windows-invalid characters cannot escape the output folder", () =>
+    ExportFixture(false, presetName: "../预设:高清?", expectedStem: "sample_.._预设_高清_", occupied: false).GetAwaiter().GetResult());
+Check("A blank filename component falls back safely and directory collisions use numbers", () =>
+    ExportFixture(false, presetName: " ... ", expectedStem: "sample_预设", directoryCollision: true).GetAwaiter().GetResult());
+async Task ExportFixture(bool cancel, bool twoPass = false, bool gpu = false, bool gpuFailsAfterCheck = false,
+    string presetName = "预设 1", string expectedStem = "sample_预设 1", bool occupied = true, bool directoryCollision = false)
 {
     var root = Directory.CreateTempSubdirectory("TractorTool-VideoChecks-").FullName;
     try
     {
         var source = Path.Combine(root, "sample.mp4"); await File.WriteAllTextAsync(source, "source");
-        var prior = Path.Combine(root, "sample_导出.mp4"); await File.WriteAllTextAsync(prior, "existing");
+        var prior = Path.Combine(root, expectedStem + ".mp4");
+        if (occupied) await File.WriteAllTextAsync(prior, "existing");
+        var collision = Path.Combine(root, expectedStem + "_2.mp4");
+        if (directoryCollision) Directory.CreateDirectory(collision);
         var passes = new List<int>(); var gpuChecks = 0; var cpuRuns = 0; var note = ""; string? statistics = null;
         var runner = new FixtureRunner(async request =>
         {
@@ -166,16 +176,17 @@ async Task ExportFixture(bool cancel, bool twoPass = false, bool gpu = false, bo
         try
         {
             output = await exporter.ExportAsync(new Dictionary<string, string> { ["ffmpeg"] = "C:/ffmpeg.exe", ["ffprobe"] = "C:/ffprobe.exe" },
-                FileStamp.Read(source), Sample(), settings with { RateControl = twoPass ? "vbr2" : "vbr" }, null, root, _ => { }, _ => { }, CancellationToken.None,
+                FileStamp.Read(source), Sample(), settings with { RateControl = twoPass ? "vbr2" : "vbr" }, presetName, null, root, _ => { }, _ => { }, CancellationToken.None,
                 useGpu: gpu, executionInfo: text => note = text);
             Require(!cancel);
         }
         catch (OperationCanceledException) when (cancel) { }
-        Require(await File.ReadAllTextAsync(source) == "source" && await File.ReadAllTextAsync(prior) == "existing");
-        Require(!Directory.EnumerateDirectories(root).Any());
+        Require(await File.ReadAllTextAsync(source) == "source");
+        if (occupied) Require(await File.ReadAllTextAsync(prior) == "existing");
+        Require(Directory.EnumerateDirectories(root).All(path => directoryCollision && path == collision));
         if (twoPass) Require(passes.SequenceEqual(cancel ? new[] { 1 } : new[] { 1, 2 }));
         if (gpu) Require(gpuChecks == (twoPass ? 0 : gpuFailsAfterCheck ? 1 : 3) && cpuRuns == (twoPass ? 2 : 1) && note.Contains("使用 CPU"));
-        if (!cancel) Require(output != prior && File.Exists(output));
+        if (!cancel) Require(output == Path.Combine(root, expectedStem + (occupied ? directoryCollision ? "_3" : "_2" : "") + ".mp4") && File.Exists(output));
     }
     finally { Directory.Delete(root, recursive: true); }
 }
@@ -257,7 +268,8 @@ async Task BatchFixture()
         releaseFirst.TrySetResult(); await export.WaitAsync(TimeSpan.FromSeconds(5));
         Require(maximumActive == 1 && calls == 2 && packages.Lease.Disposed && !vm.IsBusy);
         Require(vm.Presets[0].Status == "导出失败" && vm.Presets[1].Status == "已取消" && vm.Presets[2].Status == "已完成");
-        Require(File.Exists(vm.Presets[2].OutputPath) && await File.ReadAllTextAsync(source) == "source");
+        Require(Path.GetFileName(vm.Presets[2].OutputPath) == "input_Name 3.mp4" &&
+            File.Exists(vm.Presets[2].OutputPath) && await File.ReadAllTextAsync(source) == "source");
         await vm.StopAsync();
         await tasks.BeginShutdownAsync();
         Require(tasks.Snapshot.Count(t => t.State == TractorTool.Contracts.Tasks.BackgroundTaskState.Succeeded) == 1);

@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M4（用户反馈修正） | [E34 · 预设命名、公共任务归属与双代理复审（2026-10-04）](#evidence-preset-task-review) |
 | M4（用户反馈修正） | [E33 · 日志/任务整合、错误提醒与取消诊断（2026-10-04）](#evidence-logs-tasks) |
 | M4（实现补齐，运行待验） | [E32 · 公共有限任务、取消复审与 M4 交接（2026-10-04）](#evidence-m4-tasks) |
 | M4（进行中） | [E31 · 视频码率模式、GPU 偏好与紧凑布局（2026-10-04）](#evidence-video-rate-control) |
@@ -1344,3 +1345,29 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 最终交付 host/TractorTool.exe 和 video-final/TractorTool.VideoExport-0.5.1.zip；ZIP SHA256 为 `1F763F745F6EFB663EA03B95242A3BFCEB44F71EC5E0D5D589886A480888E381`。不会自动覆盖已装 DLL；用户使用新宿主、安装最终 ZIP 并显式退出重启。保留已有 .vscode/launch.json 空白修改、不提交。普通构建不代表运行检查或真实 UI 通过。
 
 静态脚本 artifacts/logs-tasks/verify_static.py 核对通过：10 份文档 238 处本地链接/锚点、5 个 AXAML XML、ZIP 清单及 9 项内容（版本/API/共享二进制排除），static-checks.json 的 Issues 为空。本轮 git diff --check 通过（排除用户已有 launch.json 空白改动）。真实颜色/角标/暂停/筛选/进度、取消异常触发、任务与插件生命周期、旧 DLL 兼容以及全部媒体/GPU 等仍待用户执行，M2/M3/M4 不标为验收完成。
+
+<a id="evidence-preset-task-review"></a>
+
+## E34：预设命名、公共任务归属与双代理复审（2026-10-04）
+
+用户要求输出为原文件名加下划线和预设名，任务进度必须是宿主公用功能，并要求修改后由子代理审查错误、悬空代码及过量重复。本轮未启动应用、检查程序、FFmpeg 或 Windows UI，没有访问用户媒体/剪贴板，也未替换已安装插件。
+
+- VideoExporter 接收本批次预设快照名称，正式输出为 `原文件名_预设名.扩展名`。名称只用于文件命名，不参与编码参数解析；Windows 非法字符/控制字符清洗、空结果兜底，长主干保守限制为 200 个 UTF-16 字符（预设最多 80）。文件或目录冲突追加 `_2`、`_3`；原子不覆盖提交遇到竞争后继续下一名称，替换旧固定 `_导出` 和随机尾缀逻辑。既有输出不重命名，失败仍只清理本次事务文件。
+- 静态确认 Contracts/Core 任务服务原本已经公用，快照含 PluginId，插件决定执行策略。宿主任务按钮从“返回工具”改为“打开＋插件名”，按 PluginId 找首个普通页面；不可用则“查看插件”进入插件管理。初始化完成刷新摘要行的插件名称/入口，未引入视频专属路由或新任务框架，公共 API 1.7 / UI 1.3 不变。
+- 新增 VideoChecks 3 组命名夹具，覆盖中文空格、非法字符/分隔符、清洗为空、已有文件和同名目录；既有批次检查增加预设名输出断言，合计 26 组。新增 TaskUiChecks 跨插件模型检查：两个插件即使使用同 BatchId，取消仍相互隔离；另在 Headless 主程序增加经过 MainViewModel 实际回调的正常工具/缺失插件路由检查。全部只编译，未运行。
+- 按用户要求显式使用两位 `gpt-6.1-sol` / `high` 子代理，分别只读审查命名/快照/输出事务和公共任务/日志/路由边界。未发现范围内 P0–P2 阻塞或明显悬空、大量重复实现。命名审查建议明确截短边界，已写入设计；任务审查指出委托检查不能替代宿主路由，已补检查，并采纳 P3 建议同时断言实际页面类型，避免错误页沿用相同导航 Key 时误通过。初始化恢复链仍只静态核对，不借检查源码宣称运行通过。
+
+构建与产物在 artifacts/preset-task-review，沿用 Publish-Host.ps1 与 Build-VideoPlugin.ps1：
+
+| 记录 | 实际结果 |
+| --- | --- |
+| build-debug.log | 修改后 Debug 12 工程，0 警告/0 错误 |
+| publish-host.log | Release 自包含宿主发布通过，未安装/启动 |
+| build-video.log | 发布 SDK 独立构建视频 0.5.2，0 警告/0 错误 |
+| build-source-final.log | 补宿主页面断言并恢复源码 SDK 引用后 Debug 12 工程，0 警告/0 错误 |
+| host-before.json、host-hash-check.json | 独立插件构建前后 235 个宿主文件 Changed=0 |
+| verify_static.py、static-checks.json | 10 份文档 239 处本地链接/锚点、5 个 AXAML XML、ZIP 清单和 9 项内容检查通过，Issues 为空；变更 diff --check 通过 |
+
+最终产物为 host/TractorTool.exe 和 video/TractorTool.VideoExport-0.5.2.zip，ZIP SHA256 为 `ABC5CFC9B7263407F000A07633BBE6B459EF205D2D001A952FA86C3FFC76E857`。用户使用新宿主、安装新 ZIP 并显式退出重启；开发编译不自动替换已装 DLL。本轮保留 .vscode/launch.json 已有空白修改，不纳入提交。
+
+真实 Windows 命名/同名竞争/超长名、多个实际插件任务与跳转、恢复摘要及既有日志/取消/媒体/GPU 回归仍交用户运行，M2/M3/M4 不标记验收完成。M5 未开始。

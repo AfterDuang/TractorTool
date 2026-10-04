@@ -77,7 +77,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (packages is not null) _packageReferences = new(paths, manager, packages);
         _icons = new NavigationIconStore(log);
         Settings.ExitCommand = ExitCommand;
-        Logs = new LogsViewModel(paths, log, new(tasks, OpenTaskPlugin, id => _plugins.Records.FirstOrDefault(r => r.Manifest?.Id == id)?.Name ?? id));
+        Logs = new LogsViewModel(paths, log, new(tasks, OpenTaskPlugin,
+            id => _plugins.Records.FirstOrDefault(r => r.Manifest?.Id == id)?.Name ?? id,
+            id => FindTaskPluginPage(id) is not null));
         Plugins = new PluginsViewModel(paths, plugins, ShowLogsCommand, manager, log);
         Home = new HomeViewModel(ShowPluginsCommand, new RelayCommand(() =>
         {
@@ -147,6 +149,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
         Plugins.Update(_registered, Navigation);
         Home.Update(Plugins.Items, Plugins.Summary, Plugins.DirectoryError);
+        Logs.Tasks.Refresh();
         // Update the catalog without replacing a page opened while plugins were starting.
     }
 
@@ -168,9 +171,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         finally { _navigating = false; }
     }
 
+    private RegisteredPage? FindTaskPluginPage(string id) => _registered.FirstOrDefault(p => p.PluginId == id && !p.IsSettings);
     private void OpenTaskPlugin(string id)
     {
-        var page = _registered.FirstOrDefault(p => p.PluginId == id && !p.IsSettings);
+        var page = FindTaskPluginPage(id);
         if (page is not null) OpenPluginPage(page);
         else ShowPlugins();
     }

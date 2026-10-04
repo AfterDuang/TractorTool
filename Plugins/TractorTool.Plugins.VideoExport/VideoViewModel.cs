@@ -241,7 +241,7 @@ public partial class VideoViewModel : ObservableObject
                     {
                         if (job.Data.Options.UseCover) coverStamp!.Verify();
                         var step = "准备导出";
-                        return await exporter.ExportAsync(lease.Tools, source, info, job.Data.Options, cover, directory,
+                        return await exporter.ExportAsync(lease.Tools, source, info, job.Data.Options, job.Data.Name, cover, directory,
                             value => { report.Report(new(value, step)); Update(() => { card.IsIndeterminate = false; card.Progress = value; }); },
                             state => { step = state; report.Report(new(null, state)); Update(() => { card.Status = state; card.IsIndeterminate = true; }); }, itemToken, useGpu,
                             note =>

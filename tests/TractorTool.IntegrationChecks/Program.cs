@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using TractorTool;
 using TractorTool.Contracts;
+using TractorTool.Contracts.Tasks;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
@@ -110,6 +111,19 @@ Check("Repeated completed initialization does not duplicate navigation or settin
     Assert(ReferenceEquals(first, second));
     Pump(Task.WhenAll(first, second));
     Assert(vm.Navigation.Count == 2 && vm.Settings.PluginSettings.Count == 1 && vm.Home.InstalledPlugins.Count == 1);
+});
+Check("Task actions open the owning plugin page or plugin management when unavailable", () =>
+{
+    var snapshot = new BackgroundTaskSnapshot(Guid.NewGuid(), "Test.Independent", Guid.NewGuid(), "Fixture task",
+        BackgroundTaskState.Succeeded, 100, "", null, null, DateTimeOffset.Now, DateTimeOffset.Now);
+    var available = new TaskRow(snapshot, vm.Logs.Tasks);
+    vm.ShowLogsCommand.Execute(null);
+    available.OpenCommand.Execute(null);
+    Assert(vm.SelectedNavigation?.Key == "Test.Independent/home" && vm.CurrentPage is Border);
+    var unavailable = new TaskRow(snapshot with { PluginId = "Fixture.Uninstalled" }, vm.Logs.Tasks);
+    Assert(unavailable.OpenLabel == "查看插件");
+    unavailable.OpenCommand.Execute(null);
+    Assert(vm.SelectedNavigation?.Key == "plugins" && vm.CurrentPage is PluginsView);
 });
 Check("Home lists the real plugin independently of management search and reuses navigation", () =>
 {
@@ -468,6 +482,7 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
 });
 AppearanceChecks.Run(Check, Pump, output);
 MotionChecks.Run(Check);
+TaskUiChecks.Run(Check, Pump, output);
 NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
 PluginManagementUiChecks.Run(Check, Pump, output);

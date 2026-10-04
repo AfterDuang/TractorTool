@@ -31,12 +31,13 @@ public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cl
     }
 
     public async Task<string> ExportAsync(IReadOnlyDictionary<string, string> tools, FileStamp source, MediaInfo info,
-        ExportOptions options, string? cover, string directory, Action<double> progress, Action<string> status, CancellationToken token,
+        ExportOptions options, string presetName, string? cover, string directory, Action<double> progress, Action<string> status, CancellationToken token,
         bool useGpu = false, Action<string>? executionInfo = null)
     {
         _ = ExportPlan.Validate(info, options, cover);
         if (!Path.IsPathFullyQualified(directory) || !Directory.Exists(directory))
             throw new DirectoryNotFoundException("请选择已存在的输出文件夹。");
+        var stem = OutputStem(source.Path, presetName);
         source.Verify();
         FileStamp? coverStamp = options.UseCover ? FileStamp.Read(cover!) : null;
         var work = Path.Combine(directory, ".tractortool-" + Guid.NewGuid().ToString("N"));
@@ -110,12 +111,17 @@ public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cl
             var outputInfo = await ProbeAsync(tools["ffprobe"], temporary, token).ConfigureAwait(false);
             ExportPlan.ValidateOutput(info, outputInfo, options);
             source.Verify(); token.ThrowIfCancellationRequested();
-            var destination = Path.Combine(directory, Path.GetFileNameWithoutExtension(source.Path) + "_导出" + ExportPlan.Extension(options.Container));
-            // Atomic, no-overwrite commit on the target filesystem. A concurrent name collision remains a failure.
-            if (File.Exists(destination) || Directory.Exists(destination))
-                destination = Path.Combine(directory, Path.GetFileNameWithoutExtension(source.Path) + "_导出_" + Guid.NewGuid().ToString("N")[..8] + ExportPlan.Extension(options.Container));
-            File.Move(temporary, destination, overwrite: false);
-            return destination;
+            // Each commit is atomic and never overwrites a source or another invocation's output.
+            for (var number = 1; ; number++)
+            {
+                token.ThrowIfCancellationRequested();
+                var suffix = number == 1 ? "" : "_" + number;
+                var destination = Path.Combine(directory, stem + suffix + ExportPlan.Extension(options.Container));
+                if (File.Exists(destination) || Directory.Exists(destination)) continue;
+                try { File.Move(temporary, destination, overwrite: false); return destination; }
+                catch (IOException) when (File.Exists(temporary) && (File.Exists(destination) || Directory.Exists(destination)))
+                { /* A concurrent writer won this name; try the next readable suffix. */ }
+            }
 
             Task<ProcessResult> EncodeAsync(int pass, Action<double> report)
             {
@@ -136,6 +142,21 @@ public sealed class VideoExporter(IProcessRunner processes, Action<Exception> cl
             try { Directory.Delete(work, recursive: false); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { cleanupError(ex); }
         }
+    }
+
+    private static string OutputStem(string source, string presetName)
+    {
+        // Treat the preset as a filename component, never as a path or encoding parameters.
+        static string Clean(string value) => new string(value.Select(c =>
+            char.IsControl(c) || "<>:\"/\\|?*".Contains(c) ? '_' : c).ToArray()).Trim().TrimEnd('.');
+        var preset = Clean(presetName);
+        if (preset.Length == 0) preset = "预设";
+        var original = Clean(Path.GetFileNameWithoutExtension(source));
+        if (original.Length == 0) original = "视频";
+        // Leave room for the extension and collision suffix within a normal filesystem component.
+        var limit = 200 - Math.Min(preset.Length, 80) - 1;
+        if (original.Length > limit) original = original[..limit].TrimEnd();
+        return original + "_" + (preset.Length > 80 ? preset[..80] : preset);
     }
 
     private static void CheckResult(ProcessResult result, string operation)

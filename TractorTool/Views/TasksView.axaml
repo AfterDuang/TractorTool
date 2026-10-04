@@ -26,7 +26,8 @@
                 <TextBlock Text="{Binding Snapshot.Error}" Classes="muted" IsVisible="{Binding HasError}" />
                 <SelectableTextBlock Text="{Binding Snapshot.Result}" TextWrapping="Wrap" IsVisible="{Binding HasResult}" />
                 <WrapPanel>
-                  <Button Content="返回工具" Command="{Binding OpenCommand}" Margin="0,0,8,0" />
+                  <Button Content="{Binding OpenLabel}" Command="{Binding OpenCommand}" ToolTip.Tip="{Binding OpenDescription}"
+                          AutomationProperties.Name="{Binding OpenDescription}" Margin="0,0,8,0" />
                   <Button Content="取消此项" Command="{Binding CancelCommand}" IsVisible="{Binding IsActive}" Margin="0,0,8,0" />
                   <Button Content="取消整批" Command="{Binding CancelBatchCommand}" IsVisible="{Binding IsActive}" />
                 </WrapPanel>
