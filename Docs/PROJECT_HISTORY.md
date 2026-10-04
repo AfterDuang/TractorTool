@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（可靠性起步） | [E36 · 用户回归反馈与日志磁盘保留（2026-10-04）](#evidence-log-retention) |
 | M4（用户反馈修正） | [E35 · 日志全部已读、底部跟随与管理冲突（2026-10-04）](#evidence-log-follow) |
 | M4（用户反馈修正） | [E34 · 预设命名、公共任务归属与双代理复审（2026-10-04）](#evidence-preset-task-review) |
 | M4（用户反馈修正） | [E33 · 日志/任务整合、错误提醒与取消诊断（2026-10-04）](#evidence-logs-tasks) |
@@ -1390,3 +1391,21 @@ dotnet build TractorTool.slnx -c Debug --disable-build-servers -m:1 -nr:false
 交付 host-final/TractorTool.exe；Contracts API 1.7 / UI 1.3 和视频 0.5.2 不变，未重新打包插件，不需要重复安装同版。用户可使用当前源码 F5 或新发布宿主运行测试。本轮未启动应用、检查程序、FFmpeg、UI 自动化，也未操作真实插件安装目录、媒体或剪贴板。
 
 真实 Windows 滚轮/拖动/键盘、300 条淘汰、不同高度/缩放/窄窗口、点击已读与并发日志、管理拒绝和实际故障提示仍待用户验证。旧取消调试异常、媒体/GPU/任务/生命周期等缺口保持，不能将编译或静态检查记为运行通过。
+
+<a id="evidence-log-retention"></a>
+
+## E36：用户回归反馈与日志磁盘保留（2026-10-04）
+
+用户对 E35 交付回复“看着没啥问题了，继续往下推进吧”。记为该轮日志交互/冲突处理的总体反馈，未推定每个边界、媒体或 GPU 已通过。按当前里程碑进入 M5，本轮选择先落实已有计划中的日志磁盘保留；数据目录迁移留作下一项。
+
+- 新增 Core 内部 LogFileWriter，替换 AppLog 的无界 AppendAllText。保留同一写锁与日志模型，不增加公共接口、外部包、线程或定时器。唯一会话名与分段编号避免同秒/同进程撞名，FilePath 指向当前段。
+- 单文件上限 10 MiB，按容量及 UTC 跨日滚动；首次写入/滚动时保留最近 14 天、最多 20 个文件，总量目标 100 MiB，预留当前段完整容量以避免逐条扫描。当前文件保留；只识别顶层精确命名的宿主普通日志，兼容旧文件名。其他文件/目录/链接不清理，日志路径祖先链接拒绝写入或清理。
+- 占用/权限等清理失败只记一次 WARNING，继续写入新记录，下次滚动重试；失败时不声称上限已经满足。实际写入故障仍使用原 ERROR 提示。磁盘淘汰不改变内存 300 条窗口、未读数或全部已读行为。
+- 单条磁盘内容上限 64 KiB，按完整 UTF-8 字符截断并写明标记；完整原文仅保留在本次内存窗口。应用数据页展示由策略常量生成的说明及打开日志目录按钮，不引入另一套配置。
+- LogChecks 增加 6 组：会话隔离、过期与清理边界、数量及未读独立性、总容量预留、滚动与中文/emoji 截断、Windows 文件占用与重试。与既有 5 组合计 11 组，仅编译未执行；UTC 跨日/实际磁盘空间和原生 UI 仍待运行验收。
+
+证据位于 artifacts/m5-log-retention：初次 build-debug.log 因受限构建无法写 LocalAppData/AvaloniaUI/BuildServices/buildtasks.log 失败；自动审批允许必要构建写入后，build-debug-approved.log 构建成功。最后的 build-final.log 为 Debug 12 工程 0 警告/0 错误；publish-host.log 沿用 scripts/Publish-Host.ps1 成功发布 win-x64 自包含宿主 host/TractorTool.exe。没有关闭 Avalonia 构建任务、更改 IDE 配置或运行应用。
+
+静态 verify_static.py / static-checks.json 核对 10 份文档 240 处本地链接/锚点及 6 个 AXAML，Issues 为空；git diff --check 通过。主代理复核清理边界及失败路径，没有新子代理审查，不将旧审查结论套用到本轮。用户原有 .vscode/launch.json 空白修改继续保留，不纳入提交。
+
+Contracts API 1.7 / UI 1.3 与视频 0.5.2 未变，插件未重新打包或安装。未运行检查程序、应用、FFmpeg、UI 自动化，未访问实际媒体/剪贴板，也未清理真实用户日志。M5 开始不等于阶段完成；M1–M4 未逐项记录的运行缺口、旧取消异常及 Job 终止轮询仍保留。

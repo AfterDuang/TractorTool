@@ -30,6 +30,7 @@ public partial class SettingsViewModel : ViewModelBase
     public AppPaths Paths { get; }
     public ExternalToolsViewModel ExternalTools { get; }
     public string ApplicationVersion => AppInfo.Version;
+    public string LogRetentionDescription => AppLog.RetentionDescription;
     public ThemeChoice[] Themes { get; } = [new("System", "跟随系统"), new("Light", "浅色"), new("Dark", "深色")];
     public AccentChoice[] Accents { get; } = [new("#2563EB", "蓝色"), new("#0F766E", "青绿色"), new("#7C3AED", "紫色"), new("#C2410C", "橙色")];
     [ObservableProperty] private ThemeChoice _selectedTheme;

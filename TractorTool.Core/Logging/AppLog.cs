@@ -14,15 +14,16 @@ public sealed class AppLog : IAppLog
 {
     private readonly object _gate = new();
     private readonly Queue<LogEntry> _recent = new();
+    private readonly LogFileWriter _files;
     private long _sequence, _errors, _acknowledged;
-    public string FilePath { get; }
+    public string FilePath { get { lock (_gate) return _files.FilePath; } }
+    public static string RetentionDescription => LogFileWriter.RetentionDescription;
     public string? WriteError { get; private set; }
     public event Action? Changed;
 
     public AppLog(string directory)
     {
-        Directory.CreateDirectory(directory);
-        FilePath = Path.Combine(directory, $"host-{DateTime.Now:yyyyMMdd-HHmmss}-{Environment.ProcessId}.log");
+        _files = new LogFileWriter(directory);
     }
 
     public void Write(string source, string message, Exception? error = null) =>
@@ -34,7 +35,15 @@ public sealed class AppLog : IAppLog
         lock (_gate)
         {
             var entry = Append(level, source, message, error?.ToString());
-            try { File.AppendAllText(FilePath, entry.Text + Environment.NewLine); WriteError = null; }
+            try
+            {
+                if (_files.Write(entry.Text, entry.Timestamp) is { } warning)
+                {
+                    var notice = Append(AppLogLevel.Warning, "Logging", "旧日志清理未完成，磁盘保留上限暂无法保证；下次滚动文件或日期变化时重试。", warning);
+                    _files.Write(notice.Text, notice.Timestamp);
+                }
+                WriteError = null;
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // Surface a failed sink without recursively writing to that same sink.

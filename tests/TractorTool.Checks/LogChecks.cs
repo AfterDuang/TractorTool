@@ -52,6 +52,97 @@ internal static class LogChecks
             log.Write("Test", "recovered");
             Assert(log.Snapshot().WriteError is null && File.ReadAllText(log.FilePath).Contains("recovered"));
         });
+        check("New sessions have distinct files and preserve each other's records", () =>
+        {
+            var first = new AppLog(DirectoryFor("sessions"));
+            var second = new AppLog(DirectoryFor("sessions"));
+            first.Write("Test", "first session"); second.Write("Test", "second session");
+            Assert(first.FilePath != second.FilePath);
+            Assert(File.ReadAllText(first.FilePath).Contains("first session") &&
+                !File.ReadAllText(first.FilePath).Contains("second session"));
+        });
+        check("Age cleanup only removes host logs, preserving other files and subdirectories", () =>
+        {
+            var dir = DirectoryFor("age");
+            var log = new AppLog(dir);
+            var expired = Archive(dir, 1, "expired");
+            File.SetLastWriteTimeUtc(expired, DateTime.UtcNow.AddDays(-15));
+            var recent = Archive(dir, 2, "recent");
+            var unrelated = Path.Combine(dir, "user-notes.log");
+            var similar = Path.Combine(dir, "host-99999999-999999-1.log");
+            File.WriteAllText(unrelated, "keep notes"); File.WriteAllText(similar, "keep unknown format");
+            File.SetLastWriteTimeUtc(unrelated, DateTime.UtcNow.AddDays(-30));
+            File.SetLastWriteTimeUtc(similar, DateTime.UtcNow.AddDays(-30));
+            var sub = Path.Combine(dir, "archive"); Directory.CreateDirectory(sub);
+            var nested = Archive(sub, 3, "keep nested");
+            File.SetLastWriteTimeUtc(nested, DateTime.UtcNow.AddDays(-30));
+            log.Write("Test", "new record");
+            Assert(!File.Exists(expired) && File.Exists(recent) && File.Exists(unrelated) &&
+                File.Exists(similar) && File.Exists(nested));
+        });
+        check("File count retains newest history and does not affect error acknowledgement", () =>
+        {
+            var dir = DirectoryFor("count"); var log = new AppLog(dir);
+            var oldest = "";
+            for (var i = 0; i < 25; i++)
+            {
+                var file = Archive(dir, i + 1, "history");
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(i - 25));
+                if (i == 0) oldest = file;
+            }
+            log.Write(AppLogLevel.Error, "Test", "visible error");
+            Assert(Directory.GetFiles(dir, "*.log").Length == 20 && !File.Exists(oldest));
+            Assert(log.Snapshot().UnreadErrors == 1);
+            log.AcknowledgeErrors();
+            Assert(log.Snapshot().UnreadErrors == 0 && File.ReadAllText(log.FilePath).Contains("visible error"));
+        });
+        check("Total disk budget reserves space for the active segment", () =>
+        {
+            var dir = DirectoryFor("budget"); var log = new AppLog(dir);
+            var oldest = "";
+            for (var i = 0; i < 12; i++)
+            {
+                var file = Archive(dir, i + 1, "history");
+                using (var stream = File.OpenWrite(file)) stream.SetLength(10 * 1024 * 1024);
+                File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddMinutes(i - 12));
+                if (i == 0) oldest = file;
+            }
+            log.Write("Test", "within budget");
+            Assert(!File.Exists(oldest) && Directory.GetFiles(dir).Sum(f => new FileInfo(f).Length) <= 100L * 1024 * 1024);
+            Assert(File.ReadAllText(log.FilePath).Contains("within budget"));
+        });
+        check("Rotation preserves prior records and caps oversized UTF8 entries", () =>
+        {
+            var log = new AppLog(DirectoryFor("rotation"));
+            log.Write("Test", "previous segment");
+            var previous = log.FilePath;
+            using (var stream = File.OpenWrite(previous)) stream.SetLength(10 * 1024 * 1024 - 1);
+            var message = string.Concat(Enumerable.Repeat("中文😀", 12000));
+            log.Write("Test", message);
+            Assert(log.FilePath != previous && File.ReadAllText(previous).StartsWith(log.Snapshot().Entries[0].Timestamp.ToString("O")));
+            var bytes = File.ReadAllBytes(log.FilePath);
+            var text = new System.Text.UTF8Encoding(false, true).GetString(bytes);
+            Assert(bytes.Length <= 64 * 1024 && text.Contains("已截断"));
+            Assert(log.Snapshot().Entries[^1].Message == message);
+            log.Write("Test", "after oversized record");
+            Assert(File.ReadAllText(log.FilePath).Contains("after oversized record"));
+        });
+        if (OperatingSystem.IsWindows()) check("Blocked cleanup warns once, keeps logging, and retries on rotation", () =>
+        {
+            var dir = DirectoryFor("blocked"); var log = new AppLog(dir);
+            var blocked = Archive(dir, 1, "locked history");
+            File.SetLastWriteTimeUtc(blocked, DateTime.UtcNow.AddDays(-30));
+            using (var held = new FileStream(blocked, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                log.Write("Test", "first"); log.Write("Test", "second");
+                Assert(log.Snapshot().Entries.Count(e => e.Level == AppLogLevel.Warning) == 1);
+                Assert(log.Snapshot().UnreadErrors == 0 && log.Snapshot().WriteError is null && File.Exists(blocked));
+                Assert(File.ReadAllText(log.FilePath).Contains("旧日志清理未完成"));
+            }
+            using (var stream = File.OpenWrite(log.FilePath)) stream.SetLength(10 * 1024 * 1024);
+            log.Write("Test", "cleanup retry");
+            Assert(!File.Exists(blocked) && log.Snapshot().WriteError is null);
+        });
         check("Task progress logs milestones, clean cancellation is INFO, failure is ERROR", () =>
         {
             async Task Run()
@@ -79,6 +170,12 @@ internal static class LogChecks
             }
             Run().WaitAsync(TimeSpan.FromSeconds(15)).GetAwaiter().GetResult();
         });
+    }
+    private static string Archive(string directory, int id, string content)
+    {
+        var path = Path.Combine(directory, $"host-20260101-120000-{id}.log");
+        File.WriteAllText(path, content);
+        return path;
     }
     private static void Assert(bool value) { if (!value) throw new Exception("Logging assertion failed."); }
     private sealed class LegacyLog : IAppLog { public void Write(string source, string message, Exception? error = null) { } }
