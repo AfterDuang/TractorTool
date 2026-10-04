@@ -52,30 +52,33 @@ public partial class App : Application
         {
             _desktop = desktop;
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            var status = new TextBlock { Text = "正在打开应用数据…", TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-            var cancel = new Button { Content = "退出" };
-            var splash = new Window
-            {
-                Title = "TractorTool", Width = 520, Height = 220, CanResize = false,
-                Content = new StackPanel { Margin = new Thickness(24), Spacing = 20,
-                    Children = { status, new ProgressBar { IsIndeterminate = true }, cancel } }
-            };
+            var window = new MainWindow();
+            window.ShowStartup("正在启动 TractorTool…");
             _startup = new CancellationTokenSource();
-            cancel.Click += (_, _) => _startup?.Cancel();
-            splash.Closing += (_, e) =>
+            window.Closing += (_, e) =>
             {
-                if (_startup is null) return;
+                if (_exiting) return;
                 e.Cancel = true;
-                _startup.Cancel();
-                status.Text = "正在停止迁移，原数据保留…";
+                if (CancelStartup(window)) return;
+                if (!_ready) { _exiting = true; desktop.Shutdown(1); return; }
+                if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitCoreAsync(systemExit: true); return; }
+                if (_tray?.Available == true) window.Hide();
+                else { _vm?.NotifyTrayUnavailable(); Restore(); }
             };
-            splash.Opened += async (_, _) => await StartAsync(desktop, splash, status);
-            desktop.MainWindow = splash;
+            window.Opened += OnOpened;
+            async void OnOpened(object? sender, EventArgs args)
+            {
+                window.Opened -= OnOpened;
+                await StartAsync(desktop, window);
+            }
+            desktop.MainWindow = window;
+            if (OperatingSystem.IsWindows()) Program.RestoreSignal?.Listen(() => Dispatcher.UIThread.Post(Restore));
             desktop.ShutdownRequested += (_, e) =>
             {
                 if (_exiting) return;
                 e.Cancel = true;
-                if (_startup is not null) _startup.Cancel();
+                if (CancelStartup(window)) return;
+                if (!_ready) { _exiting = true; desktop.Shutdown(1); }
                 else _ = ExitCoreAsync(systemExit: true);
             };
             desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); };
@@ -83,22 +86,40 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, Window splash, TextBlock status)
+    private bool CancelStartup(MainWindow window)
+    {
+        if (_startup is null) return false;
+        _startup.Cancel();
+        window.ShowStartup("正在停止启动，原数据保留…");
+        return true;
+    }
+
+    private async Task StartAsync(IClassicDesktopStyleApplicationLifetime desktop, MainWindow window)
     {
         var startup = _startup!;
         var compatibility = new HostCompatibility(OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
             System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier, UiApi.Version, UiApi.AvaloniaVersion);
-        var progress = new Progress<string>(message => { if (_startup == startup && !startup.IsCancellationRequested) status.Text = message; });
+        var progress = new Progress<string>(message => { if (_startup == startup && !startup.IsCancellationRequested) window.ShowStartup(message); });
         try
         {
             // No log/settings/package/plugin writers exist while the two roots are compared.
-            var prepared = await Task.Run(() =>
+            var opened = await Task.Run(() =>
             {
                 var fixedRoot = Program.ProfileRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
                 _lease = new InstanceLease(AppPaths.Absolute(fixedRoot));
                 var paths = AppPaths.Open(Program.ProfileRoot, ensureDirectories: false);
                 if (!string.Equals(paths.DataRoot, paths.BootstrapRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                     _dataLease = new InstanceLease(paths.DataRoot);
+                var settings = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate).Load();
+                return (Paths: paths, Settings: settings);
+            });
+            startup.Token.ThrowIfCancellationRequested();
+            // Read existing appearance before a potentially long migration; this does not save settings.
+            ThemeService.Apply(opened.Settings);
+            var prepared = await Task.Run(() =>
+            {
+                startup.Token.ThrowIfCancellationRequested();
+                var paths = opened.Paths;
                 var migration = new DataRootMigration(paths);
                 var requested = migration.Snapshot.Migration is not null;
                 string? managementError = null;
@@ -116,11 +137,18 @@ public partial class App : Application
                 return (result.Paths, result.Error, managementError, Migrated: requested && result.Error is null);
             });
             startup.Token.ThrowIfCancellationRequested();
-            var window = CreateMainWindow(prepared.Paths, compatibility, prepared.managementError, prepared.Error, prepared.Migrated);
+            ConfigureMainWindow(window, prepared.Paths, compatibility, prepared.managementError, prepared.Error, prepared.Migrated);
             _startup = null;
-            desktop.MainWindow = window;
-            window.Show();
-            splash.Close();
+            _ready = true;
+            window.ShowWorkspace();
+            _tray = new TrayService(Restore, ExitAsync, _log!, Program.LaunchArguments.Contains("--no-tray"));
+            try { await _vm!.InitializeAsync(); }
+            catch (Exception ex)
+            {
+                _log!.Write("Host", "初始化失败", ex);
+                if (!_exiting) _vm!.Notice = "初始化失败：" + ex.Message;
+            }
+            if (!_exiting && _tray.Available != true) _vm!.NotifyTrayUnavailable();
         }
         catch (OperationCanceledException) when (startup.IsCancellationRequested)
         {
@@ -131,21 +159,13 @@ public partial class App : Application
         catch (Exception ex)
         {
             _startup = null;
-            var quit = new Button { Content = "退出" };
-            quit.Click += (_, _) => desktop.Shutdown(1);
-            var message = new TextBox { Text = "启动未完成。\n" + ex.Message + "\n请保留原数据与迁移记录，解决问题后重新启动。",
-                IsReadOnly = true, TextWrapping = Avalonia.Media.TextWrapping.Wrap };
-            var window = new Window { Title = "TractorTool · 启动失败", Width = 720, Height = 360,
-                Content = new StackPanel { Margin = new Thickness(24), Spacing = 20, Children = { message, quit } } };
-            window.Closed += (_, _) => desktop.Shutdown(1);
-            desktop.MainWindow = window;
-            window.Show();
-            splash.Close();
+            _ready = false;
+            window.ShowStartupError(ex.Message + "\n请保留原数据与迁移记录，解决问题后重新启动。");
         }
         finally { startup.Dispose(); }
     }
 
-    private Window CreateMainWindow(AppPaths paths, HostCompatibility compatibility, string? managementError, string? migrationError, bool migrated)
+    private void ConfigureMainWindow(MainWindow window, AppPaths paths, HostCompatibility compatibility, string? managementError, string? migrationError, bool migrated)
     {
         _log = new AppLog(paths.LogRoot);
         if (migrationError is not null) _log.Write(AppLogLevel.Error, "Storage", migrationError);
@@ -165,30 +185,7 @@ public partial class App : Application
         if (managementError is not null) _plugins.Discover([], startupError: managementError);
         _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log, _packages, _pluginManager), ExitAsync,
             managementError is null ? _pluginManager : null, settings.DisabledPlugins, _packages, _tasks);
-        var window = new MainWindow { DataContext = _vm };
-        window.Closing += (_, e) =>
-        {
-            if (_exiting) return;
-            e.Cancel = true;
-            if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitCoreAsync(systemExit: true); return; }
-            if (_tray?.Available == true) window.Hide();
-            else { _vm.NotifyTrayUnavailable(); Restore(); }
-        };
-        window.Opened += async (_, _) =>
-        {
-            if (_ready) return;
-            _ready = true;
-            _tray = new TrayService(Restore, ExitAsync, _log, Program.LaunchArguments.Contains("--no-tray"));
-            if (OperatingSystem.IsWindows()) Program.RestoreSignal?.Listen(() => Dispatcher.UIThread.Post(Restore));
-            try { await _vm.InitializeAsync(); }
-            catch (Exception ex)
-            {
-                _log.Write("Host", "初始化失败", ex);
-                if (!_exiting) _vm.Notice = "初始化失败：" + ex.Message;
-            }
-            if (!_exiting && _tray.Available != true) _vm.NotifyTrayUnavailable();
-        };
-        return window;
+        window.DataContext = _vm;
     }
 
     private void Restore()

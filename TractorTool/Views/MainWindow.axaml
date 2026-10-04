@@ -61,5 +61,19 @@
         </Grid>
       </Border>
     </nav:FANavigationView>
+    <!-- Startup owns the same window and title bar; navigation is revealed after data is ready. -->
+    <Grid x:Name="StartupPanel" Grid.Row="1" ColumnDefinitions="72,*" IsVisible="False">
+      <Border Background="{DynamicResource AppSidebarBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,1,0" />
+      <Grid Grid.Column="1" Margin="40,32">
+        <StackPanel Spacing="20" MaxWidth="560" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+          <TextBlock x:Name="StartupStatus" FontSize="20" FontWeight="SemiBold" TextAlignment="Center" TextWrapping="Wrap" />
+          <ProgressBar x:Name="StartupProgress" Height="4" MinHeight="4" IsIndeterminate="False"
+                       HorizontalAlignment="Stretch" AutomationProperties.Name="启动进度" />
+          <TextBox x:Name="StartupError" IsVisible="False" IsReadOnly="True" AcceptsReturn="True"
+                   TextWrapping="Wrap" MaxHeight="280" AutomationProperties.Name="启动错误详情" />
+          <Button x:Name="StartupExit" Content="退出" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Grid>
+    </Grid>
   </Grid>
 </fa:FAAppWindow>

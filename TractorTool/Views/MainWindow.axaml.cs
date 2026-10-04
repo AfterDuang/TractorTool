@@ -18,6 +18,7 @@ public partial class MainWindow : FAAppWindow
         _dialogs = new(this);
         TitleBar.Height = 48;
         TitleBar.ExtendsContentIntoTitleBar = true;
+        StartupExit.Click += (_, _) => Close();
         NavigationView.ItemInvoked += (_, e) =>
         {
             var item = e.InvokedItem as NavigationItem ?? e.InvokedItemContainer?.DataContext as NavigationItem;
@@ -30,6 +31,33 @@ public partial class MainWindow : FAAppWindow
         Closed += (_, _) => { _dialogs.Dispose(); Disconnect(); _presentedViewModel?.Dispose(); };
         ActualThemeVariantChanged += (_, _) => ApplyCaptionColors();
         Opened += (_, _) => ApplyCaptionColors();
+    }
+
+    // Presentation only: App still controls startup ownership, cancellation and service creation.
+    public void ShowStartup(string message)
+    {
+        NavigationView.IsVisible = false;
+        StartupPanel.IsVisible = true;
+        StartupStatus.Text = message;
+        StartupProgress.IsVisible = true;
+        StartupProgress.IsIndeterminate = true;
+        StartupError.IsVisible = false;
+    }
+
+    public void ShowStartupError(string message)
+    {
+        ShowStartup("启动未完成");
+        StartupProgress.IsIndeterminate = false;
+        StartupProgress.IsVisible = false;
+        StartupError.Text = message;
+        StartupError.IsVisible = true;
+    }
+
+    public void ShowWorkspace()
+    {
+        StartupProgress.IsIndeterminate = false;
+        StartupPanel.IsVisible = false;
+        NavigationView.IsVisible = true;
     }
     private void ConnectPagePresenter()
     {

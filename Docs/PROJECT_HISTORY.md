@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（启动交互修正） | [E39 · 主窗口内启动与迁移进度（2026-10-04）](#evidence-startup-shell) |
 | M5（双代理复审） | [E38 · 迁移重试空间与快照取消修正（2026-10-04）](#evidence-migration-review) |
 | M5（可靠性实现） | [E37 · 数据目录迁移与启动恢复（2026-10-04）](#evidence-data-migration) |
 | M5（可靠性起步） | [E36 · 用户回归反馈与日志磁盘保留（2026-10-04）](#evidence-log-retention) |
@@ -1445,3 +1446,20 @@ Contracts API 1.7 / UI 1.3 与视频 0.5.2 未变，插件未重新打包或安�
 静态 verify_static.py / static-checks.json 核对 10 份文档、243 处本地链接/锚点及 6 个 AXAML，Issues 为空；变更 diff 检查通过。最终宿主 host/TractorTool.exe；Contracts API 1.7 / UI 1.3、剪贴板 1.1.1、视频 0.5.2 不变，插件未重打包或安装。`.vscode/launch.json` 用户原有空白修改未纳入提交。
 
 本轮未启动应用、检查程序、FFmpeg 或 UI 自动化，未操作真实数据目录/媒体/剪贴板。近满盘重试、块内/部分收尾取消与真实启动窗口，以及 E37 其他运行缺口仍待用户验收；M5 不标记完成。
+
+<a id="evidence-startup-shell"></a>
+
+## E39：主窗口内启动与迁移进度（2026-10-04）
+
+用户反馈每次启动都会出现白色小窗口，并给出主窗口内容区居中显示状态/进度条的示意。源码确认旧流程无论是否迁移都会创建 520×220 的普通 Window，完成后再创建 MainWindow，失败又创建另一普通窗口；显示“正在打开应用数据”不代表每次都在迁移。
+
+- 移除上述临时窗口。App 只创建一次 MainWindow 并赋给 desktop.MainWindow；启动内容区复用标题栏、图标、背景与主题资源，保留空侧栏轮廓、居中状态/横向活动条和退出按钮，不强制最大化。普通启动显示“正在启动 TractorTool”，迁移回调才显示复制/校验状态和实际百分比文本。活动条不伪造总进度。
+- 取得 profile/DataRoot 租约后，后台只读现有外观并在 UI 线程应用，再进行迁移；迁移准备完成后才配置写入服务/模型和插件。就绪后在同一窗口切换到主页，插件仍按原流程初始化；失败在同窗显示可选择复制的原因和退出。初始配置读取完成前沿用系统主题，首次原生呈现与主题切换视觉未实测。
+- 关闭启动界面或点击退出沿用取消链，保留数据与迁移请求；进入业务界面后仍按原规则关闭到托盘、显式退出清理。首次 Opened 处理器解绑，避免恢复窗口重复初始化；实例恢复监听提前到主窗口创建后，启动期间最小化也可接收恢复信号。没有引入定时器、延迟停留或通用启动框架，Core 迁移事务未改。
+- 主代理复核一次窗口创建/赋值、取消与错误分支、迟到进度保护、主题只读和服务启动次序。本轮没有新子代理，不将 E38 的复审自动算作本轮通过。未增加仅镜像界面显隐属性的检查用例；完整启动生命周期需要原生运行证据。
+
+证据位于 artifacts/m5-startup-shell：build-debug.log 记录 `dotnet build TractorTool.slnx -c Debug -m:1 -nr:false` 成功，12 工程、**0 警告/0 错误**；publish-host.log 记录 `scripts/Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\m5-startup-shell\host` 发布 Release / win-x64 自包含成功。必要构建允许 Avalonia 自有缓存/日志写入，没有修改 IDE 或关闭构建任务。
+
+静态 verify_static.py / static-checks.json 核对 10 份文档、244 处本地链接/锚点和 6 个 AXAML XML，Issues 为空；变更 diff 检查通过。宿主为 host/TractorTool.exe；Contracts API 1.7 / UI 1.3 和既有插件版本不变，没有重新打包/安装插件。保留 `.vscode/launch.json` 用户已有空白修改，不纳入提交。
+
+未启动应用、检查程序、FFmpeg、UI 自动化或访问真实数据。普通启动不弹额外窗口、迁移进度、错误退出、主题首帧、缩放/窄窗口、启动中关闭及托盘/实例恢复仍由用户验证。M5、近满盘/块内取消及既有 M1–M4 运行缺口继续保留。

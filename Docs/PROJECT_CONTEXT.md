@@ -1,11 +1,11 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-04。**M5 日志磁盘保留和数据目录迁移已实现；本轮按用户要求双代理审查迁移并修正两项 P2。** 当前验收以 [DEVELOPMENT](DEVELOPMENT.md#current-status) 为准，本轮证据见 [E38](PROJECT_HISTORY.md#evidence-migration-review)。未逐项记录的 M1–M4 运行缺口继续保留。
+更新日期：2026-10-04。**本轮按启动白窗反馈，改为唯一主窗口内显示启动/迁移/失败状态，完成后原位进入主页。** 当前验收以 [DEVELOPMENT](DEVELOPMENT.md#current-status) 为准，本轮证据见 [E39](PROJECT_HISTORY.md#evidence-startup-shell)。未逐项记录的 M1–M4 运行缺口继续保留。
 
 ## 1. 当前边界
 
 - 用户接手运行测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化或操作真实剪贴板/媒体。必要编译、独立打包和静态核对允许。“看着没啥问题”是 E35 反馈，不视作媒体/GPU 或所有故障分支通过。
-- VS Code / 根 slnx 12 工程；宿主不引用具体插件，源码 SDK 与 HostSdkDir 发布 DLL 引用互斥，开发 bin 不自动安装。本轮两位子代理均显式 GPT-6.1-Sol + high，分别审查存储事务和启动/退出链，修正后复审均无新增发现。
+- VS Code / 根 slnx 12 工程；宿主不引用具体插件，源码 SDK 与 HostSdkDir 发布 DLL 引用互斥，开发 bin 不自动安装。若用子代理，显式 GPT-6.1-Sol + high；本轮主代理复核，E38 双代理结论不自动覆盖本轮。
 - 框架只提供公共连接、管理、生命周期及交互，媒体/AI 业务留插件。插件在实际 AppRoot/Plugins；数据/工具包在 DataRoot；不建通用 Worker/IPC/Python 平台。
 - 实质改动保存本地 Git，不配置远程或推送；保留用户已有 .vscode/launch.json 空白修改。M5 迁移/日志保留运行验证、可靠性回归和 CI/安装器尚未完成。
 
@@ -13,6 +13,7 @@
 
 - Contracts API **1.7** / UI API **1.3** 未变，旧构造、默认接口实现和程序集身份继续兼容。日志保留和迁移都在 Core 内实现，不扩展 SDK 或新建业务框架。
 - 数据迁移入口为设置 → 通用设置 → 应用数据，只接受本机空的专用目录。确认后在固定 bootstrap 记录绑定 AppRoot 的请求，显式退出、下次服务/插件加载前执行；不迁移插件代码。复制 Config/Data/Packages/Logs，跳过 Cache/Packages/.work/bootstrap，SHA256 核对、无覆盖提交，保留原目录。
+- 启动只创建一个 MainWindow，共用标题栏/主题资源，居中状态和进度条占内容区，不强制最大化。普通启动显示“正在启动”，仅迁移回调显示复制/校验信息；完成后原位显示主页，失败同窗显示原因/退出。Opened 处理器首次触发即解绑，实例恢复不重新初始化。迁移前只读外观，日志/设置写入服务和插件仍在迁移准备完成后创建；现有 Core 提交/恢复流程不变。
 - 启动持有固定 profile、当前/目标 DataRoot 和插件安装目录租约，后台复制、事件进度，无轮询。全部复制校验后原子切换 dataRoot，保留事务直至插件回退状态/快照元数据重绑定完成。提交前失败回原根并提示设置重试/取消；提交后收尾失败停止加载，重启幂等收尾，不能回旧根继续写。存盘报错会重读实际指针，避免错误处理反向覆盖。
 - 有待重启插件变更/待加载结果时不安排迁移；安排后新增变更则保留旧根先处理插件，随后手动重试。关闭启动进度窗口停止复制/快照校验并退出，提交前后均保留请求；提交后取消保留新指针，下次先收尾。快照摘要格式不变，遍历和每 64 KiB 读取前检查取消。重试在归属/内容校验后回收专属 scratch，再查实际空间；不删除已复制目标文件。原根继续运行导致已复制内容变化时，取消后选择新空目录；无自动清理旧目录入口。
 - 当前包 receipt 持久化相对工具路径；用户输入/输出路径不改。新根回退快照会更新本安装引用的 DataRoot，旧快照不动。未来 Python venv 需专门重建，不由此次复制自动保证可搬迁。
@@ -33,6 +34,6 @@
 | 应用数据/迁移起点 | [DataRootMigration](../TractorTool.Core/Storage/DataRootMigration.cs)、[AppPaths](../TractorTool.Core/Storage/AppPaths.cs)、[App](../TractorTool/App.axaml.cs)、[DataMigrationViewModel](../TractorTool/ViewModels/DataMigrationViewModel.cs)、[迁移设计](ARCHITECTURE.md#storage) |
 | 待重启与依赖 | [PluginManager](../TractorTool.Core/Plugins/PluginManager.cs)、[ExternalPackageService](../TractorTool.Core/Packages/ExternalPackageService.cs) |
 
-本轮宿主 artifacts/m5-migration-review/host；视频仍为 artifacts/preset-task-review/video/TractorTool.VideoExport-0.5.2.zip，不需要重复安装。Debug 12 工程和 Release 宿主发布通过；迁移 9 组核心检查、6 组插件管理关联检查仅编译未运行，证据详见 E38。新增夹具覆盖两个阶段取消/再启动，扩展旧摘要固定值及残留 scratch 回收；近满盘/块内取消仍需运行证据。未启动应用或改动实际数据根。
+本轮宿主 artifacts/m5-startup-shell/host；视频仍为 artifacts/preset-task-review/video/TractorTool.VideoExport-0.5.2.zip，不需要重复安装。Debug 12 工程和 Release 宿主发布通过，未运行任何检查程序或应用。普通启动/迁移/错误同窗切换、主题首帧、关闭取消和托盘恢复待用户验证，证据详见 E39；E38 近满盘/块内取消等缺口保留。未改动实际数据根。
 
 下一项推进 **M5 本地/CI 共用的正式分发流程**，完善压缩包、许可与校验产物，再落实安装器。用户负责隔离运行验收，重点仍有迁移的跨卷/ACL/空间不足/中断恢复、实际回退与包复用；媒体/GPU、任务/生命周期及旧取消异常等缺口保持，不随文档归档消失。
