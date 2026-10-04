@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文档（GitHub 首页） | [E44 · 项目 README 与文档入口（2026-10-05）](#evidence-project-readme) |
 | M5（用户级安装器） | [E43 · 安装、升级/卸载保留与双代理复审（2026-10-05）](#evidence-installer) |
 | M5（三代理分发复审） | [E42 · 路径、ZIP 校验和构建环境修正（2026-10-04）](#evidence-distribution-review) |
 | M5（统一分发） | [E41 · 本地/CI 共用 ZIP、许可及静态校验（2026-10-04）](#evidence-distribution) |
@@ -1587,3 +1588,11 @@ try {
 ```
 
 下一项开发为 GitHub Release 流程；安装/升级/卸载与中断恢复、最低系统/无 SDK 机器及前述 M2–M5 运行缺口继续保留。没有把编译通过改写为产品验收通过，也没有修改用户已有 `.vscode/launch.json` 空白改动。
+
+<a id="evidence-project-readme"></a>
+
+## E44：项目 README 与文档入口（2026-10-05）
+
+用户要求为后续上传 GitHub 准备项目 README。新增根 README.md，复用已有应用图标，说明精干宿主/插件业务边界、两个工具、公共体验、发布文件、数据目录、VS Code/F5、独立插件安装、统一分发脚本及文档入口。核对当前项目、SDK 配置、插件清单、脚本参数与入口；不写个人绝对路径、虚构仓库/下载地址或未经确认的开源许可证，不把参考软件截图作为本项目截图。
+
+标明当前开发中，Release/CI 实跑和完整运行验收仍待完成；Python/pip/AI 仅为计划。Docs/README.md 增加首页职责，开发台账和交接保留 E43 的代码事实。11 份文档/272 处本地链接与锚点、A01–A23 编号、README 图标资源及可移植路径核对通过，结果在 artifacts/readme-docs/doc-checks.json；不构建、不运行应用/检查程序/安装器，不配置远程或上传。用户 `.vscode/launch.json` 空白修改及工作中新增的 `.gitignore` 修改保留且不纳入提交。

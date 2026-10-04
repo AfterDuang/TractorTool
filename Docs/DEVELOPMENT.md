@@ -36,6 +36,8 @@
 
 用户接手运行测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化，不操作真实配置、剪贴板或媒体。静态检查、构建、替身/Headless 不能替代真实系统和硬件证据。早期 artifacts 曾被外部清理，历史路径不保证仍存在。
 
+文档入口：[项目 README](../README.md) 已补齐 GitHub 首页说明、安装/开发/插件入口及开发中状态，详见 [E44](PROJECT_HISTORY.md#evidence-project-readme)。该轮仅核对文档，不增加构建或运行通过项；未配置远程、上传或发布。
+
 <a id="workflow"></a>
 
 ## 2. 开发与验收入口
@@ -155,4 +157,4 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 
 <a id="evidence"></a>
 
-历史入口：[E01–E43 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E44 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

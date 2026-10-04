@@ -6,8 +6,10 @@
 
 **处于 M5 可靠性与发布阶段。** 最新一轮 [E43](PROJECT_HISTORY.md#evidence-installer) 实现 Windows 用户级安装器及升级/卸载保留逻辑。两位 gpt-6.1-sol / high 子代理复审后，完整 ZIP/安装器编译及静态校验通过；没有执行实际安装、升级、卸载或应用。CI 已接入相同流程但未执行，打包不等于运行通过。
 
+随后 [E44](PROJECT_HISTORY.md#evidence-project-readme) 仅补齐根 [README](../README.md) 供将来 GitHub 展示，文档链接已核对。未新增功能、构建或运行证据，未配置远程或上传；下一项开发仍是 Release 流程。
+
 - M1–M4 功能实现已转维护；真实媒体/GPU、任务/退出、依赖/管理/剪贴板的逐项缺口仍在台账。M5 的运行恢复、安装保留、Release 发布、签名及无 SDK 机器验收未完成。
-- 用户接手测试；未经新指示不运行应用、检查程序、FFmpeg 或 UI 自动化，不访问真实配置/媒体/剪贴板。允许必要构建/发布和静态核对。保留 `.vscode/launch.json` 用户已有空白修改，不纳入提交。
+- 用户接手测试；未经新指示不运行应用、检查程序、FFmpeg 或 UI 自动化，不访问真实配置/媒体/剪贴板。允许必要构建/发布和静态核对。保留用户 `.vscode/launch.json` 空白修改及 `.gitignore` 新增的 Docs/ 规则，不纳入提交；Docs 已被 Git 跟踪，忽略规则不会自动移除它们。
 - 框架仅负责公共连接、管理、生命周期和交互；业务留插件，不预建 Python/AI/Worker 平台。插件代码在实际 AppRoot/Plugins，数据与工具包在 DataRoot。使用子代理时显式 `gpt-6.1-sol` / `high`。
 
 ## 2. 下次改动必须保留的边界
