@@ -8,11 +8,13 @@
 - 原记录中的“本轮”“当前”“下一步”仅指记录发生时；旧方案、版本、产物路径和命令不可直接当作当前操作指南。
 - 历史通过只覆盖当时的代码。早期 artifacts 曾被外部清理，保留日志路径不保证文件仍存在；失败、未执行及证据缺口均保留。
 - E01–E20 最初从开发文档迁入，此后轮次按 E 编号追加；保留当时日期、结果和命令，不补造运行证据。
+- E45 已删除 `Build-ClipboardPlugin.ps1` / `Build-VideoPlugin.ps1`，并将 `Verify-M1.ps1` 改名；下文旧命令保留为历史证据，当前操作见 [插件构建规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证) 和 [检查入口](DEVELOPMENT.md#workflow)。
 
 ## 记录索引
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（脚本精简） | [E45 · 删除重复打包入口与验证脚本改名（2026-10-05）](#evidence-script-cleanup) |
 | 文档（GitHub 首页） | [E44 · 项目 README 与文档入口（2026-10-05）](#evidence-project-readme) |
 | M5（用户级安装器） | [E43 · 安装、升级/卸载保留与双代理复审（2026-10-05）](#evidence-installer) |
 | M5（三代理分发复审） | [E42 · 路径、ZIP 校验和构建环境修正（2026-10-04）](#evidence-distribution-review) |
@@ -1596,3 +1598,13 @@ try {
 用户要求为后续上传 GitHub 准备项目 README。新增根 README.md，复用已有应用图标，说明精干宿主/插件业务边界、两个工具、公共体验、发布文件、数据目录、VS Code/F5、独立插件安装、统一分发脚本及文档入口。核对当前项目、SDK 配置、插件清单、脚本参数与入口；不写个人绝对路径、虚构仓库/下载地址或未经确认的开源许可证，不把参考软件截图作为本项目截图。
 
 标明当前开发中，Release/CI 实跑和完整运行验收仍待完成；Python/pip/AI 仅为计划。Docs/README.md 增加首页职责，开发台账和交接保留 E43 的代码事实。11 份文档/272 处本地链接与锚点、A01–A23 编号、README 图标资源及可移植路径核对通过，结果在 artifacts/readme-docs/doc-checks.json；不构建、不运行应用/检查程序/安装器，不配置远程或上传。用户 `.vscode/launch.json` 空白修改及工作中新增的 `.gitignore` 修改保留且不纳入提交。
+
+<a id="evidence-script-cleanup"></a>
+
+## E45：删除重复打包入口与验证脚本改名（2026-10-05）
+
+用户确认上一轮脚本审查建议后，删除只透传项目路径的 Build-ClipboardPlugin.ps1 和 Build-VideoPlugin.ps1。正式插件直接使用 Build-Plugin.ps1 的 -Project 参数，现有 Build-Distribution 本来就直接调用该通用入口，因此不改分发及 CI 流程。
+
+Verify-M1.ps1 改名为 Verify-PluginHost.ps1，证据目录前缀从 artifacts/m1- 改为 artifacts/plugin-host-；构建、核心检查、独立机制插件、Headless 及宿主哈希验证内容保持不变。同步检查工程注释、插件规范示例、当前台账与交接；历史记录中的旧命令保留，并在阅读约定中指向现行入口。图标生成和其他分发脚本继续保留，没有新增兼容包装或抽象。
+
+静态验证：9 份 PowerShell 脚本及文档中的插件打包命令语法通过；现行文件无被删/改名入口的残留引用，文档本地链接和锚点有效；改名脚本除证据目录前缀外与原文件一致。结果记录于 artifacts/script-cleanup/static-checks.json。未执行构建、发布、应用、检查程序或安装器，不增加运行验收通过项；用户 .gitignore 和 .vscode/launch.json 修改保留且不纳入提交。下一项开发仍为 M5 GitHub Release 流程。

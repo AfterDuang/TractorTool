@@ -1,7 +1,7 @@
 param([string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$run = Join-Path $repo ('artifacts/m1-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6))
+$run = Join-Path $repo ('artifacts/plugin-host-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6))
 $publish = Join-Path $run 'host'
 New-Item -ItemType Directory -Path $run -Force | Out-Null
 function Invoke-Recorded([string]$Name, [scriptblock]$Action) {

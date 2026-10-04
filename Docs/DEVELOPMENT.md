@@ -38,6 +38,8 @@
 
 文档入口：[项目 README](../README.md) 已补齐 GitHub 首页说明、安装/开发/插件入口及开发中状态，详见 [E44](PROJECT_HISTORY.md#evidence-project-readme)。该轮仅核对文档，不增加构建或运行通过项；未配置远程、上传或发布。
 
+脚本整理：[E45](PROJECT_HISTORY.md#evidence-script-cleanup) 删除两个重复的插件打包包装脚本，统一使用 `Build-Plugin.ps1 -Project ...`；独立宿主验证改名为 `Verify-PluginHost.ps1`，覆盖保持不变。9 份脚本语法、现行引用与文档链接核对通过，本轮未构建或运行检查程序。
+
 <a id="workflow"></a>
 
 ## 2. 开发与验收入口
@@ -90,7 +92,7 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 | `dotnet run --project tests/TractorTool.Checks -c Release` | 核心存储、管理、日志、依赖、任务与进程；Windows 部分包含真实子进程夹具，包使用内存 ZIP/虚拟 HTTP，不启动 FFmpeg |
 | `dotnet run --project tests/TractorTool.ClipboardChecks` | 剪贴板模型/替身，不证明 WinRT 实际系统行为 |
 | `dotnet run --project tests/TractorTool.VideoChecks` | 媒体数据、参数、进度与隔离输出替身，不证明真实转码或 GPU |
-| [Verify-M1.ps1](../scripts/Verify-M1.ps1) | 构建、核心检查、发布、独立机制插件、Headless 和哈希；历史名称不等于当前全部阶段覆盖，不能代替正式插件/原生拖放/托盘验收 |
+| [Verify-PluginHost.ps1](../scripts/Verify-PluginHost.ps1) | 构建、核心检查、发布、独立机制插件、Headless 和哈希；证据输出到 artifacts/plugin-host-*，不能代替正式插件/原生拖放/托盘验收 |
 
 <a id="milestones"></a>
 
@@ -157,4 +159,4 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 
 <a id="evidence"></a>
 
-历史入口：[E01–E44 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E45 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

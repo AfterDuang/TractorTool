@@ -180,7 +180,7 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 4. 重新核对原有宿主文件哈希，确认无需修改/重编宿主。
 5. 使用隔离 profile 重启宿主，真实验证导航和设置注册、设置持久化、错误状态及生命周期；编译和文件复制不能替代 DLL 加载证据。
 
-完整、可复用的执行入口是 [Verify-M1.ps1](../scripts/Verify-M1.ps1)。单独构建示例（需把变量指向已发布宿主的绝对路径，从仓库根目录执行）：
+构建、核心检查、独立机制插件加载与宿主哈希验证入口是 [Verify-PluginHost.ps1](../scripts/Verify-PluginHost.ps1)，UI 部分使用 Headless，不能代替真实 Windows 交互验收。单独构建示例（需把变量指向已发布宿主的绝对路径，从仓库根目录执行）：
 
 ```powershell
 $publishedHost = 'H:\ProjH\TractorTool\artifacts\manual-publish'
@@ -191,10 +191,15 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 
 此代码块是操作示例，不是新增执行证据。首次构建需要正常还原。宿主发布和隔离启动入口见 [开发操作](DEVELOPMENT.md#workflow)。
 
-正式剪贴板插件已有 [独立项目](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 和 [打包脚本](../scripts/Build-ClipboardPlugin.ps1)。两个正式插件入口共用 [Build-Plugin](../scripts/Build-Plugin.ps1)，需要 PowerShell 7.4+ 和根 global.json 指定的 SDK；读取清单版本作为插件产品版本，复制实际还原依赖的许可，输出 ZIP 与 SHA256：
+所有插件直接使用 [Build-Plugin](../scripts/Build-Plugin.ps1)，通过 `-Project` 指定工程。需要 PowerShell 7.4+ 和根 global.json 指定的 SDK；读取清单版本作为插件产品版本，复制实际还原依赖的许可，输出 ZIP 与 SHA256。两个正式插件的独立打包示例（从仓库根目录执行）：
 
 ```powershell
-./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/manual-publish -Output H:/ProjH/TractorTool/artifacts/manual-clipboard
+./scripts/Build-Plugin.ps1 `
+    -Project ./Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj `
+    -HostSdkDir ./artifacts/manual-publish -Output ./artifacts/manual-clipboard
+./scripts/Build-Plugin.ps1 `
+    -Project ./Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj `
+    -HostSdkDir ./artifacts/manual-publish -Output ./artifacts/manual-video
 ```
 
 输出必须是新空目录。将单个本地 ZIP 拖到宿主插件面板，或通过“插件 → 安装 / 更新”选择 ZIP；两者共用可信来源确认及校验流程。确认后显式退出并重新启动，不能只关闭到托盘。日常解决方案可以编译全部工程；发布宿主仍只指定 `TractorTool.csproj`，不会因此静态包含插件，随后独立编译/打包才是插件正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
@@ -207,4 +212,4 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 - 仅使用隔离数据和临时发布副本。静态检查、构建、自动化、集成、真实系统/UI/硬件分别报告。
 - 业务特有的用例和实现范围放各插件文档；当前结果和限制写 DEVELOPMENT.md，已完成轮次的执行详情归 PROJECT_HISTORY.md。用户接手运行测试，未经新指示不自动启动验收程序。
 
-视频插件通过 [Build-VideoPlugin.ps1](../scripts/Build-VideoPlugin.ps1) 使用同一 HostSdkDir/空输出目录约定独立打包，源码为 [VideoExport 工程](../Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj)。ZIP 不捆绑 FFmpeg；首次功能使用交给宿主申请。具体版本/可测范围只见开发台账，不能以 JSON 夹具或独立编译代替真实工具执行。
+视频插件源码为 [VideoExport 工程](../Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj)。ZIP 不捆绑 FFmpeg；首次功能使用交给宿主申请。具体版本/可测范围只见开发台账，不能以 JSON 夹具或独立编译代替真实工具执行。

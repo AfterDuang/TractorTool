@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
   </PropertyGroup>
-  <!-- Local development uses public SDK projects; Verify-M1 explicitly rebuilds against a published SDK. -->
+  <!-- Local development uses public SDK projects; Verify-PluginHost explicitly rebuilds against a published SDK. -->
   <ItemGroup Condition="'$(HostSdkDir)' != ''">
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
