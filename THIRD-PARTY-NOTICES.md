@@ -1,5 +1,13 @@
 # Third-party notices
 
+The complete distribution also includes `Licenses/dependencies.json` and original
+license / third-party notice texts collected from the published NuGet dependency
+graph, including the .NET runtime, Avalonia, Inter, SkiaSharp and HarfBuzzSharp.
+Upstream license texts missing from NuGet packages are tracked in
+`packaging/licenses/sources.json` in the source repository. Each plugin carries
+its own `NOTICE.md` and `Licenses` directory. These notices do not grant a license
+to TractorTool's own code.
+
 ## Optional external tools: FFmpeg / ffprobe
 
 The host catalog pins Gyan's FFmpeg 9.0.2 essentials build for Windows x64.

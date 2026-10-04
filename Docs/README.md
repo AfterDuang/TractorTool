@@ -16,7 +16,7 @@
 | [项目历史](PROJECT_HISTORY.md) | 已完成轮次的 E 编号记录、真实命令、失败、证据、M1 回归清单及参考调研；按需查阅 | 当前待办的唯一副本、重新定义现行产品语义 |
 | [根 AGENTS.md](../AGENTS.md) | Agent 工作约定、阅读顺序、修改与验证边界 | 每轮开发过程和第二份架构说明 |
 
-图标母版及导出方法见 [Artwork](../Artwork/README.md)，第三方许可见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。参考截图暂保留在 Docs 根目录，不为整理目录移动现有资产。
+图标母版及导出方法见 [Artwork](../Artwork/README.md)，第三方许可见 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md)。随 ZIP 提供的用户说明见 [packaging/README.txt](../packaging/README.txt)，分发操作和验收仍集中在开发台账。参考截图暂保留在 Docs 根目录，不为整理目录移动现有资产。
 
 ## 怎么阅读
 

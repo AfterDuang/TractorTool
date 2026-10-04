@@ -329,17 +329,21 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 
 产品版本唯一默认值位于根 [Directory.Build.props](../Directory.Build.props) 的 `Version`；本地/CI 可以用 MSBuild `-p:Version` 覆盖，[发布脚本](../scripts/Publish-Host.ps1) 的可选 `-Version` 参数仅透传同一属性。宿主 [AppInfo](../TractorTool/Services/AppInfo.cs) 从自己的程序集读取 `AssemblyInformationalVersion`，关于页和启动日志复用它，不读取入口检查程序的版本、不另存一份 UI 字符串。宿主的 AssemblyVersion/FileVersion 由 .NET SDK 根据产品版本派生，预发布后缀保留在产品版本中。[微软程序集属性说明](https://learn.microsoft.com/dotnet/standard/assembly/set-attributes-project-file)
 
-插件兼容协议 `PluginApi.Version` / `UiApi.Version` 和已有库的 `AssemblyVersion=1.0.0.0` 保持独立；不随应用显示版本自动改变，否则会无谓破坏已编译插件的绑定。Windows manifest 的 assemblyIdentity 是固定的激活标识，不是关于页/EXE 文件属性的产品版本。当前没有增加 Git 自动版本工具或 CI 基础设施。
+插件兼容协议 `PluginApi.Version` / `UiApi.Version` 和已有库的 `AssemblyVersion=1.0.0.0` 保持独立；不随应用显示版本自动改变，否则会无谓破坏已编译插件的绑定。Windows manifest 的 assemblyIdentity 是固定的激活标识，不是关于页/EXE 文件属性的产品版本。CI 沿用同一版本属性，不引入 Git 自动版本工具。
 
 应用图标使用同一透明母版导出 PNG 与多尺寸 ICO。窗口标题和关于页用 PNG，EXE 与托盘用 ICO，16/20/24/32/48/64/128/256 像素覆盖小图标和高 DPI。母版及生成提示词在 [Artwork](../Artwork/README.md)，[导出脚本](../scripts/Generate-AppIcon.ps1) 仅处理尺寸/格式；普通构建直接使用已入库资源，不联网生成图标。
 
 ### 7.2 发布边界
 
-动态 C# 插件宿主采用常规 .NET 发布。首版建议 Windows x64 自包含目录包，暂不启用 Native AOT、未验证的裁剪或单文件布局，以降低动态加载与路径兼容风险。Native AOT 不支持此类动态程序集加载。[微软说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)
+动态 C# 插件宿主采用常规 .NET 发布。当前分发入口生成 Windows x64 自包含目录 ZIP，不启用 Native AOT、裁剪或单文件布局。Native AOT 不支持此类动态程序集加载。[微软说明](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/)
 
 压缩包和安装程序使用同一组验证过的文件。内置工具插件按正常插件包结构部署到软件目录的 `Plugins`，与后来本地安装的插件使用相同装载流程，无需首启复制到用户数据目录。软件升级时保留用户安装的插件和已升级版本，不能整目录清空 `Plugins`。FFmpeg 按需下载到数据根目录的 `Packages`，不默认重复捆绑到每个插件中。
 
-本地与 CI 共用发布脚本，生成 SHA256、版本和许可清单。自动更新宿主、插件在线市场、多平台安装器、不可信插件沙箱均不属于首版；不能把未来扩展预留变成当前需要实现的大型基础设施。
+本地与 [CI](../.github/workflows/distribution.yml) 共用 [Build-Distribution](../scripts/Build-Distribution.ps1)：先发布宿主，再引用该 SDK 独立构建两个正式插件，核对宿主原文件哈希后按正常插件目录组包。输出宿主 ZIP、独立插件 ZIP、SHA256SUMS、版本/源码信息；包内 files.json 记录文件大小及哈希。许可从实际发布依赖图对应的 NuGet 包收集；缺失原文的包按 [固定上游来源](../packaging/licenses/sources.json) 补充，缺许可则打包失败。构建产物不带用户数据、测试插件或 FFmpeg 二进制。
+
+[Verify-Distribution](../scripts/Verify-Distribution.ps1) 只静态核对清单、ZIP 路径/内容、版本及整包与独立插件的一致性，不装载 DLL 或启动程序。SHA256 不证明发布者身份，也不替代运行验收。新包仅写入新目录，不能当作覆盖升级器；安装器负责的插件/数据保留逻辑仍待实现。当前 CI 只上传构建产物，GitHub Release 发布尚待接入，实际验证状态统一见开发台账。
+
+自动更新宿主、插件在线市场、多平台安装器、不可信插件沙箱均不属于首版；不能把未来扩展预留变成当前需要实现的大型基础设施。
 
 <a id="python-dependencies"></a>
 

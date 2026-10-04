@@ -1,6 +1,6 @@
 # 剪贴板历史插件
 
-通过 Windows 系统 API 读取历史；不记录、自建或上传历史数据。仅展示文本，其他类型显示占位。
+通过 Windows 系统 API 读取历史；不记录、自建或上传历史数据。支持文本与图片预览、复制原项；不可读取的格式显示原因。
 
 构建使用 Microsoft.Windows.SDK.NET.Ref 10.0.19041.57 提供的 C#/WinRT 投影和运行时，以及 CommunityToolkit.Mvvm 8.4.2（MIT）。Avalonia 与 TractorTool 公开 SDK 由宿主提供，不随插件重复分发。
 

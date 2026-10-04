@@ -1,0 +1,32 @@
+[
+  {
+    "repositoryCommit": "1e12211eb0c52a09e314ca57a344147c37d0a26c",
+    "file": "Avalonia.DataGrid.txt",
+    "source": "https://raw.githubusercontent.com/AvaloniaUI/Avalonia.Controls.DataGrid/1e12211eb0c52a09e314ca57a344147c37d0a26c/licence.md"
+  },
+  {
+    "repositoryCommit": "d3c867a9e2de379249b03dbeb3495bd7f076a81a",
+    "file": "Avalonia.txt",
+    "source": "https://raw.githubusercontent.com/AvaloniaUI/Avalonia/d3c867a9e2de379249b03dbeb3495bd7f076a81a/licence.md"
+  },
+  {
+    "repositoryCommit": "215ee0481e8b0e6d396cbe2a0f33dc791c5646ab",
+    "file": "FluentAvalonia.txt",
+    "source": "https://raw.githubusercontent.com/amwx/FluentAvalonia/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/LICENSE"
+  },
+  {
+    "repositoryCommit": "76785efcafd91b5902fd19dd11145f6dd655b7b4",
+    "file": "MicroCom.txt",
+    "source": "https://raw.githubusercontent.com/kekekeks/MicroCom/76785efcafd91b5902fd19dd11145f6dd655b7b4/LICENSE"
+  },
+  {
+    "repositoryCommit": "b4a7fed0b878f74cb54f7cca84d2889af4e596ba",
+    "file": "Tmds.DBus.txt",
+    "source": "https://raw.githubusercontent.com/tmds/Tmds.DBus/b4a7fed0b878f74cb54f7cca84d2889af4e596ba/COPYING"
+  },
+  {
+    "package": "Avalonia.Fonts.Inter",
+    "file": "Inter.txt",
+    "source": "https://raw.githubusercontent.com/rsms/inter/v4.1/LICENSE.txt"
+  }
+]

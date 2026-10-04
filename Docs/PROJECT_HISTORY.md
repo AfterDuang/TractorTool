@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（统一分发） | [E41 · 本地/CI 共用 ZIP、许可及静态校验（2026-10-04）](#evidence-distribution) |
 | M5（复核与文档整理） | [E40 · 启动复核与当前台账整理（2026-10-04）](#evidence-doc-review) |
 | M5（启动交互修正） | [E39 · 主窗口内启动与迁移进度（2026-10-04）](#evidence-startup-shell) |
 | M5（双代理复审） | [E38 · 迁移重试空间与快照取消修正（2026-10-04）](#evidence-migration-review) |
@@ -1479,3 +1480,26 @@ Contracts API 1.7 / UI 1.3 与视频 0.5.2 未变，插件未重新打包或安�
 本轮静态文档证据位于 `artifacts/m5-doc-review/verify_docs.py` 与 `static-checks.json`：10 份文档、234 处本地链接/锚点、A01–A23 完整顺序检查通过，Issues 为空；`git diff --check -- Docs` 通过，排除用户已有 `.vscode/launch.json` 空白修改。开发台账字符数减少约 40%，交接页约 47%，精简前后字符数记录于同一 JSON，不以行数代替篇幅。
 
 源码仍为 `2fe0bd6`，没有重复构建/发布，也没有运行应用、检查程序、FFmpeg、UI 自动化或访问真实用户数据。最近 Debug/Release 证据仍只引用 E39；现场确认该轮宿主、构建/发布日志及 E34 视频 0.5.2 ZIP 文件仍存在，不代表已执行它们。M5 正式分发/安装器待开发，迁移故障、实际媒体/GPU/任务/生命周期、旧取消输出与 Job 轮询缺口继续留在当前台账。
+
+<a id="evidence-distribution"></a>
+
+## E41：本地/CI 共用 ZIP、许可及静态校验（2026-10-04）
+
+用户在 E40 交接后要求“好 下一步”，推进已经列明的 M5 分发流程。本轮不改 C# / AXAML，不实现安装器或改运行时框架；没有创建远程、推送或实际发布。主代理自行 Review，无新子代理，不把旧审查结论当本轮证据。
+
+- 新增 Build-Distribution.ps1：PowerShell 7，读取 Directory.Build.props 默认版本 0.1.0（支持显式 -Version），拒绝已有输出及经过目录链接的路径；不删除或覆盖旧产物。复用 Publish-Host 的 win-x64 / Release / 自包含发布，禁止 AOT、裁剪、单文件。
+- 合并两个插件打包脚本的重复逻辑到 Build-Plugin.ps1，保留原有专用入口；读取各自清单版本，显式引用已发布 SDK、正常 restore 后 Rebuild，拒绝共享程序集副本。复制到正常 Plugins/Id/Version，原宿主文件 SHA256 保持不变；不把插件改为宿主静态引用，也不运行插件。
+- 输出宿主 ZIP、剪贴板 1.1.1 ZIP、视频 0.5.2 ZIP、SHA256SUMS 和 release.json；主 ZIP 有单一顶层产品目录，内部 files.json 记录除自身外文件的大小与 SHA256。release.json 记录实际程序集产品版本、RID、SDK、UTC 时间、Git 基线与未提交状态。当前产物基线为 30d3c052d4bcbe4cdd29bae46f6034401fcc5697、sourceDirty=true，不声称对应干净提交。
+- Export-DependencyNotices 按发布 deps.json 的运行依赖和本次 assets 的包根收集 23 项 NuGet 元数据及许可原文，包括 .NET runtime、Skia/HarfBuzz 原生通知。无内嵌原文的 Avalonia、DataGrid、FluentAvalonia、MicroCom、Tmds.DBus 按 NuGet repository commit 取得官方文本；Inter 字体附上游 OFL，固定来源记录在 packaging/licenses/sources.json。构建时不联网补许可，缺材料则失败。插件继续携带各自许可，修正旧 NOTICE 中“仅文本”“导出开发中”等过时说明。
+- Verify-Distribution 只读取 ZIP/JSON 并计算哈希，检查路径、外层校验、内层清单、必要文件、整包与独立插件版本/内容一致、无测试插件/数据/FFmpeg/共享程序集副本。不执行程序集、程序或媒体任务；完整性检查不是签名或运行验证。
+- .github/workflows/distribution.yml 为 main push、PR、手动触发准备 Windows 2022 / SDK 10.0.401 作业，调用同一脚本，只上传 assets。checkout v7、setup-dotnet v6、upload-artifact v7 的官方提交 SHA 经 GitHub API 核对后固定；contents:read、关闭凭据持久化，不提供发布写权限。GitHub 端尚未执行，未把配置完成记作 CI 通过。
+
+本地证据在 artifacts/m5-distribution：
+
+1. build-1.log：统一脚本先成功发布宿主，随后因 Avalonia.Controls.DataGrid/12.1.2 独立仓库许可未覆盖而主动停止。按该包的固定仓库提交补入 licence.md 后，单独收集得到 23 项依赖许可；没有跳过检查。
+2. build-2.log：`scripts/Build-Distribution.ps1 -Output H:\ProjH\TractorTool\artifacts\m5-distribution\attempt-2` 成功。宿主 Release win-x64 自包含发布完成；两个插件独立构建均 **0 警告/0 错误**，宿主原文件哈希未变。ZIP 内 **311 个清单文件**（另含 files.json）、2 个插件校验通过。必要构建经自动审批写 Avalonia/NuGet 自有缓存，没有关闭构建任务或修改 IDE。
+3. check-artifacts.ps1 / artifact-checks.json：仅使用 artifacts 中复制的分发样本，确认已有输出、非法版本、外层哈希变更、内层文件变更（重算外层哈希）、ZIP 越界路径（重算外层哈希）五种情况被相应检查拒绝。未改动交付包和真实安装。最终交付另以 check-artifacts-final.ps1 / artifact-checks-final.json 重验同五项通过。6 份脚本语法、10 份文档/241 处本地链接与 A01–A23 编号核对通过，结果在 static-checks.json。
+
+复核修正许可来源空数组的 null 项，以及测试插件真实标识的拒绝规则后，build-delivery.log 在新目录完整重跑上述构建与静态校验成功。最终交付入口为 delivery/assets，宿主 ZIP 约 81.3 MiB，独立剪贴板约 6.5 MiB、视频约 187 KiB；同内容展开布局在 delivery/layout/TractorTool-0.1.0-win-x64。没有运行宿主、检查程序、FFmpeg 或 UI 自动化，没有访问真实配置/媒体/剪贴板。打包编译不代替当前 DLL 加载、GPU、迁移和任务运行验证。
+
+仓库暂未附本项目代码许可证；第三方声明不替代本项目授权。安装器、用户插件/数据升级保留、GitHub Release 发布、签名/最低系统/无 SDK 机器，以及此前未关闭的运行缺口仍留在 DEVELOPMENT。当前流程只做新目录分发，不用于覆盖更新现有安装。保留用户 .vscode/launch.json 空白改动，不纳入提交。
