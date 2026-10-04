@@ -132,12 +132,12 @@ Check("Appearance animation preference reaches window, navigation and setting-ro
     var surface = row.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("themeSurface"));
     bool HasBackgroundTransition(Avalonia.Animation.Animatable control) =>
         control.Transitions?.OfType<Avalonia.Animation.BrushTransition>().Any(t => t.Property?.Name == "Background") == true;
-    Assert(window.Classes.Contains("themeTransitions"));
+    Assert(Motion.GetIsEnabled(window));
     Assert(HasBackgroundTransition(window) && HasBackgroundTransition(titleBar) &&
         HasBackgroundTransition(navigation) && HasBackgroundTransition(surface));
     vm.Settings.EnableAnimations = false;
     window.UpdateLayout();
-    Assert(!window.Classes.Contains("themeTransitions"));
+    Assert(!Motion.GetIsEnabled(window));
     Assert(!HasBackgroundTransition(window) && !HasBackgroundTransition(titleBar) &&
         !HasBackgroundTransition(navigation) && !HasBackgroundTransition(surface));
     vm.Settings.EnableAnimations = true;
@@ -433,6 +433,7 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
     Assert(Application.Current!.RequestedThemeVariant == ThemeVariant.Dark);
 });
 AppearanceChecks.Run(Check, Pump, output);
+MotionChecks.Run(Check);
 NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
 PluginManagementUiChecks.Run(Check, Pump, output);

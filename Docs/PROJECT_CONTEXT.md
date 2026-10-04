@@ -15,9 +15,9 @@
 - 根 slnx 包含全部 10 工程。日常源码引用公开 Contracts/UI；正式打包显式 HostSdkDir，只用发布 DLL 并 Rebuild，坏路径不回退。模式切换正常还原，开发 bin 不自动安装。
 - 插件管理重启生效，开关表示待生效目标；更新快照在旧进程退出后、新 DLL 加载前制作。失败请求保留恢复信息，卸载保留用户数据，软件目录不可写不改装到数据目录。
 - 剪贴板 1.1.1 已修复空选择标题绑定；左历史/右预览、复制原项、系统事件与窗口激活补刷，无轮询/自建历史库；图片按选择生成预览，离页取消解绑。资源界限见 [插件文档](Plugins/ClipboardHistory.md)。
-- 最近 [E21](PROJECT_HISTORY.md#evidence-card-layout) 调整管理卡片：信息在左，开关/按钮在右共享高度，恢复操作可换行；Debug 全方案、Release 发布及独立 1.1.1 打包成功，234 个宿主文件未变。GPT-6.1-Sol/high 只读复审未发现确定缺陷；实际布局仍待验。
-- 最新截图的空值绑定来自旧版路径；已只读核实 Debug 安装清单仍为 1.1.0。验收副本为 `artifacts/m2-card-layout/host` 与同级 1.1.1 ZIP，隔离命令见 [当前操作](DEVELOPMENT.md#workflow)。需安装升级并显式退出重启；只构建宿主不会更新插件，已装 1.1.1 不重装同版本。未替用户修改安装目录。
-- 15 项管理、20 项剪贴板模型、7 项管理 UI 用例仅编译未运行；1.1.1 修复及 M2 完整系统行为仍待验。旧 M1 的 33/21 项成功不覆盖新代码。
+- 最近 [E22](PROJECT_HISTORY.md#evidence-shared-motion) 处理开关动画：FA 本身有滑动/按压过渡，原管理刷新却重建全部卡片；现保留卡片/过滤集合，原位更新并显式失败复位。Motion/MotionStyles 统一普通控件及模板的动画偏好、公共颜色过渡；不用再为新页面绑定主窗口 class。第三方已开始的短时展开/页面过渡不保证即时取消。
+- 最新截图显示剪贴板 1.1.1，不再沿用 E21 的“当前仍装 1.1.0”。本轮只改宿主/公共 UI，不必重打或重装同版本插件。隔离宿主在 `artifacts/m2-motion/host`；已有 1.1.1 ZIP 仍在 `artifacts/m2-card-layout/clipboard`，命令见 [当前操作](DEVELOPMENT.md#workflow)。未替用户修改安装目录。
+- Debug 全方案与 Release 发布成功；GPT-6.1-Sol/high 复审核对了模板优先级/资源查找/原位更新，补正用例的 Loaded 时序。15 项管理、20 项剪贴板模型、8 项管理 UI、2 项共享动效用例仅编译未运行；新动效和 M2 完整行为待用户验收。旧 M1 的 33/21 项成功不覆盖新代码。
 
 ## 3. 代码入口
 
@@ -25,9 +25,9 @@
 | --- | --- |
 | 管理事务与装载 | [PluginManager](../TractorTool.Core/Plugins/PluginManager.cs)、[PluginFiles](../TractorTool.Core/Plugins/PluginFiles.cs)、[PluginHost](../TractorTool.Core/Plugins/PluginHost.cs) |
 | 管理 UI / 剪贴板 | [PluginsView](../TractorTool/Views/PluginsView.axaml)、[PluginsViewModel](../TractorTool/ViewModels/PluginsViewModel.cs)、[ClipboardHistoryViewModel](../Plugins/TractorTool.Plugins.ClipboardHistory/ClipboardHistoryViewModel.cs) |
-| 启动 / 导航 / 主题 | [App](../TractorTool/App.axaml.cs)、[MainViewModel](../TractorTool/ViewModels/MainViewModel.cs)、[SettingsViewModel](../TractorTool/ViewModels/SettingsViewModel.cs) |
+| 启动 / 导航 / 主题 | [App](../TractorTool/App.axaml.cs)、[MainViewModel](../TractorTool/ViewModels/MainViewModel.cs)、[SettingsViewModel](../TractorTool/ViewModels/SettingsViewModel.cs)、[Motion](../TractorTool.UI/Motion.cs)、[MotionStyles](../TractorTool.UI/Styles/MotionStyles.axaml) |
 | 插件规范与构建 | [PLUGIN_DEVELOPMENT](PLUGIN_DEVELOPMENT.md)、[Build-ClipboardPlugin](../scripts/Build-ClipboardPlugin.ps1) |
 
-下一步：由用户按 [当前待验清单](DEVELOPMENT.md#workflow) 核验拖放边界、开关/重启、卡片、空选择日志、分栏/图片/原项粘贴及事件刷新；处理反馈后再讨论 M3。遇到失败保留日志和原状态，不删除真实数据。
+下一步：由用户按 [当前待验清单](DEVELOPMENT.md#workflow) 核验动画开关、滑块/按压/失败复位，再回归 M2 安装重启和真实剪贴板；处理反馈后再讨论 M3。遇到失败保留日志和原状态，不删除真实数据。
 
 后续替换本文摘要，当前结论写开发台账，详细过程归历史；不要逐轮向本文追加。

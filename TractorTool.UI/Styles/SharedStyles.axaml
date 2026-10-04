@@ -17,39 +17,7 @@
       </Setter>
     </ControlTheme>
   </Styles.Resources>
-  <!-- Only opt our own surfaces into theme motion. Removing the window class also cancels
-       in-flight Avalonia transitions; the Fluent animation flag alone does not do that. -->
-  <Style Selector=":is(Window).themeTransitions">
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-        <BrushTransition Property="Foreground" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-      </Transitions>
-    </Setter>
-  </Style>
-  <Style Selector=":is(Window).themeTransitions Border.themeSurface, :is(Window).themeTransitions Border.card, :is(Window).themeTransitions Border.iconTile, :is(Window).themeTransitions ui|SettingRow /template/ Border.themeSurface">
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-        <BrushTransition Property="BorderBrush" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-      </Transitions>
-    </Setter>
-  </Style>
-  <Style Selector=":is(Window).themeTransitions TextBlock.muted, :is(Window).themeTransitions :is(TextBlock).caption">
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Foreground" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-      </Transitions>
-    </Setter>
-  </Style>
-  <Style Selector=":is(Window).themeTransitions Button.toolCard">
-    <Setter Property="Transitions">
-      <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-        <BrushTransition Property="BorderBrush" Duration="0:0:0.22" Easing="CubicEaseInOut" />
-      </Transitions>
-    </Setter>
-  </Style>
+  <StyleInclude Source="avares://TractorTool.UI/Styles/MotionStyles.axaml" />
   <Style Selector=":is(Window)">
     <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI" />
     <Setter Property="FontSize" Value="14" />

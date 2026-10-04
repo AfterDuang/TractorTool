@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Contracts;
@@ -10,25 +9,6 @@ using TractorTool.Services;
 using TractorTool.UI;
 
 namespace TractorTool.ViewModels;
-
-public sealed record PluginCard(string Name, string Version, string Description, string State, string Detail,
-    bool HasIssue, ToolIconKind Icon, IRelayCommand? OpenCommand)
-{
-    public bool CanOpen => OpenCommand is not null;
-    public IImage? ImageSource { get; init; }
-    public string PendingText { get; init; } = "";
-    public bool HasPending => PendingText.Length != 0;
-    public IRelayCommand? ToggleCommand { get; init; }
-    public bool RequestedEnabled { get; init; }
-    public bool CanToggle => ToggleCommand is not null;
-    public IRelayCommand? UninstallCommand { get; init; }
-    public IRelayCommand? RollbackCommand { get; init; }
-    public IRelayCommand? CancelChangeCommand { get; init; }
-    public bool CanManage => UninstallCommand is not null;
-    public bool CanRollback => RollbackCommand is not null;
-    public bool CanCancelChange => CancelChangeCommand is not null;
-    public bool HasActions => CanOpen || CanManage || CanRollback || CanCancelChange;
-}
 
 public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCommand showLogsCommand, PluginManager? manager = null, IAppLog? log = null) : ViewModelBase
 {
@@ -46,12 +26,12 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     public string PluginRoot => paths.PluginRoot;
     public IRelayCommand ShowLogsCommand { get; } = showLogsCommand;
     public ObservableCollection<PluginCard> Items { get; } = [];
-    public IEnumerable<PluginCard> FilteredItems => Items.Where(p => string.IsNullOrWhiteSpace(Search) ||
-        p.Name.Contains(Search, StringComparison.CurrentCultureIgnoreCase));
+    public ObservableCollection<PluginCard> FilteredItems { get; } = [];
     public bool NoMatches => !IsLoading && !HasDirectoryError && HasItems && !string.IsNullOrWhiteSpace(Search) && !FilteredItems.Any();
     public bool HasItems => Items.Count != 0;
     public bool IsEmpty => !IsLoading && !HasDirectoryError && !HasItems;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(FilteredItems)), NotifyPropertyChangedFor(nameof(NoMatches))] private string _search = "";
+    [ObservableProperty] private string _search = "";
+    partial void OnSearchChanged(string value) => UpdateFilter();
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasOperationStatus))] private string _operationStatus = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasDirectoryError)), NotifyPropertyChangedFor(nameof(IsEmpty)), NotifyPropertyChangedFor(nameof(NoMatches))] private string? _directoryError;
     public bool HasOperationStatus => !string.IsNullOrWhiteSpace(OperationStatus);
@@ -61,7 +41,14 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     public void Update(IReadOnlyList<RegisteredPage> pages, IEnumerable<NavigationItem> navigation)
     {
         _pages = pages; _navigation = navigation.ToArray();
-        Items.Clear();
+        var existing = Items.ToDictionary(p => p.Key, StringComparer.Ordinal);
+        List<PluginCard> updated = [];
+        void Add(string key, PluginCardState state)
+        {
+            if (existing.TryGetValue(key, out var card)) card.Apply(state);
+            else card = new PluginCard(key, state);
+            updated.Add(card);
+        }
         var managed = manager?.Snapshot ?? [];
         foreach (var record in host.Records)
         {
@@ -73,31 +60,54 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
                 PluginState.Loaded => "已启用", PluginState.Disabled => "已禁用",
                 PluginState.Incompatible => "不兼容", PluginState.Invalid => "清单无效",
                 PluginState.Duplicate => "版本冲突", PluginState.Failed => "加载失败", _ => "等待加载" };
-            var card = new PluginCard(record.Name, record.Manifest?.Version ?? "未知版本",
+            var card = new PluginCardState(record.Name, record.Manifest?.Version ?? "未知版本",
                 record.Manifest?.Description ?? "无法读取插件信息。", state, record.Detail,
                 record.State is not (PluginState.Loaded or PluginState.Disabled),
                 page?.Options.Icon ?? ToolIconKind.Tools, item?.OpenCommand) { ImageSource = item?.ImageSource };
-            Items.Add(WithManagement(card, record.Manifest?.Id ?? management?.Id, management, record.State == PluginState.Disabled,
+            Add("record:" + record.Directory, WithManagement(card, record.Manifest?.Id ?? management?.Id, management, record.State == PluginState.Disabled,
                 record.State != PluginState.Duplicate && (record.Manifest is not null || management is not null)));
         }
         foreach (var management in managed.Where(m => !host.Records.Any(r => r.Manifest?.Id == m.Id ||
             (m.ActiveVersion is not null && string.Equals(r.Directory, Path.Combine(paths.PluginRoot, m.Id, m.ActiveVersion), StringComparison.OrdinalIgnoreCase))) &&
             (m.ActiveVersion is not null || m.Pending is not null)))
         {
-            Items.Add(WithManagement(new(management.Name, management.ActiveVersion ?? management.Pending?.Version ?? "",
+            Add("managed:" + management.Id, WithManagement(new(management.Name, management.ActiveVersion ?? management.Pending?.Version ?? "",
                 "", management.ActiveVersion is null ? "待安装" : "未加载", management.Error,
                 management.Error.Length != 0, ToolIconKind.Tools, null), management.Id, management, !management.Enabled, true));
         }
+        Synchronize(Items, updated);
+        UpdateFilter();
         DirectoryError = host.DirectoryError;
         Summary = $"{Items.Count} 个本地插件 · {host.Records.Count(p => p.State == PluginState.Loaded)} 个已启用";
         IsLoading = false;
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(IsEmpty));
-        OnPropertyChanged(nameof(FilteredItems));
         OnPropertyChanged(nameof(NoMatches));
     }
 
-    private PluginCard WithManagement(PluginCard card, string? id, ManagedPlugin? item, bool disabled, bool valid)
+    private void UpdateFilter()
+    {
+        Synchronize(FilteredItems, Items.Where(p => string.IsNullOrWhiteSpace(Search) ||
+            p.Name.Contains(Search, StringComparison.CurrentCultureIgnoreCase)).ToArray());
+        OnPropertyChanged(nameof(NoMatches));
+    }
+
+    private static void Synchronize(ObservableCollection<PluginCard> target, IReadOnlyList<PluginCard> source)
+    {
+        // Remove only absent rows, then move/insert. Never Reset the ItemsSource on state changes.
+        var retained = source.ToHashSet();
+        for (var i = target.Count - 1; i >= 0; i--)
+            if (!retained.Contains(target[i])) target.RemoveAt(i);
+        for (var i = 0; i < source.Count; i++)
+        {
+            if (i < target.Count && ReferenceEquals(target[i], source[i])) continue;
+            var current = target.IndexOf(source[i]);
+            if (current < 0) target.Insert(i, source[i]);
+            else target.Move(current, i);
+        }
+    }
+
+    private PluginCardState WithManagement(PluginCardState card, string? id, ManagedPlugin? item, bool disabled, bool valid)
     {
         if (!ManagementAvailable || manager is null || id is null || !valid) return card;
         var pending = item?.Pending;

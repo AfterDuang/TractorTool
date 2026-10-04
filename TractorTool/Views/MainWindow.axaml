@@ -3,7 +3,7 @@
         xmlns:ui="using:TractorTool.UI.Controls" xmlns:vm="using:TractorTool.ViewModels"
         x:Class="TractorTool.Views.MainWindow" x:DataType="vm:MainViewModel"
         Width="1120" Height="760" MinWidth="720" MinHeight="540"
-        Title="TractorTool" Icon="/Assets/tractortool.png" Classes.themeTransitions="{Binding Settings.EnableAnimations}"
+        Title="TractorTool" Icon="/Assets/tractortool.png"
         Background="{DynamicResource AppBackgroundBrush}" Foreground="{DynamicResource AppTextBrush}">
   <Grid RowDefinitions="48,*">
     <!-- Avalonia 12 needs an explicit non-client role on the custom surface above the default title bar. -->

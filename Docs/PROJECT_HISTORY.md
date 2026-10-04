@@ -34,6 +34,7 @@
 | M2（进行中） | [E19 · VS Code 解决方案与插件开发组织（2026-10-04）](#evidence-project-layout) |
 | M2（进行中） | [E20 · 公共 UI、宿主与插件样式职责复核（2026-10-04）](#evidence-style-ownership) |
 | M2（进行中） | [E21 · 卡片信息/操作分组及旧插件绑定诊断（2026-10-04）](#evidence-card-layout) |
+| M2（进行中） | [E22 · 统一动效与管理卡片原位更新（2026-10-04）](#evidence-shared-motion) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
 
@@ -963,5 +964,53 @@ git diff --check
 - 自动化/集成/真实 Windows UI：均未执行。检查工程仅随方案编译；高 DPI/宽窄窗口、开关与恢复操作、安装更新后空选择控制台错误消失，均待用户运行确认。
 
 交付 ZIP：`artifacts/m2-card-layout/clipboard/TractorTool.ClipboardHistory-1.1.1.zip`，SHA256 `3ADF97493EE6636B1428896B9CFA993F97A1EB6E7628643CE29685718FD74201`。本轮插件业务未改变，继续使用 1.1.1；已经安装该版本时不应重复安装同版本。日常 F5 仍启动原应用目录，发布副本是另一个独立软件目录；二者各自拥有 Plugins。运行入口与待验清单维护在 [开发文档](DEVELOPMENT.md#workflow)。
+
+</details>
+
+<a id="evidence-shared-motion"></a>
+
+<details>
+<summary>E22 · 统一动效与管理卡片原位更新（2026-10-04）</summary>
+
+### E22 · 统一动效与管理卡片原位更新（2026-10-04）
+
+起点本地提交 `94d1ed3`，工作区干净。用户最新截图已显示剪贴板 1.1.1，反馈插件启停开关没有参考软件的动画，要求完善公共框架。范围仅宿主/公共 UI 和相关检查，不进入 M3、不修改已安装插件或真实数据、不运行程序。
+
+只读对照来源：
+
+- [Watt Toolkit 开关样式](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Avalonia/UI/Styling/Controls/ToggleSwitch.axaml)：共享样式组织控件外观与过渡。本次仅参考组织方式，不复制其 GPL 模板。
+- [FluentAvalonia 3.1.0 开关主题](https://github.com/amwx/FluentAvalonia/blob/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/src/FluentAvalonia/Styling/ControlThemes/BasicControls/ToggleSwitchStyles.axaml)：当前依赖本来有 Canvas.Left 200 ms 以及表面/旋钮尺寸 167 ms 过渡；按钮、滑杆、展开箭头也有各自内置反馈。本次保留原模板和原生拖动处理。
+- [FAUISettings](https://github.com/amwx/FluentAvalonia/blob/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/src/FluentAvalonia/Core/FAUISettings.cs)：应用动画标志不会自动撤销 AXAML Transitions。[Avalonia Animatable](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Animation/Animatable.cs) 支持替换有效 Transitions 时移除在途属性过渡；[ToggleSwitch](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Controls/ToggleSwitch.cs) 在 Loaded 安装滑块过渡，拖动时临时清空并恢复。
+- [DynamicResourceExpression](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Markup/Avalonia.Markup.Xaml/Data/DynamicResourceExpression.cs) 从实际目标控件查资源，[Application](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Controls/Application.cs) 先查 Resources 再查 Styles，因此应用的 false 不被 MotionStyles 默认 true 遮蔽。[Expander](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Controls/Expander.cs) 已开始的 CrossFade 不随 ContentTransition=null 取消，这一边界保留。
+
+修正内容：
+
+1. 原 PluginsViewModel.Update 每次管理结果都 Clear 并重建卡片/过滤枚举，销毁正在过渡的开关。改为按记录目录保留可观察 PluginCard，快照原子替换后通知；集合只增删/移动实际变化项，同 ID 不同版本目录仍分开。失败后显式恢复本地开关，不依赖相同模型值必定触发绑定重放。
+2. 新增 UI 内的 Motion/MotionStyles。全局控件及模板子元素通过资源读偏好；关闭时可逆覆盖普通 Transitions，不覆盖写死原生拖动的底层值；开启恢复原值。自有颜色过渡时长统一为 220 ms；页面仍走同一个 FA 应用标志；移除主窗口 themeTransitions 接入要求。新增窗口/页面不必重复配线。
+3. 不复制完整模板、不引入依赖、轮询、通用动画引擎或全局时钟冻结。普通属性过渡与后续展开/切页受控；已开始的第三方展开/页面短时过渡仍由库结束，自定义业务动效需遵循偏好与自身取消。
+4. 管理 UI 用例扩充至 8 项（原对象/控件保留、失败复位、筛选与重复 ID）；新增 2 项共享动效检查覆盖模板局部过渡、关闭/恢复、拖动下层值和新窗口。保留已有忙碌串行保护，不宣称焦点始终保持。
+
+实际命令（仓库根 PowerShell，SDK 10.0.401）：
+
+```powershell
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false 2>&1 | Tee-Object artifacts/m2-motion/build-debug.log
+# 首轮失败：新增 MotionChecks 直接访问 ITransition.Property，2 个 CS0122；宿主/UI 库编译成功。
+# 修为 OfType<DoubleTransition>() 后再次编译：
+dotnet build TractorTool.slnx -c Debug -m:1 -nr:false 2>&1 | Tee-Object artifacts/m2-motion/build-debug-fixed.log
+./scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/m2-motion/host 2>&1 | Tee-Object artifacts/m2-motion/publish-host.log
+# 复审要求用例先处理 Loaded；修正后最终编译检查工程及依赖：
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Debug -m:1 -nr:false 2>&1 | Tee-Object artifacts/m2-motion/build-checks-final.log
+./artifacts/m2-motion/Check-Docs.ps1
+git diff --check
+```
+
+结果分层：
+
+- 静态：GPT-6.1-Sol/high 子代理只读复审实现及精确依赖源码，指出 Expander 在途取消边界和检查用例 Loaded 时序，分别保留限制/修正；未发现其他确定缺陷不等于全仓无缺陷。文档相对链接及新增 E22 锚点检查结果在 `artifacts/m2-motion/docs-links.json`。
+- 构建/发布：修正后的 Debug 全方案 0 警告/0 错误；最终检查工程及依赖编译 0 警告/0 错误；Release win-x64 自包含发布成功。首次失败日志保留。构建授权仅用于 Avalonia 构建日志等正常输出，不启动应用。
+- 自动化/集成/Windows UI：**均未执行**，新增检查仅编译。动画视觉连续性、真实点击/拖动、快速反向/失败复位、偏好关闭恢复及新页面、深浅主题仍交用户验收；对象引用断言不能证明渲染流畅。
+- 产物：隔离宿主 `artifacts/m2-motion/host`；已有剪贴板 1.1.1 ZIP 沿用 E21，本轮不重编正式插件、不声称取得新的独立加载或哈希不变证据。VS Code F5 使用已构建的原 Debug 宿主；隔离宿主自带空 Plugins，用户可在该副本安装既有 ZIP 测试。
+
+当前操作与未关闭事项只在 [开发文档](DEVELOPMENT.md#workflow) 维护；本记录归档不代表 M2 或真实动效验收通过。
 
 </details>

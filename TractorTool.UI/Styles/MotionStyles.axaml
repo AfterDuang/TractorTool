@@ -1,0 +1,42 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="using:TractorTool.UI.Controls" xmlns:motion="using:TractorTool.UI">
+  <Styles.Resources>
+    <x:Boolean x:Key="AppMotionEnabled">True</x:Boolean>
+  </Styles.Resources>
+  <!-- Standard control feedback (switch thumb, button hover, expander arrow, etc.) comes
+       from FluentAvalonia. Apply the preference to template parts and newly added controls too. -->
+  <Style Selector=":is(Control)">
+    <Setter Property="motion:Motion.IsEnabled" Value="{DynamicResource AppMotionEnabled}" />
+  </Style>
+  <Style Selector=":is(Window)">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+        <BrushTransition Property="Foreground" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Border.themeSurface, Border.card, Border.iconTile, ui|SettingRow /template/ Border.themeSurface">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+        <BrushTransition Property="BorderBrush" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="TextBlock.muted, :is(TextBlock).caption">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Foreground" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+  <Style Selector="Button.toolCard">
+    <Setter Property="Transitions">
+      <Transitions>
+        <BrushTransition Property="Background" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+        <BrushTransition Property="BorderBrush" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
+      </Transitions>
+    </Setter>
+  </Style>
+</Styles>

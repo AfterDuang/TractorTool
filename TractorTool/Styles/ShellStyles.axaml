@@ -1,6 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:fa="using:FluentAvalonia.UI.Controls" xmlns:p="using:FluentAvalonia.UI.Controls.Primitives"
-        xmlns:ui="using:TractorTool.UI.Controls">
+        xmlns:ui="using:TractorTool.UI.Controls" xmlns:motion="using:TractorTool.UI">
   <Style Selector="ui|PageHost#PagePresenter">
     <Setter Property="Margin" Value="28,0,28,0" />
   </Style>
@@ -17,10 +17,10 @@
     <Setter Property="Background" Value="{DynamicResource AppSidebarBrush}" />
     <Setter Property="OpenPaneLength" Value="72" /><Setter Property="CompactPaneLength" Value="72" />
   </Style>
-  <Style Selector=":is(Window).themeTransitions fa|FANavigationView.shell">
+  <Style Selector="fa|FANavigationView.shell">
     <Setter Property="Transitions">
       <Transitions>
-        <BrushTransition Property="Background" Duration="0:0:0.22" Easing="CubicEaseInOut" />
+        <BrushTransition Property="Background" Duration="{x:Static motion:Motion.ThemeDuration}" Easing="CubicEaseInOut" />
       </Transitions>
     </Setter>
   </Style>

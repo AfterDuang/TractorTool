@@ -50,13 +50,19 @@ public partial class PluginsView : UserControl
         await vm.InstallArchiveAsync(file);
     }
 
-    private void OnPluginEnabledChanged(object? sender, RoutedEventArgs e)
+    private async void OnPluginEnabledChanged(object? sender, RoutedEventArgs e)
     {
         if (sender is not ToggleSwitch { DataContext: PluginCard card } toggle || toggle.IsChecked == card.RequestedEnabled) return;
         // IsCheckedChanged covers both clicking and dragging the thumb. Initial bindings are equal
         // to the requested state and must never enqueue a management operation.
-        if (DataContext is PluginsViewModel { CanInstall: true } && card.ToggleCommand?.CanExecute(null) == true)
-            card.ToggleCommand.Execute(null);
+        if (DataContext is PluginsViewModel { CanInstall: true } vm && card.ToggleCommand is { } command && command.CanExecute(null))
+        {
+            await command.ExecuteAsync(null);
+            // A failed write leaves the model value unchanged. Explicitly restore the local thumb
+            // even if the binding suppresses an equal-value notification; keep its native transition.
+            if (ReferenceEquals(DataContext, vm) && vm.CanInstall && ReferenceEquals(toggle.DataContext, card))
+                toggle.SetCurrentValue(ToggleSwitch.IsCheckedProperty, (bool?)card.RequestedEnabled);
+        }
         else toggle.SetCurrentValue(ToggleSwitch.IsCheckedProperty, (bool?)card.RequestedEnabled);
     }
 }

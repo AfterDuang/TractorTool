@@ -88,6 +88,9 @@ internal static class PluginManagementUiChecks
                 {
                     window.Show(); window.UpdateLayout();
                     Assert(manager.Snapshot.Count == 0);
+                    var card = vm.Items.Single();
+                    var collectionChanges = 0;
+                    vm.FilteredItems.CollectionChanged += (_, _) => collectionChanges++;
                     var command = (IAsyncRelayCommand)vm.Items.Single().ToggleCommand!;
                     var toggle = view.GetVisualDescendants().OfType<ToggleSwitch>().Single();
                     // Like a thumb drag: bypass Click/Command and change IsChecked directly.
@@ -95,10 +98,14 @@ internal static class PluginManagementUiChecks
                     pump(command.ExecutionTask ?? throw new Exception("Thumb did not enqueue operation")); window.UpdateLayout();
                     Assert(manager.Snapshot.Single().Pending?.Kind == (enabled ? PluginChangeKind.Disable : PluginChangeKind.Enable));
                     Assert(vm.Items.Single().RequestedEnabled == !enabled && !vm.Items.Single().CanManage);
+                    Assert(ReferenceEquals(card, vm.Items.Single()) && collectionChanges == 0);
+                    Assert(ReferenceEquals(toggle, view.GetVisualDescendants().OfType<ToggleSwitch>().Single()));
                     command = (IAsyncRelayCommand)vm.Items.Single().ToggleCommand!;
                     view.GetVisualDescendants().OfType<ToggleSwitch>().Single().SetCurrentValue(ToggleSwitch.IsCheckedProperty, (bool?)enabled);
                     pump(command.ExecutionTask ?? throw new Exception("Reverse thumb did not cancel operation"));
                     Assert(manager.Snapshot.Single().Pending is null && vm.Items.Single().RequestedEnabled == enabled);
+                    window.UpdateLayout();
+                    Assert(ReferenceEquals(toggle, view.GetVisualDescendants().OfType<ToggleSwitch>().Single()) && collectionChanges == 0);
                 }
                 finally { window.Close(); }
             });
@@ -111,10 +118,12 @@ internal static class PluginManagementUiChecks
             try
             {
                 window.Show(); window.UpdateLayout(); var command = (IAsyncRelayCommand)vm.Items.Single().ToggleCommand!;
-                view.GetVisualDescendants().OfType<ToggleSwitch>().Single().SetCurrentValue(ToggleSwitch.IsCheckedProperty, false);
+                var toggle = view.GetVisualDescendants().OfType<ToggleSwitch>().Single();
+                toggle.SetCurrentValue(ToggleSwitch.IsCheckedProperty, false);
                 pump(command.ExecutionTask ?? throw new Exception("No write attempted")); window.UpdateLayout();
                 Assert(manager.Snapshot.Count == 0 && vm.OperationStatus.Contains("失败") && vm.Items.Single().RequestedEnabled);
                 Assert(view.GetVisualDescendants().OfType<ToggleSwitch>().Single().IsChecked == true);
+                Assert(ReferenceEquals(toggle, view.GetVisualDescendants().OfType<ToggleSwitch>().Single()));
             }
             finally { window.Close(); }
         });
@@ -128,6 +137,21 @@ internal static class PluginManagementUiChecks
             Assert(!vm.Items.Single().RequestedEnabled);
             pump(((IAsyncRelayCommand)vm.Items.Single().ToggleCommand!).ExecuteAsync(null));
             Assert(manager.Snapshot.Single().Pending?.Kind == PluginChangeKind.Enable);
+        });
+        check("Filtering retains matching rows and same-ID version conflicts remain distinct", () =>
+        {
+            var paths = Paths(); var log = new AppLog(paths.LogRoot);
+            var host = new PluginHost(paths, compatibility, log);
+            host.Records.Add(new(Path.Combine(paths.PluginRoot, "Checks.Ui", "1.0.0"), Manifest(), PluginState.Duplicate, "duplicate"));
+            host.Records.Add(new(Path.Combine(paths.PluginRoot, "Checks.Ui", "2.0.0"), Manifest(), PluginState.Duplicate, "duplicate"));
+            var vm = new PluginsViewModel(paths, host, new RelayCommand(() => { }));
+            vm.Update([], []);
+            var cards = vm.Items.ToArray(); var changes = 0;
+            vm.FilteredItems.CollectionChanged += (_, _) => changes++;
+            vm.Search = "fixture"; vm.Update([], []);
+            Assert(changes == 0 && vm.Items.SequenceEqual(cards) && !ReferenceEquals(cards[0], cards[1]));
+            vm.Search = "no match"; Assert(vm.NoMatches && vm.FilteredItems.Count == 0);
+            vm.Search = ""; Assert(!vm.NoMatches && vm.FilteredItems.SequenceEqual(cards));
         });
     }
 }
