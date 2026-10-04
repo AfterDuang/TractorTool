@@ -1,24 +1,28 @@
-#requires -Version 7.0
+#requires -Version 7.4
 param(
     [Parameter(Mandatory)][string]$Project,
     [Parameter(Mandatory)][string]$HostSdkDir,
     [Parameter(Mandatory)][string]$Output
 )
 $ErrorActionPreference = 'Stop'
-$hostSdk = [IO.Path]::GetFullPath($HostSdkDir)
+$hostSdk = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostSdkDir)
 foreach ($assembly in @('TractorTool.Contracts.dll', 'TractorTool.UI.dll')) {
     if (!(Test-Path -LiteralPath (Join-Path $hostSdk $assembly) -PathType Leaf)) { throw 'HostSdkDir 必须指向已经发布的宿主。' }
 }
-$destination = [IO.Path]::GetFullPath($Output)
+$destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if ((Test-Path -LiteralPath $destination) -and (Get-ChildItem -LiteralPath $destination -Force | Select-Object -First 1)) {
     throw '插件输出目录必须为空，避免覆盖旧包。'
 }
-$projectRoot = Split-Path ([IO.Path]::GetFullPath($Project))
+$Project = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Project)
+$projectRoot = Split-Path $Project
 $manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'plugin.json') -Raw | ConvertFrom-Json
 $files = Join-Path $destination 'files'
 # Normal restore is required when switching between source SDK references and published DLLs.
-dotnet build $Project -t:Rebuild -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files
-if ($LASTEXITCODE -ne 0) { throw '插件构建失败。' }
+Push-Location $projectRoot
+try {
+    dotnet build $Project -t:Rebuild -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files
+    if ($LASTEXITCODE -ne 0) { throw '插件构建失败。' }
+} finally { Pop-Location }
 $shared = @(Get-ChildItem -LiteralPath $files -Recurse -Filter *.dll | Where-Object {
     $_.BaseName -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$'
 })

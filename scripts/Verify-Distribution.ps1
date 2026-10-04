@@ -1,8 +1,8 @@
-#requires -Version 7.0
+#requires -Version 7.4
 # Static artifact checks only: never load assemblies or start the application.
 param([Parameter(Mandatory)][string]$AssetsDir)
 $ErrorActionPreference = 'Stop'
-$root = [IO.Path]::GetFullPath($AssetsDir)
+$root = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AssetsDir)
 $checksums = @{}
 foreach ($line in (Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS'))) {
     if ($line -notmatch '^([A-Fa-f0-9]{64})  ([^/\\:]+)$' -or $Matches[2] -in @('.', '..', 'SHA256SUMS')) { throw 'SHA256SUMS 格式无效。' }
@@ -26,12 +26,23 @@ function Get-ZipHash($Entry) {
 }
 function Get-ZipFiles($Archive, [string]$Prefix) {
     $result = @{}
+    $pathKinds = @{}
     foreach ($entry in $Archive.Entries) {
         $name = $entry.FullName
-        if (!$name.StartsWith($Prefix, [StringComparison]::Ordinal) -or $name.Contains('\') -or $name.Contains(':') -or $name.StartsWith('/') -or @($name.Split('/') | Where-Object { $_ -in @('.', '..') }).Count) { throw "无效 ZIP 路径：$name" }
+        if (!$name.StartsWith($Prefix, [StringComparison]::Ordinal) -or $name.Contains('\') -or $name.StartsWith('/')) { throw "无效 ZIP 路径：$name" }
+        # Match Windows extraction and the plugin installer's segment rules.
+        $parts = $name.TrimEnd('/').Split('/')
+        $path = ''
+        for ($i = 0; $i -lt $parts.Length; $i++) {
+            $part = $parts[$i]
+            if (!$part -or $part -match '[. ]$|[<>:"|?*\x00-\x1F]|^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\.|$)') { throw "无效 ZIP 路径：$name" }
+            $path = if ($path) { "$path/$part" } else { $part }
+            $kind = if ($i -lt $parts.Length - 1 -or $name.EndsWith('/')) { 'directory' } else { 'file' }
+            if ($pathKinds.ContainsKey($path) -and ($pathKinds[$path] -ne $kind -or $kind -eq 'file')) { throw "ZIP 路径冲突：$name" }
+            $pathKinds[$path] = $kind
+        }
         if ($name.EndsWith('/')) { continue }
         $relative = $name.Substring($Prefix.Length)
-        if ($result.ContainsKey($relative)) { throw "ZIP 重复文件：$relative" }
         $result[$relative] = $entry
     }
     return $result
@@ -52,7 +63,7 @@ try {
         if (!$listed.ContainsKey($required)) { throw "缺少分发文件：$required" }
     }
     if ((Get-ZipHash $entries['release.json']) -ne $checksums['release.json']) { throw '内外发布元数据不一致。' }
-    if (@($entries.Keys | Where-Object { $_ -match '(^|/)(ffmpeg|ffprobe)\.exe$|(^|/)(Config|Data|Logs|Cache|\.management)/|(^|/)(Test\.Independent|IndependentPlugin)(/|\.)' }).Count) { throw '分发包混入外部工具、用户数据或测试插件。' }
+    if (@($entries.Keys | Where-Object { $_ -match '(^|/)(ffmpeg|ffprobe)\.exe$|(^|/)bootstrap\.json$|(^|/)(Config|Data|Logs|Cache|\.management)/|(^|/)(Test\.Independent|IndependentPlugin)(/|\.)' }).Count) { throw '分发包混入外部工具、用户数据或测试插件。' }
     foreach ($plugin in $release.plugins) {
         if (!$checksums.ContainsKey($plugin.archive)) { throw '插件 ZIP 未登记。' }
         $pluginZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root $plugin.archive))
@@ -64,7 +75,7 @@ try {
             if (@($listed.Keys | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $pluginFiles.Count) { throw '整包与独立插件文件数量不一致。' }
             foreach ($path in $pluginFiles.Keys) {
                 if ((Get-ZipHash $pluginFiles[$path]) -ne $listed["$prefix$path"]) { throw "整包与独立插件不一致：$path" }
-                if ([IO.Path]::GetFileNameWithoutExtension($path) -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$' -and $path.EndsWith('.dll')) { throw "插件夹带共享程序集：$path" }
+                if ([IO.Path]::GetFileNameWithoutExtension($path) -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$' -and $path.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)) { throw "插件夹带共享程序集：$path" }
             }
         } finally { $pluginZip.Dispose() }
     }

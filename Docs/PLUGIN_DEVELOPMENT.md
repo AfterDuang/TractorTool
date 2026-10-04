@@ -191,7 +191,7 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 
 此代码块是操作示例，不是新增执行证据。首次构建需要正常还原。宿主发布和隔离启动入口见 [开发操作](DEVELOPMENT.md#workflow)。
 
-正式剪贴板插件已有 [独立项目](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 和 [打包脚本](../scripts/Build-ClipboardPlugin.ps1)。两个正式插件入口共用 [Build-Plugin](../scripts/Build-Plugin.ps1)，需要 PowerShell 7；读取清单版本作为插件产品版本，复制实际还原依赖的许可，输出 ZIP 与 SHA256：
+正式剪贴板插件已有 [独立项目](../Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj) 和 [打包脚本](../scripts/Build-ClipboardPlugin.ps1)。两个正式插件入口共用 [Build-Plugin](../scripts/Build-Plugin.ps1)，需要 PowerShell 7.4+ 和根 global.json 指定的 SDK；读取清单版本作为插件产品版本，复制实际还原依赖的许可，输出 ZIP 与 SHA256：
 
 ```powershell
 ./scripts/Build-ClipboardPlugin.ps1 -HostSdkDir H:/ProjH/TractorTool/artifacts/manual-publish -Output H:/ProjH/TractorTool/artifacts/manual-clipboard

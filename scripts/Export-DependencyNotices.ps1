@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 7.4
 # Collect metadata and original license texts for the packages in the published runtime graph.
 # No network requests and no package code execution. Missing license material fails packaging.
 param(

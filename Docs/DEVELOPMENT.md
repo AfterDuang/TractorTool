@@ -10,7 +10,7 @@
 
 | 范围 | 当前实现 |
 | --- | --- |
-| 工程与版本 | VS Code，根 slnx 12 工程；最近构建为 Windows / .NET SDK 10.0.401。Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0；产品默认 0.1.0，统一来自 Directory.Build.props |
+| 工程与版本 | VS Code，根 slnx 12 工程；global.json 固定 .NET SDK 10.0.401，分发脚本要求 PowerShell 7.4+。Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0；产品默认 0.1.0，统一来自 Directory.Build.props |
 | 公共接口 | Contracts API 1.7 / UI API 1.3，接受此前版本并保留旧 ABI；宿主不静态引用具体插件，正式插件独立引用发布 SDK |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑已有，专属布局留在各页面 |
 | 剪贴板 | 正式插件 1.1.1：系统历史、左列表/右预览、复制原项、事件与激活刷新；无自建历史库或定时轮询 |
@@ -27,8 +27,8 @@
 
 | 层级 | 当前可引用的结果 |
 | --- | --- |
-| 本轮 Review/静态 | [E41](PROJECT_HISTORY.md#evidence-distribution)：主代理复核新脚本和工作流；分发 ZIP 的 311 个文件、整包/独立插件及哈希一致性通过；已有输出、非法版本、外层哈希、内层内容及 ZIP 越界路径 5 个拒绝场景通过。文档链接与 A01–A23 编号通过；无新子代理审查 |
-| 构建/发布 | E41 本地统一脚本完成 Release win-x64 自包含发布，两个插件独立构建均 0 警告/0 错误，原宿主文件哈希未变。包版本 0.1.0，记录构建基线 `30d3c05` 及 sourceDirty=true；本轮未改 C# / AXAML。全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell) 12 工程通过 |
+| 本轮 Review/静态 | [E42](PROJECT_HISTORY.md#evidence-distribution-review)：三位 gpt-6.1-sol / high 子代理审查分发安全、CI/许可、架构/复用并复审修正；补齐相对路径、Windows ZIP 冲突及共享 DLL 大小写校验，固定构建环境并修复日志遗漏。4 个坏包、11 个路径边界与有效包回归通过；23 项依赖/28 份许可原文核对通过，脚本语法、文档链接及 A01–A23 编号通过 |
+| 构建/发布 | E42 从 artifacts 子目录用相对输出路径完成 Release win-x64 自包含分发；两个插件独立构建均 0 警告/0 错误且日志完整，原宿主文件哈希未变，311 文件及整包/独立插件一致性通过。包版本 0.1.0，记录基线 `9dcb9af` 及 sourceDirty=true；未改 C# / AXAML。全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell) |
 | CI/分发运行 | GitHub Actions 配置已写入，尚未在 GitHub 执行，未建立远程或推送/发布。ZIP 未运行；安装器、签名、最低系统及无 SDK 机器尚无证据 |
 | 自动化/集成 | E37–E39 的迁移核心 9 组、管理关联 6 组只编译未运行；其他当前检查也不能套用历史通过。近满盘、块内/部分收尾取消未取得运行证据 |
 | Windows UI/系统/媒体 | 用户指出旧白色小窗，E39 的同窗启动尚待实测；主题首帧、启动关闭/恢复、迁移故障、媒体/GPU 等见第 4 节。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒有界轮询，实际使用时警告一次 |
@@ -50,7 +50,7 @@ dotnet build .\TractorTool.slnx -c Debug -m:1 -nr:false
 dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH\TractorTool\artifacts\manual-profile
 # 发布到新空目录，正式插件另行打包
 .\scripts\Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\manual-publish
-# PowerShell 7：完整分发，目标必须尚不存在；版本默认来自 Directory.Build.props
+# PowerShell 7.4+：完整分发，目标必须尚不存在；版本默认来自 Directory.Build.props
 .\scripts\Build-Distribution.ps1 -Output H:\ProjH\TractorTool\artifacts\manual-distribution
 # 仅核对产物文件，不运行应用
 .\scripts\Verify-Distribution.ps1 -AssetsDir H:\ProjH\TractorTool\artifacts\manual-distribution\assets
@@ -58,7 +58,7 @@ dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH
 
 `--profile-root` 要求绝对路径，隔离启动指针及默认数据；不带参数访问真实 `%LOCALAPPDATA%\TractorTool`，该参数不等于迁移。插件仍在所启动宿主的 AppRoot/Plugins，不随 profile 切换。**迁移/故障测试使用独立发布副本、隔离 profile 与新的空目标，不修改真实 bootstrap 或用户文件。**
 
-当前分发产物在 `artifacts/m5-distribution/delivery/assets`：宿主 ZIP 0.1.0、剪贴板 ZIP 1.1.1、视频 ZIP 0.5.2、release.json 和 SHA256SUMS。解压后的同内容布局在 `delivery/layout/TractorTool-0.1.0-win-x64`，已含两个独立插件。从新目录使用隔离 profile 验证；不要把 ZIP 直接覆盖旧安装，当前还不是升级器。相同已装插件版本无需重装；日常源码构建不会替换已装 DLL。独立打包见 [插件规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)，变更后显式退出重启，关闭窗口仅隐藏。
+当前分发产物在 `artifacts/m5-distribution-review/delivery-final/assets`：宿主 ZIP 0.1.0、剪贴板 ZIP 1.1.1、视频 ZIP 0.5.2、release.json 和 SHA256SUMS；同级 `layout/TractorTool-0.1.0-win-x64` 已含两个独立插件。SDK 版本由根 global.json 与 CI 共用。从新目录使用隔离 profile 验证；不要把 ZIP 直接覆盖旧安装，当前还不是升级器。相同已装插件版本无需重装；日常源码构建不会替换已装 DLL。独立打包见 [插件规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)，变更后显式退出重启，关闭窗口仅隐藏。
 
 ### 当前人工回归重点
 
@@ -109,7 +109,7 @@ dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH
 | 编号 | 验收场景 | 通过条件 | 证据层级 | 状态 |
 | --- | --- | --- | --- | --- |
 | A01 | 主框架与主题 | 顶部主页和三个底部入口可达，欢迎/插件卡片与实际安装一致，布局/图标/控件/切页反馈统一，宿主和插件主题一致，重启保留 | UI | E22 修复开关动效；E39 根据白色启动小窗反馈改为同一主窗口内启动/迁移/失败提示，编译通过；实际主题首帧、缩放、关闭/恢复与原位切换待验 |
-| A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | 部分通过：E41 两个正式插件引用发布 SDK 独立构建，原宿主文件未变，ZIP 与整包插件内容一致；当前 DLL 实际加载未执行，不能套用旧 UI 加载证据 |
+| A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | 部分通过：E42 两个正式插件引用发布 SDK 独立构建，原宿主文件未变，ZIP 与整包插件内容一致；当前 DLL 实际加载未执行，不能套用旧 UI 加载证据 |
 | A03 | 兼容性与禁用 | 不兼容、禁用插件只读清单不执行入口；加载错误可定位 | 集成 | 历史 M1 有运行证据；活动版本选择/管理禁用及 API 1.7 接受旧 1.0–1.6 的兼容检查仅编译，实际旧 DLL 加载待验 |
 | A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | 管理、快照回退及状态冲突检查已编译；未执行，真实 ACL/占用/中断恢复待验，不能据历史目录受阻用例标为完成 |
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | 公共任务接入及日志内任务进度入口已编译；历史常驻活动切页/隐藏 Headless 检查通过，当前真实视频任务、任务页和托盘仍待用户验证 |
@@ -129,7 +129,7 @@ dotnet run --project .\TractorTool\TractorTool.csproj -- --profile-root H:\ProjH
 | A19 | 取消与失败 | 单项取消/整批取消正确，无遗留进程，失败不冒充成功，余项策略一致 | 集成、进程 | 已修整批登记和迟到取消竞争；单项/整批取消、等待项跳过、失败继续与公共进程清理检查只编译未运行 |
 | A20 | 输出安全 | 不覆盖源文件和已有文件，只清理任务自身临时产物 | 集成 | 单次事务目录、无覆盖提交和指定临时文件清理已编译；隔离输出检查未运行 |
 | A21 | 退出和恢复 | 明确退出能停止任务，重启标记中断，无无限等待或重复执行 | UI、进程 | 公共任务摘要、日志内任务入口、退出确认及系统退出有界停止已编译；任务检查未运行。真实退出/重启中断、损坏摘要重试与旧生命周期回归待用户验证 |
-| A22 | 发布验证 | 本地与 CI 使用同一脚本，安装/压缩包加载插件，校验信息正确 | 发布、UI | 部分通过：E41 本地统一打包、许可收集、311 文件及 5 项拒绝校验通过；CI 已配置未运行。当前 ZIP 实际加载、安装器/升级保留、Release 发布及无 SDK 机器仍未验 |
+| A22 | 发布验证 | 本地与 CI 使用同一脚本，安装/压缩包加载插件，校验信息正确 | 发布、UI | 部分通过：E42 三代理复审后本地分发、311 文件及新增路径/坏包校验通过；SDK 固定，CI 已配置未运行。E41 的 5 项历史拒绝证据保留；当前 ZIP 实际加载、安装器/升级保留、Release 发布及无 SDK 机器仍未验 |
 | A23 | 日志与任务交互 | 分级/筛选/折叠详情、任务进度；全部已读保留日志，新错误再次提醒；底部跟随且不打断上翻；磁盘保留有界且不误删其他文件 | 集成、UI | E35 用户反馈未发现问题，未逐项报告边界；E36 日志保留检查只编译未运行。旧取消异常及进程树轮询优化仍待验证/处理 |
 
 

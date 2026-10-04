@@ -341,7 +341,9 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 
 本地与 [CI](../.github/workflows/distribution.yml) 共用 [Build-Distribution](../scripts/Build-Distribution.ps1)：先发布宿主，再引用该 SDK 独立构建两个正式插件，核对宿主原文件哈希后按正常插件目录组包。输出宿主 ZIP、独立插件 ZIP、SHA256SUMS、版本/源码信息；包内 files.json 记录文件大小及哈希。许可从实际发布依赖图对应的 NuGet 包收集；缺失原文的包按 [固定上游来源](../packaging/licenses/sources.json) 补充，缺许可则打包失败。构建产物不带用户数据、测试插件或 FFmpeg 二进制。
 
-[Verify-Distribution](../scripts/Verify-Distribution.ps1) 只静态核对清单、ZIP 路径/内容、版本及整包与独立插件的一致性，不装载 DLL 或启动程序。SHA256 不证明发布者身份，也不替代运行验收。新包仅写入新目录，不能当作覆盖升级器；安装器负责的插件/数据保留逻辑仍待实现。当前 CI 只上传构建产物，GitHub Release 发布尚待接入，实际验证状态统一见开发台账。
+分发脚本使用 PowerShell 7.4+；根 [global.json](../global.json) 固定 .NET SDK，CI 从同一文件安装，禁止滚动选用其他 SDK。脚本按调用方的 PowerShell 当前位置解析输入路径，在仓库/插件工程目录内执行 dotnet 后恢复位置。宿主与插件构建输出保留在普通输出流，可统一收集日志；产品版本与 SDK 版本仍独立管理。
+
+[Verify-Distribution](../scripts/Verify-Distribution.ps1) 只静态核对清单、ZIP 路径/内容、版本及整包与独立插件的一致性，不装载 DLL 或启动程序。按 Windows 规则拒绝非法路径段、大小写重复文件及文件/目录冲突，并排除共享 DLL 副本与用户 bootstrap。SHA256 不证明发布者身份，也不替代运行验收。新包仅写入新目录，不能当作覆盖升级器；安装器负责的插件/数据保留逻辑仍待实现。当前 CI 只上传构建产物，GitHub Release 发布尚待接入，实际验证状态统一见开发台账。
 
 自动更新宿主、插件在线市场、多平台安装器、不可信插件沙箱均不属于首版；不能把未来扩展预留变成当前需要实现的大型基础设施。
 

@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 7.4
 param(
     [Parameter(Mandatory)][string]$Output,
     [string]$Version
@@ -12,7 +12,7 @@ if (!$Version) {
 if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') {
     throw '版本必须为三段数字，可附加预发布后缀。'
 }
-$destination = [IO.Path]::GetFullPath($Output)
+$destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if (Test-Path -LiteralPath $destination) { throw '分发输出目录必须是尚不存在的新目录；不会清理或覆盖旧产物。' }
 for ($ancestor = Split-Path $destination; $ancestor; $ancestor = Split-Path $ancestor) {
     if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -23,8 +23,11 @@ $sourceCommit = git -C $repo rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw '无法读取源码提交。' }
 $sourceChanges = @(git -C $repo status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw '无法读取源码工作区状态。' }
-$sdk = dotnet --version
-if ($LASTEXITCODE -ne 0) { throw '无法读取 .NET SDK 版本。' }
+Push-Location $repo
+try {
+    $sdk = dotnet --version
+    if ($LASTEXITCODE -ne 0) { throw '无法读取 .NET SDK 版本。' }
+} finally { Pop-Location }
 $bundleName = "TractorTool-$Version-win-x64"
 $bundle = Join-Path $destination "layout/$bundleName"
 $assetsDir = Join-Path $destination 'assets'
@@ -40,10 +43,11 @@ $hostHashes = @{}
 Get-ChildItem -LiteralPath $bundle -File -Recurse | ForEach-Object {
     $hostHashes[[IO.Path]::GetRelativePath($bundle, $_.FullName)] = (Get-FileHash -LiteralPath $_.FullName).Hash
 }
-$plugins = @(foreach ($plugin in @('ClipboardHistory', 'VideoExport')) {
+$plugins = @()
+foreach ($plugin in @('ClipboardHistory', 'VideoExport')) {
     $pluginOutput = Join-Path $destination "work/$plugin"
     $project = Join-Path $repo "Plugins/TractorTool.Plugins.$plugin/TractorTool.Plugins.$plugin.csproj"
-    & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project $project -HostSdkDir $bundle -Output $pluginOutput | Out-Host
+    & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project $project -HostSdkDir $bundle -Output $pluginOutput
     $files = Join-Path $pluginOutput 'files'
     $manifest = Get-Content -LiteralPath (Join-Path $files 'plugin.json') -Raw | ConvertFrom-Json
     $installPath = "Plugins/$($manifest.id)/$($manifest.version)"
@@ -52,8 +56,8 @@ $plugins = @(foreach ($plugin in @('ClipboardHistory', 'VideoExport')) {
     Get-ChildItem -LiteralPath $files -Force | Copy-Item -Destination $install -Recurse
     $archive = "$($manifest.id)-$($manifest.version).zip"
     Copy-Item -LiteralPath (Join-Path $pluginOutput $archive) -Destination $assetsDir
-    [ordered]@{ id = $manifest.id; version = $manifest.version; path = $installPath; archive = $archive }
-})
+    $plugins += [ordered]@{ id = $manifest.id; version = $manifest.version; path = $installPath; archive = $archive }
+}
 foreach ($path in $hostHashes.Keys) {
     if ((Get-FileHash -LiteralPath (Join-Path $bundle $path)).Hash -ne $hostHashes[$path]) { throw "插件构建修改了宿主：$path" }
 }

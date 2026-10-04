@@ -13,6 +13,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（三代理分发复审） | [E42 · 路径、ZIP 校验和构建环境修正（2026-10-04）](#evidence-distribution-review) |
 | M5（统一分发） | [E41 · 本地/CI 共用 ZIP、许可及静态校验（2026-10-04）](#evidence-distribution) |
 | M5（复核与文档整理） | [E40 · 启动复核与当前台账整理（2026-10-04）](#evidence-doc-review) |
 | M5（启动交互修正） | [E39 · 主窗口内启动与迁移进度（2026-10-04）](#evidence-startup-shell) |
@@ -1503,3 +1504,45 @@ Contracts API 1.7 / UI 1.3 与视频 0.5.2 未变，插件未重新打包或安�
 复核修正许可来源空数组的 null 项，以及测试插件真实标识的拒绝规则后，build-delivery.log 在新目录完整重跑上述构建与静态校验成功。最终交付入口为 delivery/assets，宿主 ZIP 约 81.3 MiB，独立剪贴板约 6.5 MiB、视频约 187 KiB；同内容展开布局在 delivery/layout/TractorTool-0.1.0-win-x64。没有运行宿主、检查程序、FFmpeg 或 UI 自动化，没有访问真实配置/媒体/剪贴板。打包编译不代替当前 DLL 加载、GPU、迁移和任务运行验证。
 
 仓库暂未附本项目代码许可证；第三方声明不替代本项目授权。安装器、用户插件/数据升级保留、GitHub Release 发布、签名/最低系统/无 SDK 机器，以及此前未关闭的运行缺口仍留在 DEVELOPMENT。当前流程只做新目录分发，不用于覆盖更新现有安装。保留用户 .vscode/launch.json 空白改动，不纳入提交。
+
+<a id="evidence-distribution-review"></a>
+
+## E42：路径、ZIP 校验和构建环境修正（2026-10-04）
+
+用户要求用子代理 Review，并关注关键设计约束。三位子代理均显式指定 gpt-6.1-sol / high，分别检查分发完整性与数据边界、CI/许可、架构/复用，并对修正做最终复审。主代理核对源码与项目依赖、修复问题并执行本地分发；没有改动 C# / AXAML、API 或插件版本，没有扩展业务和框架。
+
+确认并修正的问题：
+
+1. PowerShell 切换到 artifacts 后，相对参数仍由进程工作目录解析，导致校验找错目录。分发、校验、宿主发布和插件构建入口改用 PowerShell 路径解析；dotnet 在仓库/插件目录执行并以 finally 恢复位置。
+2. ZIP 校验原先接受尾点文件名，以及文件 `collision` 和 `collision/child.txt` 的路径冲突；测试 ZIP 的清单/哈希一致仍会被 Windows 解压拒绝。现在逐段检查 Windows 文件名、保留设备名、大小写重复及文件/目录冲突，同时允许正常显式目录与任意目录条目顺序。
+3. 共享 DLL 后缀比较原先区分大小写，`TractorTool.Contracts.DLL` 可绕过分发校验；已改为忽略大小写，与宿主安装检查保持一致。额外排除 bootstrap.json，坏样本验证通过；没有发现正式交付包实际夹带用户数据。
+4. setup-dotnet 安装指定版本不等于 CLI 固定选用该版本。新增 global.json 固定 10.0.401、关闭滚动和预发布选择，CI 从同一文件安装；本地 SDK 原本恰好一致，不能据此声称旧 CI 已经失败。固定 Action 提交的 global-json-file 参数已核对。
+5. 原脚本声称支持 PowerShell 7.0，但所用 SHA256.HashData(Stream) 依赖较新运行时。统一分发/插件/许可/校验声明为 PowerShell 7.4+，采用 .NET 8 基线；不是声称该 API 直到 7.4 才出现。
+6. 插件构建输出通过 Out-Host 显示而未完整进入外层日志文件。插件元数据改为显式收集，构建输出直接进入普通输出流，日志保留两个独立构建的完整结果。
+
+静态审查没有发现本轮引入宿主静态引用业务插件、迁移插件代码、夹带 FFmpeg、预建空框架或无调用者的新抽象。现有两个专用插件打包入口仍复用 Build-Plugin，不为假设中的未来插件新增配置平台。公共日志/任务保持按插件身份处理，未新增定时轮询；现有 Windows Job 退出确认的有界轮询及旧运行缺口继续保留，不能由本次分发审查关闭。
+
+证据与验证：
+
+| 层级 | 本轮结果及文件 |
+| --- | --- |
+| ZIP 静态夹具 | `artifacts/review-distribution-integrity/fixture.ps1` 与 `recheck.ps1` / `recheck-results.txt`：有效基线接受，尾点、共享大写 DLL、bootstrap、文件/目录冲突 4 个坏包拒绝；11 个内存路径边界含 3 个有效和 8 个拒绝场景通过。旧正式包绝对路径、切换位置后的相对路径校验均通过。最初复现仅解压 artifacts 下虚拟内容，不执行程序 |
+| 许可静态核对 | `artifacts/review-distribution-licenses/static-evidence.json`：E41 包的 23 项实际运行依赖与声明一致，28 份许可文本非空且与对应 NuGet/固定来源原文哈希一致；两个插件的 MVVM 与 WinRT/Windows SDK 私有依赖许可已核对。该文件保留修正前 sdkResolverPinned=false 的事实，不表示修正后仍未锁定 |
+| 当前分发构建 | `artifacts/m5-distribution-review/build-final.log`：Release win-x64 自包含宿主发布成功，剪贴板 1.1.1 与视频 0.5.2 独立构建均 0 警告/0 错误，输出均进入日志；原宿主哈希未变，最终 311 文件和 2 个插件静态一致性通过 |
+| 脚本/文档 | `artifacts/m5-distribution-review/static-checks.json`、`script-checks.json`：文档链接/锚点、A01–A23 完整顺序及 7 份相关脚本语法核对；当前台账和交接替换旧结论，历史证据不复制为新的运行通过 |
+| 未执行 | GitHub CI、应用/检查程序、FFmpeg、UI/硬件、安装/升级/卸载。没有访问真实配置、媒体或剪贴板，没有创建远程、推送或发布 |
+
+实际成功命令如下（PowerShell 7.6.5，SDK 10.0.401；工具输出日志使用绝对路径）：
+
+```powershell
+Push-Location artifacts
+try {
+    & ../scripts/Build-Distribution.ps1 -Output m5-distribution-review/delivery-final *>&1 |
+        Tee-Object -FilePath H:\ProjH\TractorTool\artifacts\m5-distribution-review\build-final.log
+    if ((Get-Location).Path -ne 'H:\ProjH\TractorTool\artifacts') { throw '调用目录未恢复。' }
+} finally { Pop-Location }
+```
+
+当前 assets 与 layout 位于 `artifacts/m5-distribution-review/delivery-final`，包内基线为 `9dcb9afc171bea640d848e4d7b6f0d29f2f940e2`、sourceDirty=true；不声称与随后提交逐字对应。首次验证用了相对 Tee-Object 文件路径，日志目标错误导致命令失败，前面的宿主发布已执行，留下 `delivery` 的部分产物；第二次同目录重试被新目录保护拒绝。两次失败未覆盖旧产物，随后改用新目录 delivery-final 和绝对日志路径才完成。失败尝试没有被记成构建成功，也没有删除用户文件来重试。
+
+三位子代理最终复审未提出新的确定缺陷；此结论限于当前分发及关联边界，不代表整个产品无缺陷或运行验收通过。M5 的下一项仍是安装器与升级/卸载保留逻辑；真实运行继续交用户。用户 `.vscode/launch.json` 空白改动保留且不纳入本轮提交。
