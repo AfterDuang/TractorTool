@@ -3,52 +3,55 @@
              x:Class="TractorTool.Plugins.VideoExport.ExportWorkspaceView" x:DataType="vm:VideoViewModel">
   <Grid RowDefinitions="*,Auto" RowSpacing="16" Margin="28,0,0,0">
     <Grid x:Name="Columns" ColumnDefinitions="360,20,*">
-      <ScrollViewer Classes="pageScroll">
-        <StackPanel Spacing="16" Margin="0,0,4,12">
-          <vm:VideoInputView />
-          <Border Classes="card" Padding="16">
-            <StackPanel Spacing="12" IsEnabled="{Binding CanEditPresets}">
-              <TextBlock Text="{Binding EditorTitle}" Classes="sectionTitle" />
-              <TextBox Text="{Binding PresetName}" PlaceholderText="预设名称" MaxLength="80" AutomationProperties.Name="预设名称" />
-              <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto">
-                <TextBlock Text="输出格式" /><TextBlock Grid.Column="2" Text="码率模式" />
-                <ComboBox Grid.Row="1" ItemsSource="{Binding Containers}" SelectedItem="{Binding Container}" HorizontalAlignment="Stretch" Margin="0,6,0,0" AutomationProperties.Name="输出格式">
-                  <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportFormat"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-                </ComboBox>
-                <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding RateControls}" SelectedItem="{Binding RateControl}" HorizontalAlignment="Stretch" Margin="0,6,0,0" AutomationProperties.Name="码率模式">
-                  <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
-                </ComboBox>
-              </Grid>
-              <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto">
-                <TextBlock Text="视频码率 · Mbps" /><TextBlock Grid.Column="2" Text="音频码率 · kbps" />
-                <NumericUpDown Grid.Row="1" Value="{Binding VideoMbps}" Minimum="0.1" Maximum="200" Increment="0.5" FormatString="0.###" Margin="0,6,0,0" AutomationProperties.Name="视频码率 Mbps" />
-                <NumericUpDown Grid.Row="1" Grid.Column="2" Value="{Binding AudioKbps}" Minimum="32" Maximum="512" Increment="32" Margin="0,6,0,0" AutomationProperties.Name="音频码率 kbps" />
-              </Grid>
-              <Expander Header="画面选项" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="{Binding ShowPictureOptions}">
-                <StackPanel Spacing="12">
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="保持源尺寸" VerticalAlignment="Center" />
-                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding KeepSize}" OnContent="" OffContent="" AutomationProperties.Name="保持源尺寸" />
-                  </Grid>
-                  <Grid ColumnDefinitions="*,24,*" IsVisible="{Binding !KeepSize}">
-                    <NumericUpDown Value="{Binding OutputWidth}" Minimum="2" Maximum="8192" Increment="2" AutomationProperties.Name="输出宽度像素" />
-                    <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                    <NumericUpDown Grid.Column="2" Value="{Binding OutputHeight}" Minimum="2" Maximum="8192" Increment="2" AutomationProperties.Name="输出高度像素" />
-                  </Grid>
-                  <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Text="替换第一帧" VerticalAlignment="Center" />
-                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding ReplaceFirstFrame}" OnContent="" OffContent="" AutomationProperties.Name="替换第一帧" />
-                  </Grid>
-                </StackPanel>
-              </Expander>
-              <WrapPanel ItemSpacing="8" LineSpacing="8">
-                <Button Content="{Binding EditorAction}" Command="{Binding SavePresetCommand}" />
-                <Button Content="取消编辑" Command="{Binding ResetEditorCommand}" IsVisible="{Binding IsEditingPreset}" Classes="quiet" />
-              </WrapPanel>
-            </StackPanel>
-          </Border>
-        </StackPanel>
-      </ScrollViewer>
+      <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="导出参数" Classes="sectionTitle" VerticalAlignment="Center" Margin="0,0,0,12" />
+        <ScrollViewer Grid.Row="1" Classes="pageScroll">
+          <StackPanel Spacing="16" Margin="0,0,4,12">
+            <vm:VideoInputView />
+            <Border Classes="card" Padding="16">
+              <StackPanel Spacing="12" IsEnabled="{Binding CanEditPresets}">
+                <TextBlock Text="{Binding EditorTitle}" Classes="sectionTitle" />
+                <TextBox Text="{Binding PresetName}" PlaceholderText="预设名称" MaxLength="80" AutomationProperties.Name="预设名称" />
+                <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="输出格式" /><TextBlock Grid.Column="2" Text="码率模式" />
+                  <ComboBox Grid.Row="1" ItemsSource="{Binding Containers}" SelectedItem="{Binding Container}" HorizontalAlignment="Stretch" Margin="0,6,0,0" AutomationProperties.Name="输出格式">
+                    <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportFormat"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding RateControls}" SelectedItem="{Binding RateControl}" HorizontalAlignment="Stretch" Margin="0,6,0,0" AutomationProperties.Name="码率模式">
+                    <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ExportChoice"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+                  </ComboBox>
+                </Grid>
+                <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto">
+                  <TextBlock Text="视频码率 · Mbps" /><TextBlock Grid.Column="2" Text="音频码率 · kbps" />
+                  <NumericUpDown Grid.Row="1" Value="{Binding VideoMbps}" Minimum="0.1" Maximum="200" Increment="0.5" FormatString="0.###" Margin="0,6,0,0" AutomationProperties.Name="视频码率 Mbps" />
+                  <NumericUpDown Grid.Row="1" Grid.Column="2" Value="{Binding AudioKbps}" Minimum="32" Maximum="512" Increment="32" Margin="0,6,0,0" AutomationProperties.Name="音频码率 kbps" />
+                </Grid>
+                <Expander Header="画面选项" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="{Binding ShowPictureOptions}">
+                  <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="保持源尺寸" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding KeepSize}" OnContent="" OffContent="" AutomationProperties.Name="保持源尺寸" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,24,*" IsVisible="{Binding !KeepSize}">
+                      <NumericUpDown Value="{Binding OutputWidth}" Minimum="2" Maximum="8192" Increment="2" AutomationProperties.Name="输出宽度像素" />
+                      <TextBlock Grid.Column="1" Text="×" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                      <NumericUpDown Grid.Column="2" Value="{Binding OutputHeight}" Minimum="2" Maximum="8192" Increment="2" AutomationProperties.Name="输出高度像素" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                      <TextBlock Text="替换第一帧" VerticalAlignment="Center" />
+                      <ToggleSwitch Grid.Column="1" IsChecked="{Binding ReplaceFirstFrame}" OnContent="" OffContent="" AutomationProperties.Name="替换第一帧" />
+                    </Grid>
+                  </StackPanel>
+                </Expander>
+                <WrapPanel ItemSpacing="8" LineSpacing="8">
+                  <Button Content="{Binding EditorAction}" Command="{Binding SavePresetCommand}" />
+                  <Button Content="取消编辑" Command="{Binding ResetEditorCommand}" IsVisible="{Binding IsEditingPreset}" Classes="quiet" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
       <Grid x:Name="PresetPanel" Grid.Column="2" RowDefinitions="Auto,*">
         <Grid ColumnDefinitions="*,Auto" Margin="0,0,28,12">
           <TextBlock Text="导出预设" Classes="sectionTitle" VerticalAlignment="Center" />
