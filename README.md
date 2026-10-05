@@ -34,7 +34,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 | 能力 | 使用方式 |
 | --- | --- |
 | 插件管理 | 拖入或选择本地 ZIP 安装、更新，支持启停和卸载；变更在退出并重启后生效 |
-| 外部依赖 | 设置中可浏览、搜索源目录和本机依赖，查看资料、安装、取消及清理；首次确认、已装复用。支持远程索引与缓存，正式地址尚待部署，当前显示随附的 FFmpeg 本地目录；[源维护与测试插件](Docs/PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
+| 外部依赖 | 默认从 GitHub Release 按需下载，首次确认、校验与已装复用；设置分为 Packages（已安装包）和依赖来源。支持添加公开 GitHub Enterprise 来源；[插件声明](Docs/PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
 | 后台任务 | 切换页面、隐藏到托盘后继续；在“日志 → 任务进度”查看状态与取消 |
 | 运行记录 | INFO / WARNING / ERROR 分级高亮，搜索筛选、底部跟随、未读错误提醒 |
 | 外观与设置 | 浅色、深色、跟随系统和主题色；软件设置与插件设置分开组织 |
@@ -150,7 +150,7 @@ $compiler = ./scripts/Get-InnoCompiler.ps1 -Output ./artifacts/local-inno
 
 ## 后续方向
 
-近期工作集中在可信依赖索引部署与第二工具验收、安装与升级恢复、真实媒体/GPU 和任务生命周期验收，以及 GitHub Release 流程。安装源维护和 MediaInfo 测试插件入口见[插件开发规范](Docs/PLUGIN_DEVELOPMENT.md#package-source-maintenance)。Python / pip 依赖与本地 AI 插件支持属于[后续计划](Docs/ARCHITECTURE.md#python-dependencies)，尚未实现；业务仍由插件承担。
+近期工作集中在 GitHub 依赖链路、安装升级恢复、真实媒体/GPU 和任务生命周期验收，以及 GitHub Release 发布流程。独立 ripgrep 测试插件见[插件规范](Docs/PLUGIN_DEVELOPMENT.md#package-source-maintenance)。Python / pip 与本地 AI 支持属于[后续计划](Docs/ARCHITECTURE.md#python-dependencies)，尚未实现；业务仍由插件承担。
 
 ## 许可与致谢
 

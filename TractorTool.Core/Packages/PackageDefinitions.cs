@@ -9,37 +9,8 @@ public sealed record PackageTool(string Path, string VersionPrefix,
 public sealed record PackageDefinition(PackageReference Package, string Rid, string Name, string Description,
     Uri DownloadUri, string Sha256, string License, Uri SourceUri, IReadOnlyDictionary<string, PackageTool> Tools);
 
-public static class PackageCatalog
+public static class PackageDefinitions
 {
-    internal const int MaxBytes = 1024 * 1024;
-    // The source index is maintained and distributed by the host, independently of compiled code.
-    public static IReadOnlyList<PackageDefinition> Load(string path)
-    {
-        PackageFiles.CheckPath(path);
-        using var file = File.OpenRead(path);
-        if (file.Length > MaxBytes) throw new InvalidDataException("依赖源索引超过大小限制。");
-        var bytes = new byte[checked((int)file.Length)];
-        file.ReadExactly(bytes);
-        return Parse(bytes);
-    }
-
-    internal static IReadOnlyList<PackageDefinition> Parse(ReadOnlySpan<byte> bytes)
-    {
-        if (bytes.Length > MaxBytes) throw new InvalidDataException("依赖源索引超过大小限制。");
-        if (bytes.StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) bytes = bytes[3..];
-        var index = JsonSerializer.Deserialize<SourceIndex>(bytes, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        if (index is null || index.SchemaVersion != 1 || index.Packages is null || index.Packages.Length > 1000)
-            throw new InvalidDataException("依赖源索引格式不支持。");
-        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var definition in index.Packages)
-        {
-            Validate(definition);
-            if (!keys.Add($"{definition.Package.Id}/{definition.Package.Version}/{definition.Rid}"))
-                throw new InvalidDataException("依赖源中存在重复包版本。");
-        }
-        return index.Packages.Select(Snapshot).ToArray();
-    }
-
     internal static PackageDefinition Snapshot(PackageDefinition definition)
     {
         Validate(definition);
@@ -70,5 +41,4 @@ public static class PackageCatalog
             throw new InvalidDataException("依赖包定义过大，无法保存完整安装记录。");
     }
 
-    private sealed record SourceIndex(int SchemaVersion, PackageDefinition[] Packages);
 }

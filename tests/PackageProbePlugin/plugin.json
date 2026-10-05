@@ -2,13 +2,41 @@
   "schemaVersion": 1,
   "id": "Test.PackageProbe",
   "name": "外部依赖测试插件",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryAssembly": "PackageProbePlugin.dll",
   "entryType": "PackageProbePlugin.ProbePlugin",
   "apiVersion": "1.7",
   "uiApiVersion": "1.1",
   "avaloniaVersion": "12.1.2",
-  "supportedPlatforms": ["win-x64"],
-  "dependencies": [{ "id": "MediaInfo", "version": "26.5.0" }],
-  "description": "按需申请真实 MediaInfo CLI，验证公开包租约及进程接口；仅供隔离测试。"
+  "supportedPlatforms": [
+    "win-x64"
+  ],
+  "dependencies": [
+    {
+      "id": "ripgrep",
+      "version": "14.1.1",
+      "downloads": [
+        {
+          "rid": "win-x64",
+          "repository": "BurntSushi/ripgrep",
+          "tag": "14.1.1",
+          "asset": "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+          "sha256": "d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1",
+          "name": "ripgrep",
+          "description": "命令行搜索工具，此测试只读取版本。",
+          "license": "MIT OR Unlicense",
+          "tools": {
+            "rg": {
+              "path": "ripgrep-14.1.1-x86_64-pc-windows-msvc/rg.exe",
+              "versionPrefix": "ripgrep 14.1.1",
+              "arguments": [
+                "--version"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "description": "按需申请真实 ripgrep GitHub Release，验证包租约及版本命令；仅供隔离测试。"
 }

@@ -49,8 +49,10 @@ public partial class SettingsViewModel : ViewModelBase
     public ObservableCollection<SettingsPage> Categories { get; } = [];
     public IReadOnlyList<SettingsPage> SoftwareSettings { get; }
     public IReadOnlyList<SettingsPage> GeneralPages { get; }
+    public IReadOnlyList<SettingsPage> DependencyPages { get; }
+    public IReadOnlyList<SettingsPage> CategoryPages => SelectedCategory == SoftwareSettings[1] ? DependencyPages : GeneralPages;
     public SettingsPage AppearancePage => GeneralPages[0];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectedCategory), nameof(Breadcrumbs))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SelectedCategory), nameof(Breadcrumbs), nameof(CategoryPages))]
     private SettingsPage? _selectedPage;
     public SettingsPage? SelectedCategory
     {
@@ -75,10 +77,14 @@ public partial class SettingsViewModel : ViewModelBase
         ExternalTools = new(packages, OpenPackage);
         Migration = new(paths, manager, log);
         SoftwareSettings = [new("通用设置", () => new SettingsGeneralView { DataContext = this }),
-            new("外部依赖", () => new ExternalToolsView { DataContext = ExternalTools })];
+            new("外部依赖", () => new SettingsGeneralView { DataContext = this })];
         GeneralPages = [new("外观", () => new SettingsAppearanceView { DataContext = this }, SoftwareSettings[0], "主题、主题色与界面动画", ToolIconKind.Palette),
             new("应用数据", () => new SettingsDataView { DataContext = this }, SoftwareSettings[0], "数据目录与存储位置", ToolIconKind.Folder),
             new("关于软件", () => new SettingsAboutView { DataContext = this }, SoftwareSettings[0], "版本信息与退出应用", ToolIconKind.Info)];
+        DependencyPages = [new("Packages", () => new ExternalToolsView { DataContext = ExternalTools }, SoftwareSettings[1],
+            "查看已安装的依赖、来源与使用情况", ToolIconKind.Tools),
+            new("依赖来源", () => new DependencySourcesView { DataContext = ExternalTools }, SoftwareSettings[1],
+            "管理 GitHub 下载来源", ToolIconKind.Folder)];
         foreach (var page in SoftwareSettings) Categories.Add(page);
         _selectedPage = Categories[0];
         _enableAnimations = settings.EnableAnimations;
@@ -90,7 +96,7 @@ public partial class SettingsViewModel : ViewModelBase
     public void AddPluginPage(SettingsPage page) { PluginSettings.Add(page); Categories.Add(page); }
     [RelayCommand] private void Navigate(SettingsPage? page) { if (!_stopping && page is not null) SelectedPage = page; }
     private void OpenPackage(PackageCardViewModel card) => Navigate(new(card.Name,
-        () => new PackageDetailsView { DataContext = card }, SoftwareSettings[1]));
+        () => new PackageDetailsView { DataContext = card }, DependencyPages[0]));
     internal void LogPageError(Exception error) => _log.Write("Settings", "设置页面加载或清理失败", error);
     partial void OnSelectedThemeChanged(ThemeChoice value) => ApplyAppearance();
     partial void OnSelectedAccentChanged(AccentChoice value) => ApplyAppearance();

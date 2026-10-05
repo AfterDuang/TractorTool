@@ -11,31 +11,33 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
 {
     private readonly ExternalPackageService? _service;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly HashSet<PackageReference> _knownInstalled = [];
     private int _queued;
     private bool _disposed;
     private bool _cleaning;
     private string _status = "";
-    private string _refreshError = "";
-    private int _selectedScope;
+    private bool _savingSource;
+    private bool _showSourceForm;
+    private string _sourceName = "";
+    private string _sourceAddress = "";
     private string _searchText = "";
     private Func<string, string, CancellationToken, Task<bool>>? _confirm;
     public ObservableCollection<PackageCardViewModel> Cards { get; } = [];
     public ObservableCollection<PackageCardViewModel> VisibleCards { get; } = [];
-    public int SelectedScope { get => _selectedScope; set { if (SetProperty(ref _selectedScope, value)) Refresh(); } }
+    public ObservableCollection<DependencySource> Sources { get; } = [];
+    public bool ShowSourceForm { get => _showSourceForm; set => SetProperty(ref _showSourceForm, value); }
+    public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
+    public string SourceAddress { get => _sourceAddress; set { if (SetProperty(ref _sourceAddress, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
     public string SearchText { get => _searchText; set { if (SetProperty(ref _searchText, value)) FilterCards(); } }
     public bool IsEmpty => VisibleCards.Count == 0;
-    public string EmptyMessage => !string.IsNullOrWhiteSpace(SearchText) ? "没有找到匹配的依赖。" :
-        SelectedScope == 0 ? "当前安装源没有本平台可用的依赖。" : "尚无已安装或被插件申请的依赖。";
+    public string EmptyMessage => !string.IsNullOrWhiteSpace(SearchText) ? "没有找到匹配的依赖。" : "尚未安装依赖。插件首次使用时会提示安装。";
     public string Summary => $"{Cards.Count(c => c.IsInstalled)} 个已安装 · {Cards.Count(c => c.CanRemove)} 个可清理";
-    public string SourceStatus => _service?.SourceStatus ?? "外部依赖服务不可用。";
-    public string SourceLocation => _service?.SourceLocation ?? "未提供安装源";
-    public string SourceName => _service?.HasRemoteSource == true ? "软件维护的远程安装源" : "软件随附的本地安装源";
-    public string CatalogSummary => $"{Cards.Count(c => c.IsAvailable)} 个源中可用的包 · 当前平台";
-    public string RefreshSourceLabel => _service?.HasRemoteSource == true ? "刷新安装源" : "刷新本地目录";
-    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status, _refreshError }.Where(s => !string.IsNullOrEmpty(s)));
+    public bool HasCleanup => Cards.Any(c => c.CanRemove);
+    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status }.Where(s => !string.IsNullOrEmpty(s)));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }
-    public IAsyncRelayCommand RefreshSourceCommand { get; }
+    public IAsyncRelayCommand AddSourceCommand { get; }
+    public IAsyncRelayCommand<DependencySource> RemoveSourceCommand { get; }
     public IRelayCommand<PackageCardViewModel> OpenCommand { get; }
 
     public ExternalToolsViewModel(ExternalPackageService? service, Action<PackageCardViewModel> open)
@@ -43,7 +45,10 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         _service = service;
         OpenCommand = new RelayCommand<PackageCardViewModel>(card => { if (!_disposed && card is not null) open(card); });
         CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && Cards.Any(c => c.CanRemove));
-        RefreshSourceCommand = new AsyncRelayCommand(RefreshSourceAsync, CanRefreshSource);
+        AddSourceCommand = new AsyncRelayCommand(() => SaveSourceAsync(null), () => !_disposed && !_savingSource && _service is not null &&
+            !string.IsNullOrWhiteSpace(SourceName) && !string.IsNullOrWhiteSpace(SourceAddress));
+        RemoveSourceCommand = new AsyncRelayCommand<DependencySource>(s => SaveSourceAsync(s),
+            s => !_disposed && !_savingSource && _service is not null && s is { IsDefault: false });
         if (service is not null) service.Changed += OnChanged;
         Refresh();
     }
@@ -53,7 +58,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         if (_service is not null) _service.ConfirmInstallAsync = confirm is null ? null : (prompt, token) => confirm(
             prompt.IsRepair ? "重新安装依赖" : "安装依赖",
             $"{prompt.RequestedBy} 需要 {prompt.Definition.Name} {prompt.Definition.Package.Version}。\n{prompt.Definition.Description}\n\n" +
-            $"来源：{prompt.Definition.DownloadUri.Host}\n许可：{prompt.Definition.License}\n" +
+            $"来源：{prompt.Definition.SourceUri.AbsoluteUri}\n许可：{prompt.Definition.License}\n" +
             (prompt.IsRepair ? "将替换此版本损坏的工具文件。\n" : "") +
             "安装后供插件共用，卸载插件时会保留。是否继续？", token);
     }
@@ -64,7 +69,11 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     }
     private void Refresh()
     {
-        var snapshots = _service?.GetPackages(includeCatalog: true) ?? [];
+        var packages = _service?.GetPackages() ?? [];
+        foreach (var item in packages.Where(p => p.IsInstalled)) _knownInstalled.Add(item.Package);
+        // A repair temporarily removes files; keep its progress, cancel action and failure visible.
+        var snapshots = packages.Where(p => p.IsInstalled || _knownInstalled.Contains(p.Package) &&
+            (p.Status.CanCancel || p.Status.Phase == PackagePhase.Failed)).ToArray();
         foreach (var stale in Cards.Where(c => !snapshots.Any(s => s.Package == c.Key)).ToArray())
         { stale.MarkUnavailable(); Cards.Remove(stale); }
         foreach (var snapshot in snapshots)
@@ -74,19 +83,19 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
                 (title, message, token) => _confirm?.Invoke(title, message, token) ?? Task.FromResult(false)));
             else card.Refresh(snapshot);
         }
+        var sources = _service?.GetSources() ?? [];
+        if (!Sources.SequenceEqual(sources)) { Sources.Clear(); foreach (var source in sources) Sources.Add(source); }
         FilterCards();
         OnPropertyChanged(string.Empty);
-        CleanCommand.NotifyCanExecuteChanged(); RefreshSourceCommand.NotifyCanExecuteChanged();
+        CleanCommand.NotifyCanExecuteChanged(); AddSourceCommand.NotifyCanExecuteChanged(); RemoveSourceCommand.NotifyCanExecuteChanged();
     }
     private void FilterCards()
     {
-        var managed = SelectedScope == 0 ? null : _service?.GetPackages().Select(p => p.Package).ToHashSet();
         var query = SearchText.Trim();
-        var visible = Cards.Where(c => (SelectedScope == 0 ? c.IsAvailable : managed?.Contains(c.Key) == true) &&
-            (c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || c.Key.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        var visible = Cards.Where(c => (c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || c.Key.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              c.Key.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         foreach (var card in VisibleCards.Except(visible).ToArray()) VisibleCards.Remove(card);
-        // ponytail: quadratic reconciliation for small settings lists; use a keyed diff if large catalogs become common.
+        // ponytail: quadratic reconciliation for small installed lists; use a keyed diff if package counts become large.
         for (var i = 0; i < visible.Length; i++)
         {
             var existing = VisibleCards.IndexOf(visible[i]);
@@ -95,15 +104,18 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         }
         OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(EmptyMessage));
     }
-    private bool CanRefreshSource() => !_disposed && _service is { CanRefreshSource: true, IsRefreshingSource: false };
-    private async Task RefreshSourceAsync()
+    private async Task SaveSourceAsync(DependencySource? remove)
     {
-        if (!CanRefreshSource()) return;
-        _refreshError = ""; Refresh();
-        try { await _service!.RefreshSourceAsync(_stopping.Token); }
-        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
-        catch (Exception ex) { _refreshError = "安装源刷新失败：" + ex.Message; }
-        finally { if (!_disposed) Refresh(); }
+        if (_disposed || _savingSource || _service is null) return;
+        var name = SourceName; var address = SourceAddress;
+        _savingSource = true; _status = ""; Refresh();
+        try
+        {
+            await Task.Run(() => { if (remove is null) _service.AddSource(name, address); else _service.RemoveSource(remove); });
+            if (remove is null) { SourceName = ""; SourceAddress = ""; ShowSourceForm = false; }
+        }
+        catch (Exception ex) { _status = "依赖来源未保存：" + ex.Message; }
+        finally { _savingSource = false; if (!_disposed) Refresh(); }
     }
     private async Task CleanAsync()
     {
@@ -136,7 +148,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         if (_service is not null) _service.Changed -= OnChanged;
         _stopping.Cancel();
         foreach (var card in Cards) card.RefreshStopped();
-        CleanCommand.NotifyCanExecuteChanged(); RefreshSourceCommand.NotifyCanExecuteChanged();
+        CleanCommand.NotifyCanExecuteChanged(); AddSourceCommand.NotifyCanExecuteChanged(); RemoveSourceCommand.NotifyCanExecuteChanged();
     }
 }
 
@@ -148,18 +160,18 @@ public sealed class PackageCardViewModel : ObservableObject
     private PackageListItem _item;
     private bool _operating;
     private string _operationError = "";
-    private PackageDefinition? DisplayDefinition => _item.SourceDefinition ?? _item.Definition;
     public PackageReference Key => _item.Package;
-    public string Name => DisplayDefinition?.Name ?? Key.Id;
-    public string Attribution => $"版本 {Key.Version} · {_item.Status.Rid}" + (DisplayDefinition is { } d ? $" · {d.License}" : "");
+    public string Name => _item.Definition?.Name ?? Key.Id;
+    public string Attribution => $"版本 {Key.Version} · {_item.Status.Rid}" + (_item.Definition is { } d ? $" · {d.License}" : "");
     public string Directory => _item.Status.Directory;
-    public string Source => DisplayDefinition?.SourceUri.AbsoluteUri ?? "可信安装源尚未提供此版本。";
-    public string Description => DisplayDefinition?.Description ?? "当前安装源没有此包资料。";
-    public bool IsAvailable => _item.SourceDefinition is not null;
-    public string Availability => IsAvailable ? "源中可用" : "当前源未提供此版本";
-    public string DownloadUri => _item.SourceDefinition?.DownloadUri.AbsoluteUri ?? "当前源未提供下载地址。";
-    public string ToolNames => string.Join("、", DisplayDefinition?.Tools.Keys ?? []);
-    public string Sha256 => DisplayDefinition?.Sha256 ?? "无校验信息";
+    public string Source => _item.Definition?.SourceUri.AbsoluteUri ?? "来源信息不可用。";
+    public string SourceSummary => _item.Definition is { } d ? "来源：" +
+        (d.SourceUri.AbsolutePath.Contains("/releases/tag/", StringComparison.Ordinal) ?
+            $"GitHub · {d.SourceUri.Host} / {string.Join("/", d.SourceUri.AbsolutePath.Split('/').Skip(1).Take(2))}" : d.SourceUri.Host) : "来源信息不可用";
+    public string Description => _item.Definition?.Description ?? "安装资料不可用。";
+    public string DownloadUri => _item.Definition?.DownloadUri.AbsoluteUri ?? "下载地址不可用。";
+    public string ToolNames => string.Join("、", _item.Definition?.Tools.Keys ?? []);
+    public string Sha256 => _item.Definition?.Sha256 ?? "无校验信息";
     public bool IsInstalled => _item.IsInstalled;
     public string SizeText => _item.Status.InstalledBytes is { } size ? $"{size / 1048576d:0.0} MiB" : "";
     public string RequiredBy => _item.RequiredBy.Count == 0 ? "没有插件引用" : "引用插件：" + string.Join("、", _item.RequiredBy);
@@ -209,7 +221,7 @@ public sealed class PackageCardViewModel : ObservableObject
         finally { _operating = false; RefreshStopped(); }
     }
     public void Refresh(PackageListItem item) { _item = item; RefreshStopped(); }
-    public void MarkUnavailable() => Refresh(_item with { SourceDefinition = null, IsInstalled = false, CanInstall = false, CanRemove = false,
+    public void MarkUnavailable() => Refresh(_item with { IsInstalled = false, CanInstall = false, CanRemove = false,
         Status = _item.Status with { Phase = PackagePhase.Missing, InstalledBytes = null, Error = "当前目录已不包含此包，请返回列表。" } });
     public void RefreshStopped()
     {

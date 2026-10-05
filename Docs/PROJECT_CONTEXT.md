@@ -1,41 +1,39 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-05。本页只保留接续所需信息；完整进度与未关闭项以 [开发验收台账](DEVELOPMENT.md#current-status) 为准。
+更新日期：2026-10-05。本页是接续快照；唯一当前状态台账为 [DEVELOPMENT](DEVELOPMENT.md#current-status)，逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
-## 1. 当前位置
+## 1. 当前工作
 
-**处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 标题栏布局最近改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
+处于 M5 可靠性与发布阶段，M1–M4 功能已实现但运行验收没有全部完成。最新 [E60](PROJECT_HISTORY.md#evidence-github-dependencies) 按用户决定取消自有包源，直接接 GitHub Release；覆盖之前 E56/E58/E59 的索引、缓存、刷新和目录浏览方向，不再安排自有源部署或虚拟源测试。
 
-最新改动为 [E59](PROJECT_HISTORY.md#evidence-dependency-catalog-ui)：外部依赖设置可浏览“源中可用”/“本机依赖”、搜索、查看实际源位置及包资料，直接安装/取消/清理；浏览不产生下载或需求，确认/引用/租约保护不变。用户明确不需要临时源沙盒，删除对应构建脚本，保留独立测试插件和既有产物，后续用真实源。13工程 Release 构建通过，子代理只读 Review 未发现可确认P1/P2；新增回归只编译未运行，代理未启动应用。E56 远程索引/缓存及 E58 本地重读保留，正式地址仍为 null、目录仅 FFmpeg，不能把管理入口完成等同远程部署或验收通过。
+- 外部依赖分为 **Packages**（已安装包及修复进度）与 **依赖来源**。默认 GitHub，额外来源只支持公开 GitHub Enterprise API 地址；pip 等安装能力接入后才开放，不做空入口。
+- 插件在 `dependencies[].downloads` 声明 RID、仓库、精确标签/ZIP、SHA256、许可、工具路径和版本检查。宿主负责解析/首次确认/下载/事务/租约，无 FFmpeg 专属目录。公开 PackageReference / Contracts API 1.7 / UI API 1.4 ABI 不变。
+- 视频源码清单升至 0.5.5，FFmpeg 9.0.2 改用 GyanD/codexffmpeg Release；独立 Test.PackageProbe 1.1.0 改用 ripgrep 14.1.1 真实 Release，只调用 --version，不搜索用户文件。
+- 已装 receipt v2 可离线复用；旧 v1 等插件声明补资料，SHA/工具不符拒绝复用。损坏旧包保留可修复状态。相同身份的声明冲突要明确失败，不能暗中换工具。已装清理继续检查禁用/待重启/回退引用与使用租约。
+- GitHub API 查询仅实际申请/修复时触发；共享查询、限时限量、精确附件/hash 校验，退出取消并等待；无轮询。来源配置在 DataRoot/Config/dependency-sources.json，旧源文件/缓存不再读取，真实用户数据不删除。
 
-[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 预览器旧属性提示的恢复效果仍待用户确认，操作入口见开发文档。E59 常规 Debug 输出被运行中程序/调试器锁定 DLL，未能同步；改用 artifacts 隔离目录构建 Debug 通过，0警告/0错误。未关闭用户程序或修改 IDE 配置，之后停止调试再 F5 才能使用新代码。
+E60 Release 全 13 工程、隔离 Debug 宿主构建通过。子代理 Core/UI Review 问题已修，检查代码只编译未运行；官方 API/校验文件/ZIP 内容只读核对不代表真实安装通过。详细产物与最后证据见台账；E56/E58/E59 旧产物不包含本轮代码。
 
-[E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 公共导航页面回收修复仍待用户复测真实发布版长期切页/图片内存曲线。当时单独授权的隔离检查 10/10、320旧对象可回收是该轮证据，不扩展成常态自动测试权限。
+## 2. 必须保留的约定
 
-[E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。
+- 用户接手测试，未经新指示不启动应用、检查程序、FFmpeg、UI 自动化，不接管真实配置、媒体、剪贴板或用户进程。可做必要构建/静态核对。新源码构建不自动替换已安装插件，插件更新需 ZIP 和显式退出重启。
+- 保留 `.vscode/launch.json` 空白修改、`.gitignore` 的 Docs/ 规则，不纳入提交。Docs 已跟踪，可 `git add -u -- Docs`。使用子代理显式 gpt-6.1-sol / high；本地提交不等于远程推送授权。
+- 框架精简，只承担公共连接、管理、生命周期和交互，业务留插件；不预建 pip/AI/Worker 平台，不静态引用插件。
+- 唯一 MainWindow 承担启动/迁移/错误；初始化后关闭到托盘，切页/隐藏不取消任务。日志承载重要运行记录与任务进度，不记录导航；正常取消不记 Error。
+- 迁移保持 profile/数据根/插件目录互斥；提交前保留旧指针，提交后失败暂停插件并待恢复；不迁移插件代码、不删除旧根。实例/维护保护和恢复记录不能省略。
+- 分发用现有脚本，只写新目录；ZIP 不覆盖升级。安装器保留现有 Plugins、用户数据及管理状态，首次安装残留只允许同包恢复。Windows 维护互斥当前限同一会话，跨会话待验。
+- VS Code + PowerShell 7.4+、SDK 10.0.401、Inno Setup 6.7.3；不更换 IDE，不启用 Native AOT/未经验证的裁剪，不自动配置 Git 远程或推送。
 
-- 用户接手测试；未经新指示不运行应用、检查程序、FFmpeg 或 UI 自动化，不访问真实配置/媒体/剪贴板。开发可做必要构建和静态核对，文档任务只核对文档。
-- 保留用户 `.vscode/launch.json` 空白修改及 `.gitignore` 新增的 Docs/ 规则，不纳入提交；Docs 已被 Git 跟踪，忽略规则不会自动移除它们。使用子代理时显式 `gpt-6.1-sol` / `high`。
-
-## 2. 下次改动必须保留的边界
-
-- 框架只负责公共连接、管理、生命周期和交互，业务留插件，不预建 Python/AI/Worker 平台。Contracts API 1.7 / UI API 1.4；保留原有公开方法/注册 ABI，PageHost 取消事件从 1.4 提供，依赖旧 FAFrame 事件者需按插件规范迁移。宿主不引用具体插件，正式插件独立使用发布 SDK，源码编译不自动更新已装 DLL。
-- 启动只创建一次 MainWindow，实例恢复不重新初始化；准备完成前不创建业务写入服务/插件。进度事件不能迟到覆盖主页；启动中关闭取消并退出，进入业务界面后关闭到托盘。
-- 迁移保持 profile/数据根/插件安装目录互斥，提交前失败保留旧指针，切换后收尾失败停止加载并在下次恢复；保留原根、恢复记录和插件代码。重试先核对目标归属/内容、专属 scratch 与空间，详见 [存储架构](ARCHITECTURE.md#storage)。
-- 分发只写新目录，ZIP 解压不等于升级；安装器仅使用已校验且 installationProtocol=1 的 ZIP。升级保留整个已有 Plugins，卸载保留插件及数据，首次安装残留只能同包恢复。WindowsMaintenance 与安装器的命名门/存活信号须一致，维护不强杀任务、不轮询；当前互斥限同一 Windows 会话，不能删除启动保护却保留协议标记。
-- PowerShell 7.4+、SDK 10.0.401、Inno Setup 6.7.3；编译器哈希/签名及安装器来源成对校验不能省略，依赖升级须复核许可。CI 只上传产物，未授予发布写权限。
-- 未关闭：真实媒体/GPU、任务/退出、依赖/管理/剪贴板，以及同窗启动、迁移跨卷/近满盘/ACL/块内及部分收尾取消、安装保留/恢复、跨会话维护。旧取消调试输出触发不明；Windows Job 终止仍有 20ms/最多 3 秒轮询，启用时警告一次。逐项状态只看 [A01–A23](DEVELOPMENT.md#acceptance)，不因总体反馈或 Review 自动关闭。
-
-## 3. 入口与下一步
+## 3. 代码入口与下一步
 
 | 工作 | 入口 |
 | --- | --- |
-| 设置与标题栏 | [SettingsView](../TractorTool/Views/SettingsView.axaml)、[ShellStyles](../TractorTool/Styles/ShellStyles.axaml)、[MainWindow](../TractorTool/Views/MainWindow.axaml) |
-| 启动与维护保护 | [Program](../TractorTool/Program.cs)、[WindowsMaintenance](../TractorTool/Platform/WindowsMaintenance.cs)、[App](../TractorTool/App.axaml.cs) |
-| 外部依赖索引 | [PackageSources](../TractorTool.Core/Packages/PackageSources.cs)、[PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs)、[ExternalToolsViewModel](../TractorTool/ViewModels/ExternalToolsViewModel.cs)、[独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs)；维护/验收步骤见[插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
-| 迁移与回退 | [DataRootMigration](../TractorTool.Core/Storage/DataRootMigration.cs)、[PluginManager](../TractorTool.Core/Plugins/PluginManager.cs)、[DataMigrationViewModel](../TractorTool/ViewModels/DataMigrationViewModel.cs) |
-| 分发与安装 | [Build-Distribution](../scripts/Build-Distribution.ps1)、[Build-Installer](../scripts/Build-Installer.ps1)、[安装脚本](../packaging/TractorTool.iss)、[Verify-Distribution](../scripts/Verify-Distribution.ps1)、[CI](../.github/workflows/distribution.yml) |
+| GitHub 解析/来源设置 | [PackageSources](../TractorTool.Core/Packages/PackageSources.cs)、[GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs) |
+| 安装/旧记录/租约 | [ExternalPackageService](../TractorTool.Core/Packages/ExternalPackageService.cs)、[PackageManagement](../TractorTool.Core/Packages/PackageManagement.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) |
+| 设置与来源 UI | [SettingsViewModel](../TractorTool/ViewModels/SettingsViewModel.cs)、[ExternalToolsViewModel](../TractorTool/ViewModels/ExternalToolsViewModel.cs)、[DependencySourcesView](../TractorTool/Views/DependencySourcesView.axaml) |
+| 测试插件 | [PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs)、[GitHub 接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
+| 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1)、[安装脚本](../packaging/TractorTool.iss) |
 
-本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
+下一步由用户验证 E60 的真实 GitHub 安装、来源操作及 Packages 信息。后续继续 M5 GitHub Release 流程，但 CI 尚未在 GitHub 执行，未配置远程/推送。E55 公共导航页面回收的长期真实切页/图片内存曲线仍待复测；此前单独授权的 10/10 隔离检查不扩展为常态测试权限。
 
-下一步继续真实源交付，后续部署软件维护的 HTTPS 索引再用测试插件安排远程链路验收；地址未确定前保留 null，不要求用户立即测试临时源。E59 的客户端 UI、**E55 导航修复** 的内存曲线及视觉效果仍待运行验证，之后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。
+未关闭：真实媒体/GPU/任务/退出/依赖/插件管理/剪贴板；两插件布局、设置折叠/标题栏、同窗启动；迁移跨卷/近满盘/ACL/取消及部分收尾恢复；安装保留/恢复和跨会话维护。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒轮询并警告一次。逐项只看 [A01–A23](DEVELOPMENT.md#acceptance)，不能因 Review/编译通过自动关闭。

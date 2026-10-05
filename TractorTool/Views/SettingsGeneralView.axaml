@@ -3,7 +3,7 @@
              x:Class="TractorTool.Views.SettingsGeneralView" x:DataType="vm:SettingsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody">
-      <ItemsControl ItemsSource="{Binding GeneralPages}">
+      <ItemsControl ItemsSource="{Binding CategoryPages}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:SettingsPage">
             <Button Classes="toolCard" HorizontalAlignment="Stretch" Margin="0,0,0,8"

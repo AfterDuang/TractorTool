@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（GitHub 依赖） | [E60 · GitHub 来源与简化管理（2026-10-05）](#evidence-github-dependencies) |
 | M5（依赖管理交互） | [E59 · 目录浏览与客户端操作（2026-10-05）](#evidence-dependency-catalog-ui) |
 | M5（依赖测试交付） | [E58 · 本地目录刷新与隔离测试包（2026-10-05）](#evidence-dependency-sandbox) |
 | 排查（源状态与预览器） | [E57 · 禁用原因与 Debug 绑定核对（2026-10-05）](#evidence-source-preview-diagnostics) |
@@ -1852,3 +1853,26 @@ dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll 
 - 静态检查：271 个文档相对文件链接、2 个修改的 AXAML/XML 和本轮 diff --check 通过；保留用户 .gitignore 与 .vscode/launch.json 修改，不纳入本轮提交。
 
 后续部署维护者控制的真实源再安排测试插件验收；本轮不要求用户运行临时源。客户端 UI 与远程/下载/清理的实际表现仍待验证，其他未关闭项保留在当前台账。
+
+
+<a id="evidence-github-dependencies"></a>
+
+## E60：GitHub 依赖来源与简化管理（2026-10-05）
+
+用户取消自有索引方向，要求默认 GitHub；外部依赖只有 Packages 和依赖来源两个入口。澄清确认本轮只实现 GitHub，pip 在安装能力接入后开放。
+
+实现：删除 PackageCatalog 的索引加载/解析、default.json/source.json、远程索引/缓存/刷新、旧目录浏览与相关检查；保留 PackageDefinitions 的实际安装资料校验和快照。插件 Core 清单 dependencies 新增 downloads，公开 PackageReference/Contracts ABI 不变。来源地址保存于 Config/dependency-sources.json；默认公共 API，额外公开 Enterprise API 可添加/移除。缺包按精确 Release tag/ZIP/hash 解析、首次确认及既有事务安装；已装离线复用、旧 receipt 补资料、损坏修复、引用/租约和安全清理保留。用户旧缓存/数据未删除。
+
+Core 与 UI 分别由 gpt-6.1-sol / high 子代理只读 Review。修复其发现的 Ready/Acquire 绕过声明冲突、schema1 无资料及损坏记录无法修复、SHA 大小写比较、修复卡片/取消入口消失，以及已安装计数和测试 NOTICE 过时；移除不再消费的 PackageListItem.SourceDefinition。查询 task 从登记集合移除后才完成，避免紧接的重试加入旧失败任务。
+
+新增回归：真实 HTTP 形状的离线替身检查共享解析、拒绝/重试、离线复用、声明冲突、坏附件/hash/重定向、配置增删持久化、schema1 大写 hash/损坏修复和退出；设置检查改为已装列表与来源命令。所有新检查只编译，未运行。
+
+只读上游证据：GitHub GyanD/codexffmpeg tag 9.0.2 返回 uploaded 的 ffmpeg-9.0.2-essentials_build.zip，114768076 字节，digest sha256:60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba，与插件声明一致。ripgrep 14.1.1 官方 .zip.sha256 为 d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1；只在内存查看 ZIP 条目，确认 rg.exe、LICENSE-MIT、UNLICENSE 路径，没有提取或执行工具。文档引用 GitHub 官方 Release API，未引入自建测试源。
+
+构建记录：初次 Release 编译发现新 AXAML 命名空间写法及已删 Availability 绑定残留，另有 Watermark 过时与空引用警告；修复后 `dotnet build TractorTool.slnx -c Release --nologo -v minimal` 13 工程通过，0 警告/0 错误。`dotnet build TractorTool/TractorTool.csproj -c Debug --artifacts-path artifacts/github-sources-e60-build --nologo -v minimal -m:1 -nr:false` 通过，0 警告/0 错误。使用 Publish-Host.ps1 在 artifacts/github-sources-e60/host 生成独立宿主副本，不改用户 Debug 输出或启动程序。最终修复后全 13 工程 Release 及隔离 Debug 宿主复编均通过（0 警告/0 错误）。
+
+未执行应用、检查程序、真实插件加载、FFmpeg/ripgrep 运行、UI 操作或 GPU 验证；没有更新真实配置/已安装插件，没有停止用户进程，没有配置远程或推送。已有媒体/可靠性缺口保留；索引部署待办取消，不能标作部署通过。
+
+最终 Core 复核未发现剩余确定问题；UI 的两处 P3（已安装计数、NOTICE）已修。Markdown 文件链接静态扫描 251 项无缺失，新增产物链接后 253 项仍无缺失；本轮 diff 空白检查通过（排除用户已有 launch.json 尾随空白）。
+
+独立打包均复用 Build-Plugin.ps1，以 artifacts/github-sources-e60/host 为 HostSdkDir：视频输出到 video，Test.PackageProbe 输出到 probe，均 0 警告/0 错误。ZIP 静态核对真实 GitHub 清单、NOTICE/许可、SHA256 sidecar 及没有宿主共享 DLL 副本；宿主副本无 PackageSources 目录。视频 ZIP SHA256：633ad7eb6571387cc3d209931a81c61ca00d6aa68d82da9c49730b91bf0b7daa；测试插件 ZIP SHA256：2f701fc22f6fc7a1d383ee8af83fce47c984e485a965cda79dcda27bae8d463e。没有启动或安装产物；本轮没有重打完整分发 ZIP/安装器。

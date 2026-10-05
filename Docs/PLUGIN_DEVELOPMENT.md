@@ -37,7 +37,7 @@
 | `uiApiVersion` | 当前为 1.4；宿主仍接受旧 1.0–1.3 页面注册与已有公开方法签名 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
-| `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复；清单有效但源未提供时页面仍可加载，申请时明确报告不可用 |
+| `dependencies` | 可空，最多 32 个不重复的 id/三段 version；新依赖在 downloads 按 RID 提供 GitHub 安装资料。旧 id/version 清单仍可复用已装包；完整示例见下文 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。UI API 1.3 允许 PluginPageOptions.UsesCustomHeader=true，由插件自己提供标题和局部功能切换，宿主收起默认标题并让出整页视口；只对导航页生效，设置页仍由设置容器组织。默认 false 保留旧布局。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
@@ -102,7 +102,7 @@ RunAsync 在后台线程调用业务回调，回调通过 IProgress 报告百分
 
 插件在用户使用功能时调用 `TryRequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。用户选择“先不安装”正常返回 `null`，插件保留输入并结束本次操作，不作为异常；调用方 token 取消仍抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`。旧 API 1.3 `RequestAsync` 的签名与拒绝时抛取消异常的语义保持兼容，新插件使用 1.4。失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
 
-清单只声明包 ID 与固定版本，不传入下载 URL、哈希或安装脚本。不在初始化中取得长期租约或自动下载。源缺失不使插件整体不兼容；需要依赖的操作不可继续，但其他页面仍可用。软件维护的内置索引为 `PackageSources/default.json`，当前提供 FFmpeg 9.0.2 / win-x64；配置可信远程索引后由宿主按需查询或设置手动刷新，插件 API 不变。尚无正式远程地址或用户自定义源，具体维护流程见下节。
+清单声明固定包身份及 GitHub 安装资料，详见下节。插件初始化不自动下载，不执行安装脚本，不持有无业务需要的长期租约。清单仅扩展 JSON 字段，公开 PackageReference/Contracts ABI 不变；旧版宿主不具备本轮 GitHub 解析能力，新清单请配合 E60 或之后的宿主使用。
 
 通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
 
@@ -120,23 +120,49 @@ var result = await context.Processes!.RunAsync(
 
 <a id="package-source-maintenance"></a>
 
-### 安装源维护与隔离验证
+### GitHub 依赖声明与验证
 
-源维护者负责提供 [default.json](../TractorTool.Core/Packages/default.json) 相同结构的 `schemaVersion: 1` 索引，使用固定上游版本、HTTPS 下载地址、实际归档 SHA256、平台、许可及工具相对路径。工具可声明 `arguments` 和 `output`（stdout/stderr）；字段和限制以 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 为准。SHA256 由取得的可信归档计算，不代表上游签名。仅收录可信的便携 ZIP 工具，不在资料中执行任意安装脚本。
+无需建设 TractorTool 包源。插件作者在 `dependencies[].downloads` 指明上游仓库及精确 Release 附件；用户的默认 GitHub 来源即可解析。版本和附件内容固定，变更归档或工具契约应发布新包版本，不能以相同 id/version 覆盖；不同发行方的同名工具使用独立 ID。
 
-将审核后的索引托管到软件维护者控制的 HTTPS 地址，再在软件分发配置 [source.json](../TractorTool.Core/Packages/source.json) 中设置 `indexUri`；配置随宿主复制到 `PackageSources/source.json`，启动时读取。当前值为 null，发布者尚未配置远程仓库，不能把占位 URL 当作正式源。索引地址确定后，新增包或新版本只更新该索引即可，无需修改/重编宿主；原 ID/版本/RID 的归档内容改变必须发新版本。源不可达时保留缓存，已装包可离线使用；同一索引中未出现的包不会自动成为用户需求。
+下面示例直接来自 [独立测试插件清单](../tests/PackageProbePlugin/plugin.json)：
 
-[PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 是非 FFmpeg 独立消费方，只申请 MediaInfo 并执行只读 `--Version`。其依赖管理版本为 `26.5.0`，对应上游 `26.05`；资料见 [mediainfo.json](../tests/PackageSources/mediainfo.json)。该测试插件不进入正式分发，不修改视频插件的媒体读取实现。
+```json
+{
+  "id": "ripgrep",
+  "version": "14.1.1",
+  "downloads": [{
+    "rid": "win-x64",
+    "repository": "BurntSushi/ripgrep",
+    "tag": "14.1.1",
+    "asset": "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip",
+    "sha256": "d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1",
+    "name": "ripgrep",
+    "description": "命令行搜索工具，此测试只读取版本。",
+    "license": "MIT OR Unlicense",
+    "tools": {
+      "rg": {
+        "path": "ripgrep-14.1.1-x86_64-pc-windows-msvc/rg.exe",
+        "versionPrefix": "ripgrep 14.1.1",
+        "arguments": ["--version"]
+      }
+    }
+  }]
+}
+```
 
-客户端可在“设置 → 外部依赖”查看实际源位置、当前平台可用包和本机依赖，搜索名称/标识/版本，查看资料并安装、取消下载或清理。浏览不产生需求；已被插件引用或持有租约的包不能清理。当前生产目录仍只有 FFmpeg，未部署远程源时显示本地目录，不伪装成线上仓库。
+`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。pip 等类型尚未开放。
 
-用户已决定不继续扩展临时源沙盒；保留独立测试插件，待维护者部署真实 HTTPS 源后再安排以下验收。运行时使用新发布副本和新 `--profile-root`，不得使用日常安装或真实数据目录：
+工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
-1. 按第 6 节发布宿主，使用 `Build-Plugin.ps1 -Project ./tests/PackageProbePlugin/PackageProbePlugin.csproj -HostSdkDir <发布宿主目录> -Output <新空目录>` 独立打包并安装测试插件。
-2. 远程链路：把测试索引发布到维护者控制的测试 HTTPS 地址，在这个测试副本的 `PackageSources/source.json` 填地址后启动；测试包不写入内置目录，点击测试插件按钮验证按需发现、首次确认、下载和版本检查。测试配置修改不代表原分发文件清单仍匹配；只核对宿主二进制未变，不把该副本重新当正式包发布。
-3. 设置页刷新真实源，确认包数量、搜索与详情反映索引；本机依赖只包含已安装、被引用或已申请的包，不能将浏览目录当成安装行为。尚无真实源地址时不要求用户搭建替代源或运行沙盒。
-4. 验证拒绝后重试、再次使用不下载、刷新失败/坏索引保留旧缓存、退出/重启离线复用；卸载测试插件并重启，依赖仍保留，未引用且无租约才可清理。
-5. [PackageChecks](../tests/TractorTool.Checks/PackageChecks.cs) 的替身用例覆盖索引并发/缓存/校验/确认快照和安装记录预算；构建通过不等于这些用例已执行，也不等于真实网络/MediaInfo 已通过。
+[视频插件](../Plugins/TractorTool.Plugins.VideoExport/plugin.json) 自带 GyanD/codexffmpeg 的 FFmpeg 9.0.2 声明；Core 没有 FFmpeg 专属目录。[PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 独立申请 ripgrep 14.1.1 并只执行 `--version`，不搜索文件、不进入正式分发。GitHub 接口依据 [Release by tag](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name)，测试附件见 [ripgrep Release](https://github.com/BurntSushi/ripgrep/releases/tag/14.1.1)。
+
+运行验收仍由用户安排，使用新宿主和隔离 profile，不需搭建虚拟源：
+
+1. 发布宿主后用第 6 节 Build-Plugin 为测试插件打包，安装并显式退出、重新启动。
+2. 点击测试插件“申请依赖并读取版本”，首次拒绝应正常返回，再次接受才下载真实 GitHub ZIP；正确版本后释放租约。
+3. Packages 仅列已安装包，显示来源、版本、许可、大小与引用；已装重复申请/重启离线复用不查询 GitHub。修复期间继续显示进度、取消或错误。
+4. 验证来源增删持久化、坏地址/重复拒绝、未配置来源明确提示、API 404/限流/超时、坏 hash/附件拒绝；移除来源不删包，卸载插件重启后保留包，无引用/租约才允许清理。
+5. 单调用方取消不影响其他申请；退出取消查询/下载并等待清理。运行结果登记到 [A07](DEVELOPMENT.md#acceptance)，编译、网络资料核对不算通过。
 
 ## 5. 统一 UI 与设置
 

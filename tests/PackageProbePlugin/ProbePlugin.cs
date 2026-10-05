@@ -30,7 +30,7 @@ public sealed class ProbePlugin : IPlugin, IPluginUiModule
             DataContext = model,
             Children =
             {
-                new TextBlock { Text = "测试 MediaInfo CLI 26.05", Classes = { "sectionTitle" } },
+                new TextBlock { Text = "测试 ripgrep 14.1.1", Classes = { "sectionTitle" } },
                 new TextBlock { Text = "点击后由宿主确认并准备依赖，再读取版本。切页或隐藏窗口会继续；不读取媒体文件。", TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                 new Button { Content = "申请依赖并读取版本", Command = model.RunCommand, Classes = { "accent" } },
                 new Button { Content = "取消当前操作", Command = model.CancelCommand },
@@ -67,28 +67,28 @@ public sealed partial class ProbeViewModel : ObservableObject
     private async Task RunAsync(CancellationToken cancellationToken)
     {
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _context.ApplicationStopping);
-        Status = "正在申请 MediaInfo 26.05…";
+        Status = "正在申请 ripgrep 14.1.1…";
         try
         {
             var packages = _context.Packages ?? throw new NotSupportedException("宿主未提供包服务。");
             var processes = _context.Processes ?? throw new NotSupportedException("宿主未提供进程服务。");
             ProcessResult result;
-            using (var lease = await packages.TryRequestAsync(new PackageReference("MediaInfo", "26.5.0"), operation.Token))
+            using (var lease = await packages.TryRequestAsync(new PackageReference("ripgrep", "14.1.1"), operation.Token))
             {
                 if (lease is null) { Status = "本次未安装；可稍后重试。"; return; }
                 Status = "依赖已取得，正在读取版本…";
-                result = await processes.RunAsync(new ProcessRequest(lease.Tools["mediainfo"], ["--Version"])
+                result = await processes.RunAsync(new ProcessRequest(lease.Tools["rg"], ["--version"])
                 {
                     Timeout = TimeSpan.FromSeconds(15),
                     OutputLimit = 16 * 1024
                 }, operation.Token);
                 if (result.ExitCode != 0 || result.StandardOutputTruncated || result.StandardErrorTruncated ||
                     !result.StandardOutput.Replace("\r\n", "\n", StringComparison.Ordinal)
-                        .StartsWith("MediaInfo Command line, \nMediaInfoLib - v26.05", StringComparison.Ordinal))
-                    throw new InvalidDataException($"MediaInfo 版本检查失败（退出码 {result.ExitCode}）。");
+                        .StartsWith("ripgrep 14.1.1", StringComparison.Ordinal))
+                    throw new InvalidDataException($"ripgrep 版本检查失败（退出码 {result.ExitCode}）。");
             }
             Status = result.StandardOutput.Trim() + "\n版本检查通过，包租约已释放。";
-            _context.Log.Write(_context.PluginId, "MediaInfo CLI 26.05 版本检查通过。");
+            _context.Log.Write(_context.PluginId, "ripgrep 14.1.1 版本检查通过。");
         }
         catch (OperationCanceledException) when (operation.IsCancellationRequested)
         {

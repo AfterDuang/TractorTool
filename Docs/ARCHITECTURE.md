@@ -175,7 +175,7 @@ Windows 注销或关机跳过交互确认并执行有界清理，不能因无限
 
 区分三类依赖：插件的私有 .NET 库随插件打包；共享 SDK 由宿主提供；FFmpeg 等外部程序由包管理服务提供版本化路径。
 
-流程以 [产品需求第 5 节](TractorTool.md#5-外部依赖管理) 为准：插件通过 API 1.4 `TryRequestAsync` 申请 → 复用已安装版本或解析可信源 → 缺失时由宿主确认下载 → 安装 → 返回工具租约。“先不安装”正常返回空租约，调用 token 取消与实际失败仍走异常路径。原 API 1.2 `AcquireAsync` 仍只获取已安装包；API 1.3 `RequestAsync` 保留旧签名和拒绝时抛取消异常的兼容行为。来源索引、插件依赖引用、安装记录、运行租约各自承担不同职责；卸载插件仅改变引用，包仍保留，用户在设置的独立外部依赖页清理未引用包。
+流程以 [产品需求第 5 节](TractorTool.md#5-外部依赖管理) 为准：插件通过 API 1.4 `TryRequestAsync` 申请 → 按声明核对并复用已装版本或查询 GitHub Release → 首次确认 → 下载校验安装 → 返回工具租约。拒绝返回 null；旧 API 1.2 AcquireAsync 只复用已装包，1.3 RequestAsync 保留拒绝时抛取消异常的 ABI。插件声明、用户配置的来源地址、安装记录和运行租约各自独立；卸载仅改变引用，已装包保留。
 
 清理在 Core 的同一锁内检查插件引用、请求预留、运行租约和安装事务。引用从持久的插件清单及管理日志重建，不维护另一份易漂移的引用计数文件；包括禁用/失败插件、待激活版本和可回退版本。管理提交前暂停清理，提交后在管理锁内同步引用；卸载重启生效前继续保护旧版本。任何清单或管理状态不可读都暂停清理，不能推定为零引用。下载确认、安装和取得租约之间也有预留保护。
 
@@ -187,15 +187,15 @@ Windows 注销或关机跳过交互确认并执行有界清理，不能因无限
 
 SHA256 用于核对内容，不单独证明发布者可信；包清单和来源本身也需要可信。FFmpeg 构建中的编码器和分发许可随构建选项变化，发布前记录采用的二进制来源和许可证。
 
-可信索引由 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 校验，内置目录仍是软件目录 `PackageSources/default.json`（源码 [default.json](../TractorTool.Core/Packages/default.json)）。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 读取软件维护的 `PackageSources/source.json` 中 `indexUri`，仅接受不含凭据/片段的 HTTPS URL；默认 null，表示尚未部署正式远程源。此时设置提供“刷新本地目录”，实际重新读取 default.json，并明确未进行远程更新；未知依赖也可触发本地重读。文件损坏时保留上次有效目录和已装包，修正后可重试。没有用户添加源或插件指定下载源的入口。两份文件随构建/发布复制，分发静态检查要求存在；测试可通过 Core 构造参数 sourceDirectory 指定隔离目录，不扩展插件 Contracts。
+[GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs) 定义 Core 内的 PluginDependency 和 GitHub 下载资料。清单 dependencies 保留 id/version，新增 downloads 按 RID 描述仓库、精确 tag、asset、SHA256、许可及 tools。公开 Contracts 的 PackageReference 与方法签名不变；宿主把清单映射为限定作用域。插件只写 JSON，不引用 Core 类型。旧清单缺少 downloads 仍允许加载并复用已装包，缺失包会提示更新插件资料。有效声明不因当前未添加来源而阻止页面加载。
 
-配置远程源后，启动只读取按源 URL 隔离的 `<DataRoot>/Cache/PackageSources` 缓存；普通启动不联网。插件申请在本地没有对应可用来源且未就绪时按需刷新，设置也可手动刷新。并发刷新共用一次下载，单调用方取消只取消等待，退出取消并等待共享操作。索引下载限 15 秒/1 MiB，验证整份 schema、重复项、路径和包资料后原子替换缓存，失败保留当前目录、缓存和已装包；重定向不能改变协议/站点。远程目录叠加内置兜底，同身份可更新来源/说明；已有同 ID、固定版本、RID 的 SHA256 或标识大小写变化被拒绝，内容改变须新版本。刷新只更新可用源资料，已安装记录、运行租约、正在下载和已展示确认的定义各自保留快照；确认后安装使用用户批准的定义。
+[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 按 GitHub 官方 Release-by-tag API 查询附件，不维护自己的索引或持久元数据缓存。固定 GitHub 公共 API，额外公开 Enterprise 来源保存在 `<DataRoot>/Config/dependency-sources.json`，随数据迁移。添加时校验 HTTPS API 路径、凭据/查询/片段、名称和重复地址，再复用 JsonFileStore 原子保存；配置损坏保留原文件并阻止覆盖。移除自定义来源不删除已装包，也不撤销已开始的下载。pip/私有认证尚未开放。旧 PackageSources/default.json、source.json 和索引刷新代码已删除；用户数据中的历史缓存不再读取，也不自动删除。
 
-内置生产条目仍为 Gyan FFmpeg 9.0.2 essentials / win-x64；第二个真实工具 [MediaInfo 测试资料](../tests/PackageSources/mediainfo.json) 和 [独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs) 保留供后续真实源验收，不进入正式分发。插件仍只声明 ID/固定三段版本，Contracts API 不变；未知包或平台允许页面加载，申请时明确报错。设置默认展示“源中可用”，可切换“本机依赖”查看引用、实际安装或已申请包；Core 的 GetPackages 默认仍只返回后一集合，includeCatalog 查询不标记需求或下载。源位置、可用数量和包详情直接可见，安装/取消/单包清理复用既有服务及确认、引用和租约保护；源已移除的本机包保留管理入口。安装源维护见 [插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。
+GitHub 查询只在实际缺包/修复时发生，15 秒、响应上限 2 MiB；同包查询共享，单调用方取消只取消等待，退出取消并等待查询。校验精确标签、唯一已上传 ZIP、大小、同仓库附件地址及可用的 GitHub digest；下载后仍独立验证声明的 SHA256。拒绝跨站/降级 API 重定向、404、限流、坏资料；错误显示在调用方。清单声明必须相互一致，已装复用与旧 AcquireAsync 同样比较当前 SHA256 和工具契约，不为此联网。确认、查询结果和安装分别持有快照，重复申请与变更时不绕过校验。
 
 [包服务](../TractorTool.Core/Packages/ExternalPackageService.cs) 合并同包并发申请的确认及安装；调用方取消等待不影响其他等待者，设置页取消才停止共享下载。下载最多 256 MiB、ZIP 展开最多 1 GiB/10000 项，拒绝路径越界、重名/大小写冲突、特殊文件和重解析点。校验后按可信工具资料的 `arguments` 参数向量执行，`output` 选择 stdout/stderr，与 `versionPrefix` 做 CRLF/LF 归一后的前缀比较；非零退出或被选输出截断均失败。旧资料缺省仍是 `-version`/stdout，不执行 shell 或安装脚本。参数最多 16 项，每项 1024 字符、禁 NUL；前缀最多 512 字符，整个定义默认 UTF-8 序列化后最多 48 KiB，给 64 KiB receipt 的工具哈希留足空间。
 
-成功才写 receipt 并原子移动目录。receipt v2 保存完整安装定义及下载/工具哈希，因此索引下架或失效后仍可复用并清理已安装包；旧 v1 在仍有对应源定义时升级，无法恢复的记录保留文件并报错。取得租约重新校验文件；损坏包可经确认重新安装，禁止运行中替换，修复使用当前可信源地址。网络/整体超时显示失败，取消可重试；修复会移除损坏副本，失败不冒充恢复成功。现阶段固定版本和安装记录已有确定性，不再维护一份重复的锁文件；语言依赖的间接解析另见后续 Python 计划。
+成功才写 receipt 并原子移动目录。receipt v2 保存完整定义及下载/工具哈希，来源移除或离线仍可管理已装包。旧 v1 缺资料时先保留，读取插件声明后以相同 SHA256 补齐，损坏旧包保留 Failed/HasFiles 状态以供确认修复。SHA256 比较忽略大小写；没有匹配声明的旧文件保留，不猜测或删除。取得租约重新校验工具文件；修复确认后移除损坏副本再装，失败继续展示，不能伪装成功。固定版本与 receipt 已足够确定性，不另建重复锁文件。
 
 事务暂存在 `Packages/.work/<GUID>`，归属标记最后删除。宿主持有数据根实例锁，启动时仅清理带精确标记的遗留事务，不扫描删除用户其他目录。共享服务在退出时封闭新操作并取消/等待已有操作。每个插件得到限定清单依赖的 PackageScope；插件持有租约至进程和输出结束，插件清理完成后回收遗忘的租约。占用期间拒绝移除；不同版本可并存。
 
@@ -378,6 +378,6 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 - **引用与清理**：资源关系由插件指向环境，再指向解释器和环境内的依赖；间接依赖也受保护。持久引用与运行租约必须覆盖这一关系，不能单独删除仍被环境使用的运行时或库。卸载插件仅解除生效后的引用，保留已安装依赖；设置中主动清理无引用且无运行占用的资源。下载缓存与已安装环境分别统计和清理。
 - **存储与迁移**：解释器、环境及包数据由宿主放在 DataRoot 管理，插件代码继续位于 AppRoot/Plugins。Python venv 通常含绝对路径，数据根迁移需要按记录在目标位置重建环境并验证，再切换引用、保留旧环境供恢复；不能直接沿用 ZIP 包的复制/移动提交方式。目录布局和环境安装事务在实施时定稿。
 
-首次安装仍由宿主展示所需依赖及来源并征求确认，满足要求的已安装环境直接复用。首批源仍由软件统一维护；支持 pip 兼容源不意味着允许插件随意追加源或安装命令。Python 发行版获取方式、版本锁定格式、环境复用粒度，以及是否支持需要编译的源码分发包，均待实施前确认，不作为已交付能力。
+首次安装仍由宿主展示所需依赖及来源并征求确认，满足要求的已安装环境直接复用。未来 pip 来源入口要与实际安装能力一同开放；不允许插件追加任意安装命令。Python 发行版获取方式、版本锁定格式、环境复用粒度，以及是否支持需要编译的源码分发包，均待实施前确认，不作为已交付能力。
 
 依据：[Python venv 的隔离与迁移限制](https://docs.python.org/3/library/venv.html)、[pip 的进程调用方式](https://pip.pypa.io/en/stable/user_guide/#using-pip-from-your-program)、[pip 依赖解析](https://pip.pypa.io/en/stable/topics/dependency-resolution/)、[Python 包索引协议](https://packaging.python.org/en/latest/specifications/simple-repository-api/)。

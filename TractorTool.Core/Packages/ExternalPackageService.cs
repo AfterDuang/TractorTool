@@ -25,25 +25,17 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     public event Action? Changed;
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
-        IEnumerable<PackageDefinition>? definitions = null, Uri? sourceUri = null, string? sourceCacheDirectory = null,
-        string? sourceDirectory = null)
+        IEnumerable<PackageDefinition>? definitions = null, string? sourcesFile = null)
     {
         _root = AppPaths.Absolute(root); PackageFiles.CheckPath(_root);
         _http = http; _processes = processes; _log = log;
         _rid = rid;
-        _sourceFile = definitions is null ? Path.Combine(AppPaths.Absolute(sourceDirectory ??
-            Path.Combine(AppContext.BaseDirectory, "PackageSources")), "default.json") : null;
-        _sourceUri = sourceUri ?? (definitions is null ? LoadSourceUri() : null);
-        if (_sourceUri is not null) ValidateSourceUri(_sourceUri);
-        _sourceCacheFile = _sourceUri is null ? null : Path.Combine(
-            AppPaths.Absolute(sourceCacheDirectory ?? Path.Combine(_root, ".source")),
-            Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_sourceUri.AbsoluteUri))) + ".json");
-        _bundledSource = (definitions ?? LoadSource()).Select(PackageCatalog.Snapshot).ToArray();
-        var catalog = LoadInitialSource().Where(d => d.Rid == rid).ToArray();
+        _sourcesFile = AppPaths.Absolute(sourcesFile ?? Path.Combine(_root, ".sources.json"));
+        LoadSources();
+        var supplied = (definitions ?? []).Select(PackageDefinitions.Snapshot).Where(d => d.Rid == rid).ToArray();
         _entries = [];
-        foreach (var d in catalog)
+        foreach (var d in supplied)
         {
-            PackageCatalog.Validate(d);
             var entry = new Entry(d, Path.Combine(_root, d.Package.Id, d.Package.Version, d.Rid));
             if (!_entries.TryAdd(d.Package, entry)) throw new InvalidDataException("外部工具目录重复。");
             entry.SourceDefinition = d;
@@ -86,7 +78,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         {
             EnsureRunning(); var e = Find(package);
             if (e.Phase == PackagePhase.Ready && e.Operation is null) return Task.CompletedTask;
-            var definition = approvedDefinition ?? e.SourceDefinition ?? throw new NotSupportedException("可信安装源暂未提供此包版本。");
+            var definition = approvedDefinition ?? e.SourceDefinition ?? throw new NotSupportedException("插件尚未提供此包版本的安装资料。");
+            _ = DeclaredDownload(package, definition);
             if (e.Operation is null)
             {
                 if (e.Users.Count != 0) throw new InvalidOperationException("工具仍被使用，不能重新安装。");
@@ -155,6 +148,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         lock (_gate)
         {
             EnsureRunning(); var e = Find(package);
+            _ = DeclaredDownload(package, e.Definition);
             if (e.Phase != PackagePhase.Ready || e.Operation is not null) throw new InvalidOperationException("请先在设置中安装所需的外部工具。");
             e.Users[owner] = e.Users.GetValueOrDefault(owner) + 1;
             var completion = new TaskCompletionSource<IPackageLease>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -170,7 +164,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                     {
                         linked.Token.ThrowIfCancellationRequested();
                         var path = PackageFiles.SafePath(e.Directory, tool.Path);
-                        if (await HashAsync(path, linked.Token) != receipt.Tools[name]) throw new InvalidDataException("工具文件校验失败，请在外部依赖设置中重新安装。");
+                        if (!string.Equals(await HashAsync(path, linked.Token), receipt.Tools[name], StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("工具文件校验失败，请在外部依赖设置中重新安装。");
                     }
                     linked.Token.ThrowIfCancellationRequested();
                     completion.TrySetResult(new Lease(e.Directory, new ReadOnlyDictionary<string, string>(e.Definition.Tools.ToDictionary(
@@ -266,7 +260,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             {
                 var path = PackageFiles.SafePath(staging, tool.Path);
                 if (!File.Exists(path)) throw new InvalidDataException($"工具包缺少 {name}。");
-                // Missing arguments retain compatibility with existing catalogs and installed receipts.
+                // Missing arguments retain compatibility with existing plugin declarations and installed receipts.
                 var result = await _processes.RunAsync(new(path, tool.Arguments ?? ["-version"]) { Timeout = TimeSpan.FromSeconds(15), OutputLimit = 16384 }, token);
                 var output = tool.Output == "stderr" ? result.StandardError : result.StandardOutput;
                 var truncated = tool.Output == "stderr" ? result.StandardErrorTruncated : result.StandardOutputTruncated;
@@ -334,7 +328,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         var path = PackageFiles.SafePath(e.Directory, "receipt.json");
         if (!File.Exists(path) || new FileInfo(path).Length > 65536) throw new InvalidDataException("工具安装记录缺失或过大。");
         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path));
-        if (receipt is null || receipt.Schema is not (1 or 2) || receipt.ArchiveHash != e.Definition.Sha256 || receipt.Tools is null ||
+        if (receipt is null || receipt.Schema is not (1 or 2) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
             receipt.Tools.Count != e.Definition.Tools.Count || receipt.InstalledBytes <= 0 || receipt.InstalledBytes > 1024L * 1024 * 1024)
             throw new InvalidDataException("工具安装记录与目录不符。");
         foreach (var (name, tool) in e.Definition.Tools)
@@ -353,7 +347,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         if (phase == PackagePhase.Ready) _log.Write("Packages", $"{e.Definition.Package.Id} {e.Definition.Package.Version}：依赖就绪。");
         Notify();
     }
-    private Entry Find(PackageReference package) => _entries.TryGetValue(package, out var e) ? e : throw new NotSupportedException("宿主目录不支持此工具版本或平台。");
+    private Entry Find(PackageReference package) => _entries.TryGetValue(package, out var e) ? e : throw new NotSupportedException("插件未提供安装资料：此工具版本或平台。");
     private void EnsureRunning() => ObjectDisposedException.ThrowIf(_shutdown is not null, this);
     private void Notify()
     {

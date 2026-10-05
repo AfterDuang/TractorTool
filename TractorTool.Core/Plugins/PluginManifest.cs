@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using TractorTool.Contracts;
 using TractorTool.Core.Storage;
-using TractorTool.Contracts.Packages;
+using TractorTool.Core.Packages;
 
 namespace TractorTool.Core.Plugins;
 
@@ -18,7 +18,7 @@ public sealed record PluginManifest
     public string UiApiVersion { get; init; } = "";
     public string AvaloniaVersion { get; init; } = "";
     public string[] SupportedPlatforms { get; init; } = [];
-    public PackageReference[] Dependencies { get; init; } = [];
+    public PluginDependency[] Dependencies { get; init; } = [];
     public string Description { get; init; } = "";
     public string Author { get; init; } = "";
 }
@@ -77,12 +77,17 @@ public static class ManifestValidator
             throw new InvalidDataException("清单缺少 SDK 版本声明。");
         if (m.SupportedPlatforms is null || m.SupportedPlatforms.Length == 0 || m.SupportedPlatforms.Any(string.IsNullOrWhiteSpace) || m.Dependencies is null)
             throw new InvalidDataException("清单平台或依赖列表无效。");
-        if (m.Dependencies.Length > 32 || m.Dependencies.Distinct().Count() != m.Dependencies.Length)
+        if (m.Dependencies.Length > 32 || m.Dependencies.Select(d => d?.Package).Distinct().Count() != m.Dependencies.Length)
             throw new InvalidDataException("清单依赖过多或重复。");
         foreach (var dependency in m.Dependencies)
         {
             if (dependency is null) throw new InvalidDataException("清单依赖不能为空。");
             AppPaths.ValidateId(dependency.Id); ValidateVersion(dependency.Version);
+            if (dependency.Downloads is null || dependency.Downloads.Length > 16 ||
+                dependency.Downloads.Select(d => d?.Rid).Distinct(StringComparer.OrdinalIgnoreCase).Count() != dependency.Downloads.Length)
+                throw new InvalidDataException("依赖下载平台无效或重复。");
+            foreach (var download in dependency.Downloads)
+                _ = (download ?? throw new InvalidDataException("依赖下载资料为空。")).Definition(dependency.Package);
         }
         _ = EntryPath(m, directory);
     }

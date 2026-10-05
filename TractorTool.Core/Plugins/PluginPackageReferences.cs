@@ -62,7 +62,7 @@ public sealed class PluginPackageReferences : IDisposable
                 }
             }
             catch (Exception ex) { error = "无法确认全部插件依赖，暂停清理：" + ex.Message; }
-            _packages.UpdateReferences(new(manifests.SelectMany(m => m.Dependencies.Select(p => new PackageDependency(p, m.Id, m.Name)))
+            _packages.UpdateReferences(new(manifests.SelectMany(m => m.Dependencies.Select(p => new PackageDependency(p.Package, m.Id, m.Name, p.Downloads)))
                 .Distinct().ToArray(), error.Length == 0, error));
         }
     }

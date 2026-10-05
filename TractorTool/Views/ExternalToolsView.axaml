@@ -2,30 +2,15 @@
              x:Class="TractorTool.Views.ExternalToolsView" x:DataType="vm:ExternalToolsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="16">
-      <Border Classes="card">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" FontSize="16" />
-          <TextBlock Text="{Binding SourceStatus}" Classes="caption" TextWrapping="Wrap" />
-          <SelectableTextBlock Text="{Binding SourceLocation}" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding CatalogSummary}" Classes="caption" />
-          <WrapPanel>
-            <Button Content="{Binding RefreshSourceLabel}" Command="{Binding RefreshSourceCommand}" Margin="0,4,8,0" />
-            <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" Margin="0,4,0,0" />
-          </WrapPanel>
-        </StackPanel>
-      </Border>
-      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" />
-      <TabStrip SelectedIndex="{Binding SelectedScope}">
-        <TabStripItem Content="源中可用" /><TabStripItem Content="本机依赖" />
-      </TabStrip>
+      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
       <WrapPanel>
         <TextBox Text="{Binding SearchText}" PlaceholderText="搜索名称、标识或版本" Width="240" Margin="0,0,16,8" />
+        <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" IsVisible="{Binding HasCleanup}" Margin="0,0,16,8" />
         <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
       </WrapPanel>
       <Border Classes="card" IsVisible="{Binding IsEmpty}">
         <StackPanel Spacing="8">
           <TextBlock Text="{Binding EmptyMessage}" FontWeight="SemiBold" TextWrapping="Wrap" />
-          <TextBlock Text="浏览目录不会下载依赖，首次安装前会请你确认。" Classes="caption" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
       <ItemsControl ItemsSource="{Binding VisibleCards}">
@@ -39,7 +24,8 @@
                     <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
                     <TextBlock Text="{Binding StatusText}" Classes="caption" />
                   </WrapPanel>
-                  <TextBlock Text="{Binding Availability}" Classes="caption" />
+                  <TextBlock Text="{Binding SourceSummary}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SizeText}" Classes="caption" />
                   <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
                   <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />

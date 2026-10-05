@@ -1,31 +1,35 @@
 using System.Text.Json;
 using TractorTool.Contracts.Packages;
+using TractorTool.Contracts;
 
 namespace TractorTool.Core.Packages;
 
-public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName);
+public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName, IReadOnlyList<GitHubPackage>? Downloads = null);
 public sealed record PackageReferenceSnapshot(IReadOnlyList<PackageDependency> Dependencies, bool Complete, string Error = "");
 public sealed record PackageListItem(PackageReference Package, PackageDefinition? Definition, PackageStatus Status,
-    IReadOnlyList<string> RequiredBy, bool IsInstalled, bool CanInstall, bool CanRemove)
-{
-    public PackageDefinition? SourceDefinition { get; init; }
-}
+    IReadOnlyList<string> RequiredBy, bool IsInstalled, bool CanInstall, bool CanRemove);
 public sealed record PackageInstallPrompt(PackageDefinition Definition, string RequestedBy, bool IsRepair);
 
 public sealed partial class ExternalPackageService
 {
     private readonly string _rid;
+    private readonly Dictionary<PackageReference, (string Directory, Receipt Receipt)> _legacyReceipts = [];
     private PackageReferenceSnapshot _references = new([], false, "正在读取插件依赖。");
     public string SourceError
     {
-        get { lock (_gate) return string.Join("\n", new[] { _sourceError, _refreshError }.Where(s => s.Length != 0)); }
+        get { lock (_gate) return string.Join("\n", new[] { _sourceError, _settingsError, _legacyReceipts.Count == 0 ? "" : "旧安装记录缺少资料，需对应插件提供下载声明；文件已保留。" }.Where(s => s.Length != 0)); }
         private set { _sourceError = value; }
     }
     public Func<PackageInstallPrompt, CancellationToken, Task<bool>>? ConfirmInstallAsync { get; set; }
 
     public void UpdateReferences(PackageReferenceSnapshot snapshot)
     {
-        lock (_gate) _references = snapshot with { Dependencies = snapshot.Dependencies.ToArray() };
+        lock (_gate)
+        {
+            _references = snapshot with { Dependencies = snapshot.Dependencies.Select(d => d with
+                { Downloads = d.Downloads?.Select(p => p.Snapshot(d.Package)).ToArray() }).ToArray() };
+            RestoreLegacyReceipts();
+        }
         Notify();
     }
     internal void InvalidateReferences()
@@ -34,28 +38,27 @@ public sealed partial class ExternalPackageService
         Notify();
     }
     public string ReferenceError { get { lock (_gate) return _references.Complete ? "" : _references.Error; } }
-    public IReadOnlyList<PackageListItem> GetPackages(bool includeCatalog = false)
+    public IReadOnlyList<PackageListItem> GetPackages()
     {
         lock (_gate)
         {
             var keys = _references.Dependencies.Select(d => d.Package).Concat(_entries.Where(p =>
-                p.Value.HasFiles || p.Value.Requested || p.Value.Operation is not null ||
-                includeCatalog && p.Value.SourceAvailable).Select(p => p.Key)).Distinct();
+                p.Value.HasFiles || p.Value.Requested || p.Value.Operation is not null).Select(p => p.Key)).Distinct();
             return keys.OrderBy(p => p.Id).ThenBy(p => p.Version).Select(key =>
             {
                 _entries.TryGetValue(key, out var e);
                 var required = _references.Dependencies.Where(d => d.Package == key)
                     .Select(d => $"{d.PluginName} ({d.PluginId})").Distinct().Order().ToArray();
                 return new PackageListItem(key, e?.Definition, Status(key), required, e?.HasFiles == true,
-                    e is { SourceAvailable: true, Operation: null, Preparation: null } && e.Users.Count == 0 && e.Phase != PackagePhase.Ready,
-                    e is not null && CanRemove(e)) { SourceDefinition = e?.SourceDefinition };
+                    e is { Operation: null, Preparation: null } && (e.SourceAvailable || HasDownload(key)) && e.Users.Count == 0 && e.Phase != PackagePhase.Ready,
+                    e is not null && CanRemove(e));
             }).ToArray();
         }
     }
     private PackageStatus Status(PackageReference key)
     {
         if (!_entries.TryGetValue(key, out var e))
-            return new(key, _rid, PackagePhase.Missing, 0, null, "可信安装源暂未提供此版本或平台。", [], false, "", null);
+            return new(key, _rid, PackagePhase.Missing, 0, null, "", [], false, "", null);
         return new(key, e.Definition.Rid, e.Phase, e.Downloaded, e.Total, e.Error,
             Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes);
     }
@@ -77,6 +80,7 @@ public sealed partial class ExternalPackageService
         lock (_gate)
         {
             EnsureRunning(); e = Find(package);
+            _ = DeclaredDownload(package, e.Definition);
             if (e.Operation is not null && e.InstallCancellation is null)
                 throw new InvalidOperationException("此依赖正在清理，请完成后再申请。");
             e.Requests++; e.Requested = true;
@@ -131,12 +135,6 @@ public sealed partial class ExternalPackageService
         return completion.Task;
     }
 
-    private IReadOnlyList<PackageDefinition> LoadSource()
-    {
-        try { return PackageCatalog.Load(_sourceFile!); }
-        catch (Exception ex) { _refreshError = "依赖源不可用：" + ex.Message; _log.Write("Packages", _refreshError, ex); return []; }
-    }
-
     private void RestoreInstalledDefinitions()
     {
         // Enumerate only the three owned directory levels. Never recurse through links or delete
@@ -158,8 +156,10 @@ public sealed partial class ExternalPackageService
                         var path = PackageFiles.SafePath(directory, "receipt.json");
                         if (new FileInfo(path).Length > 65536) throw new InvalidDataException("安装记录过大。");
                         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path)) ?? throw new InvalidDataException("安装记录为空。");
+                        if (receipt.Schema == 1 && receipt.Definition is null && known is null)
+                        { _legacyReceipts[key] = (directory, receipt); continue; }
                         var definition = receipt.Definition ?? known?.Definition ?? throw new InvalidDataException("旧安装缺少源元数据，已保留文件。");
-                        PackageCatalog.Validate(definition);
+                        PackageDefinitions.Validate(definition);
                         if (definition.Package != key || definition.Rid != _rid || !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException("安装记录与目录身份不符。");
                         var entry = new Entry(definition, directory) { HasFiles = true,
@@ -183,6 +183,31 @@ public sealed partial class ExternalPackageService
             }
         }
         catch (Exception ex) { SourceError = "读取依赖安装目录失败：" + ex.Message; _log.Write("Packages", SourceError, ex); }
+    }
+
+    private void RestoreLegacyReceipts()
+    {
+        foreach (var (key, legacy) in _legacyReceipts.ToArray())
+        {
+            try
+            {
+                if (DeclaredDownload(key) is not { } recipe) continue;
+                var definition = recipe.Definition(key);
+                if (!string.Equals(definition.Sha256, legacy.Receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase)) continue;
+                if (_entries.TryGetValue(key, out var existing) && (existing.Operation is not null || existing.Preparation is not null)) continue;
+                var entry = new Entry(definition, legacy.Directory) { HasFiles = true };
+                _entries[key] = entry; _legacyReceipts.Remove(key);
+                try
+                {
+                    var receipt = ReadReceipt(entry) ?? throw new InvalidDataException("旧安装目录已不存在。");
+                    entry.Phase = PackagePhase.Ready; entry.InstalledBytes = receipt.InstalledBytes;
+                    UpgradeReceipt(legacy.Directory, PackageFiles.SafePath(legacy.Directory, "receipt.json"), receipt with { Schema = 2, Definition = definition });
+                }
+                catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
+            }
+            catch (Exception ex)
+            { _log.Write(AppLogLevel.Warning, "Packages", "旧依赖安装资料未恢复，文件已保留：" + key.Id, ex); }
+        }
     }
 
     private void UpgradeReceipt(string directory, string path, Receipt receipt)

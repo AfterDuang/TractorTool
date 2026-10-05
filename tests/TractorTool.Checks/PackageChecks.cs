@@ -180,252 +180,124 @@ internal static class PackageChecks
             using var repaired = await scope.RequestAsync(Key);
             Require(service.GetStatus(Key).Phase == PackagePhase.Ready && !service.GetPackages().Single().CanRemove);
         });
-        Test("source catalog is not an installed catalog; missing dependency stays visible", async path =>
+        Test("GitHub resolution is shared, consent is required, and installed leases stay offline", async path =>
         {
-            using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
-            Require(service.GetPackages().Count == 0);
-            var catalog = service.GetPackages(includeCatalog: true).Single();
-            Require(catalog.Package == Key && catalog.SourceDefinition is not null && catalog.CanInstall &&
-                !catalog.IsInstalled && catalog.RequiredBy.Count == 0 && service.GetPackages().Count == 0);
-            var missing = new PackageReference("Unavailable", "1.0.0");
-            service.UpdateReferences(new([new(missing, "Test.Plugin", "Plugin")], true));
-            Require(service.GetPackages().Single().Package == missing && !service.GetPackages().Single().CanInstall);
-            Require(service.GetPackages(includeCatalog: true).Count == 2 && service.GetPackages().Single().SourceDefinition is null);
-            using var scope = service.CreateScope("Test.Plugin", [missing], CancellationToken.None);
-            Equal(scope.GetStatus(missing).Phase, PackagePhase.Missing);
-            await Throws<NotSupportedException>(() => scope.RequestAsync(missing));
-        });
-        Test("local catalog refresh discovers tools and preserves installed state on bad updates", async path =>
-        {
-            var sourceDirectory = Path.Combine(path, "source"); Directory.CreateDirectory(sourceDirectory);
-            var file = Path.Combine(sourceDirectory, "default.json");
-            await File.WriteAllBytesAsync(file, Index());
-            var downloads = 0;
-            using var http = new HttpClient(new Handler((request, _) =>
-            { downloads++; return Task.FromResult(Response(request, Archive())); }));
-            await using var service = new ExternalPackageService(Path.Combine(path, "installed"), "win-x64", http,
-                new Probe(), new Log(), sourceDirectory: sourceDirectory);
-            service.UpdateReferences(new([], true));
-            service.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
-            Require(service.CanRefreshSource && !service.HasRemoteSource);
-            Require(await service.RefreshSourceAsync() && downloads == 0);
-            // A plugin may discover metadata added after startup, without a host rebuild or index server.
-            await File.WriteAllBytesAsync(file, Index(Definition(Archive())));
-            using (var lease = await service.TryRequestAsync(Key, "Test.Plugin")) Require(lease is not null);
-            Require(downloads == 1 && service.GetStatus(Key).Phase == PackagePhase.Ready);
-            await File.WriteAllTextAsync(file, "broken");
-            Require(!await service.RefreshSourceAsync() && service.SourceError.Length > 0);
-            using (await service.TryRequestAsync(Key, "Test.Plugin")) { }
-            Require(downloads == 1); // Reusing an installed tool never requires a working catalog.
-            await File.WriteAllBytesAsync(file, Index(Definition(Archive()) with { Sha256 = new string('0', 64) }));
-            Require(!await service.RefreshSourceAsync());
-            await File.WriteAllBytesAsync(file, Index());
-            Require(await service.RefreshSourceAsync() && service.SourceError.Length == 0);
-            Require(service.GetPackages().Single().IsInstalled && downloads == 1);
-            await service.RemoveAsync(Key); Require(service.GetPackages().Count == 0);
-        });
-        Test("local catalog recovers after startup read failure", async path =>
-        {
-            var sourceDirectory = Path.Combine(path, "source"); Directory.CreateDirectory(sourceDirectory);
-            var file = Path.Combine(sourceDirectory, "default.json"); await File.WriteAllTextAsync(file, "broken");
-            using var http = new HttpClient(new Handler((_, _) => throw new InvalidOperationException("No network expected")));
-            await using var service = new ExternalPackageService(Path.Combine(path, "installed"), "win-x64", http,
-                new Probe(), new Log(), sourceDirectory: sourceDirectory);
-            Require(service.SourceError.Length > 0);
-            await File.WriteAllBytesAsync(file, Index(Definition(Archive())));
-            Require(await service.RefreshSourceAsync() && service.SourceError.Length == 0 && !service.IsRefreshingSource);
-            await service.DisposeAsync(); Require(!service.CanRefreshSource);
-            await Throws<ObjectDisposedException>(() => service.RefreshSourceAsync());
-        });
-        Test("source refresh coalesces, caller cancellation keeps the shared refresh alive", async path =>
-        {
+            var bytes = Archive(); var recipe = Recipe(bytes); var calls = 0; var downloads = 0; var prompts = 0;
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var requests = 0;
             using var http = new HttpClient(new Handler(async (request, token) =>
             {
-                Require(request.RequestUri == IndexUri);
-                Interlocked.Increment(ref requests); entered.TrySetResult(); await release.Task.WaitAsync(token);
-                return Response(request, Index(Definition(Archive())));
+                if (request.RequestUri!.Host == "api.github.com")
+                {
+                    Require(request.Headers.UserAgent.Count > 0 && request.RequestUri.AbsolutePath == "/repos/Fixture/tool/releases/tags/v1.0.0");
+                    Interlocked.Increment(ref calls); entered.TrySetResult(); await release.Task.WaitAsync(token);
+                    return Response(request, Release(recipe));
+                }
+                Interlocked.Increment(ref downloads); return Response(request, bytes);
             }));
-            await using var service = Remote(path, http, new Probe());
-            Require(service.CanRefreshSource && !service.IsRefreshingSource);
+            await using var service = GitHub(path, http, recipe);
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(false); };
             using var cancel = new CancellationTokenSource();
-            var first = service.RefreshSourceAsync(cancel.Token);
+            var first = service.TryRequestAsync(Key, "A", cancel.Token);
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            var second = service.RefreshSourceAsync();
-            Require(service.IsRefreshingSource);
-            cancel.Cancel(); await Throws<OperationCanceledException>(() => first);
-            release.TrySetResult(); Require(await second.WaitAsync(TimeSpan.FromSeconds(5)));
-            Require(requests == 1 && !service.IsRefreshingSource && service.SourceError == "");
-            Require(service.SourceStatus.Length != 0 && service.GetPackages().Count == 0);
-            service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
-            Require(service.GetPackages().Single().CanInstall);
+            var second = service.TryRequestAsync(Key, "B"); cancel.Cancel(); release.TrySetResult();
+            await Throws<OperationCanceledException>(async () => { using var ignored = await first; });
+            using var declined = await second;
+            Require(declined is null && calls == 1 && prompts == 1 && downloads == 0);
+            service.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
+            using (var installed = await service.TryRequestAsync(Key, "B")) Require(installed is not null && downloads == 1);
+            var onlineCalls = calls;
+            using (var reused = await service.TryRequestAsync(Key, "B")) Require(reused is not null && calls == onlineCalls);
+            var changed = recipe with { Sha256 = new string('a', 64) };
+            service.UpdateReferences(new([new(Key, "B", "B", [changed])], true));
+            await Throws<InvalidDataException>(async () => { using var denied = await service.TryRequestAsync(Key, "B"); });
+            using var scope = service.CreateScope("B", [Key], CancellationToken.None);
+            await Throws<InvalidDataException>(async () => { using var denied = await scope.AcquireAsync(Key); });
         });
-        Test("unknown dependency discovers source automatically and verifies custom stderr arguments", async path =>
+        Test("GitHub rejects wrong assets, digests, redirects and malformed metadata before consent", async path =>
         {
-            var bytes = Archive(); var definition = Definition(bytes) with
-            {
-                Tools = new Dictionary<string, PackageTool> { ["tool"] = new("bin/tool.exe", "tool\nversion 1.0.0", ["--version"], "stderr") }
-            };
-            var indexRequests = 0; var downloads = 0; var prompts = 0;
+            var recipe = Recipe(Archive()); var payload = Release(recipe); var redirect = false; var prompts = 0;
             using var http = new HttpClient(new Handler((request, _) =>
             {
-                if (request.RequestUri == IndexUri) { indexRequests++; return Task.FromResult(Response(request, Index(definition))); }
-                Require(request.RequestUri == definition.DownloadUri); downloads++; return Task.FromResult(Response(request, bytes));
-            }));
-            var probe = new Probe { Output = "unrelated stdout", Error = "tool\r\nversion 1.0.0\r\n" };
-            await using var service = Remote(path, http, probe);
-            service.ConfirmInstallAsync = (prompt, _) =>
-            { prompts++; Require(prompt.Definition.Package == Key && prompt.Definition.DownloadUri == definition.DownloadUri); return Task.FromResult(true); };
-            using var scope = service.CreateScope("Test.Plugin", [Key], CancellationToken.None);
-            Equal(scope.GetStatus(Key).Phase, PackagePhase.Missing);
-            using (var lease = await scope.TryRequestAsync(Key)) Require(lease is not null && File.Exists(lease.Tools["tool"]));
-            using (var lease = await scope.TryRequestAsync(Key)) Require(lease is not null);
-            Require(indexRequests == 1 && downloads == 1 && prompts == 1);
-            Require(probe.Requests.Single().Arguments.SequenceEqual(new[] { "--version" }));
-        });
-        Test("valid source cache survives bad refreshes and remains isolated by source URI", async path =>
-        {
-            var original = Definition(Archive()); var other = original with { Package = new("NewPackage", "1.0.0") };
-            byte[] payload = Index(original); var networkFailure = false; var requests = 0;
-            using var http = new HttpClient(new Handler((request, _) =>
-            {
-                requests++; if (networkFailure) throw new HttpRequestException("offline");
+                if (redirect) request.RequestUri = new("https://other.invalid/release");
                 return Task.FromResult(Response(request, payload));
             }));
-            await using (var service = Remote(path, http, new Probe()))
+            await using var service = GitHub(path, http, recipe);
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(true); };
+            foreach (var invalid in new[] { Release(recipe, digest: "sha256:" + new string('f', 64)),
+                Release(recipe, asset: "wrong.zip"), Release(recipe, download: "https://other.invalid/file.zip"),
+                Release(recipe, tag: "v2.0.0"), Release(recipe, size: 0) })
             {
-                service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin"), new(other.Package, "Test.Plugin", "Plugin")], true));
-                Require(await service.RefreshSourceAsync());
-                foreach (var invalid in new[]
-                {
-                    Index(other, original with { Sha256 = new string('0', 64) }),
-                    Index(original, original with { Package = new("fixture", Key.Version) }),
-                    Index(original with { DownloadUri = new("http://example.invalid/tool.zip") }),
-                    Index(original with { SourceUri = new("http://example.invalid/source") }),
-                    JsonSerializer.SerializeToUtf8Bytes(new { schemaVersion = 2, packages = new[] { original } }),
-                    new byte[1024 * 1024 + 1]
-                })
-                {
-                    payload = invalid; Require(!await service.RefreshSourceAsync());
-                    Require(service.SourceError.Length != 0 && !service.IsRefreshingSource);
-                    var packages = service.GetPackages();
-                    Require(packages.Single(p => p.Package == Key).CanInstall && packages.Single(p => p.Package == Key).Definition?.Sha256 == original.Sha256);
-                    Require(!packages.Single(p => p.Package == other.Package).CanInstall); // Reject the complete update, including its valid first entry.
-                }
-                networkFailure = true; Require(!await service.RefreshSourceAsync());
-                Require(service.SourceError.Length != 0 && service.GetPackages().Single(p => p.Package == Key).CanInstall);
+                payload = invalid;
+                await Throws<InvalidDataException>(async () => { using var denied = await service.TryRequestAsync(Key, "A"); });
             }
-            var beforeReload = requests;
-            await using (var reload = Remote(path, http, new Probe()))
+            payload = Release(recipe); redirect = true;
+            await Throws<InvalidDataException>(async () => { using var denied = await service.TryRequestAsync(Key, "A"); });
+            Require(prompts == 0 && service.GetStatus(Key).Phase == PackagePhase.Missing);
+        });
+        Test("configured GitHub source persists and removal keeps existing packages reusable", async path =>
+        {
+            var bytes = Archive(); var recipe = Recipe(bytes) with { Source = "https://git.example.com/api/v3/" };
+            using var http = new HttpClient(new Handler((request, _) => Task.FromResult(Response(request,
+                request.RequestUri!.AbsolutePath.StartsWith("/api/v3/") ? Release(recipe) : bytes))));
+            await using (var service = GitHub(path, http, recipe))
             {
-                reload.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
-                Require(reload.GetPackages().Single().CanInstall && reload.GetPackages().Single().Definition?.Sha256 == original.Sha256);
-                Require(requests == beforeReload);
+                Require(service.GetSources().Single().IsDefault);
+                await Throws<InvalidOperationException>(async () => { using var denied = await service.TryRequestAsync(Key, "A"); });
+                foreach (var bad in new[] { "http://git.example.com/api/v3/", "https://user:password@git.example.com/api/v3/", "https://git.example.com/api/v3/?token=bad" })
+                    await Throws<InvalidDataException>(() => { service.AddSource("Team", bad); return Task.CompletedTask; });
+                service.AddSource("Team", recipe.Source);
+                await Throws<InvalidDataException>(() => { service.AddSource("Duplicate", recipe.Source); return Task.CompletedTask; });
+                service.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
+                using var lease = await service.TryRequestAsync(Key, "A"); Require(lease is not null);
             }
-            await using var isolated = Remote(path, http, new Probe(), new("https://example.invalid/other-index.json"));
-            isolated.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
-            Require(!isolated.GetPackages().Single().CanInstall && requests == beforeReload);
+            using var offline = new HttpClient(new Handler((_, _) => throw new Exception("Installed packages must remain offline")));
+            await using var restored = GitHub(path, offline, recipe);
+            Require(restored.GetSources().Count == 2);
+            restored.RemoveSource(restored.GetSources().Single(s => !s.IsDefault));
+            using var reused = await restored.TryRequestAsync(Key, "A"); Require(reused is not null);
+            Require(restored.GetPackages().Single().IsInstalled && restored.GetSources().Single().IsDefault);
         });
-        Test("remote metadata overrides bundled source and removal restores its fallback", async path =>
+        Test("legacy receipt recovers from matching plugin instructions without a catalog", async path =>
         {
-            var bundled = Definition(Archive()); var revised = bundled with { Description = "Remote description", SourceUri = new("https://example.invalid/new-source") };
-            var payload = Index(revised);
-            using var http = new HttpClient(new Handler((request, _) => Task.FromResult(Response(request, payload))));
-            await using var service = new ExternalPackageService(Path.Combine(path, "installed"), "win-x64", http, new Probe(), new Log(),
-                [bundled], IndexUri, Path.Combine(path, "cache"));
-            service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
-            Require(await service.RefreshSourceAsync());
-            Require(service.GetPackages().Single().Definition?.Description == revised.Description &&
-                service.GetPackages().Single().Definition?.SourceUri == revised.SourceUri);
-            payload = Index(); Require(await service.RefreshSourceAsync());
-            Require(service.GetPackages().Single().CanInstall && service.GetPackages().Single().Definition?.Description == bundled.Description);
+            using var http = Client(Archive());
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            var file = Path.Combine(path, Key.Id, Key.Version, "win-x64", "receipt.json");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!;
+            json["Schema"] = 1; json.AsObject().Remove("Definition"); File.WriteAllText(file, json.ToJsonString());
+            using var offline = new HttpClient(new Handler((_, _) => throw new Exception("No network")));
+            await using var restored = GitHub(path, offline, Recipe(Archive()) with { Sha256 = Recipe(Archive()).Sha256.ToUpperInvariant() });
+            using var lease = await restored.TryRequestAsync(Key, "A");
+            Require(lease is not null && restored.GetStatus(Key).Phase == PackagePhase.Ready && restored.SourceError.Length == 0);
         });
-        Test("non-HTTPS source configurations and redirects are refused before adopting content", async path =>
+        Test("damaged legacy receipt remains visible and can be repaired", async path =>
         {
-            var redirect = false; var calls = 0;
-            using var http = new HttpClient(new Handler((request, _) =>
-            {
-                calls++;
-                var response = Response(request, Index(Definition(Archive())));
-                if (redirect) response.RequestMessage = new(HttpMethod.Get, "http://example.invalid/index.json");
-                return Task.FromResult(response);
-            }));
-            foreach (var uri in new[] { "http://example.invalid/index.json", "file:///index.json", "https://user:pass@example.invalid/index.json", "https://example.invalid/index.json#fragment" })
-                await Throws<InvalidDataException>(async () => { await using var rejected = Remote(path, http, new Probe(), new(uri)); });
-            Require(calls == 0);
-            await using var service = Remote(path, http, new Probe());
-            service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin")], true));
-            Require(await service.RefreshSourceAsync());
-            redirect = true; Require(!await service.RefreshSourceAsync());
-            Require(service.SourceError.Length != 0 && service.GetPackages().Single().CanInstall && calls == 2);
+            var bytes = Archive(); using var initial = Client(bytes);
+            await using (var install = Create(path, initial, new Probe())) await install.InstallAsync(Key);
+            var directory = Path.Combine(path, Key.Id, Key.Version, "win-x64");
+            var file = Path.Combine(directory, "receipt.json");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!;
+            json["Schema"] = 1; json.AsObject().Remove("Definition"); File.WriteAllText(file, json.ToJsonString());
+            File.Delete(Path.Combine(directory, "bin", "tool.exe"));
+            var recipe = Recipe(bytes);
+            using var http = new HttpClient(new Handler((request, _) => Task.FromResult(Response(request,
+                request.RequestUri!.Host == "api.github.com" ? Release(recipe) : bytes))));
+            await using var restored = GitHub(path, http, recipe);
+            Require(restored.GetPackages().Single() is { IsInstalled: true, CanInstall: true });
+            restored.ConfirmInstallAsync = (prompt, _) => { Require(prompt.IsRepair); return Task.FromResult(true); };
+            using var lease = await restored.TryRequestAsync(Key, "A");
+            Require(lease is not null && restored.GetStatus(Key).Phase == PackagePhase.Ready);
         });
-        Test("installed package stays offline reusable and rejects same-version source hash changes", async path =>
-        {
-            var original = Definition(Archive()); var payload = Index(original); var requests = 0;
-            using var http = new HttpClient(new Handler((request, _) =>
-            { requests++; return Task.FromResult(Response(request, request.RequestUri == IndexUri ? payload : Archive())); }));
-            await using (var install = Remote(path, http, new Probe()))
-            {
-                install.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
-                using (await install.TryRequestAsync(Key, "Test.Plugin")) { }
-                payload = Index(original with { Sha256 = new string('0', 64) });
-                Require(!await install.RefreshSourceAsync() && install.SourceError.Length != 0);
-                Equal(install.GetStatus(Key).Phase, PackagePhase.Ready);
-                payload = Index(); Require(await install.RefreshSourceAsync());
-            }
-            var networkCalls = 0;
-            using var offline = new HttpClient(new Handler((_, _) => { networkCalls++; throw new HttpRequestException("offline"); }));
-            await using var service = Remote(path, offline, new Probe());
-            using (await service.TryRequestAsync(Key, "Test.Plugin")) { }
-            Require(networkCalls == 0 && service.GetPackages().Single().IsInstalled && service.GetPackages().Single().CanRemove);
-            Require(service.GetPackages(includeCatalog: true).Single().SourceDefinition is null);
-            // The installed receipt still protects the hash after the source entry was removed.
-            payload = Index(original with { Sha256 = new string('0', 64) });
-            await using (var changedSource = Remote(path, http, new Probe()))
-            {
-                Require(!await changedSource.RefreshSourceAsync());
-                Equal(changedSource.GetStatus(Key).Phase, PackagePhase.Ready);
-            }
-            await service.RemoveAsync(Key); Require(!service.GetPackages().Any() && networkCalls == 0);
-        });
-        Test("refresh during consent preserves the approved download snapshot", async path =>
-        {
-            var original = Definition(Archive()); var revised = original with { DownloadUri = new("https://example.invalid/revised.zip"), Description = "Updated metadata" };
-            var payload = Index(original); var downloads = new List<Uri>();
-            using var http = new HttpClient(new Handler((request, _) =>
-            {
-                if (request.RequestUri == IndexUri) return Task.FromResult(Response(request, payload));
-                downloads.Add(request.RequestUri!); return Task.FromResult(Response(request, Archive()));
-            }));
-            await using var service = Remote(path, http, new Probe());
-            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var approve = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            service.ConfirmInstallAsync = async (prompt, token) =>
-            { Require(prompt.Definition.DownloadUri == original.DownloadUri); entered.TrySetResult(); return await approve.Task.WaitAsync(token); };
-            var request = service.TryRequestAsync(Key, "Test.Plugin");
-            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            payload = Index(revised); Require(await service.RefreshSourceAsync());
-            approve.TrySetResult(true);
-            using (var lease = await request.WaitAsync(TimeSpan.FromSeconds(5))) Require(lease is not null);
-            Require(downloads.Single() == original.DownloadUri);
-            await service.RemoveAsync(Key);
-            service.ConfirmInstallAsync = (prompt, _) =>
-            { Require(prompt.Definition.DownloadUri == revised.DownloadUri); return Task.FromResult(true); };
-            using (await service.TryRequestAsync(Key, "Test.Plugin")) { }
-            Require(downloads.SequenceEqual(new[] { original.DownloadUri, revised.DownloadUri }));
-        });
-        Test("shutdown cancels a shared source refresh and rejects later refreshes", async path =>
+        Test("shutdown cancels GitHub resolution and source edits stop with the service", async path =>
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             using var http = new HttpClient(new Handler(async (request, token) =>
-            { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, token); return Response(request, Index()); }));
-            var service = Remote(path, http, new Probe());
-            var refresh = service.RefreshSourceAsync(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            await service.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
-            await Throws<OperationCanceledException>(() => refresh);
-            await Throws<ObjectDisposedException>(() => service.RefreshSourceAsync());
+            { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, token); return Response(request, []); }));
+            await using var service = GitHub(path, http, Recipe(Archive()));
+            var pending = service.TryRequestAsync(Key, "A"); await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await service.DisposeAsync();
+            await Throws<OperationCanceledException>(async () => { using var ignored = await pending; });
+            await Throws<ObjectDisposedException>(() => { service.AddSource("Team", "https://git.example.com/api/v3/"); return Task.CompletedTask; });
         });
         Test("reference reconstruction includes disabled, pending and recovery manifests", async path =>
         {
@@ -522,33 +394,21 @@ internal static class PackageChecks
             await service.InstallAsync(Key); Equal(service.GetStatus(Key).Phase, PackagePhase.Ready);
             Require(probe.Requests.All(p => p.Arguments.Count == 0));
         });
-        Test("source rejects invalid version probe metadata before execution", async path =>
+        Test("invalid probe metadata is rejected before execution", async path =>
         {
-            var definition = Definition(Archive()); var probe = new Probe(); byte[] payload = Index();
-            using var http = new HttpClient(new Handler((request, _) => Task.FromResult(Response(request, payload))));
-            await using var service = Remote(path, http, probe);
+            var definition = Definition(Archive()); var probe = new Probe(); using var http = Client(Archive());
             foreach (var tool in new[]
             {
                 new PackageTool("bin/tool.exe", "tool version 1.0.0", ["--version"], "combined"),
+                new PackageTool("../tool.exe", "tool version 1.0.0"),
                 new PackageTool("bin/tool.exe", "tool version 1.0.0", Enumerable.Repeat("x", 17).ToArray()),
                 new PackageTool("bin/tool.exe", "tool version 1.0.0", [new string('x', 1025)]),
                 new PackageTool("bin/tool.exe", "tool version 1.0.0", ["--version\0bad"]),
                 new PackageTool("bin/tool.exe", new string('x', 513)),
                 new PackageTool("bin/tool.exe", " ")
             })
-            {
-                payload = Index(definition with { Tools = new Dictionary<string, PackageTool> { ["tool"] = tool } });
-                Require(!await service.RefreshSourceAsync() && service.SourceError.Length != 0);
-            }
-            var oversized = definition with
-            {
-                Description = new string('d', 33 * 1024),
-                Tools = new Dictionary<string, PackageTool>
-                { ["tool"] = new("bin/tool.exe", "tool version 1.0.0", Enumerable.Repeat(new string('x', 1024), 16).ToArray()) }
-            };
-            Require(JsonSerializer.SerializeToUtf8Bytes(oversized).Length > 48 * 1024);
-            payload = Index(oversized);
-            Require(!await service.RefreshSourceAsync() && service.SourceError.Length != 0);
+                await Throws<InvalidDataException>(async () =>
+                { await using var service = Create(path, http, probe, definition with { Tools = new Dictionary<string, PackageTool> { ["tool"] = tool } }); });
             Require(probe.Calls == 0);
         });
         Test("definition at metadata budget installs with a readable receipt and lease", async path =>
@@ -658,15 +518,20 @@ internal static class PackageChecks
     }
 
     private static readonly PackageReference Key = new("Fixture", "1.0.0");
-    private static readonly Uri IndexUri = new("https://example.invalid/index.json");
-    private static byte[] Index(params PackageDefinition[] definitions) => JsonSerializer.SerializeToUtf8Bytes(
-        new { schemaVersion = 1, packages = definitions }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-    private static ExternalPackageService Remote(string root, HttpClient http, Probe runner, Uri? source = null)
+    private static GitHubPackage Recipe(byte[] bytes) => new("win-x64", "Fixture/tool", "v1.0.0", "tool.zip",
+        Definition(bytes).Sha256, "Fixture", "Fixture", "Fixture", Definition(bytes).Tools);
+    private static byte[] Release(GitHubPackage recipe, string? digest = null, string? asset = null,
+        string? download = null, string? tag = null, long size = 100) => JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            tag_name = tag ?? recipe.Tag, draft = false,
+            assets = new[] { new { name = asset ?? recipe.Asset, state = "uploaded", size,
+                browser_download_url = download ?? $"{(recipe.Source == DependencySource.GitHubUrl ? "https://github.com" : new Uri(recipe.Source).GetLeftPart(UriPartial.Authority))}/{recipe.Repository}/releases/download/{recipe.Tag}/{recipe.Asset}",
+                digest = digest ?? "sha256:" + recipe.Sha256 } }
+        });
+    private static ExternalPackageService GitHub(string root, HttpClient http, GitHubPackage recipe)
     {
-        var service = new ExternalPackageService(Path.Combine(root, "installed"), "win-x64", http, runner, new Log(), [],
-            source ?? IndexUri, Path.Combine(root, "cache"));
-        service.UpdateReferences(new([], true));
-        return service;
+        var service = new ExternalPackageService(root, "win-x64", http, new Probe(), new Log());
+        service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin", [recipe])], true)); return service;
     }
     private static byte[] Archive(string? extra = null, bool link = false)
     {

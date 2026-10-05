@@ -6,7 +6,7 @@
         <StackPanel Spacing="12">
           <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
           <TextBlock Text="{Binding Attribution}" Classes="caption" />
-          <TextBlock Text="{Binding Availability}" Classes="caption" />
+          <TextBlock Text="{Binding SourceSummary}" Classes="caption" />
           <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" />
           <TextBlock Text="{Binding SizeText}" Classes="caption" />
           <TextBlock Text="{Binding RequiredBy}" />

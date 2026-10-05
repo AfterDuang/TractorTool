@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.ViewModels" xmlns:packages="clr-namespace:TractorTool.Core.Packages;assembly=TractorTool.Core"
+             x:Class="TractorTool.Views.DependencySourcesView" x:DataType="vm:ExternalToolsViewModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <TextBlock Text="插件指定仓库和版本，软件从 GitHub Release 下载所需附件。" Classes="caption" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+      <ItemsControl ItemsSource="{Binding Sources}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="packages:DependencySource">
+            <Border Classes="card" Margin="0,0,0,8">
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <StackPanel Spacing="6">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
+                  <TextBlock Text="默认来源 · GitHub Releases" IsVisible="{Binding IsDefault}" Classes="caption" />
+                  <SelectableTextBlock Text="{Binding Url}" TextWrapping="Wrap" Classes="caption" />
+                </StackPanel>
+                <Button Grid.Column="1" Content="移除" IsVisible="{Binding !IsDefault}" VerticalAlignment="Center"
+                        Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).RemoveSourceCommand}" CommandParameter="{Binding}" />
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <Expander Header="添加依赖来源" IsExpanded="{Binding ShowSourceForm, Mode=TwoWay}" HorizontalAlignment="Stretch">
+        <StackPanel Spacing="12" Margin="0,12,0,0" MaxWidth="640" HorizontalAlignment="Left">
+          <TextBlock Text="添加 GitHub Enterprise 来源，当前支持公开 Release 的 ZIP 附件。" TextWrapping="Wrap" Classes="caption" />
+          <TextBlock Text="来源名称" />
+          <TextBox Text="{Binding SourceName}" PlaceholderText="例如：团队 GitHub" MaxLength="80" />
+          <TextBlock Text="GitHub API 地址" />
+          <TextBox Text="{Binding SourceAddress}" PlaceholderText="https://github.example.com/api/v3/" />
+          <Button Content="添加" Command="{Binding AddSourceCommand}" Classes="accent" />
+        </StackPanel>
+      </Expander>
+      <TextBlock Text="移除来源不会删除已安装依赖。pip 等来源将在支持对应安装方式后开放。" Classes="caption" TextWrapping="Wrap" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -505,42 +505,26 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
     Assert(File.ReadAllBytes(store.FilePath).SequenceEqual(before) && store.Load().Theme == "Dark");
     Assert(Application.Current!.RequestedThemeVariant == ThemeVariant.Dark);
 });
-Check("Dependency settings browse the catalog without requesting packages and retain cards across filters", () =>
+Check("Dependency settings separate installed packages and persistent GitHub sources", () =>
 {
     using var http = new HttpClient();
     var runner = new ProcessRunner("PackageSettings.Check", log, _ => throw new InvalidOperationException("Browsing must not start a tool"));
-    var service = new ExternalPackageService(Path.Combine(output, "catalog-ui-packages"), "win-x64", http, runner, log,
-        sourceDirectory: Path.Combine(published, "PackageSources"));
+    var service = new ExternalPackageService(Path.Combine(output, "github-ui-packages"), "win-x64", http, runner, log);
     service.UpdateReferences(new([], true));
     using var model = new ExternalToolsViewModel(service, _ => { });
     try
     {
-        var card = model.VisibleCards.First();
-        Assert(card.IsAvailable && card.CanInstall && !card.IsInstalled && service.GetPackages().Count == 0);
-        model.SearchText = card.Key.Id.ToLowerInvariant();
-        Assert(model.VisibleCards.Contains(card));
-        model.SearchText = "no-matching-package";
-        Assert(model.IsEmpty);
-        model.SearchText = ""; model.SelectedScope = 1;
-        Assert(model.IsEmpty);
-        service.UpdateReferences(new([new(card.Key, "Test.Plugin", "Test")], true));
-        Dispatcher.UIThread.RunJobs();
-        Assert(ReferenceEquals(model.VisibleCards.Single(), card) && !card.CanRemove);
-        var prompts = 0;
-        model.ConnectConfirmation((_, _, _) => { prompts++; return Task.FromResult(false); });
-        Pump(card.InstallCommand.ExecuteAsync(null));
-        Assert(prompts == 1 && !card.IsInstalled && card.CanInstall);
-        model.SelectedScope = 0;
-        Assert(model.VisibleCards.Contains(card));
-        model.Dispose();
-        Assert(!card.InstallCommand.CanExecute(null) && !card.RemoveCommand.CanExecute(null));
+        Assert(model.IsEmpty && model.Sources.Single().IsDefault);
+        Assert(!model.RemoveSourceCommand.CanExecute(model.Sources[0]));
+        model.SourceName = "Team"; model.SourceAddress = "https://github.example.com/api/v3/";
+        Pump(model.AddSourceCommand.ExecuteAsync(null)); Dispatcher.UIThread.RunJobs();
+        Assert(model.Sources.Count == 2 && model.Error.Length == 0 && model.IsEmpty);
+        var source = model.Sources.Single(s => !s.IsDefault);
+        Pump(model.RemoveSourceCommand.ExecuteAsync(source)); Dispatcher.UIThread.RunJobs();
+        Assert(model.Sources.Count == 1 && model.IsEmpty);
+        model.Dispose(); Assert(!model.AddSourceCommand.CanExecute(null));
     }
-    finally
-    {
-        model.Dispose();
-        Pump(service.DisposeAsync().AsTask());
-        Pump(runner.DisposeAsync().AsTask());
-    }
+    finally { model.Dispose(); Pump(service.DisposeAsync().AsTask()); Pump(runner.DisposeAsync().AsTask()); }
 });
 AppearanceChecks.Run(Check, Pump, output);
 MotionChecks.Run(Check);
