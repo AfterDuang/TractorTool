@@ -8,6 +8,8 @@
 
 最新改动为 [E56](PROJECT_HISTORY.md#evidence-package-sources)：包服务增加可信 HTTPS 索引按需/手动刷新、源隔离缓存/内置兜底和可配置工具版本验证；插件清单/API 不变，保留首次确认/已装复用/引用租约保护。source.json 默认 indexUri=null，尚未部署正式远程源。MediaInfo CLI 26.05（管理版本26.5.0）的独立测试插件和测试源已准备，只做官方 ZIP 静态核对、独立打包与全解决方案 Release 构建（0警告/0错误）。子代理 Review 的 receipt 容量 P2 已修复并复核；新增回归、真实网络/MediaInfo/插件加载均未执行，用户接手运行测试的约定不变。
 
+[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 核对刷新按钮禁用为源地址未配置的既定状态；截图预览器称两个属性不存在，但源码/Debug程序集均包含它们，宿主 Debug 重建0警告/0错误。旧预览进程状态不同步是推断，未接管 VS Code 或验证重启预览器后是否恢复；操作入口已补入开发文档。
+
 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 公共导航页面回收修复仍待用户复测真实发布版长期切页/图片内存曲线。当时单独授权的隔离检查 10/10、320旧对象可回收是该轮证据，不扩展成常态自动测试权限。
 
 [E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。

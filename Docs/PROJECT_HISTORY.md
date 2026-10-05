@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 排查（源状态与预览器） | [E57 · 禁用原因与 Debug 绑定核对（2026-10-05）](#evidence-source-preview-diagnostics) |
 | M5（外部依赖通用化） | [E56 · 可信索引刷新与第二工具接入（2026-10-05）](#evidence-package-sources) |
 | 维护（导航页面回收） | [E55 · 公共导航内存修复与隔离回归（2026-10-05）](#evidence-navigation-memory-fix) |
 | 调查（发布版内存） | [E54 · 内存计数与导航事件持有路径（2026-10-05）](#evidence-memory-investigation) |
@@ -1803,3 +1804,15 @@ dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll 
 - 子代理显式 gpt-6.1-sol / high 审查：发现合法大定义可能写出超过64KiB的receipt、安装后不可读的P2；在源校验阶段加入48KiB预算，并补超预算拒绝及恰好48KiB可安装/租用用例。子代理复核该P2已关闭，其余所查取消/缓存/确认/占用/测试插件/分发路径未发现可确认P1/P2；不把静态审查视作运行通过。
 
 未完成：正式 HTTPS 索引尚未部署（配置仍为 null），远程实际更新/故障恢复、MediaInfo安装及输出、独立插件加载、界面窄窗/按钮反馈和卸载清理闭环待用户验收。没有启动应用、运行检查程序、执行 FFmpeg/MediaInfo 或操作真实配置/媒体/剪贴板。保留既有E55内存复测、媒体/GPU、迁移/安装器与Release缺口；本轮未重打完整分发或运行安装器。
+
+<a id="evidence-source-preview-diagnostics"></a>
+
+## E57：禁用原因与 Debug 绑定核对（2026-10-05）
+
+用户反馈刷新安装源灰色、Avalonia 预览器报告 RefreshSourceCommand/SourceStatus 不存在。核对结果：
+
+- 源配置和 Debug 输出副本均为 indexUri=null；CanRefreshSource 要求真实源地址且服务未退出，禁用符合实现。正式源部署仍待完成，未随意填写地址或改变首次确认行为。
+- 源码包含两个公开属性；只读扫描现有 Debug bin/obj 及 E56 Release 程序集，均存在对应 getter 名称。结合截图的 C# 类型提示可识别属性，推断预览器仍使用旧状态；没有检查其进程内加载对象，因此不把推断写成已证实根因。
+- 本机 avaloniateam.vscode-avalonia 12.4.3 的 package.json 提供 Restart Previewer、Rebuild Project and Restart Previewer。操作方法加入开发入口，不修改现有 VS Code 配置。
+- `dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -v:minimal`：沙盒首次因 Avalonia buildtasks.log 写权限失败，正常用户权限重试通过，宿主及引用工程0警告/0错误；未出现截图中的绑定编译错误。
+- 无生产代码修改，无运行测试或预览器操作；预览重启后的实际恢复待用户确认。保留用户 .gitignore 和 launch.json 修改，正式 HTTPS 源及其运行验收仍未完成。

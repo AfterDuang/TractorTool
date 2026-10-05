@@ -35,7 +35,7 @@
 | 层级 | 当前可引用的结果 |
 | --- | --- |
 | Review/静态 | [E56](PROJECT_HISTORY.md#evidence-package-sources) 子代理 gpt-6.1-sol / high 审查索引/取消/缓存/批准快照/租约与清理、测试插件及分发路径；修复定义可能超过 receipt 容量的 P2 后复核通过，未发现其余可确认 P1/P2。MediaInfo 官方 ZIP 哈希、文件路径、x64 PE 及许可静态核对；实际输出未运行。此前导航/设置等证据见 E55/E49 |
-| 宿主与插件构建 | [E56](PROJECT_HISTORY.md#evidence-package-sources) 含 13 工程的全解决方案 Release 隔离构建通过，0 警告/0 错误；MediaInfo 测试插件引用现存发布 SDK 独立构建/打包通过，0 警告/0 错误。全解决方案 Debug 历史证据仍为 E39；正式插件的独立打包证据仍见 E46/E52。本轮未替换运行中的发布目录或重打完整分发包 |
+| 宿主与插件构建 | [E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 宿主及引用工程 Debug 构建通过，0 警告/0 错误；预览器重启后的实际状态待用户确认。[E56](PROJECT_HISTORY.md#evidence-package-sources) 含 13 工程的全解决方案 Release 隔离构建及 MediaInfo 测试插件独立构建/打包通过，均为0警告/0错误。全解决方案 Debug 历史证据仍为 E39；正式插件独立打包见 E46/E52。未替换发布目录或重打完整分发包 |
 | 分发构建/校验 | E43 完整 Release win-x64 自包含宿主、两个独立插件及安装器构建成功，311 文件及整包/独立插件一致性、安装器来源成对校验通过。这是 E43 快照的证据；目录中新产物的版本与观察范围另见 [本地产物](#local-artifacts)，不自动继承历史校验结果 |
 | 开发入口 | [E45](PROJECT_HISTORY.md#evidence-script-cleanup) 统一插件打包/宿主验证脚本，[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 提供 VS Code 本地发布菜单；配置及脚本语法、引用静态检查通过，菜单交互未实测。[项目首页](../README.md) 与 [脚本说明](../scripts/README.md) 分别提供使用入口和脚本职责 |
 | 自动化/集成 | E56 新增索引并发/失败缓存/源隔离/批准快照/旧默认与 stderr/记录预算回归仅编译未运行。此前 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 获准执行的隔离导航检查 10/10 通过；E49 其他布局/折叠断言及 E37–E39 迁移核心 9 组、管理关联 6 组仍只编译未运行。没有执行全量集成或真实插件/媒体测试 |
@@ -50,7 +50,9 @@
 
 ## 2. 开发与验收入口
 
-使用根 `TractorTool.slnx` 和现有 **Avalonia: TractorTool** 启动项。工程旧提示可通过 `Developer: Reload Window` 重载；属性变化先构建，再 **Restart Previewer**。不另建解决方案或修改 IDE/异常过滤来掩盖问题。
+使用根 `TractorTool.slnx` 和现有 **Avalonia: TractorTool** 启动项。新增属性后若预览器提示属性不存在，先确认构建结果；构建已通过时，按 `Ctrl+Shift+P` 执行 **Avalonia: Restart Previewer**。尚未构建时可选 **Avalonia: Rebuild Project and Restart Previewer**；仍有旧提示再执行 **Developer: Reload Window**。上述 Avalonia 命令已核对本机扩展12.4.3。不能将预览器旧诊断当作编译失败，也不通过移除绑定或改 IDE 配置掩盖问题。
+
+“刷新安装源”在未配置远程索引时禁用：分发配置 [source.json](../TractorTool.Core/Packages/source.json) 的 `indexUri` 当前为 null，已安装包及内置目录仍可使用。由软件维护者部署真实 HTTPS 索引并配置后再启用，流程见 [安装源维护](PLUGIN_DEVELOPMENT.md#package-source-maintenance)；不是让普通用户手工寻找 FFmpeg 下载地址。
 
 **交互式本地发布：终端 → 运行任务 → TractorTool：本地发布 → 选择 ZIP 或 ZIP＋Windows 安装包。** 配置见 [tasks.json](../.vscode/tasks.json)，自动使用 `artifacts/local-publish-日期时间-随机后缀/distribution/assets` 保存最终产物，不覆盖旧目录。需 PowerShell 7.4+（`pwsh` 在 PATH 中）；安装包模式会下载并验证固定便携编译器。版本沿用工程默认，流程复用本地/CI 脚本，不自动安装、启动或上传，也不改变 F5 启动项。详细操作见 [项目首页](../README.md#构建分发包)。
 
@@ -183,4 +185,4 @@ E56 隔离构建位于 `artifacts/dependency-source-build/bin`；独立依赖测
 
 <a id="evidence"></a>
 
-历史入口：[E01–E56 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E57 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
