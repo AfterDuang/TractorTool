@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（视频导出布局） | [E47 · 固定输出操作栏与按钮层级（2026-10-05）](#evidence-video-output-bar) |
 | 维护（剪贴板布局） | [E46 · 剪贴板底部留白与独立更新包（2026-10-05）](#evidence-clipboard-bottom-spacing) |
 | 维护（脚本精简） | [E45 · 删除重复打包入口与验证脚本改名（2026-10-05）](#evidence-script-cleanup) |
 | 文档（GitHub 首页） | [E44 · 项目 README 与文档入口（2026-10-05）](#evidence-project-readme) |
@@ -1626,3 +1627,22 @@ Verify-M1.ps1 改名为 Verify-PluginHost.ps1，证据目录前缀从 artifacts/
 ```
 
 未运行应用、检查程序、安装器或 UI 自动化，未访问系统剪贴板；实际窗口留白、缩放及滚动效果待用户安装更新包、退出重启后验证。未替换用户安装或既有分发包；.gitignore 和 .vscode/launch.json 修改保留。当前文档同步现存产物路径，E43 等旧产物清理不抹去其历史证据。M5 下一项仍为 Release 流程，运行验收缺口不变。
+
+<a id="evidence-video-output-bar"></a>
+
+## E47：固定输出操作栏与按钮层级（2026-10-05）
+
+用户指出视频导出 UI 中输出位置不明显，要求结合 Apple HIG 改进。核对截图和 AXAML：原入口为透明 quiet 按钮，与路径及导出分散在预设区底部两行。参考 [Apple Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons) 中可辨识控件、用样式区分主次操作及相邻按钮尺寸一致的原则，以及 [Design principles](https://developer.apple.com/design/human-interface-guidelines/design-principles) 的清晰层级；继续使用既有 Windows/Avalonia 主题。
+
+ExportWorkspaceView 将输出区域移到独立底行，横跨输入区与预设区，滚动只发生在其上方。主题卡片显示文件夹图标、保存位置标签和长路径省略/悬停；普通按钮在空路径时显示“选择文件夹…”，选择后为“更改位置…”。导出使用强调色并紧邻路径操作，预设添加/保存退为普通按钮；窄窗口复用现有宽度断点，把操作放到路径下一行。沿用同一选择事件、忙碌保护和导出命令，不增加全局样式、依赖、服务或第二套选择流程；删除旧页脚，未改业务参数和持久化格式。
+
+视频清单升至 0.5.3，引用现存发布 SDK 独立打包成功，0 警告/0 错误；发布目录原有 312 个文件哈希不变。更新包内容/清单产品版本/SHA256/许可/共享 DLL 排除、AXAML 及文档链接/验收编号静态核对通过。证据在 `artifacts/video-ui-0.5.3` 的 build.log、host-before.json、static-checks.json；交付为 package/TractorTool.VideoExport-0.5.3.zip。
+
+```powershell
+./scripts/Build-Plugin.ps1 `
+    -Project ./Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj `
+    -HostSdkDir ./artifacts/local-distribution/layout/TractorTool-0.1.0-win-x64 `
+    -Output ./artifacts/video-ui-0.5.3/package
+```
+
+未启动应用、检查程序、FFmpeg 或 UI 自动化，没有真实 UI/转码/硬件新证据。用户安装更新后验证宽窄窗口/高 DPI、长路径、选择/取消/忙碌及滚动时操作栏可达；原有运行缺口继续保留。既有安装和整包未改，.gitignore 与 .vscode/launch.json 的用户修改不纳入提交。

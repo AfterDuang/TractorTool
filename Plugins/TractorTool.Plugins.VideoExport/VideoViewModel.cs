@@ -67,8 +67,9 @@ public partial class VideoViewModel : ObservableObject
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasCover), nameof(CoverName))] private string _coverPath = "";
     public bool HasCover => CoverPath.Length != 0;
     public string CoverName => HasCover ? Path.GetFileName(CoverPath) : "拖入封面图片（可选）";
-    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ExportCommand)), NotifyPropertyChangedFor(nameof(OutputFolderLabel))] private string _outputDirectory = "";
-    public string OutputFolderLabel => OutputDirectory.Length == 0 ? "尚未选择输出位置" : OutputDirectory;
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ExportCommand)), NotifyPropertyChangedFor(nameof(OutputFolderLabel), nameof(OutputFolderAction))] private string _outputDirectory = "";
+    public string OutputFolderLabel => OutputDirectory.Length == 0 ? "尚未选择文件夹，请先设置保存位置" : OutputDirectory;
+    public string OutputFolderAction => OutputDirectory.Length == 0 ? "选择文件夹…" : "更改位置…";
     [ObservableProperty] private string _editorAction = "添加预设";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(EditorTitle))] private bool _isEditingPreset;
     public string EditorTitle => IsEditingPreset ? "编辑预设" : "新建预设";

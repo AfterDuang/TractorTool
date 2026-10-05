@@ -14,6 +14,9 @@ public partial class ExportWorkspaceView : UserControl
             Columns.ColumnDefinitions = new(narrow ? "*" : "360,20,*");
             Columns.RowDefinitions = new(narrow ? "*,16,*" : "*");
             Grid.SetColumn(PresetPanel, narrow ? 0 : 2); Grid.SetRow(PresetPanel, narrow ? 2 : 0);
+            ExportBar.ColumnDefinitions = new(narrow ? "*" : "*,Auto");
+            ExportBar.RowDefinitions = new(narrow ? "Auto,Auto" : "*");
+            Grid.SetColumn(ExportActions, narrow ? 0 : 1); Grid.SetRow(ExportActions, narrow ? 1 : 0);
         };
     }
     private void CardsResized(object? sender, SizeChangedEventArgs e)
