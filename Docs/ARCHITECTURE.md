@@ -187,9 +187,15 @@ Windows 注销或关机跳过交互确认并执行有界清理，不能因无限
 
 SHA256 用于核对内容，不单独证明发布者可信；包清单和来源本身也需要可信。FFmpeg 构建中的编码器和分发许可随构建选项变化，发布前记录采用的二进制来源和许可证。
 
-可信索引由 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 读取软件目录 `PackageSources/default.json`，源码为 [default.json](../TractorTool.Core/Packages/default.json)，构建/发布时随宿主复制。维护者可更新文件而无需修改 C#；首版只有软件维护的本地 JSON 索引，尚无远程索引刷新或用户添加源。当前条目为 Gyan FFmpeg 9.0.2 essentials / win-x64，包含版本化 HTTPS 下载地址、SHA-256、ffmpeg/ffprobe 路径及许可。插件只声明 ID/固定三段版本；未知包或平台允许页面加载，申请时明确报错。设置只展示插件引用、实际安装或已申请的包，不把整个源目录直接当已安装列表。
+可信索引由 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 校验，内置目录仍是软件目录 `PackageSources/default.json`（源码 [default.json](../TractorTool.Core/Packages/default.json)）。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 读取软件维护的 `PackageSources/source.json` 中 `indexUri`，仅接受不含凭据/片段的 HTTPS URL；默认 null，表示尚未部署正式远程源，设置明确显示未配置并禁用刷新。没有用户添加源或插件指定下载源的入口。两份文件随构建/发布复制，分发静态检查要求存在。
 
-[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs) 合并同包并发申请的确认及安装；调用方取消等待不影响其他等待者，设置页取消才停止共享下载。下载最多 256 MiB、ZIP 展开最多 1 GiB/10000 项，拒绝路径越界、重名/大小写冲突、特殊文件和重解析点。校验后执行固定工具的 `-version`，成功才写 receipt 并原子移动目录。receipt v2 保存完整安装定义及下载/工具哈希，因此索引下架或失效后仍可复用并清理已安装包；旧 v1 在仍有对应源定义时升级，无法恢复的记录保留文件并报错。取得租约重新校验文件；损坏包可经确认重新安装，禁止运行中替换，修复使用当前可信源地址。网络/整体超时显示失败，取消可重试；修复会移除损坏副本，失败不冒充恢复成功。
+配置远程源后，启动只读取按源 URL 隔离的 `<DataRoot>/Cache/PackageSources` 缓存；普通启动不联网。插件申请在本地没有对应可用来源且未就绪时按需刷新，设置也可手动刷新。并发刷新共用一次下载，单调用方取消只取消等待，退出取消并等待共享操作。索引下载限 15 秒/1 MiB，验证整份 schema、重复项、路径和包资料后原子替换缓存，失败保留当前目录、缓存和已装包；重定向不能改变协议/站点。远程目录叠加内置兜底，同身份可更新来源/说明；已有同 ID、固定版本、RID 的 SHA256 或标识大小写变化被拒绝，内容改变须新版本。刷新只更新可用源资料，已安装记录、运行租约、正在下载和已展示确认的定义各自保留快照；确认后安装使用用户批准的定义。
+
+内置生产条目仍为 Gyan FFmpeg 9.0.2 essentials / win-x64；第二个真实工具 [MediaInfo 测试源](../tests/PackageSources/mediainfo.json) 和 [独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs) 只用于验收，不进入正式分发。插件仍只声明 ID/固定三段版本，Contracts API 不变；未知包或平台允许页面加载，申请时明确报错。设置只展示插件引用、实际安装或已申请的包，不把整个源目录直接当已安装列表。安装源的维护和隔离验证入口见 [插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。
+
+[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs) 合并同包并发申请的确认及安装；调用方取消等待不影响其他等待者，设置页取消才停止共享下载。下载最多 256 MiB、ZIP 展开最多 1 GiB/10000 项，拒绝路径越界、重名/大小写冲突、特殊文件和重解析点。校验后按可信工具资料的 `arguments` 参数向量执行，`output` 选择 stdout/stderr，与 `versionPrefix` 做 CRLF/LF 归一后的前缀比较；非零退出或被选输出截断均失败。旧资料缺省仍是 `-version`/stdout，不执行 shell 或安装脚本。参数最多 16 项，每项 1024 字符、禁 NUL；前缀最多 512 字符，整个定义默认 UTF-8 序列化后最多 48 KiB，给 64 KiB receipt 的工具哈希留足空间。
+
+成功才写 receipt 并原子移动目录。receipt v2 保存完整安装定义及下载/工具哈希，因此索引下架或失效后仍可复用并清理已安装包；旧 v1 在仍有对应源定义时升级，无法恢复的记录保留文件并报错。取得租约重新校验文件；损坏包可经确认重新安装，禁止运行中替换，修复使用当前可信源地址。网络/整体超时显示失败，取消可重试；修复会移除损坏副本，失败不冒充恢复成功。现阶段固定版本和安装记录已有确定性，不再维护一份重复的锁文件；语言依赖的间接解析另见后续 Python 计划。
 
 事务暂存在 `Packages/.work/<GUID>`，归属标记最后删除。宿主持有数据根实例锁，启动时仅清理带精确标记的遗留事务，不扫描删除用户其他目录。共享服务在退出时封闭新操作并取消/等待已有操作。每个插件得到限定清单依赖的 PackageScope；插件持有租约至进程和输出结束，插件清理完成后回收遗忘的租约。占用期间拒绝移除；不同版本可并存。
 

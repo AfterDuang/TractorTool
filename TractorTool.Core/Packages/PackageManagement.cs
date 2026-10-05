@@ -13,7 +13,11 @@ public sealed partial class ExternalPackageService
 {
     private readonly string _rid;
     private PackageReferenceSnapshot _references = new([], false, "正在读取插件依赖。");
-    public string SourceError { get; private set; } = "";
+    public string SourceError
+    {
+        get { lock (_gate) return string.Join("\n", new[] { _sourceError, _refreshError }.Where(s => s.Length != 0)); }
+        private set { _sourceError = value; }
+    }
     public Func<PackageInstallPrompt, CancellationToken, Task<bool>>? ConfirmInstallAsync { get; set; }
 
     public void UpdateReferences(PackageReferenceSnapshot snapshot)
@@ -64,6 +68,7 @@ public sealed partial class ExternalPackageService
     public async Task<IPackageLease?> TryRequestAsync(PackageReference package, string owner, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
+        await EnsureSourceAsync(package, token).ConfigureAwait(false);
         Entry e; Task<bool> prepare;
         lock (_gate)
         {
@@ -86,6 +91,7 @@ public sealed partial class ExternalPackageService
     }
     private Task<bool> StartPreparation(Entry e, string owner)
     {
+        var definition = e.SourceDefinition;
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _operations.Add(completion.Task);
         _ = Task.Run(async () =>
@@ -94,14 +100,14 @@ public sealed partial class ExternalPackageService
             var accepted = false;
             try
             {
-                if (!e.SourceAvailable) throw new NotSupportedException("可信安装源暂未提供此包版本。");
+                if (definition is null) throw new NotSupportedException("可信安装源暂未提供此包版本。");
                 var confirm = ConfirmInstallAsync ?? throw new InvalidOperationException("宿主暂时无法确认依赖安装。");
-                if (!await confirm(new(e.SourceDefinition!, owner, e.HasFiles), _stopping.Token).ConfigureAwait(false))
+                if (!await confirm(new(definition, owner, e.HasFiles), _stopping.Token).ConfigureAwait(false))
                     return;
                 _stopping.Token.ThrowIfCancellationRequested();
                 // Every requester may have left while the confirmation dialog was visible.
                 lock (_gate) if (e.Requests == 0) throw new OperationCanceledException("依赖申请已取消。");
-                await InstallAsync(e.Definition.Package, _stopping.Token, repair: true).ConfigureAwait(false);
+                await InstallAsync(e.Definition.Package, _stopping.Token, repair: true, definition).ConfigureAwait(false);
                 accepted = true;
             }
             catch (Exception ex) { failure = ex; }

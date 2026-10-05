@@ -4,18 +4,30 @@ using TractorTool.Core.Storage;
 
 namespace TractorTool.Core.Packages;
 
-public sealed record PackageTool(string Path, string VersionPrefix);
+public sealed record PackageTool(string Path, string VersionPrefix,
+    IReadOnlyList<string>? Arguments = null, string Output = "stdout");
 public sealed record PackageDefinition(PackageReference Package, string Rid, string Name, string Description,
     Uri DownloadUri, string Sha256, string License, Uri SourceUri, IReadOnlyDictionary<string, PackageTool> Tools);
 
 public static class PackageCatalog
 {
+    internal const int MaxBytes = 1024 * 1024;
     // The source index is maintained and distributed by the host, independently of compiled code.
     public static IReadOnlyList<PackageDefinition> Load(string path)
     {
         PackageFiles.CheckPath(path);
-        if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("依赖源索引超过大小限制。");
-        var index = JsonSerializer.Deserialize<SourceIndex>(File.ReadAllText(path), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        using var file = File.OpenRead(path);
+        if (file.Length > MaxBytes) throw new InvalidDataException("依赖源索引超过大小限制。");
+        var bytes = new byte[checked((int)file.Length)];
+        file.ReadExactly(bytes);
+        return Parse(bytes);
+    }
+
+    internal static IReadOnlyList<PackageDefinition> Parse(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length > MaxBytes) throw new InvalidDataException("依赖源索引超过大小限制。");
+        if (bytes.StartsWith(new byte[] { 0xEF, 0xBB, 0xBF })) bytes = bytes[3..];
+        var index = JsonSerializer.Deserialize<SourceIndex>(bytes, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         if (index is null || index.SchemaVersion != 1 || index.Packages is null || index.Packages.Length > 1000)
             throw new InvalidDataException("依赖源索引格式不支持。");
         var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -25,7 +37,15 @@ public static class PackageCatalog
             if (!keys.Add($"{definition.Package.Id}/{definition.Package.Version}/{definition.Rid}"))
                 throw new InvalidDataException("依赖源中存在重复包版本。");
         }
-        return index.Packages;
+        return index.Packages.Select(Snapshot).ToArray();
+    }
+
+    internal static PackageDefinition Snapshot(PackageDefinition definition)
+    {
+        Validate(definition);
+        return definition with { Tools = new System.Collections.ObjectModel.ReadOnlyDictionary<string, PackageTool>(
+            definition.Tools.ToDictionary(p => p.Key, p => p.Value with
+            { Arguments = p.Value.Arguments is { } args ? Array.AsReadOnly(args.ToArray()) : null })) };
     }
 
     internal static void Validate(PackageDefinition d)
@@ -39,9 +59,15 @@ public static class PackageCatalog
         foreach (var (name, tool) in d.Tools)
         {
             AppPaths.ValidateId(name);
-            if (tool is null || string.IsNullOrWhiteSpace(tool.VersionPrefix)) throw new InvalidDataException("工具验证信息无效。");
+            if (tool is null || string.IsNullOrWhiteSpace(tool.VersionPrefix) || tool.VersionPrefix.Length > 512 ||
+                tool.Output is not ("stdout" or "stderr") || tool.Arguments is { Count: > 16 } ||
+                tool.Arguments?.Any(a => a is null || a.Length > 1024 || a.Contains('\0')) == true)
+                throw new InvalidDataException("工具验证信息无效。");
             _ = PackageFiles.RelativeParts(tool.Path);
         }
+        // Receipts are capped at 64 KiB; reserve room for up to 32 tool hashes and their keys.
+        if (JsonSerializer.SerializeToUtf8Bytes(d).Length > 48 * 1024)
+            throw new InvalidDataException("依赖包定义过大，无法保存完整安装记录。");
     }
 
     private sealed record SourceIndex(int SchemaVersion, PackageDefinition[] Packages);

@@ -25,15 +25,18 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     public event Action? Changed;
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
-        IEnumerable<PackageDefinition>? definitions = null)
+        IEnumerable<PackageDefinition>? definitions = null, Uri? sourceUri = null, string? sourceCacheDirectory = null)
     {
         _root = AppPaths.Absolute(root); PackageFiles.CheckPath(_root);
         _http = http; _processes = processes; _log = log;
         _rid = rid;
-        var source = (definitions ?? LoadSource()).ToArray();
-        foreach (var definition in source) PackageCatalog.Validate(definition);
-        var catalog = (source).Where(d => d.Rid == rid)
-            .Select(d => d with { Tools = new ReadOnlyDictionary<string, PackageTool>(new Dictionary<string, PackageTool>(d.Tools)) }).ToArray();
+        _sourceUri = sourceUri ?? (definitions is null ? LoadSourceUri() : null);
+        if (_sourceUri is not null) ValidateSourceUri(_sourceUri);
+        _sourceCacheFile = _sourceUri is null ? null : Path.Combine(
+            AppPaths.Absolute(sourceCacheDirectory ?? Path.Combine(_root, ".source")),
+            Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_sourceUri.AbsoluteUri))) + ".json");
+        _bundledSource = (definitions ?? LoadSource()).Select(PackageCatalog.Snapshot).ToArray();
+        var catalog = LoadInitialSource().Where(d => d.Rid == rid).ToArray();
         _entries = [];
         foreach (var d in catalog)
         {
@@ -65,10 +68,14 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     }
 
     // Caller cancellation only cancels waiting. Explicit CancelInstall cancels the shared transfer for all waiters.
-    public Task InstallAsync(PackageReference package, CancellationToken cancellationToken = default)
-        => InstallAsync(package, cancellationToken, repair: false);
+    public async Task InstallAsync(PackageReference package, CancellationToken cancellationToken = default)
+    {
+        await EnsureSourceAsync(package, cancellationToken).ConfigureAwait(false);
+        await InstallAsync(package, cancellationToken, repair: false).ConfigureAwait(false);
+    }
 
-    private Task InstallAsync(PackageReference package, CancellationToken cancellationToken, bool repair)
+    private Task InstallAsync(PackageReference package, CancellationToken cancellationToken, bool repair,
+        PackageDefinition? approvedDefinition = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Task task;
@@ -76,7 +83,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         {
             EnsureRunning(); var e = Find(package);
             if (e.Phase == PackagePhase.Ready && e.Operation is null) return Task.CompletedTask;
-            if (!e.SourceAvailable) throw new NotSupportedException("可信安装源暂未提供此包版本。");
+            var definition = approvedDefinition ?? e.SourceDefinition ?? throw new NotSupportedException("可信安装源暂未提供此包版本。");
             if (e.Operation is null)
             {
                 if (e.Users.Count != 0) throw new InvalidOperationException("工具仍被使用，不能重新安装。");
@@ -86,7 +93,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 {
                     _log.Write("Packages", $"{package.Id} {package.Version}：开始下载并安装依赖。");
                     if (repair && e.HasFiles) RemoveFiles(e);
-                    lock (_gate) e.Definition = e.SourceDefinition!;
+                    lock (_gate) e.Definition = definition;
                     await InstallCoreAsync(e, e.InstallCancellation.Token).ConfigureAwait(false);
                 }, e);
             }
@@ -256,8 +263,12 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             {
                 var path = PackageFiles.SafePath(staging, tool.Path);
                 if (!File.Exists(path)) throw new InvalidDataException($"工具包缺少 {name}。");
-                var result = await _processes.RunAsync(new(path, ["-version"]) { Timeout = TimeSpan.FromSeconds(15), OutputLimit = 16384 }, token);
-                if (result.ExitCode != 0 || result.StandardOutputTruncated || !result.StandardOutput.StartsWith(tool.VersionPrefix, StringComparison.Ordinal))
+                // Missing arguments retain compatibility with existing catalogs and installed receipts.
+                var result = await _processes.RunAsync(new(path, tool.Arguments ?? ["-version"]) { Timeout = TimeSpan.FromSeconds(15), OutputLimit = 16384 }, token);
+                var output = tool.Output == "stderr" ? result.StandardError : result.StandardOutput;
+                var truncated = tool.Output == "stderr" ? result.StandardErrorTruncated : result.StandardOutputTruncated;
+                if (result.ExitCode != 0 || truncated || !output.Replace("\r\n", "\n").StartsWith(
+                    tool.VersionPrefix.Replace("\r\n", "\n"), StringComparison.Ordinal))
                     throw new InvalidDataException($"{name} 版本检查失败。");
                 hashes[name] = await HashAsync(path, token);
             }

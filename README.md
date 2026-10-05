@@ -34,7 +34,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 | 能力 | 使用方式 |
 | --- | --- |
 | 插件管理 | 拖入或选择本地 ZIP 安装、更新，支持启停和卸载；变更在退出并重启后生效 |
-| 外部依赖 | 插件声明需求，软件从维护的可信源查找；缺失时确认下载，已安装时复用 |
+| 外部依赖 | 插件声明需求，软件从维护的可信源查找；支持远程索引与缓存，缺失时确认下载、已安装时复用。正式远程地址尚待配置，当前默认使用内置目录 |
 | 后台任务 | 切换页面、隐藏到托盘后继续；在“日志 → 任务进度”查看状态与取消 |
 | 运行记录 | INFO / WARNING / ERROR 分级高亮，搜索筛选、底部跟随、未读错误提醒 |
 | 外观与设置 | 浅色、深色、跟随系统和主题色；软件设置与插件设置分开组织 |
@@ -150,7 +150,7 @@ $compiler = ./scripts/Get-InnoCompiler.ps1 -Output ./artifacts/local-inno
 
 ## 后续方向
 
-近期工作集中在安装与升级恢复、真实媒体/GPU 和任务生命周期验收，以及 GitHub Release 流程。Python / pip 依赖与本地 AI 插件支持属于[后续计划](Docs/ARCHITECTURE.md#python-dependencies)，尚未实现；业务仍由插件承担。
+近期工作集中在可信依赖索引部署与第二工具验收、安装与升级恢复、真实媒体/GPU 和任务生命周期验收，以及 GitHub Release 流程。安装源维护和 MediaInfo 测试插件入口见[插件开发规范](Docs/PLUGIN_DEVELOPMENT.md#package-source-maintenance)。Python / pip 依赖与本地 AI 插件支持属于[后续计划](Docs/ARCHITECTURE.md#python-dependencies)，尚未实现；业务仍由插件承担。
 
 ## 许可与致谢
 

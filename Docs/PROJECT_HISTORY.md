@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（外部依赖通用化） | [E56 · 可信索引刷新与第二工具接入（2026-10-05）](#evidence-package-sources) |
 | 维护（导航页面回收） | [E55 · 公共导航内存修复与隔离回归（2026-10-05）](#evidence-navigation-memory-fix) |
 | 调查（发布版内存） | [E54 · 内存计数与导航事件持有路径（2026-10-05）](#evidence-memory-investigation) |
 | 维护（标题栏图文） | [E53 · 轻量标题栏标识（2026-10-05）](#evidence-titlebar-branding) |
@@ -1772,3 +1773,33 @@ dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll 
 - 子代理 `memory_fix_review` 明确使用 gpt-6.1-sol / high，只读检查根因、所有调用入口、原生动画释放、取消/错误所有权、SDK 边界及多余代码；未发现可确认的 P0–P2 缺陷。保留两个兼容工厂方法有已发布 ABI 依据，不新增业务框架。
 
 本轮未执行全量检查、正式插件真实加载、Windows UI/图片预览、FFmpeg 或发布进程新计数；未覆盖正在使用的发布目录。用户下一步重新发布并重复原操作比较长期趋势，不能由弱引用测试推断所有本机/GPU/剪贴板内存均无增长。文档、协议说明、当前验收和交接同步更新；其余 M5/真实运行缺口继续保留。
+
+<a id="evidence-package-sources"></a>
+
+## E56：可信索引刷新与第二工具接入（2026-10-05）
+
+用户在 pip/npm 机制讨论后授权：复用现有包服务，增加独立更新的可信索引、通用版本验证、第二真实工具测试插件，完成子代理 Review 和文档；实际运行测试继续由用户接手。未扩展 Python、公开商店、用户添加源或安装脚本系统，未配置 Git 远程或推送。
+
+实现：
+
+- PackageSources/source.json 随宿主分发，indexUri 默认 null，明确尚无正式源地址；配置后只在申请无本地可用来源时或手动按钮刷新，启动仅读缓存。HTTPS 同站点、15秒/1MiB上限；整份校验后原子缓存到 DataRoot/Cache/PackageSources，文件按源URL哈希隔离。远程叠加内置兜底，错误保留有效状态；同 ID/版本/RID 不允许改变归档哈希或身份大小写。
+- 共享刷新纳入原有退出登记；单调用者取消等待不取消其他等待者。已装定义与运行租约独立于源更新；确认展示时捕获定义，批准后按该快照下载，避免刷新改变用户已批准来源。
+- PackageTool 增加可选 arguments、stdout/stderr 选择，旧定义缺省仍为 -version/stdout；输出与前缀统一 CRLF/LF。参数向量直接传原有进程服务，无 shell。整份定义最大48KiB，为64KiB receipt预留工具哈希空间。Contracts/API和插件依赖清单保持不变。
+- 外部依赖列表增加刷新按钮与源状态；未配置禁用并说明。Verify-Distribution 要求 source.json 存在。生产内置仍只有 FFmpeg，第二工具资料和消费方保留在 tests。
+- 新增 tests/PackageProbePlugin（Test.PackageProbe 1.0.0）和 tests/PackageSources/mediainfo.json。插件仅点击时申请 MediaInfo 并读取 --Version，持有租约至执行结束，拒绝/取消正常处理；无业务媒体读取，页面切换不取消模型操作。
+
+第二工具静态证据：
+
+- 上游 MediaInfo CLI 26.05，包管理版本26.5.0；[官方 Windows 下载页](https://mediaarea.net/en/MediaInfo/Download/Windows)、[固定官方 ZIP](https://mediaarea.net/download/binary/mediainfo/26.05/MediaInfo_CLI_26.05_Windows_x64.zip)。下载文件4,136,659字节，计算 SHA256 `f7f80620ce6d14f4995f0de6f98e3ef18ad29496db01899571152ee3311229f9`；这是本地计算值，不宣称上游独立签名/校验文件。
+- 归档根部 MediaInfo.exe / LIBCURL.DLL / LICENSE / License.html，静态 PE Machine=0x8664，主许可 BSD-2-Clause。--Version 参数及两行输出由上游 v26.05 CLI/Lib 源码确认；未运行二进制验证输出。
+- 以现存 `artifacts/local-publish-20261005-172429-36f064/distribution/layout/TractorTool-0.1.0-win-x64` 公开 SDK 独立 Build-Plugin，最终0警告/0错误；初稿打包静态核验原宿主313文件哈希未变。最终 ZIP `artifacts/dependency-probe-mediainfo/package-final/Test.PackageProbe-1.0.0.zip`，SHA256 `fea2995e7bf4f82bd173cc7f63c9322633f525011064cba83e30b98377b0df9e`，包含私有Toolkit/许可，无共享SDK或MediaInfo工具；真实加载未执行。
+
+构建与 Review：
+
+- 普通 Debug 构建先受沙盒内 Avalonia buildtasks.log 写权限限制；正常权限重试又遇 Debug obj/TractorTool.dll 被其他进程占用。未结束用户进程或删除输出，改用隔离 artifacts 路径。
+- 最终 `dotnet build TractorTool.slnx -c Release --artifacts-path artifacts/dependency-source-build -m:1 -nr:false -v:minimal`：13工程全部通过，0警告/0错误。覆盖宿主、两个正式插件、独立测试插件和检查工程的编译，不是运行证据。
+- PackageChecks 新增共享刷新/取消/退出、按需发现、内置兜底、缓存及源隔离、坏索引/过大/大小写冲突/HTTPS身份、已装离线复用/哈希不变、批准快照、验证参数/通道/换行和48KiB记录边界用例；只编译未运行。
+- 文档相对文件链接 251 个、4 个 XML（含 AXAML/工程/解决方案）、3 个 JSON 及 Verify-Distribution 的 PowerShell 语法静态检查通过；本轮改动 diff --check 通过。文档链接检查不包含网页可达性或标题锚点解析。
+- 子代理显式 gpt-6.1-sol / high 审查：发现合法大定义可能写出超过64KiB的receipt、安装后不可读的P2；在源校验阶段加入48KiB预算，并补超预算拒绝及恰好48KiB可安装/租用用例。子代理复核该P2已关闭，其余所查取消/缓存/确认/占用/测试插件/分发路径未发现可确认P1/P2；不把静态审查视作运行通过。
+
+未完成：正式 HTTPS 索引尚未部署（配置仍为 null），远程实际更新/故障恢复、MediaInfo安装及输出、独立插件加载、界面窄窗/按钮反馈和卸载清理闭环待用户验收。没有启动应用、运行检查程序、执行 FFmpeg/MediaInfo 或操作真实配置/媒体/剪贴板。保留既有E55内存复测、媒体/GPU、迁移/安装器与Release缺口；本轮未重打完整分发或运行安装器。

@@ -102,7 +102,7 @@ RunAsync 在后台线程调用业务回调，回调通过 IProgress 报告百分
 
 插件在用户使用功能时调用 `TryRequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。用户选择“先不安装”正常返回 `null`，插件保留输入并结束本次操作，不作为异常；调用方 token 取消仍抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`。旧 API 1.3 `RequestAsync` 的签名与拒绝时抛取消异常的语义保持兼容，新插件使用 1.4。失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
 
-清单只声明包 ID 与固定版本，不传入下载 URL、哈希或安装脚本。不在初始化中取得长期租约或自动下载。源缺失不使插件整体不兼容；需要依赖的操作不可继续，但其他页面仍可用。软件维护的索引为 `PackageSources/default.json`，当前提供 FFmpeg 9.0.2 / win-x64，尚无远程索引刷新和自定义源。
+清单只声明包 ID 与固定版本，不传入下载 URL、哈希或安装脚本。不在初始化中取得长期租约或自动下载。源缺失不使插件整体不兼容；需要依赖的操作不可继续，但其他页面仍可用。软件维护的内置索引为 `PackageSources/default.json`，当前提供 FFmpeg 9.0.2 / win-x64；配置可信远程索引后由宿主按需查询或设置手动刷新，插件 API 不变。尚无正式远程地址或用户自定义源，具体维护流程见下节。
 
 通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
 
@@ -117,6 +117,24 @@ var result = await context.Processes!.RunAsync(
 ```
 
 不能缓存租约外的工具路径再启动进程，不能在进程/输出读取仍活跃时释放租约。页面切换不应释放后台任务拥有的租约。宿主按插件生命周期收回遗漏租约，但这不替代正确的 using/取消逻辑。并发申请合并确认与安装；取消自己的等待不取消其他插件的下载。原 `AcquireAsync` 保持只获取已安装包的语义。禁用插件仍保留依赖引用，卸载重启后才解除，包文件不会联动删除。存储/事务边界见 [包管理](ARCHITECTURE.md#41-包管理)。
+
+<a id="package-source-maintenance"></a>
+
+### 安装源维护与隔离验证
+
+源维护者负责提供 [default.json](../TractorTool.Core/Packages/default.json) 相同结构的 `schemaVersion: 1` 索引，使用固定上游版本、HTTPS 下载地址、实际归档 SHA256、平台、许可及工具相对路径。工具可声明 `arguments` 和 `output`（stdout/stderr）；字段和限制以 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 为准。SHA256 由取得的可信归档计算，不代表上游签名。仅收录可信的便携 ZIP 工具，不在资料中执行任意安装脚本。
+
+将审核后的索引托管到软件维护者控制的 HTTPS 地址，再在软件分发配置 [source.json](../TractorTool.Core/Packages/source.json) 中设置 `indexUri`；配置随宿主复制到 `PackageSources/source.json`，启动时读取。当前值为 null，发布者尚未配置远程仓库，不能把占位 URL 当作正式源。索引地址确定后，新增包或新版本只更新该索引即可，无需修改/重编宿主；原 ID/版本/RID 的归档内容改变必须发新版本。源不可达时保留缓存，已装包可离线使用；同一索引中未出现的包不会自动成为用户需求。
+
+[PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 是非 FFmpeg 独立消费方，只申请 MediaInfo 并执行只读 `--Version`。其依赖管理版本为 `26.5.0`，对应上游 `26.05`；资料见 [mediainfo.json](../tests/PackageSources/mediainfo.json)。该测试插件不进入正式分发，不修改视频插件的媒体读取实现。
+
+运行验收由用户执行，使用新发布副本和新 `--profile-root`，不得使用日常安装或真实数据目录：
+
+1. 按第 6 节发布宿主，使用 `Build-Plugin.ps1 -Project ./tests/PackageProbePlugin/PackageProbePlugin.csproj -HostSdkDir <发布宿主目录> -Output <新空目录>` 独立打包并安装测试插件。
+2. 远程链路：把测试索引发布到维护者控制的测试 HTTPS 地址，在这个测试副本的 `PackageSources/source.json` 填地址后启动；测试包不写入内置目录，点击测试插件按钮验证按需发现、首次确认、下载和版本检查。测试配置修改不代表原分发文件清单仍匹配；只核对宿主二进制未变，不把该副本重新当正式包发布。
+3. 尚无 HTTPS 测试地址时，可只在测试副本的 `default.json` 合并 MediaInfo 条目以人工验证第二工具；这只能证明安装/调用通用性，不能替代远程链路验收。
+4. 验证拒绝后重试、再次使用不下载、刷新失败/坏索引保留旧缓存、退出/重启离线复用；卸载测试插件并重启，依赖仍保留，未引用且无租约才可清理。
+5. [PackageChecks](../tests/TractorTool.Checks/PackageChecks.cs) 的替身用例覆盖索引并发/缓存/校验/确认快照和安装记录预算；构建通过不等于这些用例已执行，也不等于真实网络/MediaInfo 已通过。
 
 ## 5. 统一 UI 与设置
 

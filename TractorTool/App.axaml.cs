@@ -179,7 +179,8 @@ public partial class App : Application
         _packageHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         _packageProcesses = new ProcessRunner("Packages", _log, OperatingSystem.IsWindows() ? StartWindowsProcess :
             _ => throw new PlatformNotSupportedException("当前平台尚未提供受管理的工具进程适配器。"));
-        _packages = new ExternalPackageService(paths.PackageRoot, compatibility.Rid, _packageHttp, _packageProcesses, _log);
+        _packages = new ExternalPackageService(paths.PackageRoot, compatibility.Rid, _packageHttp, _packageProcesses, _log,
+            sourceCacheDirectory: Path.Combine(paths.DataRoot, "Cache", "PackageSources"));
         _plugins = new PluginHost(paths, compatibility, _log,
             OperatingSystem.IsWindows() ? StartWindowsProcess : null, _packages, _tasks);
         if (managementError is not null) _plugins.Discover([], startupError: managementError);

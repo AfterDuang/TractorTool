@@ -67,7 +67,7 @@ try {
         $listed[$item.path] = $item.sha256
     }
     if ($entries.Count -ne $listed.Count + 1 -or $listed.ContainsKey('files.json')) { throw 'ZIP 存在清单外文件。' }
-    foreach ($required in @('TractorTool.exe', 'TractorTool.dll', 'TractorTool.Contracts.dll', 'TractorTool.UI.dll', 'THIRD-PARTY-NOTICES.md', 'Licenses/dependencies.json', 'PackageSources/default.json')) {
+    foreach ($required in @('TractorTool.exe', 'TractorTool.dll', 'TractorTool.Contracts.dll', 'TractorTool.UI.dll', 'THIRD-PARTY-NOTICES.md', 'Licenses/dependencies.json', 'PackageSources/default.json', 'PackageSources/source.json')) {
         if (!$listed.ContainsKey($required)) { throw "缺少分发文件：$required" }
     }
     if ((Get-ZipHash $entries['release.json']) -ne $checksums['release.json']) { throw '内外发布元数据不一致。' }

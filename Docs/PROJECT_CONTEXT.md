@@ -6,7 +6,9 @@
 
 **处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 标题栏布局最近改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
-最新修复为 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix)：移除公共 PageHost 内部 FAFrame 的窗口事件持有路径，改用原生 Border/Transitions，保留同步取消及异常恢复。宿主/集成检查 Release 构建通过；本次用户单独授权的隔离导航检查 10/10 通过，动画开/关各 40 轮、320 个旧对象全部可回收。旧发布 UI DLL 对照仍保留 124/160 个对象。子代理 Review 结论及精确证据见 E55。真实发布版长期切页/图片内存趋势待用户重新打包复测，未操作当前进程、剪贴板或用户数据；不把这次授权延伸为常态自动测试。
+最新改动为 [E56](PROJECT_HISTORY.md#evidence-package-sources)：包服务增加可信 HTTPS 索引按需/手动刷新、源隔离缓存/内置兜底和可配置工具版本验证；插件清单/API 不变，保留首次确认/已装复用/引用租约保护。source.json 默认 indexUri=null，尚未部署正式远程源。MediaInfo CLI 26.05（管理版本26.5.0）的独立测试插件和测试源已准备，只做官方 ZIP 静态核对、独立打包与全解决方案 Release 构建（0警告/0错误）。子代理 Review 的 receipt 容量 P2 已修复并复核；新增回归、真实网络/MediaInfo/插件加载均未执行，用户接手运行测试的约定不变。
+
+[E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 公共导航页面回收修复仍待用户复测真实发布版长期切页/图片内存曲线。当时单独授权的隔离检查 10/10、320旧对象可回收是该轮证据，不扩展成常态自动测试权限。
 
 [E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。
 
@@ -28,9 +30,10 @@
 | --- | --- |
 | 设置与标题栏 | [SettingsView](../TractorTool/Views/SettingsView.axaml)、[ShellStyles](../TractorTool/Styles/ShellStyles.axaml)、[MainWindow](../TractorTool/Views/MainWindow.axaml) |
 | 启动与维护保护 | [Program](../TractorTool/Program.cs)、[WindowsMaintenance](../TractorTool/Platform/WindowsMaintenance.cs)、[App](../TractorTool/App.axaml.cs) |
+| 外部依赖索引 | [PackageSources](../TractorTool.Core/Packages/PackageSources.cs)、[PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs)、[ExternalToolsViewModel](../TractorTool/ViewModels/ExternalToolsViewModel.cs)、[独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs)；维护/验收步骤见[插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
 | 迁移与回退 | [DataRootMigration](../TractorTool.Core/Storage/DataRootMigration.cs)、[PluginManager](../TractorTool.Core/Plugins/PluginManager.cs)、[DataMigrationViewModel](../TractorTool/ViewModels/DataMigrationViewModel.cs) |
 | 分发与安装 | [Build-Distribution](../scripts/Build-Distribution.ps1)、[Build-Installer](../scripts/Build-Installer.ps1)、[安装脚本](../packaging/TractorTool.iss)、[Verify-Distribution](../scripts/Verify-Distribution.ps1)、[CI](../.github/workflows/distribution.yml) |
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一步由用户重新发布后复测 **E55 导航修复** 的真实内存曲线及切页视觉效果；随后继续 **M5 GitHub Release 发布流程**。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；其余运行缺口保持待验。不得添加定时强制 GC 或反射清空第三方私有事件来掩盖资源持有。
+下一步确定软件维护的 HTTPS 索引地址，并由用户验收 **E56 远程源/MediaInfo**；真实地址未确定前保留 null，不填占位源冒充完成。继续复测 **E55 导航修复** 的内存曲线及视觉效果，然后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。

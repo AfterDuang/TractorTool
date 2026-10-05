@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    {
+      "package": { "id": "MediaInfo", "version": "26.5.0" },
+      "rid": "win-x64",
+      "name": "MediaInfo CLI",
+      "description": "上游 26.05（管理版本 26.5.0）；独立测试插件仅检查版本。",
+      "downloadUri": "https://mediaarea.net/download/binary/mediainfo/26.05/MediaInfo_CLI_26.05_Windows_x64.zip",
+      "sha256": "f7f80620ce6d14f4995f0de6f98e3ef18ad29496db01899571152ee3311229f9",
+      "license": "BSD-2-Clause",
+      "sourceUri": "https://mediaarea.net/en/MediaInfo/Download/Windows",
+      "tools": {
+        "mediainfo": {
+          "path": "MediaInfo.exe",
+          "versionPrefix": "MediaInfo Command line, \nMediaInfoLib - v26.05",
+          "arguments": ["--Version"],
+          "output": "stdout"
+        }
+      }
+    }
+  ]
+}

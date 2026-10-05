@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "Test.PackageProbe",
+  "name": "外部依赖测试插件",
+  "version": "1.0.0",
+  "entryAssembly": "PackageProbePlugin.dll",
+  "entryType": "PackageProbePlugin.ProbePlugin",
+  "apiVersion": "1.7",
+  "uiApiVersion": "1.1",
+  "avaloniaVersion": "12.1.2",
+  "supportedPlatforms": ["win-x64"],
+  "dependencies": [{ "id": "MediaInfo", "version": "26.5.0" }],
+  "description": "按需申请真实 MediaInfo CLI，验证公开包租约及进程接口；仅供隔离测试。"
+}

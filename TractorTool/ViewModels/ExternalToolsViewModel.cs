@@ -15,13 +15,16 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     private bool _disposed;
     private bool _cleaning;
     private string _status = "";
+    private string _refreshError = "";
     private Func<string, string, CancellationToken, Task<bool>>? _confirm;
     public ObservableCollection<PackageCardViewModel> Cards { get; } = [];
     public bool IsEmpty => Cards.Count == 0;
     public string Summary => $"{Cards.Count(c => c.IsInstalled)} 个已安装 · {Cards.Count(c => c.CanRemove)} 个可清理";
-    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status }.Where(s => !string.IsNullOrEmpty(s)));
+    public string SourceStatus => _service?.SourceStatus ?? "外部依赖服务不可用。";
+    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status, _refreshError }.Where(s => !string.IsNullOrEmpty(s)));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }
+    public IAsyncRelayCommand RefreshSourceCommand { get; }
     public IRelayCommand<PackageCardViewModel> OpenCommand { get; }
 
     public ExternalToolsViewModel(ExternalPackageService? service, Action<PackageCardViewModel> open)
@@ -29,6 +32,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         _service = service;
         OpenCommand = new RelayCommand<PackageCardViewModel>(card => { if (!_disposed && card is not null) open(card); });
         CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && Cards.Any(c => c.CanRemove));
+        RefreshSourceCommand = new AsyncRelayCommand(RefreshSourceAsync, CanRefreshSource);
         if (service is not null) service.Changed += OnChanged;
         Refresh();
     }
@@ -57,7 +61,18 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             if (card is null) Cards.Add(new(_service!, snapshot, _stopping.Token));
             else card.Refresh(snapshot);
         }
-        OnPropertyChanged(string.Empty); CleanCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(string.Empty);
+        CleanCommand.NotifyCanExecuteChanged(); RefreshSourceCommand.NotifyCanExecuteChanged();
+    }
+    private bool CanRefreshSource() => !_disposed && _service is { CanRefreshSource: true, IsRefreshingSource: false };
+    private async Task RefreshSourceAsync()
+    {
+        if (!CanRefreshSource()) return;
+        _refreshError = ""; Refresh();
+        try { await _service!.RefreshSourceAsync(_stopping.Token); }
+        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
+        catch (Exception ex) { _refreshError = "安装源刷新失败：" + ex.Message; }
+        finally { if (!_disposed) Refresh(); }
     }
     private async Task CleanAsync()
     {
@@ -90,7 +105,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         if (_service is not null) _service.Changed -= OnChanged;
         _stopping.Cancel();
         foreach (var card in Cards) card.RefreshStopped();
-        CleanCommand.NotifyCanExecuteChanged();
+        CleanCommand.NotifyCanExecuteChanged(); RefreshSourceCommand.NotifyCanExecuteChanged();
     }
 }
 
