@@ -112,7 +112,8 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         try
         {
             await Task.Run(() => { if (remove is null) _service.AddSource(name, address); else _service.RemoveSource(remove); });
-            if (remove is null) { SourceName = ""; SourceAddress = ""; ShowSourceForm = false; }
+            if (remove is null && SourceName == name && SourceAddress == address)
+            { SourceName = ""; SourceAddress = ""; ShowSourceForm = false; }
         }
         catch (Exception ex) { _status = "依赖来源未保存：" + ex.Message; }
         finally { _savingSource = false; if (!_disposed) Refresh(); }

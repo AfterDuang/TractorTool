@@ -13,11 +13,11 @@ public sealed record PackageInstallPrompt(PackageDefinition Definition, string R
 public sealed partial class ExternalPackageService
 {
     private readonly string _rid;
-    private readonly Dictionary<PackageReference, (string Directory, Receipt Receipt)> _legacyReceipts = [];
+    private readonly Dictionary<PackageReference, Receipt?> _pendingReceipts = [];
     private PackageReferenceSnapshot _references = new([], false, "正在读取插件依赖。");
     public string SourceError
     {
-        get { lock (_gate) return string.Join("\n", new[] { _sourceError, _settingsError, _legacyReceipts.Count == 0 ? "" : "旧安装记录缺少资料，需对应插件提供下载声明；文件已保留。" }.Where(s => s.Length != 0)); }
+        get { lock (_gate) return string.Join("\n", new[] { _sourceError, _settingsError, _pendingReceipts.Count == 0 ? "" : "部分安装记录缺少有效资料，需对应插件提供一致的下载声明；文件已保留。" }.Where(s => s.Length != 0)); }
         private set { _sourceError = value; }
     }
     public Func<PackageInstallPrompt, CancellationToken, Task<bool>>? ConfirmInstallAsync { get; set; }
@@ -28,7 +28,9 @@ public sealed partial class ExternalPackageService
         {
             _references = snapshot with { Dependencies = snapshot.Dependencies.Select(d => d with
                 { Downloads = d.Downloads?.Select(p => p.Snapshot(d.Package)).ToArray() }).ToArray() };
-            RestoreLegacyReceipts();
+            if (_references.Dependencies.Select(d => d.Package).Any(HasConflictingIdentity))
+                _references = _references with { Complete = false, Error = "依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写；暂不可清理。" };
+            RestoreDeclaredInstallations();
         }
         Notify();
     }
@@ -38,6 +40,11 @@ public sealed partial class ExternalPackageService
         Notify();
     }
     public string ReferenceError { get { lock (_gate) return _references.Complete ? "" : _references.Error; } }
+
+    private bool HasConflictingIdentity(PackageReference package) => OperatingSystem.IsWindows() &&
+        _entries.Keys.Concat(_resolutions.Keys).Concat(_pendingReceipts.Keys).Concat(_references.Dependencies.Select(d => d.Package))
+            .Any(other => other != package && string.Equals(other.Id, package.Id, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(other.Version, package.Version, StringComparison.OrdinalIgnoreCase));
     public IReadOnlyList<PackageListItem> GetPackages()
     {
         lock (_gate)
@@ -153,18 +160,20 @@ public sealed partial class ExternalPackageService
                     {
                         PackageFiles.CheckPath(version);
                         if (!Directory.Exists(directory)) continue;
+                        _pendingReceipts[key] = null;
                         var path = PackageFiles.SafePath(directory, "receipt.json");
                         if (new FileInfo(path).Length > 65536) throw new InvalidDataException("安装记录过大。");
                         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path)) ?? throw new InvalidDataException("安装记录为空。");
+                        _pendingReceipts[key] = receipt;
                         if (receipt.Schema == 1 && receipt.Definition is null && known is null)
-                        { _legacyReceipts[key] = (directory, receipt); continue; }
+                            continue;
                         var definition = receipt.Definition ?? known?.Definition ?? throw new InvalidDataException("旧安装缺少源元数据，已保留文件。");
                         PackageDefinitions.Validate(definition);
                         if (definition.Package != key || definition.Rid != _rid || !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidDataException("安装记录与目录身份不符。");
                         var entry = new Entry(definition, directory) { HasFiles = true,
                             SourceDefinition = string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
-                        _entries[key] = entry;
+                        _entries[key] = entry; _pendingReceipts.Remove(key);
                         try
                         {
                             var verified = ReadReceipt(entry)!;
@@ -177,7 +186,7 @@ public sealed partial class ExternalPackageService
                     catch (Exception ex)
                     {
                         if (known is not null) { known.Phase = PackagePhase.Failed; known.Error = ex.Message; }
-                        SourceError = "部分安装记录无法读取，已保留文件：" + ex.Message; _log.Write("Packages", SourceError, ex);
+                        _log.Write(AppLogLevel.Warning, "Packages", "安装记录无法读取，已保留文件：" + key.Id, ex);
                     }
                 }
             }
@@ -185,23 +194,27 @@ public sealed partial class ExternalPackageService
         catch (Exception ex) { SourceError = "读取依赖安装目录失败：" + ex.Message; _log.Write("Packages", SourceError, ex); }
     }
 
-    private void RestoreLegacyReceipts()
+    private void RestoreDeclaredInstallations()
     {
-        foreach (var (key, legacy) in _legacyReceipts.ToArray())
+        foreach (var key in _references.Dependencies.Select(d => d.Package).Distinct())
         {
             try
             {
+                if (_entries.ContainsKey(key) || HasConflictingIdentity(key)) continue;
                 if (DeclaredDownload(key) is not { } recipe) continue;
+                var directory = Path.Combine(_root, key.Id, key.Version, _rid);
+                PackageFiles.CheckPath(directory);
+                if (!Directory.Exists(directory)) continue;
                 var definition = recipe.Definition(key);
-                if (!string.Equals(definition.Sha256, legacy.Receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase)) continue;
-                if (_entries.TryGetValue(key, out var existing) && (existing.Operation is not null || existing.Preparation is not null)) continue;
-                var entry = new Entry(definition, legacy.Directory) { HasFiles = true };
-                _entries[key] = entry; _legacyReceipts.Remove(key);
+                // A damaged/missing receipt must not hide existing files or bypass repair consent.
+                var entry = new Entry(definition, directory) { HasFiles = true };
+                _entries[key] = entry; _pendingReceipts.Remove(key);
                 try
                 {
                     var receipt = ReadReceipt(entry) ?? throw new InvalidDataException("旧安装目录已不存在。");
                     entry.Phase = PackagePhase.Ready; entry.InstalledBytes = receipt.InstalledBytes;
-                    UpgradeReceipt(legacy.Directory, PackageFiles.SafePath(legacy.Directory, "receipt.json"), receipt with { Schema = 2, Definition = definition });
+                    if (receipt.Schema == 1)
+                        UpgradeReceipt(directory, PackageFiles.SafePath(directory, "receipt.json"), receipt with { Schema = 2, Definition = definition });
                 }
                 catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
             }

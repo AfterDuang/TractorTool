@@ -1,6 +1,10 @@
 #requires -Version 7.4
 # Static artifact checks only: never load assemblies or start the application.
-param([Parameter(Mandatory)][string]$AssetsDir)
+param(
+    [Parameter(Mandatory)][string]$AssetsDir,
+    [string]$ExpectedTag,
+    [string]$ExpectedCommit
+)
 $ErrorActionPreference = 'Stop'
 $root = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AssetsDir)
 $checksums = @{}
@@ -14,6 +18,15 @@ foreach ($line in (Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS'))) {
 $actual = @(Get-ChildItem -LiteralPath $root -File | Where-Object Name -ne 'SHA256SUMS')
 if ($actual.Count -ne $checksums.Count) { throw '产物存在未登记文件。' }
 $release = Get-Content -LiteralPath (Join-Path $root 'release.json') -Raw | ConvertFrom-Json
+if ($ExpectedTag -or $ExpectedCommit) {
+    if ($ExpectedTag -cnotmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' -or
+        $ExpectedTag -cne "v$($release.version)" -or $ExpectedCommit -notmatch '^[a-fA-F0-9]{40}$' -or
+        $release.sourceCommit -ne $ExpectedCommit -or $release.sourceDirty -isnot [bool] -or $release.sourceDirty -or
+        $release.schemaVersion -ne 1 -or $release.product -cne 'TractorTool' -or $release.runtime -cne 'win-x64') {
+        throw 'Release 身份不匹配：标签、构建版本、源码提交必须一致，且构建工作区必须干净。'
+    }
+    if (!$checksums.ContainsKey('installer.json')) { throw 'Release 缺少 Windows 安装器。' }
+}
 if (!$checksums.ContainsKey($release.archive)) { throw '宿主 ZIP 未登记。' }
 if ($checksums.ContainsKey('installer.json') -ne $checksums.ContainsKey("TractorTool-$($release.version)-win-x64-setup.exe")) { throw '安装器与来源记录必须成对提供。' }
 if ($checksums.ContainsKey('installer.json')) {

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（依赖复审与 Release） | [E61 · 恢复保护与发布草稿（2026-10-05）](#evidence-dependency-review-release) |
 | M5（GitHub 依赖） | [E60 · GitHub 来源与简化管理（2026-10-05）](#evidence-github-dependencies) |
 | M5（依赖管理交互） | [E59 · 目录浏览与客户端操作（2026-10-05）](#evidence-dependency-catalog-ui) |
 | M5（依赖测试交付） | [E58 · 本地目录刷新与隔离测试包（2026-10-05）](#evidence-dependency-sandbox) |
@@ -1876,3 +1877,25 @@ Core 与 UI 分别由 gpt-6.1-sol / high 子代理只读 Review。修复其发�
 最终 Core 复核未发现剩余确定问题；UI 的两处 P3（已安装计数、NOTICE）已修。Markdown 文件链接静态扫描 251 项无缺失，新增产物链接后 253 项仍无缺失；本轮 diff 空白检查通过（排除用户已有 launch.json 尾随空白）。
 
 独立打包均复用 Build-Plugin.ps1，以 artifacts/github-sources-e60/host 为 HostSdkDir：视频输出到 video，Test.PackageProbe 输出到 probe，均 0 警告/0 错误。ZIP 静态核对真实 GitHub 清单、NOTICE/许可、SHA256 sidecar 及没有宿主共享 DLL 副本；宿主副本无 PackageSources 目录。视频 ZIP SHA256：633ad7eb6571387cc3d209931a81c61ca00d6aa68d82da9c49730b91bf0b7daa；测试插件 ZIP SHA256：2f701fc22f6fc7a1d383ee8af83fce47c984e485a965cda79dcda27bae8d463e。没有启动或安装产物；本轮没有重打完整分发 ZIP/安装器。
+
+<a id="evidence-dependency-review-release"></a>
+
+## E61：依赖恢复复审与 Release 草稿流程（2026-10-05）
+
+用户反馈界面看着无问题，要求子代理 Review 后继续。按约定分别使用 gpt-6.1-sol / high 复审 Core 和 UI，未启动用户应用、检查程序或外部工具。
+
+- Core 发现真实宿主没有预注入 definitions 时，缺失/坏 JSON/过大/无效 Definition 的 receipt 只记日志，既有目录丢失管理入口，重装又被旧目录阻挡。恢复改为保留目录身份，由实际插件声明补资料；校验失败保持 Failed/HasFiles，拒绝安装仍保留原文件，同意后复用原修复流程。可读取的旧 ArchiveHash 必须保持一致，v2 Definition 同样校验，不能借损坏资料更换同版内容。
+- Windows 的大小写目录规则与 PackageReference 相等语义不同，别名可能被视为无引用的两个包。现在拒绝别名申请，并在引用注册时标记不完整以暂停清理；保留 Contracts ABI，不新增身份抽象或改公共相等语义。pending receipt 只保留必要资料，不再存可推导的目录字段。
+- UI 来源保存只在输入仍等于提交快照时清空/折叠，避免保存期间新输入丢失。删除产品需求中残留的自有 HTTPS 索引/缓存/刷新段。两代理复核修复后未发现剩余确定问题。
+- 复用 distribution.yml 与既有 Build-/Verify-Distribution。新增 v* 标签 push 的独立 draft-release job，只有该 job 有 contents:write；下载同次构建的 artifact、验证 tag/version/commit/干净工作区及安装器后，GitHub CLI --draft --verify-tag 创建草稿。预发布后缀映射 --prerelease；不配置远程、创建标签、推送或执行 gh 发布命令。
+- 发布 Review 指出附件失败可留下部分草稿。采用明确人工恢复路径，不自动删除/clobber：到 Releases 核对，仅删除本次失败草稿后重跑 draft-release job，正式 Release 不覆盖。README 和脚本说明同步操作及限制。
+
+构建：`dotnet build TractorTool.slnx -c Release --nologo -v minimal -m:1 -nr:false` 首次失败（0 警告/1 错误），新增断言误用 Core internal AcquireAsync；改为公开 PackageScope 后，13 工程重建通过（0 警告/0 错误）。没有为检查开放内部接口。未重新生成宿主或插件分发包，E60 的宿主副本不含 E61 修复。
+
+新增 PackageChecks 的坏记录四种输入、拒绝保留/接受修复、旧 hash 冲突及大小写租约保护断言只编译未运行；tests/ReleaseMetadataChecks.ps1 针对干净完整分发的正常/错误标签与提交，只做语法核对未运行。本机 Python 没有 PyYAML，未安装新依赖；workflow 由源码/子代理静态复核，并解析内嵌 PowerShell 语法，不声称 Actions 实跑或完整 YAML 工具验证。
+
+官方只读依据：[GitHub CLI release create](https://cli.github.com/manual/gh_release_create)、[workflow 权限](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#permissions)、[download-artifact](https://github.com/actions/download-artifact)。官方 API 解析 v8 固定为 3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c，未使用浮动 action 标签。第一次受限网络读取失败，获准只读请求后返回该提交。
+
+运行验收、真实安装/修复、CI、草稿创建及上传中断恢复全部未执行。用户笼统界面反馈不关闭 A07/A22；公开发布仍需用户提供远程目标、确认项目自身授权和运行验收。保留用户 .gitignore 与 .vscode/launch.json 修改，不纳入提交。
+
+最终静态核对：两个 PowerShell 文件与 workflow 三段内嵌脚本语法通过；253 个 Markdown 文件链接无缺失；排除用户原有改动后的 git diff --check 通过。Release/UI 复核确认人工恢复说明覆盖剩余问题，未执行 gh 或远程写入。

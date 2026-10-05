@@ -288,6 +288,63 @@ internal static class PackageChecks
             using var lease = await restored.TryRequestAsync(Key, "A");
             Require(lease is not null && restored.GetStatus(Key).Phase == PackagePhase.Ready);
         });
+        foreach (var damage in new[] { "missing", "json", "oversized", "definition" })
+        Test("unreadable receipt stays visible and requires consent to repair: " + damage, async path =>
+        {
+            var bytes = Archive(); using var initial = Client(bytes);
+            await using (var install = Create(path, initial, new Probe())) await install.InstallAsync(Key);
+            var directory = Path.Combine(path, Key.Id, Key.Version, "win-x64");
+            var file = Path.Combine(directory, "receipt.json");
+            if (damage == "missing") File.Delete(file);
+            else if (damage == "json") File.WriteAllText(file, "broken");
+            else if (damage == "oversized") File.WriteAllText(file, new string('x', 65537));
+            else
+            {
+                var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!;
+                json["Definition"]!["Sha256"] = "invalid"; File.WriteAllText(file, json.ToJsonString());
+            }
+            var recipe = Recipe(bytes);
+            using var http = new HttpClient(new Handler((request, _) => Task.FromResult(Response(request,
+                request.RequestUri!.Host == "api.github.com" ? Release(recipe) : bytes))));
+            await using var restored = GitHub(path, http, recipe);
+            Require(restored.GetPackages().Single() is { IsInstalled: true, CanInstall: true, Status.Phase: PackagePhase.Failed });
+            restored.ConfirmInstallAsync = (prompt, _) => { Require(prompt.IsRepair); return Task.FromResult(false); };
+            Require(await restored.TryRequestAsync(Key, "A") is null && File.Exists(Path.Combine(directory, "bin", "tool.exe")));
+            restored.ConfirmInstallAsync = (prompt, _) => { Require(prompt.IsRepair); return Task.FromResult(true); };
+            using var lease = await restored.TryRequestAsync(Key, "A");
+            Require(lease is not null && restored.GetStatus(Key).Phase == PackagePhase.Ready);
+        });
+        Test("damaged definition cannot replace a readable installed archive hash", async path =>
+        {
+            using var initial = Client(Archive());
+            await using (var install = Create(path, initial, new Probe())) await install.InstallAsync(Key);
+            var directory = Path.Combine(path, Key.Id, Key.Version, "win-x64");
+            var file = Path.Combine(directory, "receipt.json");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(file))!;
+            json["Definition"]!["Sha256"] = "invalid"; File.WriteAllText(file, json.ToJsonString());
+            using var offline = new HttpClient(new Handler((_, _) => throw new Exception("Conflict must not access network")));
+            await using var restored = GitHub(path, offline, Recipe(Archive("different.txt")));
+            restored.ConfirmInstallAsync = (_, _) => throw new Exception("Conflict must not ask for replacement");
+            await Throws<InvalidDataException>(async () => { using var ignored = await restored.TryRequestAsync(Key, "A"); });
+            Require(File.Exists(Path.Combine(directory, "bin", "tool.exe")));
+        });
+        Test("Windows case aliases cannot claim or clean the same package directory", async path =>
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            using var http = Client(Archive());
+            await using var service = Create(path, http, new Probe());
+            await service.InstallAsync(Key);
+            using var scope = service.CreateScope("A", [Key], default);
+            using var lease = await scope.AcquireAsync(Key);
+            var alias = Key with { Id = Key.Id.ToLowerInvariant() };
+            Require(alias != Key);
+            service.UpdateReferences(new([new(alias, "B", "B", [Recipe(Archive())])], true));
+            Require(service.ReferenceError.Length != 0 && service.GetPackages().All(p => !p.CanRemove));
+            await Throws<InvalidDataException>(async () => { using var ignored = await service.TryRequestAsync(alias, "B"); });
+            Require(File.Exists(lease.Tools["tool"]));
+            service.UpdateReferences(new([], true));
+            Require(service.ReferenceError.Length == 0 && !service.GetPackages().Single().CanRemove);
+        });
         Test("shutdown cancels GitHub resolution and source edits stop with the service", async path =>
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

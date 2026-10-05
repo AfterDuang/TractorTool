@@ -42,6 +42,11 @@ Build-Distribution 的输出目录结构如下；VS Code 菜单会自动使用�
 - **Output**：输出位置；Build-Distribution、Build-Installer、Get-InnoCompiler 要求目录尚不存在，Publish-Host、Build-Plugin 要求新目录或空目录，不用已有安装目录作为构建输出。
 - **Project / HostSdkDir**：要打包的插件 `.csproj` / 已发布宿主目录。HostSdkDir 中须有公开 SDK DLL，不是仓库源码目录。
 - **AssetsDir / CompilerPath**：已有分发的 `assets` 目录 / Inno Setup 的 `ISCC.exe` 文件路径。
+- **ExpectedTag / ExpectedCommit**：Verify-Distribution 的可选 Release 身份校验；两项须同时提供，要求标签等于 `v` 加构建版本、源码提交相同、工作区干净，且包含安装器。普通本地包校验不要求这两项。
 - 分发使用 PowerShell 7.4+ 和 [global.json](../global.json) 指定的 .NET SDK。宿主版本默认来自 [Directory.Build.props](../Directory.Build.props)，插件版本来自各自 plugin.json；菜单不用每次填写版本。
 
 命令示例集中在 [开发入口](../Docs/DEVELOPMENT.md#workflow) 与 [独立插件打包](../Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。本页只解释脚本，当前实现和验收结果统一看 [开发台账](../Docs/DEVELOPMENT.md#current-status)。
+
+[GitHub 工作流](../.github/workflows/distribution.yml) 的构建 job 只有读取权限；仅 `v*` 标签 push 才进入独立的 Release 写入 job，下载同一次构建产物并调用 Verify-Distribution 后，用 GitHub CLI 创建草稿。使用内置 GITHUB_TOKEN，无需额外发布脚本或 PAT；现有草稿/Release 不自动覆盖。操作及失败恢复见 [Release 草稿](../README.md#github-release-草稿)。
+
+[ReleaseMetadataChecks.ps1](../tests/ReleaseMetadataChecks.ps1) 是只读静态回归入口：对已完成的干净分发目录验证正常身份，并断言错误标签、错误/缺失提交被拒绝。它不启动软件或安装器，当前执行状态见开发台账。

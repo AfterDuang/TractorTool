@@ -85,6 +85,9 @@ public sealed partial class ExternalPackageService
             .SelectMany(d => d.Downloads ?? []).Where(p => p.Rid == _rid).ToArray();
         if (candidates.Length == 0) return null;
         var recipe = candidates[0]; var definition = recipe.Definition(package);
+        if (_pendingReceipts.TryGetValue(package, out var pending) && pending?.ArchiveHash is { Length: 64 } hash &&
+            hash.All(Uri.IsHexDigit) && !string.Equals(hash, definition.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"{package.Id} {package.Version} 的下载声明与原安装校验值冲突，请插件作者使用新版本或独立标识。");
         foreach (var candidate in candidates.Skip(1)) RequireSameArtifact(definition, candidate.Definition(package));
         if (installed is not null) RequireSameArtifact(installed, definition);
         return recipe;
@@ -96,6 +99,8 @@ public sealed partial class ExternalPackageService
         lock (_gate)
         {
             EnsureRunning();
+            if (HasConflictingIdentity(package))
+                throw new InvalidDataException("依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写。");
             _entries.TryGetValue(package, out var e);
             var recipe = DeclaredDownload(package, e?.Definition);
             if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null ||

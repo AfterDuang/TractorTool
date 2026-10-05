@@ -331,6 +331,12 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         if (receipt is null || receipt.Schema is not (1 or 2) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
             receipt.Tools.Count != e.Definition.Tools.Count || receipt.InstalledBytes <= 0 || receipt.InstalledBytes > 1024L * 1024 * 1024)
             throw new InvalidDataException("工具安装记录与目录不符。");
+        if (receipt.Schema == 2)
+        {
+            var definition = receipt.Definition ?? throw new InvalidDataException("安装记录缺少工具资料。");
+            PackageDefinitions.Validate(definition);
+            RequireSameArtifact(e.Definition, definition);
+        }
         foreach (var (name, tool) in e.Definition.Tools)
             if (!receipt.Tools.TryGetValue(name, out var hash) || hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit) ||
                 !File.Exists(PackageFiles.SafePath(e.Directory, tool.Path))) throw new InvalidDataException("工具文件缺失或安装记录无效。");
