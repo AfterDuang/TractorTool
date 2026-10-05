@@ -106,6 +106,8 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 `assets` 存放打包产物，`layout` 存放含两个插件的完整宿主目录。本地与 [GitHub Actions](.github/workflows/distribution.yml) 使用同一组脚本；CI 配置尚待在 GitHub 实跑。
 
+各脚本的用途、调用关系和输出目录见 [scripts 使用说明](scripts/README.md)。
+
 <details>
 <summary>同时生成 Windows 安装器</summary>
 

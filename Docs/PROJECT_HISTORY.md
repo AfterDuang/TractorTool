@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文档（脚本说明） | [E50 · 脚本用途、调用关系与产物说明（2026-10-05）](#evidence-scripts-readme) |
 | 维护（设置与标题栏） | [E49 · 设置折叠分组与标题栏留白（2026-10-05）](#evidence-settings-chrome) |
 | 开发体验（本地发布） | [E48 · VS Code 交互式发布入口（2026-10-05）](#evidence-vscode-publish) |
 | 维护（视频导出布局） | [E47 · 固定输出操作栏与按钮层级（2026-10-05）](#evidence-video-output-bar) |
@@ -1672,3 +1673,11 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 ```
 
 未运行应用、检查程序或 UI 自动化，未改变用户安装、插件或数据。真实深浅主题、展开/收起与关闭动画、键盘、窄窗、普通/最大化/DPI 及原生标题栏按钮和拖动仍待用户验证。公共 API 和插件版本不变；并行的视频布局及 VS Code 发布入口修改保持独立，不纳入本轮代码提交。M5 Release 与既有运行验收缺口不变。
+
+<a id="evidence-scripts-readme"></a>
+
+## E50：脚本用途、调用关系与产物说明（2026-10-05）
+
+用户要求解释 scripts 下各脚本，并建议就地放 README。按实际源码及 VS Code/CI 调用核对 9 个入口，新增 scripts/README.md：菜单优先，说明用途/使用时机、分发调用关系、assets/layout/work、常用参数与空输出目录要求。明确 Publish-Host 仅发布宿主，Verify-Distribution 只做文件静态校验，Verify-PluginHost 则会执行核心/独立插件/Headless 检查；图标导出只在更换母版时使用。命令示例和验收台账继续引用原文档，不复制维护第二套。
+
+根 README 与文档导航补上入口，当前台账和交接同步。文档本地链接/锚点、脚本表与 9 个实际脚本的一一对应、A01–A23 编号及差异空白核对通过，记录位于 artifacts/scripts-readme/doc-checks.json。仅修改文档，没有执行任何构建、发布、脚本业务、检查程序或应用；保留 .gitignore 和 .vscode/launch.json 原有改动。

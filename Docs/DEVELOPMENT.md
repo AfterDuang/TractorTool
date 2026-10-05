@@ -38,7 +38,7 @@
 
 文档入口：[项目 README](../README.md) 已补齐 GitHub 首页说明、安装/开发/插件入口及开发中状态，详见 [E44](PROJECT_HISTORY.md#evidence-project-readme)。该轮仅核对文档，不增加构建或运行通过项；未配置远程、上传或发布。
 
-脚本整理：[E45](PROJECT_HISTORY.md#evidence-script-cleanup) 删除两个重复的插件打包包装脚本，统一使用 `Build-Plugin.ps1 -Project ...`；独立宿主验证改名为 `Verify-PluginHost.ps1`，覆盖保持不变。9 份脚本语法、现行引用与文档链接核对通过，本轮未构建或运行检查程序。
+脚本整理：[E45](PROJECT_HISTORY.md#evidence-script-cleanup) 删除两个重复的插件打包包装脚本，统一使用 `Build-Plugin.ps1 -Project ...`；独立宿主验证改名为 `Verify-PluginHost.ps1`，覆盖保持不变。9 份脚本语法、现行引用与文档链接核对通过。[E50](PROJECT_HISTORY.md#evidence-scripts-readme) 补齐 [脚本说明](../scripts/README.md)，按源码核对用途、调用关系和输出，仅做文档检查，不增加构建或运行证据。
 
 插件布局：[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 补齐剪贴板 1.1.2 底部留白；[E47](PROJECT_HISTORY.md#evidence-video-output-bar) 将视频 0.5.3 的保存位置与导出整理为全宽固定操作栏，明确按钮层级及窄窗口换行。两次均引用既有发布 SDK 独立打包，0 警告/0 错误，原有 312 文件哈希未变；更新包与文档静态核对通过。未启动应用或检查程序，实际 UI 待用户验证。
 
@@ -169,4 +169,4 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E49 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E50 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
