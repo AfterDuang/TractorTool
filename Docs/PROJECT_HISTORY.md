@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文档（当前状态整理） | [E51 · 验证分层、产物入口与交接整理（2026-10-05）](#evidence-docs-current-state) |
 | 文档（脚本说明） | [E50 · 脚本用途、调用关系与产物说明（2026-10-05）](#evidence-scripts-readme) |
 | 维护（设置与标题栏） | [E49 · 设置折叠分组与标题栏留白（2026-10-05）](#evidence-settings-chrome) |
 | 开发体验（本地发布） | [E48 · VS Code 交互式发布入口（2026-10-05）](#evidence-vscode-publish) |
@@ -1674,6 +1675,8 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 
 未运行应用、检查程序或 UI 自动化，未改变用户安装、插件或数据。真实深浅主题、展开/收起与关闭动画、键盘、窄窗、普通/最大化/DPI 及原生标题栏按钮和拖动仍待用户验证。公共 API 和插件版本不变；并行的视频布局及 VS Code 发布入口修改保持独立，不纳入本轮代码提交。M5 Release 与既有运行验收缺口不变。
 
+同日后续 Review：按用户要求使用 gpt-6.1-sol / high 子代理只读审查提交 05c8371，检查选择/页面生命周期、折叠样式与动画、标题栏布局与命中边界、无用/重复代码、框架精简及断言/文档证据。独立核对 FluentAvalonia 3.1.0 固定提交 215ee048 的 Expander、AppWindow 模板和相关窗口实现，未发现可确认、可操作的缺陷；主代理复核一致，生产代码及检查程序不变，没有为审查新增抽象或重复构建。构建证据仍为本节前述上一轮结果，artifacts/settings-chrome 已被外部清理，不再视为现存日志。真实点击、键盘焦点、最大化、DPI 切换及原生非客户区命中继续待用户验证；本轮未构建、运行应用/检查程序或 UI 自动化。
+
 <a id="evidence-scripts-readme"></a>
 
 ## E50：脚本用途、调用关系与产物说明（2026-10-05）
@@ -1682,4 +1685,14 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 
 根 README 与文档导航补上入口，当前台账和交接同步。文档本地链接/锚点、脚本表与 9 个实际脚本的一一对应、A01–A23 编号及差异空白核对通过，记录位于 artifacts/scripts-readme/doc-checks.json。仅修改文档，没有执行任何构建、发布、脚本业务、检查程序或应用；保留 .gitignore 和 .vscode/launch.json 原有改动。
 
-同日后续 Review：按用户要求使用 gpt-6.1-sol / high 子代理只读审查提交 05c8371，检查选择/页面生命周期、折叠样式与动画、标题栏布局与命中边界、无用/重复代码、框架精简及断言/文档证据。独立核对 FluentAvalonia 3.1.0 固定提交 215ee048 的 Expander、AppWindow 模板和相关窗口实现，未发现可确认、可操作的缺陷；主代理复核一致，生产代码及检查程序不变，没有为审查新增抽象或重复构建。构建证据仍为本节前述上一轮结果，artifacts/settings-chrome 已被外部清理，不再视为现存日志。真实点击、键盘焦点、最大化、DPI 切换及原生非客户区命中继续待用户验证；本轮未构建、运行应用/检查程序或 UI 自动化。
+<a id="evidence-docs-current-state"></a>
+
+## E51：验证分层、产物入口与交接整理（2026-10-05）
+
+按用户要求只整理文档。DEVELOPMENT 将逐轮流水摘要合并为实现与验证分层表，区分源码审查、编译、产物静态校验和运行验收，保留 A01–A23 全部原文。PROJECT_CONTEXT 去除重复状态与过时路径，保留交接约束、代码入口和下一步；Docs/README 明确产物快照的单一归属。E49 的后续子代理 Review 原文从 E50 尾部归回 E49，避免把审查错误归入脚本说明轮次；架构去除一处“本轮”时态。
+
+只读核对源码版本、VS Code/脚本/CI 入口及工作区产物。旧 local-distribution、clipboard-ui-1.1.2、video-ui-0.5.3 和 settings-chrome 目录已不存在；现存 artifacts/local-publish-20261005-160113-3f6ed8/distribution 含宿主 ZIP、安装器和两个插件 ZIP。release.json/installer.json 记录产品 0.1.0、剪贴板 1.1.2、视频 0.5.3、sourceCommit=05c8371、sourceDirty=true、SDK 10.0.401、Inno Setup 6.7.3；仅确认文件/元数据存在，没有执行构建、分发校验、安装器、应用或检查程序，也不将这份快照视作重跑 E43 的结果。
+
+本地文档链接/锚点、R01–R17 与 A01–A23 编号、验收台账全文保持不变及差异空白核对通过，结果记录在 artifacts/docs-cleanup/static-checks.json。没有更改功能、配置、测试或用户数据；保留 .gitignore 与 .vscode/launch.json 的用户修改。M5 Release 开发及全部未关闭运行缺口不变。
+
+收尾时观察到并行提交 b83338d：视频源码清单变为 0.5.4，参数/预设标题对齐，插件业务文档同步。本轮只读核对其差异并更新当前摘要，不修改该提交，也未验证其构建或运行；现存整包元数据仍记录视频 0.5.3，两者分别说明。

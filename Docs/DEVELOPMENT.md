@@ -2,6 +2,8 @@
 
 更新日期：2026-10-05。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
+入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
+
 <a id="current-status"></a>
 
 ## 1. 当前状态
@@ -12,10 +14,10 @@
 | --- | --- |
 | 工程与版本 | VS Code，根 slnx 12 工程；global.json 固定 .NET SDK 10.0.401，分发脚本要求 PowerShell 7.4+。Avalonia 12.1.2、MVVM 8.4.2、FluentAvaloniaUI 3.1.0；产品默认 0.1.0，统一来自 Directory.Build.props |
 | 公共接口 | Contracts API 1.7 / UI API 1.3，接受此前版本并保留旧 ABI；宿主不静态引用具体插件，正式插件独立引用发布 SDK |
-| 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑已有，专属布局留在各页面 |
+| 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑；软件/插件设置分组可独立折叠，标题区统一 32 DIP，专属布局留在各页面 |
 | 剪贴板 | 正式插件 1.1.2：系统历史、左列表/右预览、复制原项、事件与激活刷新；补齐页面底部留白。无自建历史库或定时轮询 |
 | 依赖与进程 | 软件维护可信 JSON 源，缺包首次确认、已装复用、引用/租约保护、主动清理；卸载插件保留包。FFmpeg 9.0.2 / win-x64；公共进程支持参数向量、双流、超时/取消和 Windows Job |
-| 视频 | 正式插件 0.5.3：底部固定保存位置/导出操作栏；MediaInfo 风格报告，无播放/预览；MP4/MKV/MOV/WebM/TS，VBR 一次/两次/CBR，多预设串行；GPU 偏好在插件设置，失败/不支持回退 CPU 并说明。输出“原文件名_预设名”，冲突追加数字、不覆盖 |
+| 视频 | 源码清单 0.5.4：参数/预设标题对齐、底部固定保存位置/导出操作栏；MediaInfo 风格报告，无播放/预览；MP4/MKV/MOV/WebM/TS，VBR 一次/两次/CBR，多预设串行；GPU 偏好在插件设置，失败/不支持回退 CPU 并说明。输出“原文件名_预设名”，冲突追加数字、不覆盖 |
 | 公共任务 | 整批持久化登记、逐项执行、单项/整批取消；日志汇总全部插件任务并按 PluginId 打开所属工具。Data/tasks.json 保留活动项和最近 100 条终态，重启标中断、不自动续跑；坏摘要保留并阻止新执行，可重试保存 |
 | 日志 | INFO 绿/WARNING 黄/ERROR 红；筛选、复制、暂停、折叠详情，旧上新下、底部跟随，上翻不拉回。“已读”确认点击时全部错误，新错误再提醒。内存 300 条，普通导航不记录 |
 | M5 日志保留 | 10 MiB 分段，UTC 跨日/大小滚动，14 天、最多 20 文件/100 MiB；只清理顶层宿主日志，失败警告后继续。单条磁盘记录 64 KiB，完整原文保留在内存窗口 |
@@ -24,27 +26,21 @@
 | M5 安装器 | Inno Setup 6.7.3，当前用户可写目录；从已校验 ZIP 编译，首次附带插件、升级保留现有 Plugins，卸载保留插件及应用数据。安装/启动互斥，首次插件安装中断可用同包恢复；拒绝接管非安装版目录 |
 | 尚未实现 | GitHub Release 发布步骤；机器级安装、非 Windows 进程适配器、远程/用户自定义源、Python/pip/AI 扩展。后者仅为未来计划，不预建空框架 |
 
-### 最近证据与限制
+### 验证证据与限制
 
 | 层级 | 当前可引用的结果 |
 | --- | --- |
-| 本轮 Review/静态 | [E43](PROJECT_HISTORY.md#evidence-installer)：两位 gpt-6.1-sol / high 子代理检查安装完整性、CI/许可并复审；修正维护并发、半安装恢复、收尾退出码及来源成对校验。有效产物接受，缺安装器/缺来源记录/来源哈希不一致 3 个坏样本拒绝；脚本语法、文档链接及 A01–A23 编号核对通过。E42 的路径/ZIP/许可证据保留在历史 |
-| 构建/发布 | E43 Release win-x64 自包含宿主和两个独立插件构建成功，插件均 0 警告/0 错误；原宿主文件哈希未变，311 文件及整包/独立插件一致性通过。安装器编译成功，数字文件版本 0.1.0.0、来源 ZIP/提交/dirty 一致。包版本 0.1.0，记录基线 `af47817` 及 sourceDirty=true；仅宿主 Windows 平台启动保护改变，API/插件版本未变。全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell) |
-| CI/分发运行 | CI 已接入相同 ZIP/安装器脚本，尚未在 GitHub 执行；未建立远程或推送/发布。未运行 ZIP、安装器或卸载器；实际保留/失败恢复、跨 Windows 会话、签名、最低系统及无 SDK 机器待验 |
-| 自动化/集成 | E37–E39 的迁移核心 9 组、管理关联 6 组只编译未运行；其他当前检查也不能套用历史通过。近满盘、块内/部分收尾取消未取得运行证据 |
-| Windows UI/系统/媒体 | 用户指出旧白色小窗，E39 的同窗启动尚待实测；主题首帧、启动关闭/恢复、迁移故障、媒体/GPU 等见第 4 节。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒有界轮询，实际使用时警告一次 |
+| Review/静态 | [E49](PROJECT_HISTORY.md#evidence-settings-chrome) 子代理独立核对设置/标题栏源码及固定版本控件模板，未发现确定缺陷或新增无用/重复实现。[E43](PROJECT_HISTORY.md#evidence-installer) 两代理检查并修正安装完整性、维护并发及来源校验，3 个坏样本均被拒绝。当前文档、脚本职责与入口核对见 [E51](PROJECT_HISTORY.md#evidence-docs-current-state)；各轮方法及适用代码保留在历史 |
+| 宿主与插件构建 | E49 宿主及集成检查工程 Debug 编译通过，0 警告/0 错误；全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell)。[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 剪贴板 1.1.2、[E47](PROJECT_HISTORY.md#evidence-video-output-bar) 视频 0.5.3 引用发布 SDK 独立打包，各 0 警告/0 错误，原宿主文件哈希未变 |
+| 分发构建/校验 | E43 完整 Release win-x64 自包含宿主、两个独立插件及安装器构建成功，311 文件及整包/独立插件一致性、安装器来源成对校验通过。这是 E43 快照的证据；目录中新产物的版本与观察范围另见 [本地产物](#local-artifacts)，不自动继承历史校验结果 |
+| 开发入口 | [E45](PROJECT_HISTORY.md#evidence-script-cleanup) 统一插件打包/宿主验证脚本，[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 提供 VS Code 本地发布菜单；配置及脚本语法、引用静态检查通过，菜单交互未实测。[项目首页](../README.md) 与 [脚本说明](../scripts/README.md) 分别提供使用入口和脚本职责 |
+| 自动化/集成 | E49 新增布局/折叠断言只编译未运行；E37–E39 的迁移核心 9 组、管理关联 6 组也只编译未运行。日志保留、依赖、任务等当前检查和全部逐项缺口见第 4 节，不能套用旧版通过结果 |
+| Windows UI/系统/媒体 | 同窗启动、最新分组折叠/标题栏及两插件布局待用户实测；主题首帧、启动关闭/恢复、迁移故障、媒体/GPU 等见第 4 节。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒有界轮询，实际使用时警告一次 |
+| CI/安装运行 | CI 已接入相同 ZIP/安装器脚本，尚未在 GitHub 执行；未建立远程或推送/发布。代理未运行 ZIP、安装器或卸载器；实际保留/失败恢复、跨 Windows 会话、签名、最低系统及无 SDK 机器待验 |
 
 用户接手运行测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化，不操作真实配置、剪贴板或媒体。静态检查、构建、替身/Headless 不能替代真实系统和硬件证据。早期 artifacts 曾被外部清理，历史路径不保证仍存在。
 
-文档入口：[项目 README](../README.md) 已补齐 GitHub 首页说明、安装/开发/插件入口及开发中状态，详见 [E44](PROJECT_HISTORY.md#evidence-project-readme)。该轮仅核对文档，不增加构建或运行通过项；未配置远程、上传或发布。
-
-脚本整理：[E45](PROJECT_HISTORY.md#evidence-script-cleanup) 删除两个重复的插件打包包装脚本，统一使用 `Build-Plugin.ps1 -Project ...`；独立宿主验证改名为 `Verify-PluginHost.ps1`，覆盖保持不变。9 份脚本语法、现行引用与文档链接核对通过。[E50](PROJECT_HISTORY.md#evidence-scripts-readme) 补齐 [脚本说明](../scripts/README.md)，按源码核对用途、调用关系和输出，仅做文档检查，不增加构建或运行证据。
-
-插件布局：[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 补齐剪贴板 1.1.2 底部留白；[E47](PROJECT_HISTORY.md#evidence-video-output-bar) 将视频 0.5.3 的保存位置与导出整理为全宽固定操作栏，明确按钮层级及窄窗口换行。两次均引用既有发布 SDK 独立打包，0 警告/0 错误，原有 312 文件哈希未变；更新包与文档静态核对通过。未启动应用或检查程序，实际 UI 待用户验证。
-
-本地发布入口：[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 增加 VS Code 原生任务选择 ZIP/安装包，复用现有脚本并自动分配新目录；配置及脚本语法、引用与文档静态核对通过。未执行实际菜单操作或打包，不增加构建、安装及运行证据。
-
-设置与标题栏：[E49](PROJECT_HISTORY.md#evidence-settings-chrome) 将软件/插件设置分组改为原生折叠导航，保留当前子页和选择；标题区从 48 收紧至 32 DIP，布局与拖动区共用高度。宿主及集成检查工程 Debug 编译通过，0 警告/0 错误；新增布局/折叠断言只编译未运行，真实 UI 待用户验证。后续 gpt-6.1-sol / high 子代理独立核对源码及固定版本控件模板，未发现确定缺陷或新增无用/重复实现；代码未改，不新增运行通过项。
+整理期间并行提交 `b83338d` 将视频源码清单更新为 0.5.4、对齐左右标题；本轮只核对该源码差异，未验证其构建或运行，不把 E47 的 0.5.3 证据套用到它。
 
 <a id="workflow"></a>
 
@@ -74,9 +70,15 @@ $compiler = .\scripts\Get-InnoCompiler.ps1 -Output H:\ProjH\TractorTool\artifact
 
 `--profile-root` 要求绝对路径，隔离启动指针及默认数据；不带参数访问真实 `%LOCALAPPDATA%\TractorTool`，该参数不等于迁移。插件仍在所启动宿主的 AppRoot/Plugins，不随 profile 切换。**迁移/故障测试使用独立发布副本、隔离 profile 与新的空目标，不修改真实 bootstrap 或用户文件。**
 
-现存 ZIP 分发在 `artifacts/local-distribution/assets`：宿主 0.1.0、剪贴板 1.1.1、视频 0.5.2；同级 `layout/TractorTool-0.1.0-win-x64` 为本轮使用的发布 SDK。独立更新包分别在 `artifacts/clipboard-ui-1.1.2/package` 和 `artifacts/video-ui-0.5.3/package`，尚未安装或合入上述整包。E43 安装器产物已被外部清理，构建证据保留在历史。
-
 SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆盖旧安装；setup 默认安装到 `%LOCALAPPDATA%\Programs\TractorTool`，仅接管其管理的安装或新空目录。用户接手验证时显式选择独立测试安装位置，安装后用隔离 profile 启动，不直接覆盖日常环境。相同已装插件版本无需重装；日常源码构建不会替换已装 DLL。独立打包见 [插件规范](PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)，变更后显式退出重启，关闭窗口仅隐藏。
+
+<a id="local-artifacts"></a>
+
+### 本地产物快照
+
+2026-10-05 仅检查目录及元数据：`artifacts/local-publish-20261005-160113-3f6ed8/distribution` 存在，`assets` 内有宿主 ZIP、安装器、两个插件 ZIP、SHA256SUMS、release.json 和 installer.json；宿主布局在其 `layout/TractorTool-0.1.0-win-x64`。元数据记录产品 0.1.0、剪贴板 1.1.2、视频 0.5.3、源码 `05c8371`、sourceDirty=true、SDK 10.0.401 及 Inno Setup 6.7.3。
+
+**这次没有重新构建、执行产物校验或安装运行；文件存在及元数据不等于整包验收通过。** 旧 `artifacts/local-distribution`、`clipboard-ui-1.1.2`、`video-ui-0.5.3` 和 `settings-chrome` 已不存在，不再作为现行入口；原执行证据留在历史。后续发布使用菜单生成新目录，以上快照只在本页维护。
 
 ### 当前人工回归重点
 
@@ -169,4 +171,4 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E50 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E51 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
