@@ -1681,3 +1681,5 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 用户要求解释 scripts 下各脚本，并建议就地放 README。按实际源码及 VS Code/CI 调用核对 9 个入口，新增 scripts/README.md：菜单优先，说明用途/使用时机、分发调用关系、assets/layout/work、常用参数与空输出目录要求。明确 Publish-Host 仅发布宿主，Verify-Distribution 只做文件静态校验，Verify-PluginHost 则会执行核心/独立插件/Headless 检查；图标导出只在更换母版时使用。命令示例和验收台账继续引用原文档，不复制维护第二套。
 
 根 README 与文档导航补上入口，当前台账和交接同步。文档本地链接/锚点、脚本表与 9 个实际脚本的一一对应、A01–A23 编号及差异空白核对通过，记录位于 artifacts/scripts-readme/doc-checks.json。仅修改文档，没有执行任何构建、发布、脚本业务、检查程序或应用；保留 .gitignore 和 .vscode/launch.json 原有改动。
+
+同日后续 Review：按用户要求使用 gpt-6.1-sol / high 子代理只读审查提交 05c8371，检查选择/页面生命周期、折叠样式与动画、标题栏布局与命中边界、无用/重复代码、框架精简及断言/文档证据。独立核对 FluentAvalonia 3.1.0 固定提交 215ee048 的 Expander、AppWindow 模板和相关窗口实现，未发现可确认、可操作的缺陷；主代理复核一致，生产代码及检查程序不变，没有为审查新增抽象或重复构建。构建证据仍为本节前述上一轮结果，artifacts/settings-chrome 已被外部清理，不再视为现存日志。真实点击、键盘焦点、最大化、DPI 切换及原生非客户区命中继续待用户验证；本轮未构建、运行应用/检查程序或 UI 自动化。
