@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 开发体验（本地发布） | [E48 · VS Code 交互式发布入口（2026-10-05）](#evidence-vscode-publish) |
 | 维护（视频导出布局） | [E47 · 固定输出操作栏与按钮层级（2026-10-05）](#evidence-video-output-bar) |
 | 维护（剪贴板布局） | [E46 · 剪贴板底部留白与独立更新包（2026-10-05）](#evidence-clipboard-bottom-spacing) |
 | 维护（脚本精简） | [E45 · 删除重复打包入口与验证脚本改名（2026-10-05）](#evidence-script-cleanup) |
@@ -1646,3 +1647,11 @@ ExportWorkspaceView 将输出区域移到独立底行，横跨输入区与预设
 ```
 
 未启动应用、检查程序、FFmpeg 或 UI 自动化，没有真实 UI/转码/硬件新证据。用户安装更新后验证宽窄窗口/高 DPI、长路径、选择/取消/忙碌及滚动时操作栏可达；原有运行缺口继续保留。既有安装和整包未改，.gitignore 与 .vscode/launch.json 的用户修改不纳入提交。
+
+<a id="evidence-vscode-publish"></a>
+
+## E48：VS Code 交互式发布入口（2026-10-05）
+
+用户希望通过 VS Code 交互完成本地发布。新增 .vscode/tasks.json，使用原生任务及 pickString 选择 ZIP 或 ZIP＋安装包；进程任务调用 PowerShell 7，选择值通过环境变量传递，不把工作区路径拼成可执行命令。自动生成带日期时间及随机后缀的新目录，直接调用已有 Build-Distribution；安装包模式先调用 Get-InnoCompiler，版本、哈希和来源校验继续由现有脚本负责。未新增包装脚本、插件或发布依赖，没有改动 launch.json/F5、CI、产品 API 或业务源码。
+
+README 和开发入口改为菜单优先，同时保留 CLI。明确 PowerShell 扩展与运行时区别，要求 PowerShell 7.4+ 的 pwsh 在 PATH 中；本轮环境只能确认代理运行时提供 pwsh，不能据此保证用户 VS Code 可用。JSON、内嵌 PowerShell/既有脚本语法、任务输入/脚本引用及文档链接静态核对通过，检查脚本与结果在 artifacts/vscode-publish。未实跑 VS Code 菜单、发布/下载、应用或安装器，不新增运行验收证据。工作区并行进行的视频 0.5.3 修改及其文档保留，本轮提交仅包含发布入口和对应说明。

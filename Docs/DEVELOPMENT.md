@@ -42,11 +42,15 @@
 
 插件布局：[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 补齐剪贴板 1.1.2 底部留白；[E47](PROJECT_HISTORY.md#evidence-video-output-bar) 将视频 0.5.3 的保存位置与导出整理为全宽固定操作栏，明确按钮层级及窄窗口换行。两次均引用既有发布 SDK 独立打包，0 警告/0 错误，原有 312 文件哈希未变；更新包与文档静态核对通过。未启动应用或检查程序，实际 UI 待用户验证。
 
+本地发布入口：[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 增加 VS Code 原生任务选择 ZIP/安装包，复用现有脚本并自动分配新目录；配置及脚本语法、引用与文档静态核对通过。未执行实际菜单操作或打包，不增加构建、安装及运行证据。
+
 <a id="workflow"></a>
 
 ## 2. 开发与验收入口
 
 使用根 `TractorTool.slnx` 和现有 **Avalonia: TractorTool** 启动项。工程旧提示可通过 `Developer: Reload Window` 重载；属性变化先构建，再 **Restart Previewer**。不另建解决方案或修改 IDE/异常过滤来掩盖问题。
+
+**交互式本地发布：终端 → 运行任务 → TractorTool：本地发布 → 选择 ZIP 或 ZIP＋Windows 安装包。** 配置见 [tasks.json](../.vscode/tasks.json)，自动使用 `artifacts/local-publish-日期时间-随机后缀/distribution/assets` 保存最终产物，不覆盖旧目录。需 PowerShell 7.4+（`pwsh` 在 PATH 中）；安装包模式会下载并验证固定便携编译器。版本沿用工程默认，流程复用本地/CI 脚本，不自动安装、启动或上传，也不改变 F5 启动项。详细操作见 [项目首页](../README.md#构建分发包)。
 
 以下是操作入口，**不是本轮执行记录**；运行部分由用户决定。仓库根目录：
 
@@ -163,4 +167,4 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E47 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E48 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

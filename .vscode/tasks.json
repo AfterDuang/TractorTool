@@ -1,0 +1,46 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "TractorTool：本地发布",
+            "detail": "选择 ZIP 或 ZIP＋安装包，自动创建新目录并校验产物。",
+            "type": "process",
+            "command": "pwsh",
+            "args": [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$ErrorActionPreference = 'Stop'\n$publishRun = Join-Path (Get-Location) ('artifacts/local-publish-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,6))\n$publishOptions = @{ Output = (Join-Path $publishRun 'distribution') }\nif ($env:TRACTORTOOL_PUBLISH_KIND -eq 'installer') {\n    $publishOptions.CompilerPath = & ./scripts/Get-InnoCompiler.ps1 -Output (Join-Path $publishRun 'inno')\n}\n& ./scripts/Build-Distribution.ps1 @publishOptions"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "TRACTORTOOL_PUBLISH_KIND": "${input:publishKind}"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "echo": false
+            },
+            "runOptions": {
+                "instanceLimit": 1,
+                "reevaluateOnRerun": true
+            },
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "publishKind",
+            "type": "pickString",
+            "description": "选择本地发布产物（不会上传 GitHub 或运行安装器）",
+            "options": [
+                { "label": "ZIP 压缩包（宿主＋两个插件）", "value": "zip" },
+                { "label": "ZIP＋Windows 安装包（需下载构建工具）", "value": "installer" }
+            ],
+            "default": "zip"
+        }
+    ]
+}

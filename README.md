@@ -90,7 +90,11 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 ### 构建分发包
 
-在 PowerShell 中，从仓库根目录执行；输出目录必须尚不存在，重复构建请换一个新目录：
+在 VS Code 中点击 **终端 → 运行任务 → TractorTool：本地发布**，选择 **ZIP 压缩包** 或 **ZIP＋Windows 安装包**，即可查看构建输出，无需手写命令。也可按 `Ctrl+Shift+P` 搜索 `Tasks: Run Task` 进入。入口使用 VS Code 自带的 [Tasks](https://code.visualstudio.com/docs/debugtest/tasks) 与选择框。
+
+每次自动生成 `artifacts/local-publish-日期时间-随机后缀/distribution`，其中 `assets` 是最终产物；成功时终端显示完整路径。安装包选项会下载并校验固定版本的 Inno Setup 便携构建工具。需要本机已安装 PowerShell 7.4+ 且 `pwsh` 可用，PowerShell 扩展本身不替代运行时。任务只构建、打包和校验，不启动软件或安装器、不上传 GitHub，F5 仍用于调试。
+
+命令行方式仍可用：从仓库根目录执行；输出目录必须尚不存在，重复构建请换一个新目录：
 
 ```powershell
 # 宿主 ZIP、两个独立插件 ZIP、版本信息和校验文件

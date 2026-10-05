@@ -6,7 +6,7 @@
 
 **处于 M5 可靠性与发布阶段。** 最新 [E47](PROJECT_HISTORY.md#evidence-video-output-bar) 将视频保存位置与导出改为全宽固定操作栏，区分按钮层级并支持窄窗口换行；0.5.3 独立打包通过。剪贴板 1.1.2 底部留白及本轮视频 UI 均待用户验证。安装器仍为 E43 实现，CI 已接入未执行；没有新增安装、升级、卸载或运行通过项。
 
-[README](../README.md) 已供 GitHub 首页使用；正式插件统一使用 `Build-Plugin.ps1 -Project ...`，独立验证入口为 `Verify-PluginHost.ps1`，不恢复已删包装脚本。下一项开发仍是 Release 流程，未配置远程或上传。
+[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 添加 VS Code“终端 → 运行任务 → TractorTool：本地发布”，选择 ZIP/安装包后复用原脚本，自动写入新的 artifacts/local-publish-* 目录。配置与文档静态核对通过，未实跑菜单或打包。[README](../README.md) 已更新操作；正式插件仍用 `Build-Plugin.ps1 -Project ...`，独立验证为 `Verify-PluginHost.ps1`。下一项开发仍是 Release 流程，未配置远程或上传。
 
 - M1–M4 功能实现已转维护；真实媒体/GPU、任务/退出、依赖/管理/剪贴板的逐项缺口仍在台账。M5 的运行恢复、安装保留、Release 发布、签名及无 SDK 机器验收未完成。
 - 用户接手测试；未经新指示不运行应用、检查程序、FFmpeg 或 UI 自动化，不访问真实配置/媒体/剪贴板。允许必要构建/发布和静态核对。保留用户 `.vscode/launch.json` 空白修改及 `.gitignore` 新增的 Docs/ 规则，不纳入提交；Docs 已被 Git 跟踪，忽略规则不会自动移除它们。
