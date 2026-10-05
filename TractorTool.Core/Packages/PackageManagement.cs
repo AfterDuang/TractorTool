@@ -129,8 +129,8 @@ public sealed partial class ExternalPackageService
 
     private IReadOnlyList<PackageDefinition> LoadSource()
     {
-        try { return PackageCatalog.Load(Path.Combine(AppContext.BaseDirectory, "PackageSources", "default.json")); }
-        catch (Exception ex) { SourceError = "依赖源不可用：" + ex.Message; _log.Write("Packages", SourceError, ex); return []; }
+        try { return PackageCatalog.Load(_sourceFile!); }
+        catch (Exception ex) { _refreshError = "依赖源不可用：" + ex.Message; _log.Write("Packages", _refreshError, ex); return []; }
     }
 
     private void RestoreInstalledDefinitions()

@@ -25,11 +25,14 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     public event Action? Changed;
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
-        IEnumerable<PackageDefinition>? definitions = null, Uri? sourceUri = null, string? sourceCacheDirectory = null)
+        IEnumerable<PackageDefinition>? definitions = null, Uri? sourceUri = null, string? sourceCacheDirectory = null,
+        string? sourceDirectory = null)
     {
         _root = AppPaths.Absolute(root); PackageFiles.CheckPath(_root);
         _http = http; _processes = processes; _log = log;
         _rid = rid;
+        _sourceFile = definitions is null ? Path.Combine(AppPaths.Absolute(sourceDirectory ??
+            Path.Combine(AppContext.BaseDirectory, "PackageSources")), "default.json") : null;
         _sourceUri = sourceUri ?? (definitions is null ? LoadSourceUri() : null);
         if (_sourceUri is not null) ValidateSourceUri(_sourceUri);
         _sourceCacheFile = _sourceUri is null ? null : Path.Combine(

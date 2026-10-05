@@ -21,6 +21,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     public bool IsEmpty => Cards.Count == 0;
     public string Summary => $"{Cards.Count(c => c.IsInstalled)} 个已安装 · {Cards.Count(c => c.CanRemove)} 个可清理";
     public string SourceStatus => _service?.SourceStatus ?? "外部依赖服务不可用。";
+    public string RefreshSourceLabel => _service?.HasRemoteSource == true ? "刷新安装源" : "刷新本地目录";
     public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status, _refreshError }.Where(s => !string.IsNullOrEmpty(s)));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }

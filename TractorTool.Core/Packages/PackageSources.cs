@@ -7,13 +7,15 @@ namespace TractorTool.Core.Packages;
 public sealed partial class ExternalPackageService
 {
     private readonly Uri? _sourceUri;
+    private readonly string? _sourceFile;
     private readonly string? _sourceCacheFile;
-    private readonly IReadOnlyList<PackageDefinition> _bundledSource;
+    private IReadOnlyList<PackageDefinition> _bundledSource;
     private Task<bool>? _sourceRefresh;
-    private string _sourceStatus = "远程安装源尚未配置，使用内置目录。";
+    private string _sourceStatus = "安装源：本地目录 · 远程更新尚未配置";
     private string _refreshError = "";
     private string _sourceError = "";
-    public bool CanRefreshSource { get { lock (_gate) return _sourceUri is not null && _shutdown is null; } }
+    public bool HasRemoteSource => _sourceUri is not null;
+    public bool CanRefreshSource { get { lock (_gate) return (_sourceUri is not null || _sourceFile is not null) && _shutdown is null; } }
     public bool IsRefreshingSource { get { lock (_gate) return _sourceRefresh is not null; } }
     public string SourceStatus { get { lock (_gate) return _sourceRefresh is null ? _sourceStatus : "正在更新安装源…"; } }
 
@@ -22,7 +24,7 @@ public sealed partial class ExternalPackageService
     {
         try
         {
-            var file = Path.Combine(AppContext.BaseDirectory, "PackageSources", "source.json");
+            var file = Path.Combine(Path.GetDirectoryName(_sourceFile!)!, "source.json");
             PackageFiles.CheckPath(file);
             if (!File.Exists(file)) return null;
             if (new FileInfo(file).Length > 4096) throw new InvalidDataException("安装源配置过大。");
@@ -65,10 +67,11 @@ public sealed partial class ExternalPackageService
         }
     }
 
-    private IReadOnlyList<PackageDefinition> MergeSources(IReadOnlyList<PackageDefinition> remote)
+    private IReadOnlyList<PackageDefinition> MergeSources(IReadOnlyList<PackageDefinition> remote,
+        IReadOnlyList<PackageDefinition>? bundled = null)
     {
         var merged = new Dictionary<string, PackageDefinition>(StringComparer.OrdinalIgnoreCase);
-        foreach (var definition in _bundledSource.Concat(remote))
+        foreach (var definition in (bundled ?? _bundledSource).Concat(remote))
         {
             var key = $"{definition.Package.Id}/{definition.Package.Version}/{definition.Rid}";
             if (merged.TryGetValue(key, out var previous)) RequireSameArtifact(previous, definition);
@@ -91,7 +94,7 @@ public sealed partial class ExternalPackageService
         lock (_gate)
         {
             EnsureRunning();
-            if (_sourceUri is null || _entries.TryGetValue(package, out var entry) &&
+            if (!CanRefreshSource || _entries.TryGetValue(package, out var entry) &&
                 (entry.SourceAvailable || entry.Phase == PackagePhase.Ready || entry.Preparation is not null)) return;
         }
         await RefreshSourceAsync(token).ConfigureAwait(false);
@@ -105,7 +108,7 @@ public sealed partial class ExternalPackageService
         lock (_gate)
         {
             EnsureRunning();
-            if (_sourceUri is null) return Task.FromResult(false);
+            if (!CanRefreshSource) return Task.FromResult(false);
             task = _sourceRefresh ??= StartSourceRefresh();
         }
         Notify();
@@ -123,6 +126,23 @@ public sealed partial class ExternalPackageService
             string? temporary = null;
             try
             {
+                var bundled = _sourceFile is null ? _bundledSource : PackageCatalog.Load(_sourceFile);
+                if (_sourceUri is null)
+                {
+                    var local = MergeSources([], bundled);
+                    lock (_gate)
+                    {
+                        EnsureRunning();
+                        _stopping.Token.ThrowIfCancellationRequested();
+                        ValidateSourceUpdate(local);
+                        ApplySourceUpdate(local);
+                        _bundledSource = bundled;
+                        _sourceStatus = "安装源：本地目录 · 已重新读取（未进行远程更新）";
+                        succeeded = true;
+                    }
+                    _log.Write("Packages", "本地安装目录已重新读取。");
+                    return;
+                }
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
                 timeout.CancelAfter(TimeSpan.FromSeconds(15));
                 var token = timeout.Token;
@@ -144,7 +164,7 @@ public sealed partial class ExternalPackageService
                 }
                 if (length is not null && length != content.Length) throw new InvalidDataException("依赖源索引下载不完整。");
                 var bytes = content.ToArray();
-                var source = MergeSources(PackageCatalog.Parse(bytes));
+                var source = MergeSources(PackageCatalog.Parse(bytes), bundled);
                 lock (_gate) ValidateSourceUpdate(source);
 
                 PackageFiles.CheckPath(_sourceCacheFile!);
@@ -159,6 +179,7 @@ public sealed partial class ExternalPackageService
                     PackageFiles.CheckPath(_sourceCacheFile!);
                     File.Move(temporary, _sourceCacheFile!, true);
                     ApplySourceUpdate(source);
+                    _bundledSource = bundled;
                     _sourceStatus = $"安装源：{_sourceUri!.Host} · 已更新";
                     _refreshError = "";
                     succeeded = true;

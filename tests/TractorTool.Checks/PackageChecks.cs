@@ -191,6 +191,48 @@ internal static class PackageChecks
             Equal(scope.GetStatus(missing).Phase, PackagePhase.Missing);
             await Throws<NotSupportedException>(() => scope.RequestAsync(missing));
         });
+        Test("local catalog refresh discovers tools and preserves installed state on bad updates", async path =>
+        {
+            var sourceDirectory = Path.Combine(path, "source"); Directory.CreateDirectory(sourceDirectory);
+            var file = Path.Combine(sourceDirectory, "default.json");
+            await File.WriteAllBytesAsync(file, Index());
+            var downloads = 0;
+            using var http = new HttpClient(new Handler((request, _) =>
+            { downloads++; return Task.FromResult(Response(request, Archive())); }));
+            await using var service = new ExternalPackageService(Path.Combine(path, "installed"), "win-x64", http,
+                new Probe(), new Log(), sourceDirectory: sourceDirectory);
+            service.UpdateReferences(new([], true));
+            service.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
+            Require(service.CanRefreshSource && !service.HasRemoteSource);
+            Require(await service.RefreshSourceAsync() && downloads == 0);
+            // A plugin may discover metadata added after startup, without a host rebuild or index server.
+            await File.WriteAllBytesAsync(file, Index(Definition(Archive())));
+            using (var lease = await service.TryRequestAsync(Key, "Test.Plugin")) Require(lease is not null);
+            Require(downloads == 1 && service.GetStatus(Key).Phase == PackagePhase.Ready);
+            await File.WriteAllTextAsync(file, "broken");
+            Require(!await service.RefreshSourceAsync() && service.SourceError.Length > 0);
+            using (await service.TryRequestAsync(Key, "Test.Plugin")) { }
+            Require(downloads == 1); // Reusing an installed tool never requires a working catalog.
+            await File.WriteAllBytesAsync(file, Index(Definition(Archive()) with { Sha256 = new string('0', 64) }));
+            Require(!await service.RefreshSourceAsync());
+            await File.WriteAllBytesAsync(file, Index());
+            Require(await service.RefreshSourceAsync() && service.SourceError.Length == 0);
+            Require(service.GetPackages().Single().IsInstalled && downloads == 1);
+            await service.RemoveAsync(Key); Require(service.GetPackages().Count == 0);
+        });
+        Test("local catalog recovers after startup read failure", async path =>
+        {
+            var sourceDirectory = Path.Combine(path, "source"); Directory.CreateDirectory(sourceDirectory);
+            var file = Path.Combine(sourceDirectory, "default.json"); await File.WriteAllTextAsync(file, "broken");
+            using var http = new HttpClient(new Handler((_, _) => throw new InvalidOperationException("No network expected")));
+            await using var service = new ExternalPackageService(Path.Combine(path, "installed"), "win-x64", http,
+                new Probe(), new Log(), sourceDirectory: sourceDirectory);
+            Require(service.SourceError.Length > 0);
+            await File.WriteAllBytesAsync(file, Index(Definition(Archive())));
+            Require(await service.RefreshSourceAsync() && service.SourceError.Length == 0 && !service.IsRefreshingSource);
+            await service.DisposeAsync(); Require(!service.CanRefreshSource);
+            await Throws<ObjectDisposedException>(() => service.RefreshSourceAsync());
+        });
         Test("source refresh coalesces, caller cancellation keeps the shared refresh alive", async path =>
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

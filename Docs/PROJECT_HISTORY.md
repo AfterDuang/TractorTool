@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（依赖测试交付） | [E58 · 本地目录刷新与隔离测试包（2026-10-05）](#evidence-dependency-sandbox) |
 | 排查（源状态与预览器） | [E57 · 禁用原因与 Debug 绑定核对（2026-10-05）](#evidence-source-preview-diagnostics) |
 | M5（外部依赖通用化） | [E56 · 可信索引刷新与第二工具接入（2026-10-05）](#evidence-package-sources) |
 | 维护（导航页面回收） | [E55 · 公共导航内存修复与隔离回归（2026-10-05）](#evidence-navigation-memory-fix) |
@@ -1816,3 +1817,19 @@ dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll 
 - 本机 avaloniateam.vscode-avalonia 12.4.3 的 package.json 提供 Restart Previewer、Rebuild Project and Restart Previewer。操作方法加入开发入口，不修改现有 VS Code 配置。
 - `dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -v:minimal`：沙盒首次因 Avalonia buildtasks.log 写权限失败，正常用户权限重试通过，宿主及引用工程0警告/0错误；未出现截图中的绑定编译错误。
 - 无生产代码修改，无运行测试或预览器操作；预览重启后的实际恢复待用户确认。保留用户 .gitignore 和 launch.json 修改，正式 HTTPS 源及其运行验收仍未完成。
+
+<a id="evidence-dependency-sandbox"></a>
+
+## E58：本地目录刷新与隔离测试包（2026-10-05）
+
+用户反馈只有未配置的远程源和零散测试资料，无法直接操作验证，授权继续补齐。未配置或发布远程端点，不把本地目录刷新冒充线上索引。
+
+- Core 复用已有共享刷新任务：无远程源时重新读取 default.json，未知依赖按需重读；通过整份校验与已有身份/哈希约束后才应用。失败保留现行目录、已装记录和租约；本地启动读失败后修正文件可刷新恢复。注入目录只用于 Core 构造与隔离验证，没有新公共插件 API、用户自定义源界面或轮询。
+- 设置按钮按模式显示“刷新本地目录”或“刷新安装源”，本地模式可用并明确没有远程更新。生产 default.json 仍仅 FFmpeg；未改真实配置或安装数据。
+- Build-DependencySandbox.ps1 复用 Publish-Host、Export-DependencyNotices、Build-Plugin，在尚不存在的新目录生成自包含宿主、预装独立测试插件和合并的 MediaInfo 资料。启动文件 Start-DependencyTest.cmd 始终指定相邻 profile；source.json 在测试副本强制 null。含操作说明及可再次安装的插件 ZIP，不自动运行应用，不预下载工具，不读取真实媒体。
+- 全解决方案构建：`dotnet build TractorTool.slnx -c Release --artifacts-path artifacts/dependency-source-build -m:1 -nr:false -v:minimal`，13工程通过，0警告/0错误。新增本地发现/重复复用/坏目录保留/同版本哈希拒绝/启动故障恢复/关闭用例仅编译未运行。
+- 同步 VS Code 产物：`dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false -v:minimal`，0警告/0错误，未接管预览器。264个文档相对文件链接、AXAML/XML及脚本语法静态检查通过；本轮 diff --check 通过。
+- 已执行 `./scripts/Build-DependencySandbox.ps1 -Output ./artifacts/dependency-sandbox-20261005`，发布/独立插件构建成功，插件构建0警告/0错误。产物静态核对：app共297文件、23项宿主运行依赖许可、本地目录FFmpeg和MediaInfo、插件仅依赖MediaInfo 26.5.0；启动参数含隔离profile，profile尚不存在。测试插件ZIP共9项，包含私有许可，不含共享SDK或MediaInfo.exe；SHA256 `1f600a977d770a6c21a515baf57e125de9ca7d9e51c57ce16662d6c12bc672aa`。
+- 子代理 review_local_source_sandbox（显式gpt-6.1-sol/high）只读审查共享刷新、退出/取消、坏源回退、快照/租约、同版本内容保护和沙盒路径/数据隔离，未发现可确认P1/P2；没有执行检查程序或应用。
+
+用户下一步双击上述目录的 Start-DependencyTest.cmd，在“外部依赖测试”申请依赖并验证拒绝、下载、复用、卸载重启后保留/清理。真实加载、官方网络下载、MediaInfo输出和按钮效果均待验；正式HTTPS远程链路、既有M5/媒体/内存缺口继续保留。

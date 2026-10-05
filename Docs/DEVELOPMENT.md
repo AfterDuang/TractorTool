@@ -10,7 +10,7 @@
 
 **当前处于 M5：日志保留、数据迁移、同窗启动、ZIP 分发和 Windows 用户级安装器已实现；真实安装/升级/卸载、CI/Release 及运行验收仍待完成。** M1–M4 的功能实现已转入维护，但不能据此判定运行验收全部通过。用户对 E35 日志修正反馈未发现问题并允许继续；未逐项报告的缺口仍保留在第 4 节。
 
-**最新进展：[E56 外部依赖通用化](PROJECT_HISTORY.md#evidence-package-sources)。** 已实现按需/手动更新可信 HTTPS 索引、按源隔离缓存、内置兜底和可声明的工具验证；旧插件及 FFmpeg 元数据继续兼容。新增 MediaInfo 独立测试插件和源资料，生产内置目录仍只有 FFmpeg。全解决方案 Release 隔离构建 0 警告/0 错误，子代理 Review 的安装记录预算问题已修复并复核；新增回归用例仅编译、未执行。正式索引地址仍为 null，远程部署、真实网络及第二工具调用待验，不视为依赖阶段全部完成。
+**最新进展：[E58 本地目录刷新与可直接使用的隔离测试包](PROJECT_HISTORY.md#evidence-dependency-sandbox)。** 无远程地址时，“刷新本地目录”实际重新读取包资料，未知包也可触发重读；坏资料保留有效目录和已装包。已生成自包含宿主＋MediaInfo 测试插件＋本地源＋隔离启动入口，用户无需手工拼装或先搭服务器。13工程 Release 构建及独立测试包生成通过，新增回归只编译未运行，子代理静态 Review 未发现可确认P1/P2。E56 的远程索引/缓存/通用工具校验仍保留；正式源地址 null，真实下载/第二工具及远程部署仍待验。
 
 **内存问题修复进展：[E55 公共导航页面回收](PROJECT_HISTORY.md#evidence-navigation-memory-fix)。** E54 定位的 FAFrame 窗口事件持有路径已从 PageHost 移除，改用原生内容容器与过渡。用户单独授权的隔离导航检查 10/10 通过：动画开/关各 40 轮切页，320 个旧页面相关对象均可回收；旧发布 UI DLL 的同一回收检查仍有 124/160 个对象被持有。构建通过，真实发布版长时间切页/图片预览内存曲线仍待用户复测；不能把 E54 观测到的全部增长都归因于本次问题，也不承诺工作集立即回到启动值。
 
@@ -34,11 +34,11 @@
 
 | 层级 | 当前可引用的结果 |
 | --- | --- |
-| Review/静态 | [E56](PROJECT_HISTORY.md#evidence-package-sources) 子代理 gpt-6.1-sol / high 审查索引/取消/缓存/批准快照/租约与清理、测试插件及分发路径；修复定义可能超过 receipt 容量的 P2 后复核通过，未发现其余可确认 P1/P2。MediaInfo 官方 ZIP 哈希、文件路径、x64 PE 及许可静态核对；实际输出未运行。此前导航/设置等证据见 E55/E49 |
-| 宿主与插件构建 | [E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 宿主及引用工程 Debug 构建通过，0 警告/0 错误；预览器重启后的实际状态待用户确认。[E56](PROJECT_HISTORY.md#evidence-package-sources) 含 13 工程的全解决方案 Release 隔离构建及 MediaInfo 测试插件独立构建/打包通过，均为0警告/0错误。全解决方案 Debug 历史证据仍为 E39；正式插件独立打包见 E46/E52。未替换发布目录或重打完整分发包 |
+| Review/静态 | [E58](PROJECT_HISTORY.md#evidence-dependency-sandbox) 子代理 gpt-6.1-sol / high 审查本地刷新、取消、安装/租约保护及沙盒隔离，未发现可确认P1/P2；测试目录、许可、清单及启动参数静态核对通过。[E56](PROJECT_HISTORY.md#evidence-package-sources) 子代理 gpt-6.1-sol / high 审查索引/取消/缓存/批准快照/租约与清理、测试插件及分发路径；修复定义可能超过 receipt 容量的 P2 后复核通过，未发现其余可确认 P1/P2。MediaInfo 官方 ZIP 哈希、文件路径、x64 PE 及许可静态核对；实际输出未运行。此前导航/设置等证据见 E55/E49 |
+| 宿主与插件构建 | E58 的13工程 Release、宿主 Debug 构建和沙盒宿主/独立测试插件打包通过，0警告/0错误。[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 宿主及引用工程 Debug 构建通过，0 警告/0 错误；预览器重启后的实际状态待用户确认。[E56](PROJECT_HISTORY.md#evidence-package-sources) 含 13 工程的全解决方案 Release 隔离构建及 MediaInfo 测试插件独立构建/打包通过，均为0警告/0错误。全解决方案 Debug 历史证据仍为 E39；正式插件独立打包见 E46/E52。未替换发布目录或重打完整分发包 |
 | 分发构建/校验 | E43 完整 Release win-x64 自包含宿主、两个独立插件及安装器构建成功，311 文件及整包/独立插件一致性、安装器来源成对校验通过。这是 E43 快照的证据；目录中新产物的版本与观察范围另见 [本地产物](#local-artifacts)，不自动继承历史校验结果 |
 | 开发入口 | [E45](PROJECT_HISTORY.md#evidence-script-cleanup) 统一插件打包/宿主验证脚本，[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 提供 VS Code 本地发布菜单；配置及脚本语法、引用静态检查通过，菜单交互未实测。[项目首页](../README.md) 与 [脚本说明](../scripts/README.md) 分别提供使用入口和脚本职责 |
-| 自动化/集成 | E56 新增索引并发/失败缓存/源隔离/批准快照/旧默认与 stderr/记录预算回归仅编译未运行。此前 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 获准执行的隔离导航检查 10/10 通过；E49 其他布局/折叠断言及 E37–E39 迁移核心 9 组、管理关联 6 组仍只编译未运行。没有执行全量集成或真实插件/媒体测试 |
+| 自动化/集成 | E58 本地目录重读、坏源保留/修复、未知包发现和关闭用例只编译未运行。E56 新增索引并发/失败缓存/源隔离/批准快照/旧默认与 stderr/记录预算回归仅编译未运行。此前 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 获准执行的隔离导航检查 10/10 通过；E49 其他布局/折叠断言及 E37–E39 迁移核心 9 组、管理关联 6 组仍只编译未运行。没有执行全量集成或真实插件/媒体测试 |
 | Windows UI/系统/媒体 | 同窗启动、最新分组折叠/标题栏及两插件布局待用户实测；主题首帧、启动关闭/恢复、迁移故障、媒体/GPU 等见第 4 节。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒有界轮询，实际使用时警告一次 |
 | CI/安装运行 | CI 已接入相同 ZIP/安装器脚本，尚未在 GitHub 执行；未建立远程或推送/发布。代理未运行 ZIP、安装器或卸载器；实际保留/失败恢复、跨 Windows 会话、签名、最低系统及无 SDK 机器待验 |
 
@@ -52,7 +52,7 @@
 
 使用根 `TractorTool.slnx` 和现有 **Avalonia: TractorTool** 启动项。新增属性后若预览器提示属性不存在，先确认构建结果；构建已通过时，按 `Ctrl+Shift+P` 执行 **Avalonia: Restart Previewer**。尚未构建时可选 **Avalonia: Rebuild Project and Restart Previewer**；仍有旧提示再执行 **Developer: Reload Window**。上述 Avalonia 命令已核对本机扩展12.4.3。不能将预览器旧诊断当作编译失败，也不通过移除绑定或改 IDE 配置掩盖问题。
 
-“刷新安装源”在未配置远程索引时禁用：分发配置 [source.json](../TractorTool.Core/Packages/source.json) 的 `indexUri` 当前为 null，已安装包及内置目录仍可使用。由软件维护者部署真实 HTTPS 索引并配置后再启用，流程见 [安装源维护](PLUGIN_DEVELOPMENT.md#package-source-maintenance)；不是让普通用户手工寻找 FFmpeg 下载地址。
+分发配置 [source.json](../TractorTool.Core/Packages/source.json) 的 `indexUri` 当前为 null；设置提供可用的“刷新本地目录”，重新读取 default.json，不冒充远程更新。现成隔离测试入口见下方 [本地产物](#local-artifacts)。正式 HTTPS 索引仍由软件维护者部署和配置，流程见 [安装源维护](PLUGIN_DEVELOPMENT.md#package-source-maintenance)；普通用户不必手工寻找工具下载地址。
 
 **交互式本地发布：终端 → 运行任务 → TractorTool：本地发布 → 选择 ZIP 或 ZIP＋Windows 安装包。** 配置见 [tasks.json](../.vscode/tasks.json)，自动使用 `artifacts/local-publish-日期时间-随机后缀/distribution/assets` 保存最终产物，不覆盖旧目录。需 PowerShell 7.4+（`pwsh` 在 PATH 中）；安装包模式会下载并验证固定便携编译器。版本沿用工程默认，流程复用本地/CI 脚本，不自动安装、启动或上传，也不改变 F5 启动项。详细操作见 [项目首页](../README.md#构建分发包)。
 
@@ -90,13 +90,15 @@ E52 视频独立更新包：`artifacts/video-ui-0.5.4/package/TractorTool.VideoE
 
 E56 隔离构建位于 `artifacts/dependency-source-build/bin`；独立依赖测试插件为 `artifacts/dependency-probe-mediainfo/package-final/Test.PackageProbe-1.0.0.zip`，哈希及构建证据见 [E56](PROJECT_HISTORY.md#evidence-package-sources)。这些是构建/测试用产物，未实际加载或安装依赖，不替代正式分发包。
 
+E58 可直接使用的隔离测试目录：`artifacts/dependency-sandbox-20261005`。双击其中 `Start-DependencyTest.cmd`，打开“外部依赖测试”即可申请 MediaInfo；已预装插件、本地包资料和全部宿主运行依赖，下载工具仍需联网。启动入口指定该目录的 profile，不使用日常数据；不要绕过入口直接运行 app/TractorTool.exe。细步骤见目录内 README.txt，重建用 [Build-DependencySandbox](../scripts/Build-DependencySandbox.ps1)。代理仅生成/静态核对文件，未启动。
+
 ### 当前人工回归重点
 
 下表是待执行方法，状态只记入第 4 节；完整插件步骤链接到对应业务文档，避免重复维护。
 
 | 范围 | 本轮及后续需要核对 |
 | --- | --- |
-| 依赖源与第二工具 | 按 [安装源维护流程](PLUGIN_DEVELOPMENT.md#package-source-maintenance) 在隔离副本配置真实 HTTPS 索引，验证按需发现、首次拒绝/重试、手动刷新、缓存故障/离线复用及 MediaInfo 实际调用；插件卸载保留包，取消引用后才可清理。正式地址尚未配置 |
+| 依赖源与第二工具 | 先通过 E58 隔离启动入口验证本地重读、首次拒绝/重试、MediaInfo 下载/复用及卸载后保留/清理；按 [安装源维护流程](PLUGIN_DEVELOPMENT.md#package-source-maintenance) 另行配置真实 HTTPS 索引验证远程发现、刷新和缓存故障恢复。正式地址尚未配置 |
 | 内存与页面释放 | E55 公共导航持有路径已修，合成页面弱引用检查通过。下一步由用户重新发布并重复相同切页/图片预览动作，比较多轮托管堆与进程内存；本轮未重新测量实际发布进程，不能用工作集暂时下降或定时强制 GC 代替验证。隔离检查授权不扩展为接管真实 UI、剪贴板或采集转储 |
 | 安装/升级/卸载 | 隔离目录初装附带两个插件；同版重装及升级保留自装/已更新/已卸载插件和 .management，卸载保留 Plugins 及默认/自定义数据。检查运行/托盘时拒绝维护、维护中再次启动、首次安装取消/ACL 失败及同包恢复；拒绝目录链接、非安装版目录、数字版本降级。当前互斥限同一 Windows 会话，跨会话待验证，不声称覆盖 |
 | 启动/恢复 | 普通启动无额外小窗；迁移状态居中，完成原位进入主页；深浅主题首帧、缩放/窄窗口、启动中关闭、错误退出、最小化/再次启动恢复及托盘恢复。标题栏下无额外空带，普通/最大化窗口、DPI 切换、拖动/双击及原生按钮可用。仅迁移时显示迁移信息，不强制最大化 |
@@ -148,7 +150,7 @@ E56 隔离构建位于 `artifacts/dependency-source-build/bin`；独立依赖测
 | A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | 管理、快照回退及状态冲突检查已编译；未执行，真实 ACL/占用/中断恢复待验，不能据历史目录受阻用例标为完成 |
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | E55 隔离导航回收、取消/错误恢复、动画及嵌套 Settings 检查通过；真实发布版长期切页/图片内存曲线待用户复测。当前真实视频任务、任务页和托盘仍待验，不能据页面回收通过认定后台业务已验收 |
 | A06 | 默认与自定义数据根目录 | 指针稳定、迁移后能定位数据和下载包，软件目录插件代码不移动，失败不丢旧数据 | 集成、UI | E37 实现迁移，E38 修正空间/取消，E39 改同窗呈现；15 组关联检查只编译，原生选择/重启/跨卷/近满盘重试/ACL/块内取消与现有插件完整闭环未运行 |
-| A07 | 外部包事务及依赖管理 | 首次确认、已有复用、失败可重试、多版本共存，引用/使用中不可删，卸载插件保留包；独立索引更新、新工具无需改宿主二进制 | 集成、UI、网络 | E56 已实现远程索引/缓存/通用验证、MediaInfo 独立插件；全量构建及官方 ZIP 静态检查通过，新增和既有包用例均未运行。正式源地址 null，HTTPS 部署、坏索引/离线恢复、真实安装/输出、独立加载与清理闭环待用户验收 |
+| A07 | 外部包事务及依赖管理 | 首次确认、已有复用、失败可重试、多版本共存，引用/使用中不可删，卸载插件保留包；独立索引更新、新工具无需改宿主二进制 | 集成、UI、网络 | E56 远程索引/缓存/通用验证已实现；E58 补本地重读和可直接启动的 MediaInfo 隔离测试目录。全量构建及产物静态检查通过，新增/既有包用例均未运行；真实安装/输出、独立加载和清理仍待用户验收。正式源地址 null，HTTPS 部署及真实远程缓存故障恢复另待验 |
 | A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | E46 修正截图中卡片贴窗口底框的问题，1.1.2 独立编译/打包通过，UI 待用户验证；不据旧截图认定空选择错误及全部系统行为通过。模型检查未重新运行，Windows 完整行为仍待验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 0.5.2 完整报告、预设命名及任务接入已独立打包；媒体/参数/进度/隔离输出检查只编译，真实媒体/中文路径/取消尚未运行 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
@@ -178,11 +180,11 @@ E56 隔离构建位于 `artifacts/dependency-source-build/bin`；独立依赖测
 
 ## 6. 下一步与维护
 
-1. **E56 依赖源部署与验收**：确定维护者控制的正式/测试 HTTPS 地址后配置 source.json，按 [安装源维护流程](PLUGIN_DEVELOPMENT.md#package-source-maintenance) 验证远程发现、首次确认、离线复用和第二工具；当前 null 配置不代表正式上线。新增包回归用例由用户决定运行。
+1. **E58 直接测试第二工具**：用户先用现成隔离启动入口验证 MediaInfo 首次拒绝/同意、下载、复用和卸载后清理，无需准备服务器。随后确定维护者控制的 HTTPS 地址，按 [安装源维护流程](PLUGIN_DEVELOPMENT.md#package-source-maintenance) 验证 E56 远程发现和缓存故障恢复；本地刷新不代表正式远程上线。新增包回归用例由用户决定运行。
 2. 用户重新发布后复测 **E55 页面回收修复**，核对实际切页/图片操作后的内存趋势；随后继续 **M5 GitHub Release 发布流程**，复用现有 ZIP/安装器及校验脚本。公开发布前确认本项目授权、签名与运行验收，当前安装包/CI artifact 不作为正式发布完成；不自动配置远程或推送。
 3. 用户运行验收优先：同窗启动及迁移取消/重试/提交两侧恢复、插件回退与实际包复用；M2–M4 的媒体/GPU/任务/生命周期缺口继续保留。旧取消调试输出触发不明，Job 终止轮询优化待处理。
 4. 有实质进展时更新本页第 1/3/4 节，再替换交接快照；完成轮次的命令、失败及证据只归历史，未关闭项不可随归档消失。
 
 <a id="evidence"></a>
 
-历史入口：[E01–E57 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E58 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

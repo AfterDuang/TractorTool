@@ -6,9 +6,9 @@
 
 **处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 标题栏布局最近改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
-最新改动为 [E56](PROJECT_HISTORY.md#evidence-package-sources)：包服务增加可信 HTTPS 索引按需/手动刷新、源隔离缓存/内置兜底和可配置工具版本验证；插件清单/API 不变，保留首次确认/已装复用/引用租约保护。source.json 默认 indexUri=null，尚未部署正式远程源。MediaInfo CLI 26.05（管理版本26.5.0）的独立测试插件和测试源已准备，只做官方 ZIP 静态核对、独立打包与全解决方案 Release 构建（0警告/0错误）。子代理 Review 的 receipt 容量 P2 已修复并复核；新增回归、真实网络/MediaInfo/插件加载均未执行，用户接手运行测试的约定不变。
+最新改动为 [E58](PROJECT_HISTORY.md#evidence-dependency-sandbox)：没有远程地址也可“刷新本地目录”，真实重读包资料，未知包按需重读；继续保护安装快照/租约/固定哈希及坏源回退。已生成 `artifacts/dependency-sandbox-20261005/Start-DependencyTest.cmd`，预装 MediaInfo 测试插件和源资料，数据使用同目录 profile；用户可直接打开测试，不必拼装或搭服务器。13工程 Release 和独立沙盒构建通过，子代理只读 Review 未发现可确认P1/P2；新增回归只编译未运行，代理未启动应用。E56 远程索引/缓存及通用验证保留，但正式地址仍未部署，不能以本地测试替代远程验收。
 
-[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 核对刷新按钮禁用为源地址未配置的既定状态；截图预览器称两个属性不存在，但源码/Debug程序集均包含它们，宿主 Debug 重建0警告/0错误。旧预览进程状态不同步是推断，未接管 VS Code 或验证重启预览器后是否恢复；操作入口已补入开发文档。
+[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 预览器旧属性提示：源码/Debug程序集均包含属性，宿主 Debug 重建0警告/0错误；重启预览器后的效果仍待用户确认，操作入口见开发文档。本轮不修改 IDE 配置。
 
 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 公共导航页面回收修复仍待用户复测真实发布版长期切页/图片内存曲线。当时单独授权的隔离检查 10/10、320旧对象可回收是该轮证据，不扩展成常态自动测试权限。
 
@@ -38,4 +38,4 @@
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一步确定软件维护的 HTTPS 索引地址，并由用户验收 **E56 远程源/MediaInfo**；真实地址未确定前保留 null，不填占位源冒充完成。继续复测 **E55 导航修复** 的内存曲线及视觉效果，然后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。
+下一步由用户使用 **E58 隔离测试入口** 验收第二工具首次确认、官方包下载、复用和卸载后清理；不再要求先准备服务器。另行部署软件维护的 HTTPS 索引以验收 E56 远程链路，地址未确定前保留 null。继续复测 **E55 导航修复** 的内存曲线及视觉效果，然后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。

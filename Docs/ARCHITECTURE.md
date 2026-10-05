@@ -187,7 +187,7 @@ Windows 注销或关机跳过交互确认并执行有界清理，不能因无限
 
 SHA256 用于核对内容，不单独证明发布者可信；包清单和来源本身也需要可信。FFmpeg 构建中的编码器和分发许可随构建选项变化，发布前记录采用的二进制来源和许可证。
 
-可信索引由 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 校验，内置目录仍是软件目录 `PackageSources/default.json`（源码 [default.json](../TractorTool.Core/Packages/default.json)）。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 读取软件维护的 `PackageSources/source.json` 中 `indexUri`，仅接受不含凭据/片段的 HTTPS URL；默认 null，表示尚未部署正式远程源，设置明确显示未配置并禁用刷新。没有用户添加源或插件指定下载源的入口。两份文件随构建/发布复制，分发静态检查要求存在。
+可信索引由 [PackageCatalog](../TractorTool.Core/Packages/PackageCatalog.cs) 校验，内置目录仍是软件目录 `PackageSources/default.json`（源码 [default.json](../TractorTool.Core/Packages/default.json)）。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 读取软件维护的 `PackageSources/source.json` 中 `indexUri`，仅接受不含凭据/片段的 HTTPS URL；默认 null，表示尚未部署正式远程源。此时设置提供“刷新本地目录”，实际重新读取 default.json，并明确未进行远程更新；未知依赖也可触发本地重读。文件损坏时保留上次有效目录和已装包，修正后可重试。没有用户添加源或插件指定下载源的入口。两份文件随构建/发布复制，分发静态检查要求存在；测试可通过 Core 构造参数 sourceDirectory 指定隔离目录，不扩展插件 Contracts。
 
 配置远程源后，启动只读取按源 URL 隔离的 `<DataRoot>/Cache/PackageSources` 缓存；普通启动不联网。插件申请在本地没有对应可用来源且未就绪时按需刷新，设置也可手动刷新。并发刷新共用一次下载，单调用方取消只取消等待，退出取消并等待共享操作。索引下载限 15 秒/1 MiB，验证整份 schema、重复项、路径和包资料后原子替换缓存，失败保留当前目录、缓存和已装包；重定向不能改变协议/站点。远程目录叠加内置兜底，同身份可更新来源/说明；已有同 ID、固定版本、RID 的 SHA256 或标识大小写变化被拒绝，内容改变须新版本。刷新只更新可用源资料，已安装记录、运行租约、正在下载和已展示确认的定义各自保留快照；确认后安装使用用户批准的定义。
 
