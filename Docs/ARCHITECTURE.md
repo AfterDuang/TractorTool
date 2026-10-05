@@ -191,7 +191,7 @@ SHA256 用于核对内容，不单独证明发布者可信；包清单和来源�
 
 配置远程源后，启动只读取按源 URL 隔离的 `<DataRoot>/Cache/PackageSources` 缓存；普通启动不联网。插件申请在本地没有对应可用来源且未就绪时按需刷新，设置也可手动刷新。并发刷新共用一次下载，单调用方取消只取消等待，退出取消并等待共享操作。索引下载限 15 秒/1 MiB，验证整份 schema、重复项、路径和包资料后原子替换缓存，失败保留当前目录、缓存和已装包；重定向不能改变协议/站点。远程目录叠加内置兜底，同身份可更新来源/说明；已有同 ID、固定版本、RID 的 SHA256 或标识大小写变化被拒绝，内容改变须新版本。刷新只更新可用源资料，已安装记录、运行租约、正在下载和已展示确认的定义各自保留快照；确认后安装使用用户批准的定义。
 
-内置生产条目仍为 Gyan FFmpeg 9.0.2 essentials / win-x64；第二个真实工具 [MediaInfo 测试源](../tests/PackageSources/mediainfo.json) 和 [独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs) 只用于验收，不进入正式分发。插件仍只声明 ID/固定三段版本，Contracts API 不变；未知包或平台允许页面加载，申请时明确报错。设置只展示插件引用、实际安装或已申请的包，不把整个源目录直接当已安装列表。安装源的维护和隔离验证入口见 [插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。
+内置生产条目仍为 Gyan FFmpeg 9.0.2 essentials / win-x64；第二个真实工具 [MediaInfo 测试资料](../tests/PackageSources/mediainfo.json) 和 [独立测试插件](../tests/PackageProbePlugin/ProbePlugin.cs) 保留供后续真实源验收，不进入正式分发。插件仍只声明 ID/固定三段版本，Contracts API 不变；未知包或平台允许页面加载，申请时明确报错。设置默认展示“源中可用”，可切换“本机依赖”查看引用、实际安装或已申请包；Core 的 GetPackages 默认仍只返回后一集合，includeCatalog 查询不标记需求或下载。源位置、可用数量和包详情直接可见，安装/取消/单包清理复用既有服务及确认、引用和租约保护；源已移除的本机包保留管理入口。安装源维护见 [插件规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。
 
 [包服务](../TractorTool.Core/Packages/ExternalPackageService.cs) 合并同包并发申请的确认及安装；调用方取消等待不影响其他等待者，设置页取消才停止共享下载。下载最多 256 MiB、ZIP 展开最多 1 GiB/10000 项，拒绝路径越界、重名/大小写冲突、特殊文件和重解析点。校验后按可信工具资料的 `arguments` 参数向量执行，`output` 选择 stdout/stderr，与 `versionPrefix` 做 CRLF/LF 归一后的前缀比较；非零退出或被选输出截断均失败。旧资料缺省仍是 `-version`/stdout，不执行 shell 或安装脚本。参数最多 16 项，每项 1024 字符、禁 NUL；前缀最多 512 字符，整个定义默认 UTF-8 序列化后最多 48 KiB，给 64 KiB receipt 的工具哈希留足空间。
 

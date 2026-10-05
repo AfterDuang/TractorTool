@@ -184,9 +184,13 @@ internal static class PackageChecks
         {
             using var http = Client(Archive()); await using var service = Create(path, http, new Probe());
             Require(service.GetPackages().Count == 0);
+            var catalog = service.GetPackages(includeCatalog: true).Single();
+            Require(catalog.Package == Key && catalog.SourceDefinition is not null && catalog.CanInstall &&
+                !catalog.IsInstalled && catalog.RequiredBy.Count == 0 && service.GetPackages().Count == 0);
             var missing = new PackageReference("Unavailable", "1.0.0");
             service.UpdateReferences(new([new(missing, "Test.Plugin", "Plugin")], true));
             Require(service.GetPackages().Single().Package == missing && !service.GetPackages().Single().CanInstall);
+            Require(service.GetPackages(includeCatalog: true).Count == 2 && service.GetPackages().Single().SourceDefinition is null);
             using var scope = service.CreateScope("Test.Plugin", [missing], CancellationToken.None);
             Equal(scope.GetStatus(missing).Phase, PackagePhase.Missing);
             await Throws<NotSupportedException>(() => scope.RequestAsync(missing));
@@ -376,6 +380,7 @@ internal static class PackageChecks
             await using var service = Remote(path, offline, new Probe());
             using (await service.TryRequestAsync(Key, "Test.Plugin")) { }
             Require(networkCalls == 0 && service.GetPackages().Single().IsInstalled && service.GetPackages().Single().CanRemove);
+            Require(service.GetPackages(includeCatalog: true).Single().SourceDefinition is null);
             // The installed receipt still protects the hash after the source entry was removed.
             payload = Index(original with { Sha256 = new string('0', 64) });
             await using (var changedSource = Remote(path, http, new Probe()))

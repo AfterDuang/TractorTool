@@ -6,9 +6,9 @@
 
 **处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 标题栏布局最近改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
-最新改动为 [E58](PROJECT_HISTORY.md#evidence-dependency-sandbox)：没有远程地址也可“刷新本地目录”，真实重读包资料，未知包按需重读；继续保护安装快照/租约/固定哈希及坏源回退。已生成 `artifacts/dependency-sandbox-20261005/Start-DependencyTest.cmd`，预装 MediaInfo 测试插件和源资料，数据使用同目录 profile；用户可直接打开测试，不必拼装或搭服务器。13工程 Release 和独立沙盒构建通过，子代理只读 Review 未发现可确认P1/P2；新增回归只编译未运行，代理未启动应用。E56 远程索引/缓存及通用验证保留，但正式地址仍未部署，不能以本地测试替代远程验收。
+最新改动为 [E59](PROJECT_HISTORY.md#evidence-dependency-catalog-ui)：外部依赖设置可浏览“源中可用”/“本机依赖”、搜索、查看实际源位置及包资料，直接安装/取消/清理；浏览不产生下载或需求，确认/引用/租约保护不变。用户明确不需要临时源沙盒，删除对应构建脚本，保留独立测试插件和既有产物，后续用真实源。13工程 Release 构建通过，子代理只读 Review 未发现可确认P1/P2；新增回归只编译未运行，代理未启动应用。E56 远程索引/缓存及 E58 本地重读保留，正式地址仍为 null、目录仅 FFmpeg，不能把管理入口完成等同远程部署或验收通过。
 
-[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 预览器旧属性提示：源码/Debug程序集均包含属性，宿主 Debug 重建0警告/0错误；重启预览器后的效果仍待用户确认，操作入口见开发文档。本轮不修改 IDE 配置。
+[E57](PROJECT_HISTORY.md#evidence-source-preview-diagnostics) 预览器旧属性提示的恢复效果仍待用户确认，操作入口见开发文档。E59 常规 Debug 输出被运行中程序/调试器锁定 DLL，未能同步；改用 artifacts 隔离目录构建 Debug 通过，0警告/0错误。未关闭用户程序或修改 IDE 配置，之后停止调试再 F5 才能使用新代码。
 
 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix) 公共导航页面回收修复仍待用户复测真实发布版长期切页/图片内存曲线。当时单独授权的隔离检查 10/10、320旧对象可回收是该轮证据，不扩展成常态自动测试权限。
 
@@ -38,4 +38,4 @@
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一步由用户使用 **E58 隔离测试入口** 验收第二工具首次确认、官方包下载、复用和卸载后清理；不再要求先准备服务器。另行部署软件维护的 HTTPS 索引以验收 E56 远程链路，地址未确定前保留 null。继续复测 **E55 导航修复** 的内存曲线及视觉效果，然后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。
+下一步继续真实源交付，后续部署软件维护的 HTTPS 索引再用测试插件安排远程链路验收；地址未确定前保留 null，不要求用户立即测试临时源。E59 的客户端 UI、**E55 导航修复** 的内存曲线及视觉效果仍待运行验证，之后接续 **M5 GitHub Release**。CI 未在 GitHub 执行，未配置 Git 远程、推送或发布；其余运行缺口以台账为准。不得添加定时强制 GC 或反射清空第三方私有事件掩盖资源持有。

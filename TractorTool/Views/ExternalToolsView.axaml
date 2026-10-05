@@ -2,37 +2,57 @@
              x:Class="TractorTool.Views.ExternalToolsView" x:DataType="vm:ExternalToolsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="16">
-      <DockPanel LastChildFill="True">
-        <Button DockPanel.Dock="Right" Content="清理未引用依赖" Command="{Binding CleanCommand}" Margin="12,0,0,0" />
-        <Button DockPanel.Dock="Right" Content="{Binding RefreshSourceLabel}" Command="{Binding RefreshSourceCommand}" Margin="12,0,0,0" />
-        <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" />
-      </DockPanel>
-      <TextBlock Text="{Binding SourceStatus}" Classes="caption" TextWrapping="Wrap" />
-      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" />
-      <Border Classes="card" IsVisible="{Binding IsEmpty}">
+      <Border Classes="card">
         <StackPanel Spacing="8">
-          <TextBlock Text="暂时没有外部依赖" FontWeight="SemiBold" />
-          <TextBlock Text="插件需要的工具会显示在这里，首次下载前会请你确认。" Classes="caption" />
+          <TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" FontSize="16" />
+          <TextBlock Text="{Binding SourceStatus}" Classes="caption" TextWrapping="Wrap" />
+          <SelectableTextBlock Text="{Binding SourceLocation}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding CatalogSummary}" Classes="caption" />
+          <WrapPanel>
+            <Button Content="{Binding RefreshSourceLabel}" Command="{Binding RefreshSourceCommand}" Margin="0,4,8,0" />
+            <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" Margin="0,4,0,0" />
+          </WrapPanel>
         </StackPanel>
       </Border>
-      <ItemsControl ItemsSource="{Binding Cards}">
+      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" />
+      <TabStrip SelectedIndex="{Binding SelectedScope}">
+        <TabStripItem Content="源中可用" /><TabStripItem Content="本机依赖" />
+      </TabStrip>
+      <WrapPanel>
+        <TextBox Text="{Binding SearchText}" PlaceholderText="搜索名称、标识或版本" Width="240" Margin="0,0,16,8" />
+        <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
+      </WrapPanel>
+      <Border Classes="card" IsVisible="{Binding IsEmpty}">
+        <StackPanel Spacing="8">
+          <TextBlock Text="{Binding EmptyMessage}" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="浏览目录不会下载依赖，首次安装前会请你确认。" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+      <ItemsControl ItemsSource="{Binding VisibleCards}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:PackageCardViewModel">
-            <Button Classes="toolCard" Margin="0,0,0,8" HorizontalAlignment="Stretch"
-                    Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).OpenCommand}" CommandParameter="{Binding}">
-              <Grid ColumnDefinitions="*,Auto">
+            <Border Classes="card" Margin="0,0,0,8">
                 <StackPanel Spacing="6">
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
+                  <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap" />
                   <WrapPanel>
                     <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
                     <TextBlock Text="{Binding StatusText}" Classes="caption" />
                   </WrapPanel>
-                  <TextBlock Text="{Binding RequiredBy}" Classes="caption" />
+                  <TextBlock Text="{Binding Availability}" Classes="caption" />
+                  <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
                   <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+                  <WrapPanel>
+                    <Button Content="查看详情" Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).OpenCommand}"
+                            CommandParameter="{Binding}" Margin="0,4,8,0" />
+                    <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" Margin="0,4,8,0" />
+                    <Button Content="取消下载" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" Margin="0,4,8,0" />
+                    <Button Content="清理" Command="{Binding RemoveCommand}" IsVisible="{Binding IsInstalled}" Margin="0,4,0,0"
+                            ToolTip.Tip="仅可清理没有插件引用且未在使用的依赖。" />
+                  </WrapPanel>
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="›" FontSize="22" Margin="16,0,0,0" VerticalAlignment="Center" />
-              </Grid>
-            </Button>
+            </Border>
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

@@ -15,6 +15,7 @@ public sealed partial class ExternalPackageService
     private string _refreshError = "";
     private string _sourceError = "";
     public bool HasRemoteSource => _sourceUri is not null;
+    public string SourceLocation => _sourceUri?.AbsoluteUri ?? _sourceFile ?? "软件提供的内存目录";
     public bool CanRefreshSource { get { lock (_gate) return (_sourceUri is not null || _sourceFile is not null) && _shutdown is null; } }
     public bool IsRefreshingSource { get { lock (_gate) return _sourceRefresh is not null; } }
     public string SourceStatus { get { lock (_gate) return _sourceRefresh is null ? _sourceStatus : "正在更新安装源…"; } }

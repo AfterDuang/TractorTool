@@ -13,7 +13,9 @@ using TractorTool;
 using TractorTool.Contracts;
 using TractorTool.Contracts.Tasks;
 using TractorTool.Core.Logging;
+using TractorTool.Core.Packages;
 using TractorTool.Core.Plugins;
+using TractorTool.Core.Processes;
 using TractorTool.Core.Storage;
 using TractorTool.Services;
 using TractorTool.UI;
@@ -502,6 +504,43 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
     Pump(settings.SaveCompletion);
     Assert(File.ReadAllBytes(store.FilePath).SequenceEqual(before) && store.Load().Theme == "Dark");
     Assert(Application.Current!.RequestedThemeVariant == ThemeVariant.Dark);
+});
+Check("Dependency settings browse the catalog without requesting packages and retain cards across filters", () =>
+{
+    using var http = new HttpClient();
+    var runner = new ProcessRunner("PackageSettings.Check", log, _ => throw new InvalidOperationException("Browsing must not start a tool"));
+    var service = new ExternalPackageService(Path.Combine(output, "catalog-ui-packages"), "win-x64", http, runner, log,
+        sourceDirectory: Path.Combine(published, "PackageSources"));
+    service.UpdateReferences(new([], true));
+    using var model = new ExternalToolsViewModel(service, _ => { });
+    try
+    {
+        var card = model.VisibleCards.First();
+        Assert(card.IsAvailable && card.CanInstall && !card.IsInstalled && service.GetPackages().Count == 0);
+        model.SearchText = card.Key.Id.ToLowerInvariant();
+        Assert(model.VisibleCards.Contains(card));
+        model.SearchText = "no-matching-package";
+        Assert(model.IsEmpty);
+        model.SearchText = ""; model.SelectedScope = 1;
+        Assert(model.IsEmpty);
+        service.UpdateReferences(new([new(card.Key, "Test.Plugin", "Test")], true));
+        Dispatcher.UIThread.RunJobs();
+        Assert(ReferenceEquals(model.VisibleCards.Single(), card) && !card.CanRemove);
+        var prompts = 0;
+        model.ConnectConfirmation((_, _, _) => { prompts++; return Task.FromResult(false); });
+        Pump(card.InstallCommand.ExecuteAsync(null));
+        Assert(prompts == 1 && !card.IsInstalled && card.CanInstall);
+        model.SelectedScope = 0;
+        Assert(model.VisibleCards.Contains(card));
+        model.Dispose();
+        Assert(!card.InstallCommand.CanExecute(null) && !card.RemoveCommand.CanExecute(null));
+    }
+    finally
+    {
+        model.Dispose();
+        Pump(service.DisposeAsync().AsTask());
+        Pump(runner.DisposeAsync().AsTask());
+    }
 });
 AppearanceChecks.Run(Check, Pump, output);
 MotionChecks.Run(Check);

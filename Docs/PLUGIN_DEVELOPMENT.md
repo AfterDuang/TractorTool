@@ -128,11 +128,13 @@ var result = await context.Processes!.RunAsync(
 
 [PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 是非 FFmpeg 独立消费方，只申请 MediaInfo 并执行只读 `--Version`。其依赖管理版本为 `26.5.0`，对应上游 `26.05`；资料见 [mediainfo.json](../tests/PackageSources/mediainfo.json)。该测试插件不进入正式分发，不修改视频插件的媒体读取实现。
 
-运行验收由用户执行，使用新发布副本和新 `--profile-root`，不得使用日常安装或真实数据目录：
+客户端可在“设置 → 外部依赖”查看实际源位置、当前平台可用包和本机依赖，搜索名称/标识/版本，查看资料并安装、取消下载或清理。浏览不产生需求；已被插件引用或持有租约的包不能清理。当前生产目录仍只有 FFmpeg，未部署远程源时显示本地目录，不伪装成线上仓库。
+
+用户已决定不继续扩展临时源沙盒；保留独立测试插件，待维护者部署真实 HTTPS 源后再安排以下验收。运行时使用新发布副本和新 `--profile-root`，不得使用日常安装或真实数据目录：
 
 1. 按第 6 节发布宿主，使用 `Build-Plugin.ps1 -Project ./tests/PackageProbePlugin/PackageProbePlugin.csproj -HostSdkDir <发布宿主目录> -Output <新空目录>` 独立打包并安装测试插件。
 2. 远程链路：把测试索引发布到维护者控制的测试 HTTPS 地址，在这个测试副本的 `PackageSources/source.json` 填地址后启动；测试包不写入内置目录，点击测试插件按钮验证按需发现、首次确认、下载和版本检查。测试配置修改不代表原分发文件清单仍匹配；只核对宿主二进制未变，不把该副本重新当正式包发布。
-3. 尚无 HTTPS 地址时，运行 `./scripts/Build-DependencySandbox.ps1 -Output <尚不存在的新目录>`：复用现有构建脚本，生成自包含宿主、预装测试插件及合并后的本地目录。用户双击生成目录的 `Start-DependencyTest.cmd` 即可开始，数据隔离到该目录的 profile；不要直接运行其中的 app/TractorTool.exe。无需手工拼装或搭服务器；“刷新本地目录”实际重读该副本的 default.json。这证明本地索引与真实工具安装/调用的通用性，不能替代远程链路验收；脚本只打包，不自动启动。
+3. 设置页刷新真实源，确认包数量、搜索与详情反映索引；本机依赖只包含已安装、被引用或已申请的包，不能将浏览目录当成安装行为。尚无真实源地址时不要求用户搭建替代源或运行沙盒。
 4. 验证拒绝后重试、再次使用不下载、刷新失败/坏索引保留旧缓存、退出/重启离线复用；卸载测试插件并重启，依赖仍保留，未引用且无租约才可清理。
 5. [PackageChecks](../tests/TractorTool.Checks/PackageChecks.cs) 的替身用例覆盖索引并发/缓存/校验/确认快照和安装记录预算；构建通过不等于这些用例已执行，也不等于真实网络/MediaInfo 已通过。
 

@@ -6,7 +6,10 @@ namespace TractorTool.Core.Packages;
 public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName);
 public sealed record PackageReferenceSnapshot(IReadOnlyList<PackageDependency> Dependencies, bool Complete, string Error = "");
 public sealed record PackageListItem(PackageReference Package, PackageDefinition? Definition, PackageStatus Status,
-    IReadOnlyList<string> RequiredBy, bool IsInstalled, bool CanInstall, bool CanRemove);
+    IReadOnlyList<string> RequiredBy, bool IsInstalled, bool CanInstall, bool CanRemove)
+{
+    public PackageDefinition? SourceDefinition { get; init; }
+}
 public sealed record PackageInstallPrompt(PackageDefinition Definition, string RequestedBy, bool IsRepair);
 
 public sealed partial class ExternalPackageService
@@ -31,12 +34,13 @@ public sealed partial class ExternalPackageService
         Notify();
     }
     public string ReferenceError { get { lock (_gate) return _references.Complete ? "" : _references.Error; } }
-    public IReadOnlyList<PackageListItem> GetPackages()
+    public IReadOnlyList<PackageListItem> GetPackages(bool includeCatalog = false)
     {
         lock (_gate)
         {
             var keys = _references.Dependencies.Select(d => d.Package).Concat(_entries.Where(p =>
-                p.Value.HasFiles || p.Value.Requested || p.Value.Operation is not null).Select(p => p.Key)).Distinct();
+                p.Value.HasFiles || p.Value.Requested || p.Value.Operation is not null ||
+                includeCatalog && p.Value.SourceAvailable).Select(p => p.Key)).Distinct();
             return keys.OrderBy(p => p.Id).ThenBy(p => p.Version).Select(key =>
             {
                 _entries.TryGetValue(key, out var e);
@@ -44,7 +48,7 @@ public sealed partial class ExternalPackageService
                     .Select(d => $"{d.PluginName} ({d.PluginId})").Distinct().Order().ToArray();
                 return new PackageListItem(key, e?.Definition, Status(key), required, e?.HasFiles == true,
                     e is { SourceAvailable: true, Operation: null, Preparation: null } && e.Users.Count == 0 && e.Phase != PackagePhase.Ready,
-                    e is not null && CanRemove(e));
+                    e is not null && CanRemove(e)) { SourceDefinition = e?.SourceDefinition };
             }).ToArray();
         }
     }

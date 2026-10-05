@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| M5（依赖管理交互） | [E59 · 目录浏览与客户端操作（2026-10-05）](#evidence-dependency-catalog-ui) |
 | M5（依赖测试交付） | [E58 · 本地目录刷新与隔离测试包（2026-10-05）](#evidence-dependency-sandbox) |
 | 排查（源状态与预览器） | [E57 · 禁用原因与 Debug 绑定核对（2026-10-05）](#evidence-source-preview-diagnostics) |
 | M5（外部依赖通用化） | [E56 · 可信索引刷新与第二工具接入（2026-10-05）](#evidence-package-sources) |
@@ -1833,3 +1834,21 @@ dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll 
 - 子代理 review_local_source_sandbox（显式gpt-6.1-sol/high）只读审查共享刷新、退出/取消、坏源回退、快照/租约、同版本内容保护和沙盒路径/数据隔离，未发现可确认P1/P2；没有执行检查程序或应用。
 
 用户下一步双击上述目录的 Start-DependencyTest.cmd，在“外部依赖测试”申请依赖并验证拒绝、下载、复用、卸载重启后保留/清理。真实加载、官方网络下载、MediaInfo输出和按钮效果均待验；正式HTTPS远程链路、既有M5/媒体/内存缺口继续保留。
+
+<a id="evidence-dependency-catalog-ui"></a>
+
+## E59：目录浏览与客户端操作（2026-10-05）
+
+用户明确保留测试插件，但不需要继续扩展临时源沙盒；先补齐客户端可见、可操作的管理入口，后续使用真实源。E58 最后的沙盒测试建议由本轮取代，既有产物未删除或运行。
+
+- Core 的 GetPackages 增加可选 includeCatalog，只供宿主管理查询；默认仍只返回引用、已申请或本机包。返回当前源资料与安装快照，浏览不会创建需求或下载；Contracts 不变。
+- 设置默认“源中可用”，另有“本机依赖”，支持名称/ID/版本搜索；源位置、状态、包数量及详情可见，安装/取消/单包清理复用现有服务和确认。引用/请求/租约保护保留，源移除后的详情禁用旧操作，退出后禁用命令。未增加下载器、源配置平台、定时刷新或视频专属逻辑。
+- 删除 Build-DependencySandbox.ps1 及当前文档入口；独立 MediaInfo 测试插件/真实包资料保留，生产 default.json 仍只有 FFmpeg，source.json 的 indexUri 仍为 null，未部署或伪造 HTTPS 端点。
+- `dotnet build TractorTool.slnx -c Release --artifacts-path artifacts/dependency-source-build -m:1 -nr:false -v:minimal`：首次出现 TextBox.Watermark 过时警告，改用 PlaceholderText 后重建13工程通过，0警告/0错误。
+- `dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false -v:minimal`：30警告/6错误，均为复制依赖 DLL 被 TractorTool（45284）及 .NET 调试适配器（43156）占用，MSB3026/3027/3021。未终止或操作这些进程，常规 Debug 输出没有成功同步。
+- `dotnet build TractorTool/TractorTool.csproj -c Debug --artifacts-path artifacts/dependency-source-build -m:1 -nr:false -v:minimal`：改用隔离输出构建通过，0警告/0错误。
+- 已有 PackageChecks 补目录浏览不产生需求、未知引用和源移除后本机保留断言；IntegrationChecks 补真实随附目录的筛选、卡片复用、拒绝安装及退出命令断言。均只编译未运行，未启动应用、检查程序、工具或 UI 自动化。
+- 子代理 review_catalog_ui（显式 gpt-6.1-sol/high）只读审查目录查询、确认/安装/清理、状态同步、源移除和退出，并复核资料展示及取消判断增量；未发现可确认 P1/P2 或新增无用抽象。静态 Review 不代表真实 UI 和网络操作通过。
+- 静态检查：271 个文档相对文件链接、2 个修改的 AXAML/XML 和本轮 diff --check 通过；保留用户 .gitignore 与 .vscode/launch.json 修改，不纳入本轮提交。
+
+后续部署维护者控制的真实源再安排测试插件验收；本轮不要求用户运行临时源。客户端 UI 与远程/下载/清理的实际表现仍待验证，其他未关闭项保留在当前台账。
