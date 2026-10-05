@@ -4,7 +4,7 @@
 
 ## 1. 当前工作
 
-处于 M5 可靠性与发布阶段，M1–M4 功能已实现但运行验收没有全部完成。最新 [E61](PROJECT_HISTORY.md#evidence-dependency-review-release) 按用户要求对子代理复审问题修复，并推进 Release 草稿流程。用户反馈界面看着无问题，未逐项确认真实依赖链路。E60 取消自有包源、直接接 GitHub 的决定仍有效；不再安排索引、缓存、目录浏览、源部署或虚拟源测试。
+处于 M5 发布准备阶段。最新 [E62](PROJECT_HISTORY.md#evidence-user-local-validation) 用户明确反馈上一轮列出的本机流程“都测试过了，暂未发现问题”，包括依赖安装/拒绝重试/修复清理、视频/GPU、插件升级与数据迁移；不再仅记界面反馈或重复要求这些常规测试。未提供逐项故障/硬件明细，不能扩写成全部专项验收通过。最近代码仍为 E61 复审修复与 Release 草稿流程；E60 取消自有包源、直接接 GitHub 的决定仍有效。
 
 - 外部依赖分为 **Packages**（已安装包及修复进度）与 **依赖来源**。默认 GitHub，额外来源只支持公开 GitHub Enterprise API 地址；pip 等安装能力接入后才开放，不做空入口。
 - 插件在 `dependencies[].downloads` 声明 RID、仓库、精确标签/ZIP、SHA256、许可、工具路径和版本检查。宿主负责解析/首次确认/下载/事务/租约，无 FFmpeg 专属目录。公开 PackageReference / Contracts API 1.7 / UI API 1.4 ABI 不变。
@@ -36,6 +36,6 @@ E61 Release 全 13 工程构建通过，0 警告/0 错误；两个子代理 gpt-
 | 测试插件 | [PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs)、[GitHub 接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1)、[安装脚本](../packaging/TractorTool.iss) |
 
-下一步由用户验证真实 GitHub 安装和 E61 损坏记录/hash/别名保护。M5 Release 代码已补齐，待用户给远程目标并明确上传后再实跑普通 CI 和标签草稿；当前不配置远程/推送。正式公开前需确认项目自身授权及运行验收。E55 长期真实切页/图片内存曲线仍待复测；此前单独授权的 10/10 隔离检查不扩展为常态测试权限。
+下一步确定 GitHub 仓库及项目自身授权；远程目标与上传授权具备后实跑普通 CI 和标签草稿。目前 git remote 为空，没有推送或远程 CI 证据。E62 是用户本机运行反馈，不代表 GitHub 流程已执行；不因缺少代理运行记录而否定用户反馈。
 
-未关闭：真实媒体/GPU/任务/退出/依赖/插件管理/剪贴板；两插件布局、设置折叠/标题栏、同窗启动；迁移跨卷/近满盘/ACL/取消及部分收尾恢复；安装保留/恢复和跨会话维护。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒轮询并警告一次。逐项只看 [A01–A23](DEVELOPMENT.md#acceptance)，不能因 Review/编译通过自动关闭。
+未关闭的专项覆盖只看 [A01–A23](DEVELOPMENT.md#acceptance)：未说明的媒体细项、硬件矩阵、长期内存曲线、迁移近满盘/ACL/中断、跨会话及无 SDK 机器。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒轮询并警告一次。运行测试仍由用户接手，本轮不扩展代理测试权限。
