@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（视频参数标题） | [E52 · 导出参数标题与左右对齐（2026-10-05）](#evidence-video-parameter-heading) |
 | 文档（当前状态整理） | [E51 · 验证分层、产物入口与交接整理（2026-10-05）](#evidence-docs-current-state) |
 | 文档（脚本说明） | [E50 · 脚本用途、调用关系与产物说明（2026-10-05）](#evidence-scripts-readme) |
 | 维护（设置与标题栏） | [E49 · 设置折叠分组与标题栏留白（2026-10-05）](#evidence-settings-chrome) |
@@ -1696,3 +1697,13 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 本地文档链接/锚点、R01–R17 与 A01–A23 编号、验收台账全文保持不变及差异空白核对通过，结果记录在 artifacts/docs-cleanup/static-checks.json。没有更改功能、配置、测试或用户数据；保留 .gitignore 与 .vscode/launch.json 的用户修改。M5 Release 开发及全部未关闭运行缺口不变。
 
 收尾时观察到并行提交 b83338d：视频源码清单变为 0.5.4，参数/预设标题对齐，插件业务文档同步。本轮只读核对其差异并更新当前摘要，不修改该提交，也未验证其构建或运行；现存整包元数据仍记录视频 0.5.3，两者分别说明。
+
+<a id="evidence-video-parameter-heading"></a>
+
+## E52：导出参数标题与左右对齐（2026-10-05）
+
+按用户截图在视频导出左栏加入“导出参数”，复用右栏 sectionTitle 样式与 12 DIP 下间距；标题放在滚动区外，两侧首行卡片平齐，左右内容仍独立滚动。仅调整 ExportWorkspaceView 的 Grid 布局，沿用现有窄窗口切换，不增加业务逻辑或共享抽象。插件业务文档同步，代码提交 b83338d。
+
+视频清单升至 0.5.4，使用 Build-Plugin.ps1、正式插件 csproj 和 `artifacts/local-publish-20261005-160113-3f6ed8/distribution/layout/TractorTool-0.1.0-win-x64` SDK，输出至 `artifacts/video-ui-0.5.4/package`。独立构建通过，0 警告/0 错误；SDK 原有 312 文件哈希未变。更新包为 TractorTool.VideoExport-0.5.4.zip，AXAML、清单/程序集产品版本、SHA256、包内容一致性、许可和共享 DLL 排除核对通过；证据为同目录上层的 build.log、host-before.json、assembly-version.json、static-checks.json。
+
+文档 321 个本地链接/锚点与 A01–A23 编号静态核对通过，记录在 doc-checks.json。未启动应用、检查程序或 UI 自动化，未更新已安装插件或整包，未操作用户数据；实际标题/卡片对齐和宽窄窗口滚动交由用户确认。

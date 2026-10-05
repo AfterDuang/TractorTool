@@ -31,7 +31,7 @@
 | 层级 | 当前可引用的结果 |
 | --- | --- |
 | Review/静态 | [E49](PROJECT_HISTORY.md#evidence-settings-chrome) 子代理独立核对设置/标题栏源码及固定版本控件模板，未发现确定缺陷或新增无用/重复实现。[E43](PROJECT_HISTORY.md#evidence-installer) 两代理检查并修正安装完整性、维护并发及来源校验，3 个坏样本均被拒绝。当前文档、脚本职责与入口核对见 [E51](PROJECT_HISTORY.md#evidence-docs-current-state)；各轮方法及适用代码保留在历史 |
-| 宿主与插件构建 | E49 宿主及集成检查工程 Debug 编译通过，0 警告/0 错误；全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell)。[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 剪贴板 1.1.2、[E47](PROJECT_HISTORY.md#evidence-video-output-bar) 视频 0.5.3 引用发布 SDK 独立打包，各 0 警告/0 错误，原宿主文件哈希未变 |
+| 宿主与插件构建 | E49 宿主及集成检查工程 Debug 编译通过，0 警告/0 错误；全解决方案 Debug 证据仍为 [E39](PROJECT_HISTORY.md#evidence-startup-shell)。[E46](PROJECT_HISTORY.md#evidence-clipboard-bottom-spacing) 剪贴板 1.1.2、[E52](PROJECT_HISTORY.md#evidence-video-parameter-heading) 视频 0.5.4 引用发布 SDK 独立打包，各 0 警告/0 错误，原宿主文件哈希未变 |
 | 分发构建/校验 | E43 完整 Release win-x64 自包含宿主、两个独立插件及安装器构建成功，311 文件及整包/独立插件一致性、安装器来源成对校验通过。这是 E43 快照的证据；目录中新产物的版本与观察范围另见 [本地产物](#local-artifacts)，不自动继承历史校验结果 |
 | 开发入口 | [E45](PROJECT_HISTORY.md#evidence-script-cleanup) 统一插件打包/宿主验证脚本，[E48](PROJECT_HISTORY.md#evidence-vscode-publish) 提供 VS Code 本地发布菜单；配置及脚本语法、引用静态检查通过，菜单交互未实测。[项目首页](../README.md) 与 [脚本说明](../scripts/README.md) 分别提供使用入口和脚本职责 |
 | 自动化/集成 | E49 新增布局/折叠断言只编译未运行；E37–E39 的迁移核心 9 组、管理关联 6 组也只编译未运行。日志保留、依赖、任务等当前检查和全部逐项缺口见第 4 节，不能套用旧版通过结果 |
@@ -40,7 +40,7 @@
 
 用户接手运行测试；未经新指示不启动应用、检查程序、FFmpeg、UI 自动化，不操作真实配置、剪贴板或媒体。静态检查、构建、替身/Headless 不能替代真实系统和硬件证据。早期 artifacts 曾被外部清理，历史路径不保证仍存在。
 
-整理期间并行提交 `b83338d` 将视频源码清单更新为 0.5.4、对齐左右标题；本轮只核对该源码差异，未验证其构建或运行，不把 E47 的 0.5.3 证据套用到它。
+[E52](PROJECT_HISTORY.md#evidence-video-parameter-heading) 为视频 0.5.4 补齐独立构建与包内容静态证据；左栏“导出参数”与右栏标题、首行卡片对齐，真实 UI 仍待用户确认。
 
 <a id="workflow"></a>
 
@@ -78,7 +78,9 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 2026-10-05 仅检查目录及元数据：`artifacts/local-publish-20261005-160113-3f6ed8/distribution` 存在，`assets` 内有宿主 ZIP、安装器、两个插件 ZIP、SHA256SUMS、release.json 和 installer.json；宿主布局在其 `layout/TractorTool-0.1.0-win-x64`。元数据记录产品 0.1.0、剪贴板 1.1.2、视频 0.5.3、源码 `05c8371`、sourceDirty=true、SDK 10.0.401 及 Inno Setup 6.7.3。
 
-**这次没有重新构建、执行产物校验或安装运行；文件存在及元数据不等于整包验收通过。** 旧 `artifacts/local-distribution`、`clipboard-ui-1.1.2`、`video-ui-0.5.3` 和 `settings-chrome` 已不存在，不再作为现行入口；原执行证据留在历史。后续发布使用菜单生成新目录，以上快照只在本页维护。
+**E51 对上述整包只核对文件和元数据，没有重新构建、执行产物校验或安装运行，不能据此判定整包验收通过。** 旧 `artifacts/local-distribution`、`clipboard-ui-1.1.2`、`video-ui-0.5.3` 和 `settings-chrome` 已不存在，不再作为现行入口；原执行证据留在历史。后续发布使用菜单生成新目录，以上快照只在本页维护。
+
+E52 视频独立更新包：`artifacts/video-ui-0.5.4/package/TractorTool.VideoExport-0.5.4.zip`。引用上述宿主布局作为 SDK 构建，包清单、SHA256、许可与共享 DLL 排除静态核对通过，312 个原宿主文件哈希未变；没有修改整包或已安装插件，没有运行应用。
 
 ### 当前人工回归重点
 
@@ -139,7 +141,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | E46 修正截图中卡片贴窗口底框的问题，1.1.2 独立编译/打包通过，UI 待用户验证；不据旧截图认定空选择错误及全部系统行为通过。模型检查未重新运行，Windows 完整行为仍待验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 0.5.2 完整报告、预设命名及任务接入已独立打包；媒体/参数/进度/隔离输出检查只编译，真实媒体/中文路径/取消尚未运行 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
-| A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | E47 视频 0.5.3 输出栏与按钮层级调整已独立编译/打包，宽窄窗口、长路径及选择/取消待用户验证；预设增删改/复制、勾选与原子保存已编译，旧偏好兼容与实际重启仍待验 |
+| A11 | 预设与持久化 | 多张独立参数卡片可保存复用，源文件/封面不固定绑定到预设 | 集成、UI | E52 视频 0.5.4 左右标题对齐及固定输出栏已独立编译/打包，宽窄窗口、独立滚动、长路径及选择/取消待用户验证；预设增删改/复制、勾选与原子保存已编译，旧偏好兼容与实际重启仍待验 |
 | A12 | 名称与大小预估 | 改名不改变参数，码率单位正确，仅显示预计大小，无目标 MB 控制 | 单元、UI | 每卡独立参数/名称与码率预估已编译未运行 |
 | A13 | 多版本串行 | N 张选中卡片对应 N 个结果，任何时刻最多一个转码任务运行 | 集成、进程 | 插件实例持有单批次串行执行，失败后继续；隔离替身用例只编译未运行 |
 | A14 | 参数快照 | 入队后编辑预设不影响已提交任务，源文件变化可检测 | 集成 | 提交时快照所选预设及源身份；批次持有封面只读共享锁、单项复制封面；运行中不允许编辑，未运行验收 |
@@ -171,4 +173,4 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E51 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E52 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
