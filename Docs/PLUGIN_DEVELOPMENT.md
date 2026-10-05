@@ -34,7 +34,7 @@
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
 | `apiVersion` | 当前 1.7，仍接受 1.0–1.6；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7 |
-| `uiApiVersion` | 当前为 1.3；宿主仍接受旧 1.0、1.1、1.2 页面注册 |
+| `uiApiVersion` | 当前为 1.4；宿主仍接受旧 1.0–1.3 页面注册与已有公开方法签名 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可省略/空；否则为 `[{"id":"FFmpeg","version":"9.0.2"}]`，最多 32 项、不重复；清单有效但源未提供时页面仍可加载，申请时明确报告不可用 |
@@ -123,9 +123,9 @@ var result = await context.Processes!.RunAsync(
 - 页面采用 Avalonia/MVVM，复用宿主 UI SDK 的 `SettingRow`、`ToolIcon` 和 [共享样式](../TractorTool.UI/Styles/SharedStyles.axaml)；业务布局放插件自己的 View。
 - 样式归属遵循 [公共 UI / 宿主 / 页面边界](ARCHITECTURE.md#ui-style-ownership)。页面可以有局部 `Styles` 调整列表密度等布局，不向 Application 注入全局规则，不引用 `TractorTool/Styles/ShellStyles.axaml` 或依赖 `shell`、`rail`、`PagePresenter` 等宿主私有标识。
 - 颜色使用主题动态资源，支持深色、浅色、跟随系统和主题色，不再安装第二套全局主题。工具身份可用彩色图片并保留原色；设置和工具栏操作使用共享单色符号，随主题调整前景色。
-- 切页由宿主 PageHost 统一呈现和过渡，页面不得绕过导航所有权控制宿主窗口。
+- 切页由宿主 PageHost 统一呈现和过渡，页面不得绕过导航所有权控制宿主窗口。UI API 1.4 可在页面上 `AddHandler(PageHost.NavigatingFromEvent, (_, e) => e.Cancel = ...)` 取消离页；嵌套设置页由设置容器转发。PageHost 已移除内部 FAFrame，不再触发其 NavigatingFrom/NavigatedFrom/NavigatedTo 事件；依赖这些实现细节的页面须迁移，初始化使用 Loaded，清理仍使用 IPluginPageLifetime（必要时幂等处理 Unloaded）。仅使用已有 Present/Clear 的插件不必因此改版或重新编译。
 - 普通控件直接使用当前 FluentAvalonia 主题；共享 MotionStyles 自动将“界面动画”偏好应用到控件及模板子元素，不为每个开关另写动画、定时器或复制模板。公共表面复用 card / themeSurface / SettingRow 等样式，主题过渡时长只有 UI SDK 一个来源；不要依赖已移除的主窗口 themeTransitions class。
-- 自定义 Animation/Composition 读取已有共享库的 `FluentAvalonia.Core.FAUISettings.AreAnimationsEnabled()`，自行取消其拥有的动效；普通属性 Transitions 和 PageHost 已由公共层处理。Motion.Configure 是宿主组装入口，插件不调用它或覆盖 AppMotionEnabled 全局偏好；不通过关闭全局时钟影响进度指示。第三方已开始的页面/展开过渡可能短时继续，详见 [统一 UI](ARCHITECTURE.md#ui)。
+- 自定义 Animation/Composition 读取已有共享库的 `FluentAvalonia.Core.FAUISettings.AreAnimationsEnabled()`，自行取消其拥有的动效；普通属性 Transitions 和 PageHost 已由公共层处理。Motion.Configure 是宿主组装入口，插件不调用它或覆盖 AppMotionEnabled 全局偏好；不通过关闭全局时钟影响进度指示。第三方已开始的展开过渡可能短时继续，详见 [统一 UI](ARCHITECTURE.md#ui)。
 - 有交互状态的列表使用稳定模型与可观察集合原位更新，避免每次刷新 Clear/替换整份 ItemsSource，造成动画中断、选择或焦点丢失；失败回退要覆盖“模型值未变、控件已操作”的分支。
 - 后台变化经 UI 调度更新状态；列表、日志和订阅须有边界。加载、空、失败状态明确，长路径与较窄窗口可用。
 - 保持绑定类型正确。字符串是否为空使用显式布尔属性并通知变化，不用 `!!字符串` 强制转换；不能用关闭编译绑定掩盖路径错误。

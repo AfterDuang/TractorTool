@@ -2,7 +2,7 @@ using Avalonia.Controls;
 namespace TractorTool.UI;
 public static class UiApi
 {
-    public const string Version = "1.3";
+    public const string Version = "1.4";
     public const string AvaloniaVersion = "12.1.2";
 }
 public interface IPluginUiModule { void RegisterPages(IPluginPageRegistry registry); }

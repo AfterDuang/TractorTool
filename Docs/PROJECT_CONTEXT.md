@@ -4,9 +4,9 @@
 
 ## 1. 当前位置
 
-**处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 最近宿主改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
+**处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 标题栏布局最近改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
-最新调查为 [E54](PROJECT_HISTORY.md#evidence-memory-investigation)：用户确认发布版反复切页/剪贴板图片操作后内存升高。用户仅授权此次一分钟数字计数采集，已完成；没有读取剪贴板正文、堆转储或接管 UI。计数显示托管堆显著增长，源码定位 `FAFrame` 漏解绑窗口返回事件的持有路径；功能代码未修。此项优先于 Release，详细数值、固定依赖源码及证据见 E54，不能把本次授权延伸为常态自动测试。
+最新修复为 [E55](PROJECT_HISTORY.md#evidence-navigation-memory-fix)：移除公共 PageHost 内部 FAFrame 的窗口事件持有路径，改用原生 Border/Transitions，保留同步取消及异常恢复。宿主/集成检查 Release 构建通过；本次用户单独授权的隔离导航检查 10/10 通过，动画开/关各 40 轮、320 个旧对象全部可回收。旧发布 UI DLL 对照仍保留 124/160 个对象。子代理 Review 结论及精确证据见 E55。真实发布版长期切页/图片内存趋势待用户重新打包复测，未操作当前进程、剪贴板或用户数据；不把这次授权延伸为常态自动测试。
 
 [E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。
 
@@ -15,7 +15,7 @@
 
 ## 2. 下次改动必须保留的边界
 
-- 框架只负责公共连接、管理、生命周期和交互，业务留插件，不预建 Python/AI/Worker 平台。Contracts API 1.7 / UI API 1.3；宿主不引用具体插件，正式插件独立使用发布 SDK，源码编译不自动更新已装 DLL。
+- 框架只负责公共连接、管理、生命周期和交互，业务留插件，不预建 Python/AI/Worker 平台。Contracts API 1.7 / UI API 1.4；保留原有公开方法/注册 ABI，PageHost 取消事件从 1.4 提供，依赖旧 FAFrame 事件者需按插件规范迁移。宿主不引用具体插件，正式插件独立使用发布 SDK，源码编译不自动更新已装 DLL。
 - 启动只创建一次 MainWindow，实例恢复不重新初始化；准备完成前不创建业务写入服务/插件。进度事件不能迟到覆盖主页；启动中关闭取消并退出，进入业务界面后关闭到托盘。
 - 迁移保持 profile/数据根/插件安装目录互斥，提交前失败保留旧指针，切换后收尾失败停止加载并在下次恢复；保留原根、恢复记录和插件代码。重试先核对目标归属/内容、专属 scratch 与空间，详见 [存储架构](ARCHITECTURE.md#storage)。
 - 分发只写新目录，ZIP 解压不等于升级；安装器仅使用已校验且 installationProtocol=1 的 ZIP。升级保留整个已有 Plugins，卸载保留插件及数据，首次安装残留只能同包恢复。WindowsMaintenance 与安装器的命名门/存活信号须一致，维护不强杀任务、不轮询；当前互斥限同一 Windows 会话，不能删除启动保护却保留协议标记。
@@ -33,4 +33,4 @@
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一项优先修复 **E54 公共导航内存持有问题**，入口为 `TractorTool.UI/Controls/PageHost.cs`；核对全部嵌套宿主和导航取消/失败路径，补旧页面可回收检查，不用定时强制 GC 或反射清空第三方私有事件掩盖问题。随后继续 **M5 GitHub Release 发布流程**。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；其余运行缺口保持待验。
+下一步由用户重新发布后复测 **E55 导航修复** 的真实内存曲线及切页视觉效果；随后继续 **M5 GitHub Release 发布流程**。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；其余运行缺口保持待验。不得添加定时强制 GC 或反射清空第三方私有事件来掩盖资源持有。

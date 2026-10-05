@@ -1,6 +1,9 @@
+using System.Runtime.CompilerServices;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Threading;
-using FluentAvalonia.UI.Controls;
+using FluentAvalonia.Core;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
@@ -13,31 +16,96 @@ internal static class NavigationChecks
 {
     public static void Run(Action<string, Action> check, string output)
     {
-        check("Cancelled Frame navigation retains the current page", () =>
+        check("Detached nested page hosts and page models are collectible with their window still open", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            var presenter = new PageHost();
+            var window = new Window { Content = presenter, Width = 1000, Height = 600 };
+            window.Show();
+            try
+            {
+                foreach (var animations in new[] { false, true })
+                {
+                    Motion.Configure(Application.Current!, animations);
+                    var retired = NavigateRepeatedly(presenter, window);
+                    for (var attempt = 0; attempt < 3; attempt++)
+                    {
+                        Dispatcher.UIThread.RunJobs();
+                        window.UpdateLayout(); AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                    }
+                    if (retired.Any(reference => reference.IsAlive))
+                        throw new InvalidOperationException($"Animations={animations}: {retired.Count(reference => reference.IsAlive)} / {retired.Count} retired objects retained.");
+                    GC.KeepAlive(window); GC.KeepAlive(presenter);
+                }
+            }
+            finally { Motion.Configure(Application.Current!, originalMotion); presenter.Clear(); window.Close(); }
+        });
+
+        check("Rapid navigation, clearing and disabled motion leave the current page visible", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            var presenter = new PageHost();
+            var window = new Window { Content = presenter, Width = 400, Height = 300 };
+            window.Show();
+            try
+            {
+                Motion.Configure(Application.Current!, true);
+                presenter.Present(new Border()); presenter.Clear();
+                presenter.Present(new Border()); presenter.Present(new Border());
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                var deadline = DateTime.UtcNow.AddSeconds(2);
+                while (presenter.Child!.Opacity < 1 && DateTime.UtcNow < deadline)
+                {
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    Dispatcher.UIThread.RunJobs(); Thread.Sleep(10);
+                }
+                Require(presenter.Child!.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
+                presenter.Present(new Border());
+                Motion.Configure(Application.Current!, false); // Also disable a queued entrance.
+                Dispatcher.UIThread.RunJobs();
+                Require(presenter.Child.Opacity == 1 && presenter.Child.Transitions is null);
+                presenter.Present(new Border());
+                Require(presenter.Child.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
+            }
+            finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
+        });
+
+        check("UI 1.4 accepts existing page contracts and rejects future versions", () =>
+        {
+            var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
+            var manifest = new PluginManifest { ApiVersion = "1.7", AvaloniaVersion = UiApi.AvaloniaVersion, SupportedPlatforms = ["windows"] };
+            foreach (var version in new[] { "1.0", "1.1", "1.2", "1.3", "1.4" })
+                Require(compatibility.Check(manifest with { UiApiVersion = version }) is null);
+            Require(compatibility.Check(manifest with { UiApiVersion = "1.5" }) is not null);
+            Require(new HostCompatibility("windows", "win-x64", "1.3", UiApi.AvaloniaVersion)
+                .Check(manifest with { UiApiVersion = "1.4" }) is not null);
+        });
+
+        check("Cancelled navigation retains the current page", () =>
         {
             var presenter = new PageHost();
             var current = new Border();
             Require(presenter.Present(current));
-            current.AddHandler(FAFrame.NavigatingFromEvent, (_, args) => args.Cancel = true);
-            var frame = (FAFrame)presenter.Child!;
+            current.AddHandler(PageHost.NavigatingFromEvent, (_, args) => args.Cancel = true);
+            var container = (Border)presenter.Child!;
             Require(!presenter.Present(new Border()));
-            Require(ReferenceEquals(frame, presenter.Child) && ReferenceEquals(frame.Content, current));
+            Require(ReferenceEquals(container, presenter.Child) && ReferenceEquals(container.Child, current));
             presenter.Clear();
         });
 
-        check("Failed Frame navigation after its entry changed replaces the container", () =>
+        check("Navigation callback failure leaves a usable fresh container", () =>
         {
             var presenter = new PageHost();
             var current = new Border();
             Require(presenter.Present(current));
-            // This event runs after FAFrame has already assigned its new CurrentEntry.
-            current.AddHandler(FAFrame.NavigatedFromEvent, (_, _) => throw new InvalidOperationException("fixture navigation failed"));
+            current.AddHandler(PageHost.NavigatingFromEvent, (_, _) => throw new InvalidOperationException("fixture navigation failed"));
             var retired = presenter.Child;
             ExpectFailure(() => presenter.Present(new Border()), "fixture navigation failed");
             Require(!ReferenceEquals(retired, presenter.Child));
             var next = new Border();
             Require(presenter.Present(next));
-            Require(ReferenceEquals(((FAFrame)presenter.Child!).Content, next));
+            Require(ReferenceEquals(((Border)presenter.Child!).Child, next));
             presenter.Clear();
         });
 
@@ -52,6 +120,10 @@ internal static class NavigationChecks
                 var faulty = new Border();
                 faulty.AttachedToLogicalTree += (_, _) => throw new InvalidOperationException("fixture attachment failed");
                 ExpectFailure(() => presenter.Present(faulty), "fixture attachment failed");
+                var detaching = new Border();
+                Require(presenter.Present(detaching));
+                detaching.DetachedFromLogicalTree += (_, _) => throw new InvalidOperationException("fixture detachment failed");
+                ExpectFailure(() => presenter.Present(new Border()), "fixture detachment failed");
                 Require(presenter.Present(new Border()));
             }
             finally { presenter.Clear(); window.Close(); }
@@ -66,7 +138,7 @@ internal static class NavigationChecks
             var owner = new Border { Child = foreign };
             ExpectFailure(() => presenter.Present(foreign), "独立页面");
             Require(ReferenceEquals(owner.Child, foreign));
-            Require(ReferenceEquals(((FAFrame)presenter.Child!).Content, current));
+            Require(ReferenceEquals(((Border)presenter.Child!).Child, current));
             presenter.Clear();
         });
 
@@ -78,7 +150,7 @@ internal static class NavigationChecks
             var lifetime = new PageLifetimeProbe();
             var pluginPage = new Border { DataContext = lifetime };
             var allow = false;
-            pluginPage.AddHandler(FAFrame.NavigatingFromEvent, (_, e) => e.Cancel = !allow);
+            pluginPage.AddHandler(PageHost.NavigatingFromEvent, (_, e) => e.Cancel = !allow);
             var category = new SettingsPage("Plugin", () => pluginPage); vm.AddPluginPage(category); vm.SelectedPage = category;
             var settings = new SettingsView { DataContext = vm };
             var outer = new PageHost(); var window = new Window { Content = outer, Width = 1000, Height = 600 };
@@ -119,7 +191,7 @@ internal static class NavigationChecks
                     Require(vm.SelectedPage == vm.SoftwareSettings[0] && vm.Breadcrumbs.Count == 1);
                 }
                 vm.NavigateCommand.Execute(vm.AppearancePage);
-                window.Width = 600; window.UpdateLayout();
+                window.Width = 600; Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
                 var compact = view.FindControl<ComboBox>("CompactNavigation")!;
                 Require(compact.IsVisible && ReferenceEquals(compact.SelectedItem, vm.SoftwareSettings[0]));
                 compact.SelectedItem = vm.SoftwareSettings[1];
@@ -165,6 +237,28 @@ internal static class NavigationChecks
     private static void Require(bool condition)
     {
         if (!condition) throw new InvalidOperationException("Navigation regression assertion failed.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static List<WeakReference> NavigateRepeatedly(PageHost presenter, Window window)
+    {
+        var retired = new List<WeakReference>();
+        for (var i = 0; i < 40; i++)
+        {
+            var model = new object();
+            var leaf = new Border { DataContext = model };
+            var nested = new PageHost();
+            var page = new Border { Child = nested };
+            nested.Present(leaf);
+            presenter.Present(page);
+            window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+            retired.AddRange([new(page), new(nested), new(leaf), new(model)]);
+            // Settings explicitly clears its nested host; logs/video leave with the outer page.
+            if (i % 2 == 0) nested.Clear();
+            presenter.Present(new Border());
+        }
+        window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+        return retired;
     }
 
     private static void ExpectFailure(Action action, string message)

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（导航页面回收） | [E55 · 公共导航内存修复与隔离回归（2026-10-05）](#evidence-navigation-memory-fix) |
 | 调查（发布版内存） | [E54 · 内存计数与导航事件持有路径（2026-10-05）](#evidence-memory-investigation) |
 | 维护（标题栏图文） | [E53 · 轻量标题栏标识（2026-10-05）](#evidence-titlebar-branding) |
 | 维护（视频参数标题） | [E52 · 导出参数标题与左右对齐（2026-10-05）](#evidence-video-parameter-heading) |
@@ -1745,3 +1746,29 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 剪贴板当前代码会释放被替换/迟到预览、离页取消和解绑；图片缩放仍会产生临时数组，快速预览的取消与新解码可能重叠，但本轮未证明它们是实际泄漏来源。此次发现是依赖源码层的明确持有路径加真实堆增长证据，尚无旧页面对象数量/引用根的运行快照，不能把全部占用归因于同一问题。
 
 本轮只修改调查/交接文档，功能代码、依赖版本和发布包未改；未启动/重启应用、未执行自动化/Headless/UI 测试、未强制 GC、未收集转储。后续应在公共 PageHost 统一修复生命周期并补旧页面可回收的隔离检查，再由用户对发布版执行相同操作比较趋势；其他验收状态不因诊断成功而升级。
+
+<a id="evidence-navigation-memory-fix"></a>
+
+## E55：公共导航内存修复与隔离回归（2026-10-05）
+
+用户要求修复 E54 的内存问题并由子代理 Review；另明确同意“允许本次隔离检查”。授权仅涵盖测试窗口/临时数据中的导航检查，不含当前发布进程、真实剪贴板、转储或全量媒体测试。
+
+修复集中在 PageHost：移除 FAFrame 实例及其导航缓存/窗口事件路径，原生 Border 承载单页，Avalonia Transitions 完成 18 DIP、500 ms 上移淡入。换页清空过渡，脱离由框架释放；排队的入口回调核对容器与页面身份。保留原同步 Present/Clear、未挂载校验、取消返回 false 和异常后新容器恢复。未添加反射解绑、定时器或生产 GC。
+
+UI API 增至 1.4，增加原生 CancelRoutedEventArgs 的 PageHost.NavigatingFromEvent；Settings 转发使用此事件。接受原 UI 1.0–1.3 注册及二进制方法，保留已发布 IFANavigationPageFactory/GetPage/GetPageFromObject 签名；旧 FAFrame 导航事件不再发生，依赖这些事件的页面需按插件规范迁移，IPluginPageLifetime 不变。现有两个正式插件未引用旧事件，不需改插件版本。
+
+执行证据：
+
+```powershell
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/navigation-memory-fix/checks
+dotnet artifacts/navigation-memory-fix/checks/TractorTool.IntegrationChecks.dll artifacts/navigation-memory-fix/checks artifacts/navigation-memory-fix/evidence-final --navigation-only
+```
+
+- 宿主及关联库/检查工程 Release 构建：0 警告、0 错误。首次沙箱构建因 Avalonia BuildServices 写用户目录日志被拒失败，窄范围提权后成功；首次改写缺少工厂接口命名空间的编译错误已修。
+- Headless 导航检查：10/10 通过，日志 `artifacts/navigation-memory-fix/navigation-checks.txt`。覆盖动画开启/关闭时旧嵌套宿主、页面、叶节点及模型回收；快速切页/Clear/关闭动画后仍可见；UI 版本边界；取消保留原页；导航回调/逻辑挂载/脱离异常后恢复；拒绝已挂载页面；嵌套 Settings 取消、分类/面包屑/窄窗与 MainViewModel 成功后才清理。
+- 回收检查在窗口及外层 PageHost 仍存活时，动画关/开各导航 40 轮，共 320 个弱引用全部失效；半数内层显式 Clear，半数随外页一起脱离。强制 GC 只在此合成测试进程内，用于判断对象仍有无强引用，不计为实际应用内存曲线。
+- 首次 Headless 检查的回收/窄窗断言失败：补充测试平台渲染时钟推进及尺寸变更 Dispatcher 排空后通过。渲染器尚未处理的控件引用不能直接当泄漏，未为此更改生产生命周期。
+- 反证：复制检查输出到独立 `baseline` 目录，仅以 E54 运行包的旧 TractorTool.UI.dll 替换该目录的 UI DLL，原包只读。相同回收检查（不依赖新增事件）在动画关闭时报告 **124/160** 个对象仍被持有。其余新接口/内部容器断言因旧 DLL 缺少事件或类型不同失败，属于对照不兼容，不能用作其他产品回归结论。
+- 子代理 `memory_fix_review` 明确使用 gpt-6.1-sol / high，只读检查根因、所有调用入口、原生动画释放、取消/错误所有权、SDK 边界及多余代码；未发现可确认的 P0–P2 缺陷。保留两个兼容工厂方法有已发布 ABI 依据，不新增业务框架。
+
+本轮未执行全量检查、正式插件真实加载、Windows UI/图片预览、FFmpeg 或发布进程新计数；未覆盖正在使用的发布目录。用户下一步重新发布并重复原操作比较长期趋势，不能由弱引用测试推断所有本机/GPU/剪贴板内存均无增长。文档、协议说明、当前验收和交接同步更新；其余 M5/真实运行缺口继续保留。

@@ -20,7 +20,8 @@ using TractorTool.UI;
 using TractorTool.ViewModels;
 using TractorTool.Views;
 
-if (args.Length != 2) throw new ArgumentException("Usage: checks <published-host> <isolated-evidence-directory>");
+if (args.Length != 2 && !(args.Length == 3 && args[2] == "--navigation-only"))
+    throw new ArgumentException("Usage: checks <published-host> <isolated-evidence-directory> [--navigation-only]");
 var published = Path.GetFullPath(args[0]);
 var output = Path.GetFullPath(args[1]);
 Directory.CreateDirectory(output);
@@ -41,6 +42,12 @@ void Check(string name, Action action)
 {
     try { action(); passed++; Console.WriteLine("PASS " + name); }
     catch (Exception ex) { failed++; Console.WriteLine("FAIL " + name + ": " + ex); }
+}
+if (args.Length == 3)
+{
+    NavigationChecks.Run(Check, output);
+    Console.WriteLine($"Navigation checks: {passed} passed, {failed} failed.");
+    return failed == 0 ? 0 : 1;
 }
 var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
 var paths = new AppPaths(published, Path.Combine(output, "fixed"), Path.Combine(output, "data"));

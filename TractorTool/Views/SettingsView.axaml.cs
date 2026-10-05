@@ -3,7 +3,7 @@ using Avalonia.VisualTree;
 using System.ComponentModel;
 using TractorTool.UI;
 using TractorTool.ViewModels;
-using FluentAvalonia.UI.Controls;
+using TractorTool.UI.Controls;
 using Avalonia.Controls.Primitives;
 namespace TractorTool.Views;
 public partial class SettingsView : UserControl, IPluginPageLifetime
@@ -15,9 +15,9 @@ public partial class SettingsView : UserControl, IPluginPageLifetime
     public SettingsView()
     {
         InitializeComponent();
-        // Frame uses a direct event. Preserve the nested plugin page's right to cancel
+        // PageHost uses a direct event. Preserve the nested plugin page's right to cancel
         // when the user leaves the entire settings area, as well as when changing category.
-        AddHandler(FAFrame.NavigatingFromEvent, (_, args) =>
+        AddHandler(PageHost.NavigatingFromEvent, (_, args) =>
         {
             if (_page is null || args.Cancel) return;
             var source = args.Source; var handled = args.Handled;
