@@ -5,10 +5,10 @@
         Width="1120" Height="760" MinWidth="720" MinHeight="540"
         Title="TractorTool" Icon="/Assets/tractortool.png"
         Background="{DynamicResource AppBackgroundBrush}" Foreground="{DynamicResource AppTextBrush}">
-  <Grid RowDefinitions="48,*">
+  <Grid RowDefinitions="Auto,*">
     <!-- Avalonia 12 needs an explicit non-client role on the custom surface above the default title bar. -->
     <Border x:Name="TitleBarDragRegion" Classes="themeSurface" WindowDecorationProperties.ElementRole="TitleBar"
-            Background="{DynamicResource AppSidebarBrush}" Padding="20,0,160,0">
+            Background="{DynamicResource AppSidebarBrush}" Height="32" Padding="20,0,160,0">
       <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" IsHitTestVisible="False">
         <Image Source="/Assets/tractortool.png" Width="24" Height="24" />
         <TextBlock Text="TractorTool" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />

@@ -12,12 +12,14 @@
               SelectionChanged="CategoryChanged" ItemTemplate="{StaticResource CategoryTemplate}" AutomationProperties.Name="设置分类" />
     <ScrollViewer x:Name="Sidebar" Grid.Row="1" Margin="0,0,20,0" HorizontalScrollBarVisibility="Disabled">
       <StackPanel Spacing="8">
-        <TextBlock Text="软件设置" Classes="caption" Margin="8,0,0,4" />
-        <ListBox ItemsSource="{Binding SoftwareSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
-                 ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" />
-        <TextBlock Text="插件设置" Classes="caption" Margin="8,20,0,4" IsVisible="{Binding HasPluginSettings}" />
-        <ListBox ItemsSource="{Binding PluginSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
-                 ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" />
+        <Expander x:Name="SoftwareSettingsGroup" Classes="settingsGroup" Header="软件设置" IsExpanded="True">
+          <ListBox ItemsSource="{Binding SoftwareSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
+                   ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" Margin="12,4,0,0" />
+        </Expander>
+        <Expander x:Name="PluginSettingsGroup" Classes="settingsGroup" Header="插件设置" IsExpanded="True" IsVisible="{Binding HasPluginSettings}">
+          <ListBox ItemsSource="{Binding PluginSettings}" SelectedItem="{Binding SelectedCategory, Mode=OneWay}"
+                   ItemTemplate="{StaticResource CategoryTemplate}" SelectionChanged="CategoryChanged" Background="Transparent" Margin="12,4,0,0" />
+        </Expander>
       </StackPanel>
     </ScrollViewer>
     <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*">

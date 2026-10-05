@@ -57,6 +57,9 @@ Check("Custom title surface has the native title role and decorative content can
     var title = window.FindControl<Border>("TitleBarDragRegion");
     Assert(title is not null && WindowDecorationProperties.GetElementRole(title) == WindowDecorationsElementRole.TitleBar);
     Assert(title!.Child is StackPanel { IsHitTestVisible: false });
+    window.UpdateLayout();
+    Assert(title.Bounds.Height == 32 && window.TitleBar.Height == title.Bounds.Height);
+    Assert(window.FindControl<FluentAvalonia.UI.Controls.FANavigationView>("NavigationView")!.Bounds.Top == title.Bounds.Bottom);
 });
 Check("Home is the initial page before plugins finish loading", () =>
 {
@@ -151,6 +154,17 @@ Check("Plugin settings write through registered page", () =>
 {
     vm.ShowSettingsCommand.Execute(null);
     vm.Settings.SelectedPage = vm.Settings.PluginSettings.Single(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); window.UpdateLayout();
+    var settingsView = (SettingsView)vm.CurrentPage!;
+    var softwareGroup = settingsView.FindControl<Expander>("SoftwareSettingsGroup")!;
+    var pluginGroup = settingsView.FindControl<Expander>("PluginSettingsGroup")!;
+    var editor = settingsView.GetVisualDescendants().OfType<TextBox>().Single();
+    Assert(softwareGroup.IsExpanded && pluginGroup.IsExpanded && pluginGroup.IsVisible);
+    softwareGroup.IsExpanded = pluginGroup.IsExpanded = false;
+    window.UpdateLayout();
+    Assert(ReferenceEquals(vm.Settings.SelectedPage, vm.Settings.PluginSettings.Single()));
+    Assert(ReferenceEquals(editor, settingsView.GetVisualDescendants().OfType<TextBox>().Single()));
+    pluginGroup.IsExpanded = true;
+    Assert(!softwareGroup.IsExpanded && ReferenceEquals(((ListBox)pluginGroup.Content!).SelectedItem, vm.Settings.SelectedCategory));
     vm.CurrentPage!.GetVisualDescendants().OfType<TextBox>().Single().Text = "integration-persisted";
     vm.CurrentPage!.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "保存插件设置")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     Assert(File.ReadAllText(Path.Combine(paths.GetPluginDataDirectory("Test.Independent"), "settings.json")).Contains("integration-persisted"));

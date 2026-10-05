@@ -16,7 +16,7 @@ public partial class MainWindow : FAAppWindow
     {
         InitializeComponent();
         _dialogs = new(this);
-        TitleBar.Height = 48;
+        TitleBar.Height = TitleBarDragRegion.Height;
         TitleBar.ExtendsContentIntoTitleBar = true;
         StartupExit.Click += (_, _) => Close();
         NavigationView.ItemInvoked += (_, e) =>

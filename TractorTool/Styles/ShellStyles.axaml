@@ -15,6 +15,19 @@
   <Style Selector="ui|PageHost#PagePresenter.workspace">
     <Setter Property="Margin" Value="0" />
   </Style>
+  <!-- Compact navigation groups keep the native expander's keyboard and animation behavior. -->
+  <Style Selector="Expander.settingsGroup">
+    <Setter Property="MinWidth" Value="0" /><Setter Property="MinHeight" Value="36" />
+    <Setter Property="Padding" Value="0" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Expander.settingsGroup /template/ ToggleButton#ExpanderHeader">
+    <Setter Property="Padding" Value="8,0,0,0" /><Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Expander.settingsGroup /template/ ToggleButton#ExpanderHeader:pointerover">
+    <Setter Property="Background" Value="{DynamicResource AppNavHoverBrush}" />
+  </Style>
   <!-- Adapt the navigation template while retaining its keyboard, selection and focus behavior. -->
   <Style Selector="fa|FANavigationView.shell">
     <Setter Property="Background" Value="{DynamicResource AppSidebarBrush}" />

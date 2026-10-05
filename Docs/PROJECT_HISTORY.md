@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（设置与标题栏） | [E49 · 设置折叠分组与标题栏留白（2026-10-05）](#evidence-settings-chrome) |
 | 开发体验（本地发布） | [E48 · VS Code 交互式发布入口（2026-10-05）](#evidence-vscode-publish) |
 | 维护（视频导出布局） | [E47 · 固定输出操作栏与按钮层级（2026-10-05）](#evidence-video-output-bar) |
 | 维护（剪贴板布局） | [E46 · 剪贴板底部留白与独立更新包（2026-10-05）](#evidence-clipboard-bottom-spacing) |
@@ -1655,3 +1656,19 @@ ExportWorkspaceView 将输出区域移到独立底行，横跨输入区与预设
 用户希望通过 VS Code 交互完成本地发布。新增 .vscode/tasks.json，使用原生任务及 pickString 选择 ZIP 或 ZIP＋安装包；进程任务调用 PowerShell 7，选择值通过环境变量传递，不把工作区路径拼成可执行命令。自动生成带日期时间及随机后缀的新目录，直接调用已有 Build-Distribution；安装包模式先调用 Get-InnoCompiler，版本、哈希和来源校验继续由现有脚本负责。未新增包装脚本、插件或发布依赖，没有改动 launch.json/F5、CI、产品 API 或业务源码。
 
 README 和开发入口改为菜单优先，同时保留 CLI。明确 PowerShell 扩展与运行时区别，要求 PowerShell 7.4+ 的 pwsh 在 PATH 中；本轮环境只能确认代理运行时提供 pwsh，不能据此保证用户 VS Code 可用。JSON、内嵌 PowerShell/既有脚本语法、任务输入/脚本引用及文档链接静态核对通过，检查脚本与结果在 artifacts/vscode-publish。未实跑 VS Code 菜单、发布/下载、应用或安装器，不新增运行验收证据。工作区并行进行的视频 0.5.3 修改及其文档保留，本轮提交仅包含发布入口和对应说明。
+
+<a id="evidence-settings-chrome"></a>
+
+## E49：设置折叠分组与标题栏留白（2026-10-05）
+
+用户要求软件设置/插件设置像参考图一样独立折叠，并指出标题栏底部空带。SettingsView 用两个原生 Expander 包裹现有分类列表，默认展开、子项缩进、无插件设置时整组隐藏；收起不改变 SelectedPage/SelectedCategory，不触发右侧页面清理。ShellStyles 只调整分组尺寸、透明背景与悬停，不复制模板、不新增状态服务，键盘与展开箭头/淡入动效沿用控件和现有 Motion 偏好；窄窗大类选择保持原逻辑。
+
+源码中 MainWindow 根 Grid 和 TitleBar.Height 均固定 48 DIP；对照当前 FluentAvalonia 3.1.0 的标题栏默认 32 DIP 及截图中按钮高度差，改为 TitleBarDragRegion.Height=32，根 Grid 使用 Auto，TitleBar.Height 取同一控件高度。保留原生标题区角色和不可命中的装饰内容，启动/迁移与业务界面共享此修正，不引入拖动处理或 Win32 Hook。
+
+已有集成检查补充标题区高度/内容紧接标题区，以及分组独立折叠、保留插件设置编辑器与选中项的断言。首次沙箱内构建被 Avalonia BuildServices 的用户目录日志写入权限阻止；允许该构建后成功，并修正新断言中的引用比较警告。最终命令如下，宿主及集成检查工程 Debug 编译成功，0 警告/0 错误；日志位于 artifacts/settings-chrome/build-final.log。AXAML、差异空白与受影响文档链接静态检查通过。
+
+```powershell
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Debug --no-restore -m:1 -nr:false
+```
+
+未运行应用、检查程序或 UI 自动化，未改变用户安装、插件或数据。真实深浅主题、展开/收起与关闭动画、键盘、窄窗、普通/最大化/DPI 及原生标题栏按钮和拖动仍待用户验证。公共 API 和插件版本不变；并行的视频布局及 VS Code 发布入口修改保持独立，不纳入本轮代码提交。M5 Release 与既有运行验收缺口不变。
