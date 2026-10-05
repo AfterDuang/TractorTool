@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 维护（标题栏图文） | [E53 · 轻量标题栏标识（2026-10-05）](#evidence-titlebar-branding) |
 | 维护（视频参数标题） | [E52 · 导出参数标题与左右对齐（2026-10-05）](#evidence-video-parameter-heading) |
 | 文档（当前状态整理） | [E51 · 验证分层、产物入口与交接整理（2026-10-05）](#evidence-docs-current-state) |
 | 文档（脚本说明） | [E50 · 脚本用途、调用关系与产物说明（2026-10-05）](#evidence-scripts-readme) |
@@ -1707,3 +1708,15 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 视频清单升至 0.5.4，使用 Build-Plugin.ps1、正式插件 csproj 和 `artifacts/local-publish-20261005-160113-3f6ed8/distribution/layout/TractorTool-0.1.0-win-x64` SDK，输出至 `artifacts/video-ui-0.5.4/package`。独立构建通过，0 警告/0 错误；SDK 原有 312 文件哈希未变。更新包为 TractorTool.VideoExport-0.5.4.zip，AXAML、清单/程序集产品版本、SHA256、包内容一致性、许可和共享 DLL 排除核对通过；证据为同目录上层的 build.log、host-before.json、assembly-version.json、static-checks.json。
 
 文档 321 个本地链接/锚点与 A01–A23 编号静态核对通过，记录在 doc-checks.json。未启动应用、检查程序或 UI 自动化，未更新已安装插件或整包，未操作用户数据；实际标题/卡片对齐和宽窄窗口滚动交由用户确认。
+
+<a id="evidence-titlebar-branding"></a>
+
+## E53：轻量标题栏标识（2026-10-05）
+
+用户要求参考 Apple HIG，并确认针对当前 Windows 窗口的调整：图标 24 → 16 DIP，软件名 15/半粗 → 13/常规，左边距 20 → 12、图文间距 12 → 8；移除标题栏“桌面工具箱”，主页和关于中的描述保留。只改 MainWindow.axaml，沿用现有主题色、32 DIP 高度、垂直居中、非客户区角色及装饰内容不参与命中；窗口按钮和拖动/双击实现不变，无新控件、样式框架或遗留辅助代码。
+
+参考 [Apple Branding](https://developer.apple.com/design/human-interface-guidelines/branding) 的品牌让位于内容、[Typography](https://developer.apple.com/cn/design/human-interface-guidelines/typography) 的字重/字号层级和 [Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars) 的有用标题原则。具体尺寸是本项目选择，不是 Apple 强制规格；保留 Windows 窗口行为，不复制 macOS 标题栏。
+
+执行 `dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false`：首次被沙箱阻止写入 Avalonia BuildServices 用户日志，获准重跑同一构建后通过，0 警告/0 错误。日志为 artifacts/titlebar-branding/build.log 和 build-final.log。AXAML 解析、文档链接/编号和差异空白静态检查通过；不为纯尺寸/字重修改新增断言程序。
+
+没有启动应用、检查程序或 UI 自动化，未重新打包分发或更新已安装插件；视觉比例、深浅主题、高 DPI、最大化及原生窗口交互仍待用户验证。公共 API、插件版本和业务均未改变；用户 .gitignore 与 .vscode/launch.json 修改保留且不纳入提交。

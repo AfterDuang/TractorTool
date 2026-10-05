@@ -4,7 +4,7 @@
 
 ## 1. 当前位置
 
-**处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 最近宿主改动为 [E49](PROJECT_HISTORY.md#evidence-settings-chrome)：设置分组独立折叠、标题区统一 32 DIP；宿主及集成检查工程编译通过，子代理 Review 未发现确定缺陷，断言与真实 UI 未运行。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 左侧新增固定“导出参数”标题，与右侧标题及卡片对齐，保留独立滚动；独立构建及包内容静态核对通过。剪贴板 1.1.2 底部留白、视频标题对齐及固定操作栏仍待用户验证。
+**处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 最近宿主改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
 [E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。
 
@@ -31,4 +31,4 @@
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一项开发仍是 **M5 GitHub Release 发布流程**，复用现有 ZIP/安装器及校验，用户并行验证上述运行缺口。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；公开发布前仍需确认本项目授权、签名及无 SDK 机器等发布验收。本轮文档整理不启动这些开发或发布操作。
+下一项开发仍是 **M5 GitHub Release 发布流程**，复用现有 ZIP/安装器及校验，用户并行验证上述运行缺口。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；公开发布前仍需确认本项目授权、签名及无 SDK 机器等发布验收。
