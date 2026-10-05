@@ -6,6 +6,8 @@
 
 **处于 M5 可靠性与发布阶段，M1–M4 的功能实现已转维护，运行验收尚未完成。** 最近宿主改动为 [E53](PROJECT_HISTORY.md#evidence-titlebar-branding)：标题栏保留 32 DIP，图标缩至 16、软件名改为 13/常规字重，移除说明并收紧间距；只调整主窗口 AXAML，宿主 Debug 构建通过，真实 UI 未运行。E49 设置折叠及标题栏原生交互仍待验。最新插件改动 [E52](PROJECT_HISTORY.md#evidence-video-parameter-heading)：视频 0.5.4 标题/卡片对齐，独立构建及包静态核对通过。剪贴板 1.1.2 留白、视频布局及标题栏比例仍由用户验证。
 
+最新调查为 [E54](PROJECT_HISTORY.md#evidence-memory-investigation)：用户确认发布版反复切页/剪贴板图片操作后内存升高。用户仅授权此次一分钟数字计数采集，已完成；没有读取剪贴板正文、堆转储或接管 UI。计数显示托管堆显著增长，源码定位 `FAFrame` 漏解绑窗口返回事件的持有路径；功能代码未修。此项优先于 Release，详细数值、固定依赖源码及证据见 E54，不能把本次授权延伸为常态自动测试。
+
 [E51](PROJECT_HISTORY.md#evidence-docs-current-state) 仅整理文档、核对源码/现存产物元数据，未改变功能或验收结论。当前版本、构建证据、运行缺口及产物快照集中在 [开发台账](DEVELOPMENT.md#current-status)，不从历史包或文件存在推定新版已通过。
 
 - 用户接手测试；未经新指示不运行应用、检查程序、FFmpeg 或 UI 自动化，不访问真实配置/媒体/剪贴板。开发可做必要构建和静态核对，文档任务只核对文档。
@@ -31,4 +33,4 @@
 
 本地发布：VS Code“终端 → 运行任务 → TractorTool：本地发布”，可选择 ZIP 或安装包；菜单交互尚未实测。脚本职责见 [scripts/README](../scripts/README.md)，现存目录及元数据见 [本地产物](DEVELOPMENT.md#local-artifacts)，操作与回归方法见 [开发入口](DEVELOPMENT.md#workflow)。
 
-下一项开发仍是 **M5 GitHub Release 发布流程**，复用现有 ZIP/安装器及校验，用户并行验证上述运行缺口。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；公开发布前仍需确认本项目授权、签名及无 SDK 机器等发布验收。
+下一项优先修复 **E54 公共导航内存持有问题**，入口为 `TractorTool.UI/Controls/PageHost.cs`；核对全部嵌套宿主和导航取消/失败路径，补旧页面可回收检查，不用定时强制 GC 或反射清空第三方私有事件掩盖问题。随后继续 **M5 GitHub Release 发布流程**。CI 已接入但未在 GitHub 执行，未配置远程、推送或实际发布；其余运行缺口保持待验。

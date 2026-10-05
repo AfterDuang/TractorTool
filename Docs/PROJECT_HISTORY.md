@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 调查（发布版内存） | [E54 · 内存计数与导航事件持有路径（2026-10-05）](#evidence-memory-investigation) |
 | 维护（标题栏图文） | [E53 · 轻量标题栏标识（2026-10-05）](#evidence-titlebar-branding) |
 | 维护（视频参数标题） | [E52 · 导出参数标题与左右对齐（2026-10-05）](#evidence-video-parameter-heading) |
 | 文档（当前状态整理） | [E51 · 验证分层、产物入口与交接整理（2026-10-05）](#evidence-docs-current-state) |
@@ -1720,3 +1721,27 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 执行 `dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false`：首次被沙箱阻止写入 Avalonia BuildServices 用户日志，获准重跑同一构建后通过，0 警告/0 错误。日志为 artifacts/titlebar-branding/build.log 和 build-final.log。AXAML 解析、文档链接/编号和差异空白静态检查通过；不为纯尺寸/字重修改新增断言程序。
 
 没有启动应用、检查程序或 UI 自动化，未重新打包分发或更新已安装插件；视觉比例、深浅主题、高 DPI、最大化及原生窗口交互仍待用户验证。公共 API、插件版本和业务均未改变；用户 .gitignore 与 .vscode/launch.json 修改保留且不纳入提交。
+
+<a id="evidence-memory-investigation"></a>
+
+## E54：内存计数与导航事件持有路径（2026-10-05）
+
+用户报告调试版从一百多 MB 增至 383 MB，主要操作为频繁切页、查看/复制剪贴板图片；随后确认发布版同样增长，截图 418.1 MB。只读进程信息确认 PID 50824 来自 `artifacts/local-publish-20261005-172429-36f064/distribution/layout/TractorTool-0.1.0-win-x64/TractorTool.exe`；runtimeconfig/deps 记录 .NET 10.0.12、Avalonia 12.1.2、FluentAvaloniaUI 3.1.0。这只验证当前运行位置和依赖版本，不继承旧分发包验收结论。系统工作集、私有提交与截图列口径不同，不能直接互相比涨幅。
+
+用户明确授权“当前发布版约一分钟内存数字计数”，不读取剪贴板正文、不保存堆转储、不重启或接管界面。微软 `dotnet-counters` 10.0.745401 安装在忽略的 artifacts/memory-diagnostics/tools，非全局安装。首次附加被沙箱拒绝访问诊断管道；以同用户权限重试成功，命令为：
+
+```powershell
+& artifacts/memory-diagnostics/tools/dotnet-counters.exe collect --process-id 50824 --duration 00:00:01:00 --refresh-interval 1 --counters System.Runtime --format csv --output artifacts/memory-diagnostics/release-50824-counters.csv --resume-runtime:false
+```
+
+采集于香港时间 2026-10-05 17:33:28–17:34:27 完成，原始 CSV 与聚合 summary.json 均在 artifacts/memory-diagnostics；不含堆对象、文本或图片内容。60 个快照的 `dotnet.gc.last_collection.heap.size` 各代合计首尾为 390.43 / 451.83 MiB；Gen2 为 355.10 / 425.57 MiB，LOH 保持 20.44 MiB。59 个分配区间合计 271.47 MiB，累计分配不是净增长。Gen2 回收计数增量为 0，因此不能将 Gen2 全部空间或全部新增对象宣称为完整回收后仍存活。工作集为 723.52 → 785.10 MiB，但包含本机库、诊断与渲染等，不是纯托管对象大小。微软方法参考：[计数工具](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-counters)、[泄漏诊断](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/debug-memory-leak)。
+
+静态调查沿实际发布依赖的 nuspec 固定提交核对，发现可导致旧页面滞留的具体引用链：
+
+1. [FluentAvalonia 3.1.0 FAFrame](https://github.com/amwx/FluentAvalonia/blob/215ee0481e8b0e6d396cbe2a0f33dc791c5646ab/src/FluentAvalonia/UI/Controls/Frame/FAFrame.cs) 在 OnAttachedToVisualTree 订阅窗口 BackRequested，在 OnDetachedFromVisualTree 通过 TopLevel.GetTopLevel(this) 重新查窗口后解绑。
+2. [Avalonia 12.1.2 Visual](https://github.com/AvaloniaUI/Avalonia/blob/d3c867a9e2de379249b03dbeb3495bd7f076a81a/src/Avalonia.Base/Visual.cs) 的 SetVisualParent 先写入新父节点，再发出离树回调；[TopLevel.GetTopLevel](https://github.com/AvaloniaUI/Avalonia/blob/d3c867a9e2de379249b03dbeb3495bd7f076a81a/src/Avalonia.Controls/TopLevel.cs) 沿 VisualParent 查找窗口。整个页面被移除时，嵌套 Frame 已无法沿该路径找到原窗口，漏掉 -=。
+3. 原窗口仍持有 Frame 的事件处理器；Frame 又保留 Content、NavigationPageFactory 及其所在旧控件树。项目 [PageHost](../TractorTool.UI/Controls/PageHost.cs) 被日志、视频和设置页面嵌套使用，重新进入页面会重建导航控件；CacheSize=0 和关闭历史栈不能消除这条事件引用。单纯清 Content 也不能完整切断工厂及旧父控件引用。
+
+剪贴板当前代码会释放被替换/迟到预览、离页取消和解绑；图片缩放仍会产生临时数组，快速预览的取消与新解码可能重叠，但本轮未证明它们是实际泄漏来源。此次发现是依赖源码层的明确持有路径加真实堆增长证据，尚无旧页面对象数量/引用根的运行快照，不能把全部占用归因于同一问题。
+
+本轮只修改调查/交接文档，功能代码、依赖版本和发布包未改；未启动/重启应用、未执行自动化/Headless/UI 测试、未强制 GC、未收集转储。后续应在公共 PageHost 统一修复生命周期并补旧页面可回收的隔离检查，再由用户对发布版执行相同操作比较趋势；其他验收状态不因诊断成功而升级。
