@@ -111,6 +111,8 @@ public void RegisterTrayMenu(IPluginTrayMenu menu)
 
 独立示例见 [ProbePlugin](../tests/IndependentPlugin/ProbePlugin.cs)：右键托盘 → “独立测试插件” → 菜单计数/允许计数。测试切页与隐藏后状态保留、取消勾选后计数项禁用、显式退出、禁用插件重启后菜单消失；原有显示/退出入口继续正常。示例是机制夹具，不附带悬浮球业务；当前构建产物及运行证据只见 [开发台账](DEVELOPMENT.md#local-artifacts)。
 
+示例常驻服务仅等待停止令牌，无定时器或心跳日志；生命周期启停由宿主统一记录，托盘计数仅在点击时变化。不要为了证明后台仍运行而在日常日志中持续输出 tick。
+
 ### 有限任务（API 1.6）
 
 使用 `context.Tasks` 的 [任务契约](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)。QueueAsync 提交单项，QueueBatchAsync 一次登记整批并持久化摘要后返回句柄；业务按自己的顺序逐项等待 RunAsync，不以并行提交绕过串行要求。任务申请只包含批次标识和名称，具体参数快照及结果校验由插件拥有。
@@ -260,7 +262,7 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 ```powershell
 $publishedHost = 'H:\ProjH\TractorTool\artifacts\manual-publish'
 dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Release "-p:HostSdkDir=$publishedHost" -o .\artifacts\manual-plugin
-# 将 manual-plugin 完整输出放入该发布副本 Plugins/Test.Independent/1.0.0。
+# 将 manual-plugin 完整输出放入该发布副本 Plugins/Test.Independent/1.0.1（版本以输出清单为准）。
 # 用隔离 --profile-root 启动宿主，具体命令见 DEVELOPMENT.md。
 ```
 

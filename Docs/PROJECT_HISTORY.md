@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正（测试日志） | [E64 · 独立插件移除定时心跳（2026-10-06）](#evidence-quiet-probe) |
 | 扩展（插件托盘） | [E63 · 托盘菜单与生命周期（2026-10-06）](#evidence-plugin-tray) |
 | 反馈（本机测试） | [E62 · 用户测试暂未发现问题（2026-10-05）](#evidence-user-local-validation) |
 | M5（依赖复审与 Release） | [E61 · 恢复保护与发布草稿（2026-10-05）](#evidence-dependency-review-release) |
@@ -1938,3 +1939,17 @@ Core 与 UI 分别由 gpt-6.1-sol / high 子代理只读 Review。修复其发�
 本轮未启动应用、检查程序或接管 Windows UI，未运行真实托盘/硬件验收，未改用户配置或停止进程，未做远程推送/CI/Release。新 A24 留待用户；E62 既有本机反馈保留。保留用户 .gitignore 与 .vscode/launch.json 修改，不纳入提交。需求、架构、接入规范、台账与交接快照同步到本轮。
 
 最终静态核对：268 个 Markdown 文件链接无缺失；排除用户原有两项改动后的 diff 空白检查通过。
+
+<a id="evidence-quiet-probe"></a>
+
+## E64：独立测试插件移除定时心跳（2026-10-06）
+
+用户实际运行测试插件并报告日志持续出现 background-tick，确认它是旧生命周期夹具每 200ms 计数/每 5 次写日志后，要求稍作处理。删除该 PeriodicTimer、计数字段及页面计数展示；RunAsync 改为取消令牌注册加 TaskCompletionSource，只等待停止，无定时唤醒或正常取消异常。生命周期开始/结束沿用宿主日志，托盘菜单与点击计数保留。
+
+Test.Independent 清单升至 1.0.1，供现有 1.0.0 正常更新。原切页/隐藏检查改为确认常驻服务已开始、尚未结束且不输出 tick，退出检查确认服务结束；不再依靠连续刷日志证明存活。Verify-PluginHost 按输出清单决定安装路径，集成故障夹具/图标检查从隔离发布目录及清单读取版本，清理硬编码 1.0.0。没有改宿主协议或业务插件。
+
+构建以 `artifacts/e63-tray/host` 为 HostSdkDir，使用新输出根 `artifacts/e64-tray-quiet`。IndependentPlugin Rebuild/Release（Version=1.0.1）和 IntegrationChecks Release 均 0 警告/0 错误；公共宿主源码未修改，不重复全方案/发布构建。已有宿主 234 个文件 SHA256 不变。Verify-PluginHost 仅解析 PowerShell 语法，没有执行脚本。
+
+新包 `artifacts/e64-tray-quiet/Test.Independent-1.0.1.zip` 使用标准 ZipFile 打包，根清单版本、共享 DLL 排除及随包资源许可静态核对通过。SHA256：`22115c4ec571dd717574920f40cce95314bd149d67d7ee05a023edbcf00db76f`。没有覆盖 E63 旧包、旧宿主内插件或用户实际安装；用户需安装此更新 ZIP、显式退出并重新启动，单纯修改源码不会让正在运行的旧 DLL 停止 tick。
+
+检查代码仅编译未执行；没有启动软件、接管 UI、修改用户数据或停止进程。E63 的子代理审查属于上一轮，未把它当成本轮再次审查证据；本轮为局部源码/调用方静态复核。保留用户 .gitignore 与 .vscode/launch.json 修改，需求/宿主架构不变，同步开发台账、交接快照和插件规范。

@@ -15,7 +15,6 @@ public record ProbeSettings : IVersionedSettings
 public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService, IPluginTrayModule
 {
     protected PluginContext Context = null!;
-    private int _ticks;
     public ProbePlugin()
     {
         var marker = Environment.GetEnvironmentVariable("TRACTORTOOL_TEST_ENTRY_MARKER");
@@ -60,7 +59,7 @@ public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService, I
         panel.Children.Add(new TextBlock { Text = "独立插件已运行", Classes = { "sectionTitle" } });
         panel.Children.Add(new TextBlock { Text = FixtureDependency.Message.Value });
         panel.Children.Add(new TextBlock { Text = "备注：" + Context.Settings.Load<ProbeSettings>("settings").Note });
-        panel.Children.Add(new TextBlock { Text = $"常驻服务计数：{Volatile.Read(ref _ticks)}（重新进入页面刷新）" });
+        panel.Children.Add(new TextBlock { Text = "常驻服务随插件启停，切换页面或隐藏窗口不影响。" });
         panel.Children.Add(new TextBlock { Text = "这是宿主发布后单独编译的机制测试夹具。" });
         panel.Children.Add(new TextBlock { Text = "托盘右键 → 独立测试插件：点击菜单计数，或取消“允许计数”验证禁用；切换页面后计数仍保留。" });
         return new Border { Classes = { "card" }, MaxWidth = 960, VerticalAlignment = VerticalAlignment.Top, Child = panel };
@@ -81,12 +80,9 @@ public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService, I
     }
     public async Task RunAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(200));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
-        {
-            var ticks = Interlocked.Increment(ref _ticks);
-            if (ticks % 5 == 0) Context.Log.Write(Context.PluginId, $"background-tick:{ticks}");
-        }
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = stoppingToken.Register(() => stopped.TrySetResult());
+        await stopped.Task;
     }
     public ValueTask StopAsync(CancellationToken cancellationToken) { Context?.Log.Write("Test", "StopAsync"); return ValueTask.CompletedTask; }
     public ValueTask DisposeAsync() { Context?.Log.Write("Test", "DisposeAsync"); return ValueTask.CompletedTask; }

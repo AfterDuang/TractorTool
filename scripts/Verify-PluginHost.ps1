@@ -17,7 +17,8 @@ $before | ConvertTo-Json | Set-Content (Join-Path $run 'host-hashes-before.json'
 # Local development may have built the plugin already. Rebuild using ONLY the published SDK after hashing the host.
 $pluginOutput = Join-Path $run 'plugin-build'
 Invoke-Recorded 'plugin-build' { dotnet build (Join-Path $repo 'tests/IndependentPlugin/IndependentPlugin.csproj') -t:Rebuild -c $Configuration -m:1 -nr:false "-p:HostSdkDir=$publish" -o $pluginOutput }
-$install = Join-Path $publish 'Plugins/Test.Independent/1.0.0'
+$pluginManifest = Get-Content -LiteralPath (Join-Path $pluginOutput 'plugin.json') -Raw | ConvertFrom-Json
+$install = Join-Path $publish "Plugins/$($pluginManifest.id)/$($pluginManifest.version)"
 New-Item -ItemType Directory -Path $install -Force | Out-Null
 Get-ChildItem -LiteralPath $pluginOutput | Copy-Item -Destination $install -Recurse
 Invoke-Recorded 'integration-build' { dotnet build (Join-Path $repo 'tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj') -t:Rebuild -c $Configuration -m:1 -nr:false "-p:HostSdkDir=$publish" }

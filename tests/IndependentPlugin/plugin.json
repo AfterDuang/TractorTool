@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "Test.Independent",
   "name": "独立测试插件",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entryAssembly": "IndependentPlugin.dll",
   "entryType": "IndependentPlugin.ProbePlugin",
   "apiVersion": "1.0",

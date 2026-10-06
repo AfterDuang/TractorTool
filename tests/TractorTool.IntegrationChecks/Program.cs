@@ -223,10 +223,11 @@ Check("Page navigation and hide do not cancel resident service", () =>
 {
     vm.ShowLogsCommand.Execute(null); window.Hide();
     Pump(Task.Delay(1200));
-    var before = File.ReadAllText(log.FilePath).Split("background-tick:").Length;
-    Pump(Task.Delay(1200));
-    var after = File.ReadAllText(log.FilePath).Split("background-tick:").Length;
-    Assert(after > before); window.Show();
+    var entries = log.Snapshot().Entries.Where(e => e.Source == "Test.Independent").ToArray();
+    Assert(entries.Any(e => e.Message == "常驻服务开始。"));
+    Assert(!entries.Any(e => e.Message is "常驻服务已结束。" or "常驻服务已停止。" or "常驻服务失败" ||
+        e.Message.StartsWith("background-tick:")));
+    window.Show();
 });
 Check("Shutdown keeps icons alive until the window closes and records plugin cleanup", () =>
 {
@@ -237,6 +238,7 @@ Check("Shutdown keeps icons alive until the window closes and records plugin cle
     Assert(encoded.Length > 0);
     Pump(host.DisposeAsync().AsTask());
     Assert(log.ReadRecent().Contains("StopAsync") && log.ReadRecent().Contains("DisposeAsync"));
+    Assert(log.Snapshot().Entries.Any(e => e.Source == "Test.Independent" && e.Message == "常驻服务已结束。"));
 });
 window.Close();
 
@@ -269,7 +271,8 @@ foreach (var blockedDirectory in new[] { false, true })
     });
 }
 
-var originalManifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(Path.Combine(published, "Plugins", "Test.Independent", "1.0.0", "plugin.json")), JsonOptions.Value)!;
+var fixtureDirectory = Directory.GetDirectories(Path.Combine(published, "Plugins", "Test.Independent")).Single();
+var originalManifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(Path.Combine(fixtureDirectory, "plugin.json")), JsonOptions.Value)!;
 void CopyTree(string source, string destination)
 {
     Directory.CreateDirectory(destination);
@@ -284,7 +287,7 @@ void Fault(string name, PluginManifest manifest, PluginState expected, Action<st
         var casePaths = new AppPaths(Path.Combine(caseRoot, "app"), Path.Combine(caseRoot, "data"));
         casePaths.EnsureDataDirectories();
         var pluginDir = Path.Combine(casePaths.PluginRoot, manifest.Id, manifest.Version);
-        CopyTree(Path.Combine(published, "Plugins", "Test.Independent", "1.0.0"), pluginDir);
+        CopyTree(fixtureDirectory, pluginDir);
         File.WriteAllText(Path.Combine(pluginDir, "plugin.json"), JsonSerializer.Serialize(manifest, JsonOptions.Value));
         mutate?.Invoke(pluginDir);
         var marker = Path.Combine(caseRoot, "entry-marker.txt");
@@ -343,8 +346,8 @@ Check("One broken plugin does not prevent another plugin from loading", () =>
     casePaths.EnsureDataDirectories();
     foreach (var id in new[] { "Test.Good", "Test.Bad" })
     {
-        var destination = Path.Combine(casePaths.PluginRoot, id, "1.0.0");
-        CopyTree(Path.Combine(published, "Plugins", "Test.Independent", "1.0.0"), destination);
+        var destination = Path.Combine(casePaths.PluginRoot, id, originalManifest.Version);
+        CopyTree(fixtureDirectory, destination);
         var manifest = originalManifest with { Id = id, EntryType = id == "Test.Bad" ? "IndependentPlugin.ThrowingPlugin" : originalManifest.EntryType };
         File.WriteAllText(Path.Combine(destination, "plugin.json"), JsonSerializer.Serialize(manifest, JsonOptions.Value));
     }
@@ -376,7 +379,7 @@ Check("Concurrent initialization shares one task and commits the delayed plugin 
     var casePaths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
     casePaths.EnsureDataDirectories();
     var pluginDirectory = Path.Combine(casePaths.PluginRoot, originalManifest.Id, originalManifest.Version);
-    CopyTree(Path.Combine(published, "Plugins", "Test.Independent", "1.0.0"), pluginDirectory);
+    CopyTree(fixtureDirectory, pluginDirectory);
     File.WriteAllText(Path.Combine(pluginDirectory, "plugin.json"), JsonSerializer.Serialize(
         originalManifest with { EntryType = "IndependentPlugin.DelayedInitializationPlugin" }, JsonOptions.Value));
     var caseLog = new AppLog(casePaths.LogRoot);
@@ -415,8 +418,8 @@ void ShutdownCase(string name, (string Id, string EntryType)[] variants,
         var data = new Dictionary<string, string>();
         foreach (var variant in variants)
         {
-            var directory = Path.Combine(casePaths.PluginRoot, variant.Id, "1.0.0");
-            CopyTree(Path.Combine(published, "Plugins", "Test.Independent", "1.0.0"), directory);
+            var directory = Path.Combine(casePaths.PluginRoot, variant.Id, originalManifest.Version);
+            CopyTree(fixtureDirectory, directory);
             File.WriteAllText(Path.Combine(directory, "plugin.json"), JsonSerializer.Serialize(
                 originalManifest with { Id = variant.Id, EntryType = "IndependentPlugin." + variant.EntryType }, JsonOptions.Value));
             data[variant.Id] = casePaths.GetPluginDataDirectory(variant.Id);

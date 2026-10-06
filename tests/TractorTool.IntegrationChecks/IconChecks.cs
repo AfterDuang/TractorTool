@@ -13,7 +13,7 @@ internal static class IconChecks
         var root = Path.Combine(output, "icons-" + Guid.NewGuid().ToString("N"));
         var package = Path.Combine(root, "package");
         Directory.CreateDirectory(package);
-        var source = Path.Combine(published, "Plugins", "Test.Independent", "1.0.0", "Assets", "icon.png");
+        var source = Path.Combine(Directory.GetDirectories(Path.Combine(published, "Plugins", "Test.Independent")).Single(), "Assets", "icon.png");
         var valid = Path.Combine(package, "valid.png");
         File.Copy(source, valid);
         var log = new AppLog(Path.Combine(root, "logs"));

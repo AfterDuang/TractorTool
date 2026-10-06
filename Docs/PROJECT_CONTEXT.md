@@ -6,6 +6,8 @@
 
 处于 M5 发布准备阶段，最新 [E63](PROJECT_HISTORY.md#evidence-plugin-tray) 按用户授权实现插件托盘菜单扩展。子代理复审及构建完成，新功能运行由用户接手；不开发悬浮球业务。[E62](PROJECT_HISTORY.md#evidence-user-local-validation) 用户已反馈依赖安装/拒绝重试/修复清理、视频/GPU、插件升级与数据迁移测试暂未发现问题，不重复要求这些常规测试，也不外推未报告的故障/硬件细项。E60 GitHub 依赖决定及 E61 Release 草稿流程保持有效。
 
+后续 [E64](PROJECT_HISTORY.md#evidence-quiet-probe) 按用户反馈清理测试插件刷屏：Test.Independent 1.0.1 删除 200ms 定时器及 tick 日志，常驻服务只等待停止信号，托盘菜单不变。仅独立构建插件和受影响集成检查，0 警告/0 错误，检查未执行；Verify-PluginHost 改读输出清单版本，语法通过。新 ZIP/更新步骤见 [本地产物](DEVELOPMENT.md#local-artifacts)，未替用户安装或运行；E63 旧包仍需手工升级，不重打宿主。
+
 - 新可选 UI API 1.5：`IPluginTrayModule.RegisterTrayMenu` → 每插件一级子菜单 → 普通/勾选动作与可更新状态句柄。宿主保留显示/退出；显式推送状态，无轮询；不扩展任意菜单树或悬浮窗平台。
 - 菜单注册资源归 PluginHost 生命周期持有，Core 只接 `IAsyncDisposable`；切页/隐藏保留，失败回滚、停止封闭入口并取消/解绑，等待动作结束再释放插件。回调在 UI 线程开始，插件自行异步处理耗时工作，有限任务复用现有 Tasks；意外取消记 Error，正常停止取消记 Info。
 

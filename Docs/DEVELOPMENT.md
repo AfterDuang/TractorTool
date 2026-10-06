@@ -14,6 +14,8 @@
 
 **最近代码：[E63 插件托盘菜单](PROJECT_HISTORY.md#evidence-plugin-tray)。** UI API 1.5 新增可选托盘注册，插件名子菜单、动作/勾选/启用状态、线程调度及停止清理；宿主显示/退出入口保留。Contracts 1.7 及旧 UI 方法 ABI 不变，E61 的 GitHub 依赖/Release 草稿流程不变。独立机制插件已有菜单示例；构建及子代理静态复审完成，新托盘运行验收由用户接手，E62 反馈不覆盖该新功能。
 
+**最新修正：[E64 测试插件去除心跳](PROJECT_HISTORY.md#evidence-quiet-probe)。** 用户报告 Test.Independent 持续刷 tick；1.0.1 删除定时器/计数，常驻服务仅等待停止信号，保留托盘交互。独立插件和调整后的集成检查均构建通过，0 警告/0 错误，未运行；已安装 1.0.0 需更新 ZIP 并显式退出重启。
+
 **内存问题修复进展：[E55 公共导航页面回收](PROJECT_HISTORY.md#evidence-navigation-memory-fix)。** E54 定位的 FAFrame 窗口事件持有路径已从 PageHost 移除，改用原生内容容器与过渡。用户单独授权的隔离导航检查 10/10 通过：动画开/关各 40 轮切页，320 个旧页面相关对象均可回收；旧发布 UI DLL 的同一回收检查仍有 124/160 个对象被持有。构建通过，真实发布版长时间切页/图片预览内存曲线仍待用户复测；不能把 E54 观测到的全部增长都归因于本次问题，也不承诺工作集立即回到启动值。
 
 | 范围 | 当前实现 |
@@ -84,6 +86,8 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 <a id="local-artifacts"></a>
 
 ### 本地产物快照
+
+E64 安静版测试插件：`artifacts/e64-tray-quiet/Test.Independent-1.0.1.zip`（附 SHA256）。引用 E63 已发布 SDK 独立构建，原宿主 234 个文件哈希不变。通过插件页安装/更新此 ZIP，再显式退出并重启即可生效；不覆盖运行中 DLL，未自动安装。E63 的旧 ZIP 和测试宿主内附 1.0.0 仍含 tick，不会随源码修改自动更新。
 
 E63 新隔离宿主：`artifacts/e63-tray/host/TractorTool.exe`，已放入独立编译的 Test.Independent 1.0.0 机制夹具，未组装正式视频/剪贴板插件，不是正式分发包。独立 ZIP：`artifacts/e63-tray/Test.Independent-1.0.0.zip`，并附 SHA256。该夹具沿用机制测试版本，测试使用此新目录，不覆盖旧安装。
 
@@ -205,4 +209,4 @@ E60 历史产物（E62 核对以下宿主目录及两个 ZIP 已不存在，不�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E63 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E64 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
