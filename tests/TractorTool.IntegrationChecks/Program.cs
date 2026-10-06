@@ -434,6 +434,16 @@ void ShutdownCase(string name, (string Id, string EntryType)[] variants,
         }
     });
 }
+ShutdownCase("Independent plugin tray resources register, roll back and stop with their owner",
+    [("Test.Tray", "ProbePlugin"), ("Test.BadTray", "BadTrayRegistrationPlugin")], (caseHost, caseLog, _) =>
+    {
+        using var tray = new TrayService(() => { }, () => Task.CompletedTask, caseLog, disabled: true);
+        Pump(caseHost.LoadWithResourcesAsync(tray.Register));
+        Assert(caseHost.Records.Single(r => r.Manifest!.Id == "Test.Tray").State == PluginState.Loaded);
+        Assert(caseHost.Records.Single(r => r.Manifest!.Id == "Test.BadTray").State == PluginState.Failed);
+        Assert(tray.Menu.Items.Count == 5);
+        Pump(caseHost.DisposeAsync().AsTask()); Assert(tray.Menu.Items.Count == 3);
+    });
 ShutdownCase("Cancellation callback failure isolates cleanup and concurrent disposal shares its task",
     [("Test.ThrowCancel", "ThrowingCancellationPlugin"), ("Test.HealthyShutdown", "ShutdownProbePlugin")],
     (caseHost, caseLog, data) =>
@@ -533,5 +543,6 @@ LogViewChecks.Run(Check, output);
 NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
 PluginManagementUiChecks.Run(Check, Pump, output);
+TrayMenuChecks.Run(Check, Pump, output);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; publishedHost={published}; evidence={output}");
 return failed == 0 ? 0 : 1;

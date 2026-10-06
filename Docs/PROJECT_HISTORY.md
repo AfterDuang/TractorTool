@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 扩展（插件托盘） | [E63 · 托盘菜单与生命周期（2026-10-06）](#evidence-plugin-tray) |
 | 反馈（本机测试） | [E62 · 用户测试暂未发现问题（2026-10-05）](#evidence-user-local-validation) |
 | M5（依赖复审与 Release） | [E61 · 恢复保护与发布草稿（2026-10-05）](#evidence-dependency-review-release) |
 | M5（GitHub 依赖） | [E60 · GitHub 来源与简化管理（2026-10-05）](#evidence-github-dependencies) |
@@ -1913,3 +1914,27 @@ Core 与 UI 分别由 gpt-6.1-sol / high 子代理只读 Review。修复其发�
 只读 `git remote -v` 为空；当前工作区仍有用户 .gitignore 和 .vscode/launch.json 修改。未配置远程、推送或执行 GitHub CI/Release。下一步进入仓库/项目授权确定及 CI/草稿实跑准备，本机反馈不替代远程执行证据。
 
 文档核对发现 E60 宿主目录和两个 ZIP 已不在磁盘；保留历史构建证据，把台账里的现行下载链接改为历史路径说明，本轮未删除或重新生成产物。
+
+<a id="evidence-plugin-tray"></a>
+
+## E63：插件托盘菜单与生命周期（2026-10-06）
+
+用户讨论插件通过托盘快捷切换悬浮球等业务后，明确要求直接开发；范围为公共菜单接入，不实现悬浮球或参数监控业务。沿用 Avalonia NativeMenu/TrayIcon，新增 UI API 1.5 的可选 IPluginTrayModule、菜单注册和状态句柄，Contracts API 1.7 不变。旧页面接口/程序集身份保留，宿主接受旧 UI 1.0–1.4，旧宿主拒绝声明 1.5 的插件。
+
+- 宿主按插件名建立一级子菜单，空菜单不显示；保留显示/退出。注册期间校验 ID/文字和重复项，之后仅允许推送文字/启用/勾选状态；跨线程更新回 UI，无轮询。
+- 每项异步动作执行期间禁用并防重复点击，统一记录结果与失败。插件负责编写异步业务或使用现有 Tasks，不增加命令平台。菜单跟随插件实例，切页/隐藏继续存在；停止封闭入口、取消/解绑，等在途动作结束后才能释放插件。
+- PluginHost 保留原 LoadAsync(Action) 包装，新增注册资源返回路径，Core 只接 IAsyncDisposable。初始化/注册与重入退出交接纳入原清理序列；失败注册不遗留菜单。菜单 UI 移除失败时仍观察取消和在途动作。
+- tests/IndependentPlugin 在发布 SDK 上独立编译，增加计数/允许计数的实际菜单消费者与故障注册夹具。没有静态引用具体插件，没有修改正式业务插件版本。
+
+子代理 gpt-6.1-sol / high 进行两次静态 Review：发现未筛选 OperationCanceledException 会将超时等意外取消写成 INFO，已增加停止令牌条件，其他取消进入 ERROR；最终复审未发现剩余确定问题。覆盖旧 ABI、注册失败、空菜单、重入退出、跨线程状态、重复点击与资源寿命；复审不代表运行验收。
+
+构建与静态证据：
+
+1. `dotnet build TractorTool.slnx -c Release --artifacts-path H:\ProjH\TractorTool\artifacts\e63-tray-build -m:1 -nr:false`：首次受沙箱限制，AvaloniaStatsTask 无法写用户目录 buildtasks.log；获准构建后出现 1 条 Tray 可空引用警告，修正为可空访问，再构建 13 工程通过，0 警告/0 错误。
+2. `scripts/Publish-Host.ps1 -Output H:\ProjH\TractorTool\artifacts\e63-tray\host`：现有脚本发布新 win-x64 自包含宿主成功，不覆盖已有安装。随后以 HostSdkDir 指向该目录，`dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -t:Rebuild -c Release -m:1 -nr:false ... -o artifacts/e63-tray/plugin-files` 独立编译成功，0 警告/0 错误；234 个原宿主文件 SHA256 未变。
+3. 标准 ZipFile 打包 Test.Independent-1.0.0.zip，含根清单、入口/私有 DLL、资源与原许可，无宿主共享 DLL。SHA256：`c5fd493f9d87cab0e73a207c5a42e0b9dfc32d9f3212dc73d29cd47f4bcdfb79`。仅将同一输出放入新测试宿主的 Plugins/Test.Independent/1.0.0，未安装到日常宿主；该副本不是完整正式分发包。
+4. 新 TrayMenuChecks 覆盖分组/同 ID 隔离、注册失败/旧协议拒绝、后台更新、禁用/忙碌保护、停止等待/迟到事件、真实失败与意外取消分类；Program 加独立 DLL 注册/回滚/停止检查，NavigationChecks 增 UI 1.5 兼容断言。全部只编译，未执行。
+
+本轮未启动应用、检查程序或接管 Windows UI，未运行真实托盘/硬件验收，未改用户配置或停止进程，未做远程推送/CI/Release。新 A24 留待用户；E62 既有本机反馈保留。保留用户 .gitignore 与 .vscode/launch.json 修改，不纳入提交。需求、架构、接入规范、台账与交接快照同步到本轮。
+
+最终静态核对：268 个 Markdown 文件链接无缺失；排除用户原有两项改动后的 diff 空白检查通过。

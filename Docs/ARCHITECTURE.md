@@ -1,12 +1,12 @@
 # TractorTool 软件架构
 
-更新日期：2026-10-05。本文负责宿主和公共服务的结构设计，不包含单个插件的内部业务方案。
+更新日期：2026-10-06。本文负责宿主和公共服务的结构设计，不包含单个插件的内部业务方案。
 
 本文说明如何落实[产品需求](TractorTool.md)。插件作者遵循 [插件开发规范](PLUGIN_DEVELOPMENT.md)；首版业务设计分别见 [剪贴板插件](Plugins/ClipboardHistory.md) 和 [视频插件](Plugins/VideoExport.md)。文档分工见 [导航](README.md)，实现与验证状态以 [开发文档](DEVELOPMENT.md#current-status) 为准，后续阶段设计不能当作现有功能。
 
 ## 1. 当前代码与目标结构
 
-解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 12 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务和视频真实导出入口，M4 已接插件预设工作区、串行执行、公共有限任务和中断摘要，运行验证状态集中在开发文档。
+解决方案 [TractorTool.slnx](../TractorTool.slnx) 统一包含原路径的宿主、Contracts、Core、UI，以及 Plugins 分组中的正式插件、tests 分组中的检查工程和机制夹具，共 13 个实际工程。目标框架为 `net10.0`（剪贴板相关工程使用 Windows TFM），Avalonia `12.1.2`、CommunityToolkit.Mvvm `8.4.2`，采用单一 FluentAvaloniaUI `3.1.0` 控件主题。M2 已加入插件管理代码与独立构建的 Windows 剪贴板插件；M3 已加入包服务和视频真实导出入口，M4 已接插件预设工作区、串行执行、公共有限任务和中断摘要，运行验证状态集中在开发文档。
 
 现行职责与依赖边界如下：
 
@@ -60,6 +60,7 @@ flowchart TD
 | `IPlugin` | 初始化、停止与释放插件实例 |
 | `PluginContext` | 提供该插件可用的宿主服务、生命周期令牌与稳定标识 |
 | `IPluginUiModule`，位于 UI 工程 | 注册导航页、设置页的工厂与元数据 |
+| `IPluginTrayModule`，位于 UI 工程，可选 | 注册托盘快捷操作，持有可更新文字/勾选/启用状态的句柄 |
 | `IPluginBackgroundService`，可选 | 应用驻留期间的可取消常驻活动 |
 | `IAppLog` | 写入带级别、来源和异常详情的重要运行记录 |
 | `IBackgroundTaskService`、`IBackgroundTask` | 登记有限任务/整批、执行句柄、报告进度与取消；宿主任务页查询公共摘要 |
@@ -80,7 +81,7 @@ PluginContext 按插件生命周期提供进程、依赖和有限任务作用域
 3. 管理记录决定活动版本和启用状态；未管理的单版本插件兼容旧 `disabledPlugins` 配置。禁用、不兼容、损坏或变更失败的插件记录状态，不加载代码。
 4. 为启用插件创建加载上下文，解析其私有托管依赖与本机库。入口与解析出的私有依赖共用版本包边界校验：路径必须位于版本目录内，从文件到版本根逐级拒绝链接/重解析点。系统本机库仍由系统解析。
 5. 共享宿主的 Contracts、UI 契约、Avalonia 及跨边界使用的基础抽象程序集，避免同名类型因重复加载而不能转换。
-6. 创建插件上下文并初始化插件，再向暂存注册器注册页面与设置；全部成功后一次性提交，失败不留下半份导航；最后启动可选常驻活动。
+6. 创建插件上下文并初始化插件，再暂存页面与设置、注册可选托盘菜单；全部成功后提交，失败不留下半份导航或菜单；最后启动可选常驻活动。
 
 使用 .NET `AssemblyLoadContext` 和 `AssemblyDependencyResolver` 的现有机制。私有依赖可按插件隔离；共享程序集不能任由每个插件携带任意版本。M1 拒绝插件根目录夹带 Contracts/UI/Avalonia/FluentAvalonia/MicroCom.Runtime 的 DLL 副本；加载器从默认上下文解析共享类型并检查程序集版本。缺失私有托管依赖报错，不依赖开发机 NuGet 缓存；禁止直接引用宿主或 Core。首版插件 SDK 使用明确的已验证版本组合，版本不匹配时给出错误而不是强行加载。[微软插件指南](https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support)
 
@@ -145,6 +146,12 @@ AppLog 的事件驱动 UI 刷新，MainViewModel 合并调度，同时更新日�
 正常进程退出使用 OS 等待通知；仅 Windows Job 终止后的活跃子进程确认仍使用 20ms 轮询，每次由 Core 限制最多 3 秒。实际进入轮询时宿主每次启动只记录一条开发优化 WARNING，后续改成 Job 事件通知的缺口保留。日志、任务刷新与剪贴板更新不采用定时轮询。
 
 ### 3.4 托盘和退出
+
+UI API 1.5 的可选 [IPluginTrayModule](../TractorTool.UI/PluginTray.cs) 由宿主初始化后调用一次。插件只能在注册期间添加稳定 ID 的菜单项，宿主按插件名生成一级子菜单，置于“显示 TractorTool”和“退出”之间；空菜单不显示。插件取得 `IPluginTrayItem` 后显式推送文字、启用和勾选状态，后台线程更新由宿主切回 UI，不轮询、不自动改写插件业务状态。只提供这一层分组，不引入任意菜单树或悬浮窗管理。
+
+[TrayService](../TractorTool/Services/TrayService.cs) 拥有原生菜单；[PluginTrayMenu](../TractorTool/Services/PluginTrayMenu.cs) 封闭每个插件的回调和状态。动作从 UI 线程开始，异步期间禁用该项并阻止重复执行；插件必须异步等待耗时工作，长期任务仍走已有 Tasks 服务。成功/失败写统一日志，只有菜单停止令牌已取消时的取消才记 INFO，其余异常记 ERROR。可信插件的同步阻塞不能被安全抢占。
+
+注册返回的 `IAsyncDisposable` 由 PluginHost 持有，Core 不依赖 UI 类型。停止时封闭动作和更新、请求取消并解绑菜单，等待正在运行的动作结束后才能释放插件；菜单清理纳入已有有界退出等待。注册失败回滚，重入退出也等待注册资源交接。禁用/卸载仍为重启生效，切页或隐藏不结束菜单作用域；旧 `LoadAsync(Action)` 和页面接口签名保留。
 
 应用采用显式退出的生命周期，普通窗口关闭改为隐藏，托盘提供显示主窗口和退出命令；重新显示沿用同一宿主和任务状态。Avalonia 提供 `OnExplicitShutdown`，实现时确认当前版本的对应 API。[Avalonia 生命周期](https://docs.avaloniaui.net/api/avalonia/controls/applicationlifetimes/iclassicdesktopstyleapplicationlifetime)
 
@@ -311,7 +318,7 @@ M1 已核对 Watt Toolkit 固定提交的导航、Frame、设置行和图标组�
 - **列表更新与交互连续性**：插件管理按安装记录目录保留可观察卡片，过滤集合只增删/移动实际变化项；管理结果原位提交状态和命令，不清空重建列表打断滑块或丢弃控件。重复 ID 的不同目录仍独立呈现。写入失败显式恢复开关目标值，不依赖相同值的绑定通知必定重放。忙碌时的串行保护保留，不承诺禁用列表期间保留键盘焦点。新列表应遵循同样的稳定身份原则。
 - **切页与生命周期**：公共 `PageHost` 使用原生 Border 承载单页，通过同步 `Present(Control)` 返回成功、取消或异常；不创建 FAFrame、不订阅窗口返回事件、不缓存历史页。只接受未挂载的页面；替换前在当前页直接触发 UI API 1.4 `PageHost.NavigatingFromEvent`（原生 CancelRoutedEventArgs），设置容器向内层转发取消。成功后宿主才提交标题/选择并清理旧页，取消保留原页；同步挂载/脱离异常后重建内容容器，允许继续显示错误页。原生 Transitions 实现 18 DIP、500 ms 上移淡入，换页或脱离视觉树时由 Avalonia 释放在途过渡，队列回调核对页面身份；关闭动效直接显示。旧公开 Present/Clear 和工厂方法签名保留以兼容已编译插件，但不再触发 FAFrame 专属导航事件；页面初始化/清理遵循 Loaded/Unloaded 与 IPluginPageLifetime，后台任务不随页面结束。宿主阻止切换重入和退出后创建页面；此边界不捕获插件任意异步事件或渲染线程异常。
 - **设置持久化**：SettingsViewModel 在 UI 线程应用外观，通过单个保存任务将不可变快照交给后台写入；期间的新选择只保留最新值，旧写入完成不再应用旧主题或覆盖新状态。正常保存不显示常驻提示，保存期间不禁用选择，应用失败与写盘失败分别提示。保存错误只存于 SaveError，HasSaveError 由其派生；错误面板统一控制重试入口可见性，无 DataContext 或无法解析绑定时默认隐藏，避免无模型的 VS Code 预览出现孤立按钮。退出阻止新变更并等待整个队列，对此前最后一次保存失败最多再试一次，仍受宿主 10 秒退出期限约束。同步主题通知重入时重新应用最终有效选择，控件临时空选择不生成配置。沿用 JSON 原子替换及备份，没有新增通用设置框架。可选布尔字段 `enableAnimations` 默认 true，旧 JSON 不含此字段时仍可读取，沿用当前设置 schema；控制范围见上述统一动效边界。
-- **SDK 与加载**：UI API 为 1.4，新增 PageHost 离页取消事件；接受 UI 1.0–1.4 的原有注册与二进制签名，拒绝更高未知版本。依赖旧 FAFrame 导航事件的页面需迁移到 PageHost 取消事件及原生 Loaded/Unloaded；公共 IPluginPageLifetime 清理约定不变。UI 1.3 的 PluginPageOptions.UsesCustomHeader 及 1.2 的 IconPath 保持不变：专属页头默认关闭，导航成功后提交，错误页恢复默认标题；设置页仍由设置容器组织。Contracts API 为 1.7，接受旧 1.0–1.6，程序集身份不随协议升版。共享加载清单包含 FluentAvalonia，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
+- **SDK 与加载**：UI API 为 1.5，新增可选托盘注册接口；接受 UI 1.0–1.4 的原有注册与二进制签名，拒绝更高未知版本。UI 1.4 的 PageHost 离页取消事件保留；依赖旧 FAFrame 导航事件的页面需迁移到该事件及原生 Loaded/Unloaded，公共 IPluginPageLifetime 清理约定不变。UI 1.3 的 PluginPageOptions.UsesCustomHeader 及 1.2 的 IconPath 保持不变：专属页头默认关闭，导航成功后提交，错误页恢复默认标题；设置页仍由设置容器组织。Contracts API 为 1.7，接受旧 1.0–1.6，程序集身份不随协议升版。共享加载清单包含 FluentAvalonia，与 Avalonia/Contracts/UI/MicroCom 一起禁止插件夹带另一套副本；第三方控件类型不进入 Core/Contracts 服务接口。
 
 运行效果及已知限制只在 [开发验收台账](DEVELOPMENT.md#acceptance) 记录，架构描述不代表真实 UI 或动态加载已经通过验收。
 

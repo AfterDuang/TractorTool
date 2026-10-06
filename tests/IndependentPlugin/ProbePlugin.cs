@@ -12,7 +12,7 @@ public record ProbeSettings : IVersionedSettings
     public string Note { get; init; } = "来自独立 DLL";
 }
 
-public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService
+public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService, IPluginTrayModule
 {
     protected PluginContext Context = null!;
     private int _ticks;
@@ -32,6 +32,27 @@ public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService
         registry.AddNavigationPage("home", "独立插件", CreatePage, new PluginPageOptions(ToolIconKind.Tools, "独立加载的示例插件，使用宿主共享的图标、控件和主题。") { IconPath = "Assets/icon.png" });
         registry.AddSettingsPage("settings", "独立插件设置", CreateSettings, new PluginPageOptions(ToolIconKind.Settings, "保存一条备注，检查插件自己的设置持久化。"));
     }
+    public virtual void RegisterTrayMenu(IPluginTrayMenu menu)
+    {
+        var enabled = true;
+        var count = 0;
+        IPluginTrayItem toggle = null!, counter = null!;
+        counter = menu.Add("count", new("菜单计数：0"), token =>
+        {
+            token.ThrowIfCancellationRequested();
+            counter.Update(new($"菜单计数：{++count}"));
+            Context.Log.Write(Context.PluginId, $"独立插件托盘计数：{count}");
+            return Task.CompletedTask;
+        });
+        toggle = menu.Add("enabled", new("允许计数", IsChecked: true), token =>
+        {
+            token.ThrowIfCancellationRequested();
+            enabled = !enabled;
+            toggle.Update(new("允许计数", IsChecked: enabled));
+            counter.Update(new($"菜单计数：{count}", IsEnabled: enabled));
+            return Task.CompletedTask;
+        });
+    }
     private Control CreatePage()
     {
         var panel = new StackPanel { Spacing = 16 };
@@ -41,6 +62,7 @@ public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService
         panel.Children.Add(new TextBlock { Text = "备注：" + Context.Settings.Load<ProbeSettings>("settings").Note });
         panel.Children.Add(new TextBlock { Text = $"常驻服务计数：{Volatile.Read(ref _ticks)}（重新进入页面刷新）" });
         panel.Children.Add(new TextBlock { Text = "这是宿主发布后单独编译的机制测试夹具。" });
+        panel.Children.Add(new TextBlock { Text = "托盘右键 → 独立测试插件：点击菜单计数，或取消“允许计数”验证禁用；切换页面后计数仍保留。" });
         return new Border { Classes = { "card" }, MaxWidth = 960, VerticalAlignment = VerticalAlignment.Top, Child = panel };
     }
     private Control CreateSettings()
@@ -85,4 +107,12 @@ public sealed class BadRegistrationPlugin : ProbePlugin
 public sealed class BrokenPagePlugin : ProbePlugin
 {
     public override void RegisterPages(IPluginPageRegistry registry) => registry.AddNavigationPage("broken", "故障页面", () => throw new InvalidOperationException("fixture page failed"));
+}
+public sealed class BadTrayRegistrationPlugin : ProbePlugin
+{
+    public override void RegisterTrayMenu(IPluginTrayMenu menu)
+    {
+        base.RegisterTrayMenu(menu);
+        throw new InvalidOperationException("fixture tray registration failed");
+    }
 }

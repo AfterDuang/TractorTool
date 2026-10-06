@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | 插件实例 | `IPlugin`、`PluginContext` | 初始化、停止、释放；上下文提供路径、设置、日志和停止令牌 |
 | 页面与设置页 | `IPluginUiModule`、`IPluginPageRegistry` | 工厂注册 Avalonia Control，不要求继承宿主 VM |
+| 托盘菜单 | `IPluginTrayModule`、`IPluginTrayMenu`、`IPluginTrayItem` | UI API 1.5；可选注册快捷动作并推送状态，菜单由插件生命周期持有 |
 | 常驻活动 | `IPluginBackgroundService` | 按插件生命周期运行，与页面显示独立 |
 | 页面离开 | `IPluginPageLifetime` | 只清理页面订阅和显示资源 |
 | 路径、设置、日志 | `IAppPaths`、`IPluginSettingsStore`、`IVersionedSettings`、`IAppLog` | 按稳定 PluginId 使用宿主提供的服务 |
@@ -34,7 +35,7 @@
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
 | `apiVersion` | 当前 1.7，仍接受 1.0–1.6；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7 |
-| `uiApiVersion` | 当前为 1.4；宿主仍接受旧 1.0–1.3 页面注册与已有公开方法签名 |
+| `uiApiVersion` | 当前为 1.5；宿主仍接受旧 1.0–1.4 页面注册与已有公开方法签名；使用托盘接口必须声明 1.5 |
 | `avaloniaVersion` | 精确匹配 12.1.2 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可空，最多 32 个不重复的 id/三段 version；新依赖在 downloads 按 RID 提供 GitHub 安装资料。旧 id/version 清单仍可复用已装包；完整示例见下文 |
@@ -75,12 +76,40 @@ ZIP 必须直接以 `plugin.json` 为根，不再套一层插件目录。当前�
 
 1. 入口实现 `IPlugin.InitializeAsync(PluginContext, CancellationToken)`、`StopAsync`、`DisposeAsync`。构造函数和注册函数保持轻量，I/O 与等待采用异步方式，不同步卡住 UI 线程。
 2. 实现 `IPluginUiModule.RegisterPages`，调用 `AddNavigationPage` / `AddSettingsPage` 注册稳定页面 ID、标题和工厂；可通过 `PluginPageOptions` 提供图标和说明。具体调用形状见 [示例入口](../tests/IndependentPlugin/ProbePlugin.cs)。
-3. 宿主先初始化再暂存页面注册，整次成功后提交；注册失败不会留下半份导航。页面工厂返回未挂到其他父控件的新页面，并设置自己的 DataContext。
+3. 宿主先初始化再暂存页面注册，并注册可选托盘菜单，整次成功后提交；注册失败不会留下半份导航或菜单。页面工厂返回未挂到其他父控件的新页面，并设置自己的 DataContext。
 4. 页面离开使用 `IPluginPageLifetime.OnNavigatedFrom` 解除订阅、释放显示资源。页面、有限任务、常驻服务分别拥有生命周期；不得在离页/隐藏窗口时取消后台业务。
 5. 可选常驻活动实现 `IPluginBackgroundService.RunAsync`，响应停止令牌。清理必须兼容初始化部分失败和退出竞争，不能留下未观察的后台异常。
 6. 停止并等待插件拥有的工作结束后再释放资源。宿主有有界退出等待，不能把它当作安全强杀线程或保证磁盘写入成功的机制；同步卡死的可信插件仍可能影响进程。
 
 有限任务遵循相同所有权规则，具体业务的并发和失败策略写在各插件文档；不把业务队列参数塞进通用协议。
+
+<a id="tray-menu"></a>
+
+### 托盘快捷操作（UI API 1.5）
+
+入口类额外实现 [IPluginTrayModule](../TractorTool.UI/PluginTray.cs)，清单声明 `uiApiVersion: "1.5"`。宿主在初始化后调用一次 `RegisterTrayMenu`；页面注册接口无需改动。以下方法放在插件入口类中即可演示开关：
+
+```csharp
+public void RegisterTrayMenu(IPluginTrayMenu menu)
+{
+    var enabled = true;
+    IPluginTrayItem item = null!;
+    item = menu.Add("enabled", new("启用功能", IsChecked: enabled), token =>
+    {
+        token.ThrowIfCancellationRequested();
+        enabled = !enabled; // 实际插件先完成业务操作，再更新菜单。
+        item.Update(new("启用功能", IsChecked: enabled));
+        return Task.CompletedTask;
+    });
+}
+```
+
+- 宿主按插件名自动分组，不暴露原生菜单对象；ID 在本插件内唯一，通过现有路径标识校验。添加只允许发生在注册回调中；文字不得为空，`IsChecked=null` 为普通命令，bool 值为勾选项。
+- `Update` 可从后台线程调用；停止后忽略迟到更新。文字/启用/勾选由插件显式更新，不依靠轮询；点击不会替插件修改业务状态。
+- 动作在 UI 线程开始，执行期间禁用该项、防止重复点击。I/O 使用异步 API，CPU 工作自行放到后台；不要同步等待或 `async void`，返回的 Task 必须覆盖本次动作。需要进度与取消的有限任务复用 `context.Tasks`，不把长期工作藏在未观察的 Task 中。
+- 菜单与插件实例同寿命，切页/隐藏窗口不清理。停止时请求取消、移除菜单，等动作结束后释放插件；失败统一写日志，其他插件仍可操作。宿主有界退出不能强杀不合作的同步代码。
+
+独立示例见 [ProbePlugin](../tests/IndependentPlugin/ProbePlugin.cs)：右键托盘 → “独立测试插件” → 菜单计数/允许计数。测试切页与隐藏后状态保留、取消勾选后计数项禁用、显式退出、禁用插件重启后菜单消失；原有显示/退出入口继续正常。示例是机制夹具，不附带悬浮球业务；当前构建产物及运行证据只见 [开发台账](DEVELOPMENT.md#local-artifacts)。
 
 ### 有限任务（API 1.6）
 

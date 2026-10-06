@@ -97,6 +97,10 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
 
     /// <param name="register">Host UI validates into a staging registry and commits atomically.</param>
     public Task LoadAsync(Action<PluginRecord, IPlugin> register)
+        => LoadWithResourcesAsync((record, plugin) => { register(record, plugin); return null; });
+
+    /// <summary>Registration resources stop with the plugin and finish before its instance is disposed.</summary>
+    public Task LoadWithResourcesAsync(Func<PluginRecord, IPlugin, IAsyncDisposable?> register)
     {
         TaskCompletionSource completion;
         lock (_lifecycleGate)
@@ -111,7 +115,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         return completion.Task;
     }
 
-    private async Task LoadCoreAsync(Action<PluginRecord, IPlugin> register)
+    private async Task LoadCoreAsync(Func<PluginRecord, IPlugin, IAsyncDisposable?> register)
     {
         foreach (var record in Records.Where(r => r.State == PluginState.Discovered).ToArray())
         {
@@ -156,7 +160,8 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 {
                     if (_disposed) throw new OperationCanceledException("宿主正在退出，不再注册插件页面。");
                     token.ThrowIfCancellationRequested();
-                    register(record, plugin);
+                    lifetime.Registration = register(record, plugin);
+                    if (_disposed) throw new OperationCanceledException("宿主正在退出，不再启动插件活动。");
                     lifetime.Background = plugin is IPluginBackgroundService service
                         ? Task.Run(async () =>
                         {
@@ -165,7 +170,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                             catch (Exception ex) { log.Write(manifest.Id, "常驻服务失败", ex); }
                         }) : null;
                     record.State = PluginState.Loaded;
-                    record.Detail = "程序集已独立加载，初始化与页面注册完成。";
+                    record.Detail = "程序集已独立加载，初始化与界面注册完成。";
                 }
                 log.Write(manifest.Id, record.Detail);
             }
@@ -198,6 +203,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
     private async Task CleanupCoreAsync(PluginLifetime lifetime)
     {
         log.Write(lifetime.Id, "开始停止插件及所属任务。");
+        var registration = StopRegistrationAsync(lifetime);
         // Cancellation callbacks belong to this instance, so one callback cannot block other plugins.
         var cancellation = CancelAndObserveAsync(lifetime.Stopping, lifetime.Id, "生命周期取消回调");
         // Stop processes even if plugin initialization/StopAsync fails to respond. No page owns this runner.
@@ -216,11 +222,19 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         await stopCallbacks;
         await ObserveStageAsync(processes, lifetime.Id, "停止工具进程");
         await ObserveStageAsync(finiteTasks, lifetime.Id, "等待有限任务结束");
+        await ObserveStageAsync(registration, lifetime.Id, "等待插件菜单动作结束");
         await ObserveStageAsync(Task.Run(async () => await lifetime.Plugin.DisposeAsync()), lifetime.Id, "释放插件");
         lifetime.Packages?.Dispose();
         lifetime.Tasks?.Dispose();
         lifetime.Stopping.Dispose();
         log.Write(lifetime.Id, "插件停止与资源释放流程结束。");
+    }
+
+    private async Task StopRegistrationAsync(PluginLifetime lifetime)
+    {
+        // A reentrant shutdown can begin while registration is still returning its resource.
+        await lifetime.Initialized.Task;
+        if (lifetime.Registration is not null) await lifetime.Registration.DisposeAsync();
     }
 
     private async Task CancelAndObserveAsync(CancellationTokenSource source, string id, string operation)
@@ -309,6 +323,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
         public ProcessRunner Processes { get; } = new(id, log, startProcess);
         public PackageScope? Packages { get; set; }
         public BackgroundTaskScope? Tasks { get; set; }
+        public IAsyncDisposable? Registration { get; set; }
         public CancellationTokenSource Stopping { get; } = new();
         public TaskCompletionSource Initialized { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? Background { get; set; }

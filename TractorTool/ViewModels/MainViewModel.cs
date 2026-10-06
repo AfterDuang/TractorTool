@@ -34,6 +34,7 @@ public partial class NavigationItem(string title, IRelayCommand openCommand, str
 public partial class MainViewModel : ViewModelBase, IDisposable
 {
     private readonly PluginHost _plugins;
+    private readonly TrayService? _tray;
     private readonly AppLog _log;
     private readonly Func<Task> _exit;
     private readonly NavigationIconStore _icons;
@@ -70,9 +71,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public bool IsLogsSelected => ActiveNavigation == "logs";
 
     public MainViewModel(AppPaths paths, PluginHost plugins, AppLog log, SettingsViewModel settings, Func<Task> exit, PluginManager? manager = null,
-        IReadOnlyCollection<string>? legacyDisabled = null, ExternalPackageService? packages = null, BackgroundTaskService? tasks = null)
+        IReadOnlyCollection<string>? legacyDisabled = null, ExternalPackageService? packages = null, BackgroundTaskService? tasks = null,
+        TrayService? tray = null)
     {
         _plugins = plugins; _log = log; Settings = settings; _exit = exit; _manager = manager;
+        _tray = tray;
         _legacyDisabled = legacyDisabled ?? [];
         if (packages is not null) _packageReferences = new(paths, manager, packages);
         _icons = new NavigationIconStore(log);
@@ -120,12 +123,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             if (_detached) return;
         }
         _packageReferences?.SetDiscovered(_plugins.Records, _plugins.DirectoryError);
-        await _plugins.LoadAsync((record, plugin) =>
+        await _plugins.LoadWithResourcesAsync((record, plugin) =>
         {
-            if (_detached) return;
+            if (_detached) return null;
             var registry = new PageRegistry(record.Manifest!.Id);
             if (plugin is IPluginUiModule ui) ui.RegisterPages(registry);
+            var menu = _tray?.Register(record, plugin);
             if (!_detached) _registered.AddRange(registry.Pages);
+            return menu;
         });
         if (_detached) return;
         if (_manager is not null)
