@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正（HUD 启动与页面） | [E66 · Win32 框架程序集解析与主页面/设置分工（2026-10-07）](#evidence-hud-startup-page) |
 | 新插件（HUD 第一步） | [E65 · 原生电源通知与基础桌面状态（2026-10-07）](#evidence-system-hud) |
 | 修正（测试日志） | [E64 · 独立插件移除定时心跳（2026-10-06）](#evidence-quiet-probe) |
 | 扩展（插件托盘） | [E63 · 托盘菜单与生命周期（2026-10-06）](#evidence-plugin-tray) |
@@ -1977,3 +1978,25 @@ Test.Independent 清单升至 1.0.1，供现有 1.0.0 正常更新。原切页/�
 同步插件文档、产品索引、README、台账与交接。首版整包仍组装原两个正式插件，HUD 独立安装；没有覆盖已装 DLL/配置，没有启动应用、硬件读取、检查程序、UI 接管或远程推送。保留用户 .gitignore 与 .vscode/launch.json 修改。
 
 最终静态核对：当前涉及的文档中 100 个本地文件链接存在，AXAML XML 可解析，slnx 为 15 工程；暂存 diff 空白检查通过。
+
+<a id="evidence-hud-startup-page"></a>
+
+## E66：HUD 启动异常与主页面/设置分工（2026-10-07）
+
+用户运行 E65 的 SystemHud 0.1.0 后提供错误截图：Microsoft.Win32.Primitives 10.0.0.0 被 PluginLoadContext 误报缺失私有依赖，HudModel.FailureText 也无法解析 Win32Exception，常驻服务失败；之后托盘仍记录操作成功。用户同时要求重新分析主页面与插件设置的职责。“不新增导航接口”不等于“不提供插件主页面”，据此修正此前解释。
+
+Core 只扩充显式框架名称 Microsoft.Win32.Primitives / Microsoft.Win32.Registry，由默认运行时解析；没有复制运行时 DLL、放开 Microsoft.* 或整份 TRUSTED_PLATFORM_ASSEMBLIES。后者同时含应用依赖，不能作为宽泛私有依赖兜底。官方依据：[Win32Exception 所属程序集](https://learn.microsoft.com/en-us/dotnet/api/system.componentmodel.win32exception?view=net-10.0)、[默认探测规则](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/default-probing)。截图证明程序集解析失败，不单独推断被遮住的原生 API 故障已运行排除。
+
+插件版本升为 0.1.1，复用现有页面接口和共享主题：主页面提供运行状态、显示/隐藏、暂停/恢复、预览、最近内容以及指标和位置布局；设置留下五项长期偏好。两个保存命令合并各自字段，共享持久化和应用逻辑；保留另一页未保存草稿，托盘临时指标独立于持久配置。托盘和页面复用操作，启动失败状态可见且所有控制禁用；不新增轮询、公共服务、库或导航 API。
+
+验证记录：
+
+1. `dotnet build TractorTool.slnx -c Release -m:1 -nr:false --artifacts-path artifacts/e66-hud-fix/build`：15 工程通过，0 警告/0 错误，包括新 AXAML 绑定及检查代码。
+2. `scripts/Publish-Host.ps1 -Output artifacts/e66-hud-fix/host`：win-x64 自包含发布成功，新空目录，无运行和安装。
+3. `scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e66-hud-fix/host -Output artifacts/e66-hud-fix/plugin`：引用发布 SDK 独立 Rebuild 通过，0 警告/0 错误。
+4. ZIP 9 文件与输出逐一 SHA256 一致，无共享 SDK/运行时 DLL，打包前后 234 个新宿主文件哈希不变。清单/InformationalVersion 为 0.1.1，程序集绑定标识遵循 Directory.Build.props 固定 1.0.0.0。首次静态校验误把 AssemblyVersion 预期成 0.1.1.0 导致失败；核对统一版本约定后修正检查，不修改程序集身份。最终 ZIP SHA256：E95235C2DF1D0763FBB69DAFDA42AE6D87E0AC9EF8052BB781A1AEB5E55C28B7。
+5. IndependentPlugin 新增 FrameworkReferencePlugin，不调用原生 API，构造 Win32Exception 并断言其程序集来自 Default 上下文；IntegrationChecks 通过真实 PluginHost 加载该入口，保留私有 FixtureDependency 缺失失败检查。这里只编译，未执行任何检查程序。源码静态自审确认各控制入口和停止状态，不把上一轮子代理审查当作本轮证据。
+
+本轮必须更新宿主和插件：F5 用户重新构建宿主后安装新 ZIP 并显式退出重启；旧宿主仅更换插件仍无法解析。新发布宿主没有预装插件，也不是完整分发。未替换用户 Debug/正在运行 DLL，未启动应用或接管 UI，未修改实际设置、硬件配置或用户数据；A25 从“未运行”更新为“用户复现失败、代码修正后待复测”。保留用户 .gitignore / .vscode/launch.json 修改，不纳入提交。当前文档与产品分工同步，后两步未提前开发。
+
+最终静态核对：本轮涉及文档的 171 个本地文件链接存在，两页 AXAML XML 可解析，diff 空白检查通过。

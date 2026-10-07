@@ -18,6 +18,8 @@ public sealed class HudPlugin : IPlugin, IPluginUiModule, IPluginTrayModule, IPl
     public void RegisterPages(IPluginPageRegistry registry)
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
+        registry.AddNavigationPage("hud", "桌面状态 HUD", () => new HudView { DataContext = model },
+            new(ToolIconKind.Info, "控制桌面状态显示，选择指标并调整布局。"));
         registry.AddSettingsPage("settings", "桌面状态 HUD", () => new HudSettingsView { DataContext = model },
             new(ToolIconKind.Info, "电源变化提醒与桌面状态显示。"));
     }
@@ -32,6 +34,11 @@ public sealed class HudPlugin : IPlugin, IPluginUiModule, IPluginTrayModule, IPl
         {
             await Dispatcher.UIThread.InvokeAsync(() => { if (!stoppingToken.IsCancellationRequested) _model?.Start(); });
             await finished.Task.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => _model?.StartupFailed(ex));
+            throw;
         }
         finally { await StopAsync(CancellationToken.None); }
     }

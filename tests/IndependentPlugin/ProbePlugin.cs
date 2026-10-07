@@ -92,6 +92,18 @@ public sealed class ThrowingPlugin : ProbePlugin
 {
     public override ValueTask InitializeAsync(PluginContext context, CancellationToken token) => throw new InvalidOperationException("fixture initialization failed");
 }
+public sealed class FrameworkReferencePlugin : ProbePlugin
+{
+    public override ValueTask InitializeAsync(PluginContext context, CancellationToken token)
+    {
+        // Construction does not call native APIs; it exercises the framework assembly used by HUD errors.
+        var error = new System.ComponentModel.Win32Exception(5, "fixture access denied");
+        if (error.NativeErrorCode != 5 || System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(error.GetType().Assembly)
+            != System.Runtime.Loader.AssemblyLoadContext.Default)
+            throw new InvalidOperationException("Win32 framework assembly must resolve from the runtime.");
+        return base.InitializeAsync(context, token);
+    }
+}
 public sealed class BadRegistrationPlugin : ProbePlugin
 {
     public override void RegisterPages(IPluginPageRegistry registry)

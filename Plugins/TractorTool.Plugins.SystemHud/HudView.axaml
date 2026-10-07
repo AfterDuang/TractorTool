@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:TractorTool.Plugins.SystemHud"
+             x:Class="TractorTool.Plugins.SystemHud.HudView" x:DataType="local:HudModel">
+  <ScrollViewer Classes="pageScroll">
+    <StackPanel Classes="pageBody" Spacing="16">
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="{Binding RuntimeState}" Classes="sectionTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
+          <WrapPanel Orientation="Horizontal">
+            <Button Content="{Binding VisibilityAction}" Classes="accent" Command="{Binding ToggleVisibilityCommand}" Margin="0,0,10,8" />
+            <Button Content="{Binding PauseAction}" Command="{Binding TogglePauseCommand}" Margin="0,0,10,8" />
+            <Button Content="预览 6 秒" Command="{Binding PreviewCommand}" Margin="0,0,0,8" />
+          </WrapPanel>
+          <TextBlock Text="最近显示的内容" Classes="caption" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="{Binding Reading.Label}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding Reading.Value}" FontSize="28" FontWeight="SemiBold" />
+          </StackPanel>
+          <TextBlock Text="{Binding Reading.Detail}" TextWrapping="Wrap" Classes="caption" />
+          <TextBlock Text="HUD 隐藏或暂停时停止刷新，保留最后一次显示内容。启用、默认常驻和提醒等偏好在插件设置中调整。" TextWrapping="Wrap" Classes="caption" />
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
+        <StackPanel Spacing="14">
+          <TextBlock Text="显示内容与位置" FontWeight="SemiBold" FontSize="16" />
+          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+            <TextBlock Text="指标" /><TextBlock Grid.Column="1" Text="显示器" />
+            <ComboBox Grid.Row="1" ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="指标" />
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Monitors}" SelectedIndex="{Binding Monitor}" HorizontalAlignment="Stretch" AutomationProperties.Name="显示器" />
+            <TextBlock Grid.Row="2" Text="锚点" /><TextBlock Grid.Row="2" Grid.Column="1" Text="缩放比例" />
+            <ComboBox Grid.Row="3" ItemsSource="{Binding Anchors}" SelectedIndex="{Binding Anchor}" HorizontalAlignment="Stretch" AutomationProperties.Name="锚点" />
+            <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" AutomationProperties.Name="缩放比例" />
+          </Grid>
+          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+            <TextBlock Text="水平偏移" /><TextBlock Grid.Column="1" Text="垂直偏移" />
+            <NumericUpDown Grid.Row="1" Value="{Binding OffsetX}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="水平偏移" />
+            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding OffsetY}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="垂直偏移" />
+          </Grid>
+          <TextBlock Text="CPU、内存和网速仅在显示时每秒读取。网速是活动接口的总和，虚拟网卡可能重复统计。" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+      <Button Content="保存布局" Classes="accent" Command="{Binding ApplyLayoutCommand}" HorizontalAlignment="Left" />
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

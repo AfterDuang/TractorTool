@@ -33,7 +33,9 @@ internal sealed class PluginLoadContext(string entryPath, string packageRoot) : 
             return LoadFromAssemblyPath(ManifestValidator.PackagePath(packageRoot, path));
         }
         // Framework assemblies are provided by .NET; private dependencies must ship with the plugin.
-        if (name.Name is "netstandard" or "mscorlib" or "System" or "Microsoft.CSharp" || name.Name!.StartsWith("System.")) return null;
+        if (name.Name is "netstandard" or "mscorlib" or "System" or "Microsoft.CSharp"
+            or "Microsoft.Win32.Primitives" or "Microsoft.Win32.Registry"
+            || name.Name!.StartsWith("System.", StringComparison.Ordinal)) return null;
         throw new FileNotFoundException($"插件缺少私有依赖：{name}");
     }
 

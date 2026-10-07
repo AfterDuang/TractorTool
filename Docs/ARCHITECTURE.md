@@ -85,6 +85,8 @@ PluginContext 按插件生命周期提供进程、依赖和有限任务作用域
 
 使用 .NET `AssemblyLoadContext` 和 `AssemblyDependencyResolver` 的现有机制。私有依赖可按插件隔离；共享程序集不能任由每个插件携带任意版本。M1 拒绝插件根目录夹带 Contracts/UI/Avalonia/FluentAvalonia/MicroCom.Runtime 的 DLL 副本；加载器从默认上下文解析共享类型并检查程序集版本。缺失私有托管依赖报错，不依赖开发机 NuGet 缓存；禁止直接引用宿主或 Core。首版插件 SDK 使用明确的已验证版本组合，版本不匹配时给出错误而不是强行加载。[微软插件指南](https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support)
 
+.NET 框架程序集由默认运行时提供；除 System.* 等现有名称外，显式包含 Microsoft.Win32.Primitives（Win32Exception）及 Microsoft.Win32.Registry。不得因框架程序集缺失误报插件私有依赖，也不以 Microsoft.* 前缀或整份 TPA 列表放开任意宿主依赖兜底；插件私有依赖仍须随包提供。
+
 入口初始化、页面工厂和任务调用分别记录异常。可以处理普通失败并保持其他功能可用，但进程内可信插件仍可能使整个进程崩溃；加载上下文不是安全沙箱。
 
 ### 2.4 安装、更新、禁用和卸载

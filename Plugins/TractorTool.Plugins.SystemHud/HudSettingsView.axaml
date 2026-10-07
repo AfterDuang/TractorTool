@@ -3,34 +3,17 @@
              x:Class="TractorTool.Plugins.SystemHud.HudSettingsView" x:DataType="local:HudModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="12">
+      <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
       <ui:SettingRow Header="启用 HUD" Description="关闭主窗口到托盘后，HUD 仍可运行。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding Enabled}" AutomationProperties.Name="启用 HUD" />
       </ui:SettingRow>
-      <ui:SettingRow Header="常驻显示" Description="关闭时只在电源变化或手动预览时出现，持续 6 秒。" Icon="Info">
+      <ui:SettingRow Header="默认常驻显示" Description="保存后立即生效，也作为下次启动时的显示方式。关闭时仅提醒或预览 6 秒。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding AlwaysVisible}" AutomationProperties.Name="常驻显示" />
       </ui:SettingRow>
       <ui:SettingRow Header="电源变化提醒" Description="插入或拔出电源时显示电量；无电池设备会明确提示。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding PowerReminder}" AutomationProperties.Name="电源变化提醒" />
       </ui:SettingRow>
-      <Border Classes="card">
-        <StackPanel Spacing="14">
-          <TextBlock Text="显示内容与位置" FontWeight="SemiBold" FontSize="16" />
-          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-            <TextBlock Text="指标" /><TextBlock Grid.Column="1" Text="显示器" />
-            <ComboBox Grid.Row="1" ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="指标" />
-            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Monitors}" SelectedIndex="{Binding Monitor}" HorizontalAlignment="Stretch" AutomationProperties.Name="显示器" />
-            <TextBlock Grid.Row="2" Text="锚点" /><TextBlock Grid.Row="2" Grid.Column="1" Text="缩放比例" />
-            <ComboBox Grid.Row="3" ItemsSource="{Binding Anchors}" SelectedIndex="{Binding Anchor}" HorizontalAlignment="Stretch" AutomationProperties.Name="锚点" />
-            <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" AutomationProperties.Name="缩放比例" />
-          </Grid>
-          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-            <TextBlock Text="水平偏移" /><TextBlock Grid.Column="1" Text="垂直偏移" />
-            <NumericUpDown Grid.Row="1" Value="{Binding OffsetX}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="水平偏移" />
-            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding OffsetY}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="垂直偏移" />
-          </Grid>
-          <TextBlock Text="CPU、内存和网速仅在显示时每秒读取。网速是活动接口的总和，虚拟网卡可能重复统计。" Classes="caption" TextWrapping="Wrap" />
-        </StackPanel>
-      </Border>
+
       <ui:SettingRow Header="点击穿透" Description="鼠标直接操作下方窗口。关闭后，点击 HUD 可将其隐藏。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding ClickThrough}" AutomationProperties.Name="点击穿透" />
       </ui:SettingRow>
@@ -38,8 +21,7 @@
         <ToggleSwitch IsChecked="{Binding Animate}" AutomationProperties.Name="显示动画" />
       </ui:SettingRow>
       <StackPanel Orientation="Horizontal" Spacing="10">
-        <Button Content="应用并保存" Classes="accent" Command="{Binding ApplyCommand}" />
-        <Button Content="预览 6 秒" Command="{Binding PreviewCommand}" />
+        <Button Content="保存偏好" Classes="accent" Command="{Binding ApplyPreferencesCommand}" />
       </StackPanel>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" />
     </StackPanel>

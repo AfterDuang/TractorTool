@@ -4,13 +4,13 @@
 
 ## 1. 当前工作
 
-宿主仍处于 M5 发布准备；本轮按用户确认新增桌面状态 HUD 独立插件，第一步实现和打包见 [E65](PROJECT_HISTORY.md#evidence-system-hud)。使用 .NET 10 / Avalonia 12.1.2，原生事件优先，必要采样按需启停，权限不足明确管理员提示；不补导航接口，复用托盘“显示 TractorTool”。不改公共接口，不复制参考程序的应用/托盘/自启动壳。
+宿主仍处于 M5 发布准备；本轮修复用户实测的 HUD 常驻服务失败，并补齐插件主页面，证据见 [E66](PROJECT_HISTORY.md#evidence-hud-startup-page)。根因是插件加载器没有把 Microsoft.Win32.Primitives 归为 .NET 框架程序集，导致 Win32Exception 连同错误处理都无法解析。Core 补上 Win32 框架名称，未放开任意 Microsoft.* 或缺失私有依赖兜底。
 
-三步范围：基础 HUD → 多方案/轮播/变量模板/颜色规则/编辑预览 → GPU/温度/传感器/探测/HTTP/JSON/DeepSeek。当前只实现第一步；业务设计和验收方法见 [SystemHud](Plugins/SystemHud.md)。主窗口关闭或切页不停止 HUD；HUD 自身隐藏/暂停停止性能采样，显式退出注销通知、关闭窗口并等待在途读取。
+SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态、显示/隐藏、暂停/恢复、预览、最近内容和布局；设置保留启用、默认常驻、提醒、穿透、动画。两处保存各自字段，不隐式提交另一页草稿；托盘临时指标与持久指标分开。启动失败禁用所有控制，错误进入统一日志；采样策略未增加主页面轮询。
 
-电源用 Windows 通知；CPU/内存/网速每秒按当前可见指标读取，使用原生 API/.NET，不引入 WMI 或硬件驱动库。实际开始性能采样时只写一次优化 Warning。大于 64 逻辑处理器注明处理器组范围，网速注明接口合计，未知/重置不伪装成有效零值。
+15 工程隔离 Release 构建、宿主自包含发布及新 SDK 独立插件打包通过；回归夹具覆盖 Win32Exception 在默认上下文解析，保留私有依赖缺失失败用例，只编译未运行。ZIP 9 文件哈希一致、无共享 DLL，打包前后 234 个发布宿主文件未变。实际修复效果未运行确认，A25 保留待复测；不是“第一步运行已通过”。
 
-插件与 HudChecks 构建 0 警告/0 错误，独立 ZIP 的 9 个文件与输出一致、无共享 SDK DLL，发布 SDK 的 244 文件哈希不变。纯逻辑检查仅编译；A25 电源/穿透/DPI/退出等真实行为由用户验证。ZIP 路径唯一维护在 [本地产物](DEVELOPMENT.md#local-artifacts)，未替用户安装；HUD 暂未并入首版完整分发。
+产物路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)。本次需要更新宿主及插件：F5 用户先显式退出并重新构建宿主，再更新 0.1.1 ZIP、显式退出重启；旧加载器仅更新插件仍会失败。不覆盖已安装 DLL/数据，不启动程序。三步计划仍为基础 HUD → 多方案/轮播/模板/颜色规则/编辑 → 高级传感器/数据源，后两步未实施。
 
 ## 2. 保留的产品决定
 
@@ -34,11 +34,11 @@
 
 | 工作 | 入口 |
 | --- | --- |
-| HUD 生命周期/设置 | [HudPlugin](../Plugins/TractorTool.Plugins.SystemHud/HudPlugin.cs)、[HudModel](../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) |
+| HUD 页面/生命周期 | [HudView](../Plugins/TractorTool.Plugins.SystemHud/HudView.axaml)、[HudModel](../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) |
 | Windows 采集/窗口 | [WindowsMetrics](../Plugins/TractorTool.Plugins.SystemHud/WindowsMetrics.cs)、[HudWindow](../Plugins/TractorTool.Plugins.SystemHud/HudWindow.axaml.cs) |
 | HUD 规则/纯逻辑检查 | [插件文档](Plugins/SystemHud.md)、[HudChecks](../tests/TractorTool.HudChecks/Program.cs) |
 | 托盘公共接口 | [PluginTray](../TractorTool.UI/PluginTray.cs)、[接入规范](PLUGIN_DEVELOPMENT.md#tray-menu) |
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步按三步方案继续 HUD 第二步；第一步 A25 与 A24 运行证据由用户补充。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
+下一步先由用户确认 E66 启动修复与主页面/设置分工，再接续 HUD 第二步；A25/A24 未关闭。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
