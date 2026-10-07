@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**本轮文档：[E71 框架源码导航](PROJECT_HISTORY.md#evidence-framework-source-guide)。** 按用户澄清，根 README 展示软件框架自身的真实目录、关键文件职责、依赖方向与阅读/修改入口；插件目录示例移入插件开发规范。仅修改文档并核对目录及链接，没有新构建或运行证据，既有验收状态不变。
+**本轮文档：[E71 框架源码导航](PROJECT_HISTORY.md#evidence-framework-source-guide)。** 根 README 聚焦框架定位、公共能力、使用/开发入口与真实源码结构；移除具体插件功能、参数及重复发布说明，插件业务通过文档目录查阅。插件目录示例保留在插件规范。仅修改文档并核对链接，没有新构建或运行证据，既有验收状态不变。
 
 **源码整理：[E70 HUD 源码目录整理](PROJECT_HISTORY.md#evidence-hud-folders)。** 按插件内部职责将 19 个文件移到 Configuration / Sampling / ViewModels / Views，根目录新增源码导航，入口和清单保留原位。迁移文件内容哈希不变，命名空间和业务行为不变；插件及现有 HudChecks 隔离编译 0 警告/0 错误。未运行应用或检查，未改框架、未重新打包，当前可安装包仍为下方 E69 的 0.3.0。
 
