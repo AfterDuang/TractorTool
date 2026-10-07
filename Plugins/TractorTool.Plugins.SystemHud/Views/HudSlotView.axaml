@@ -1,8 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:TractorTool.Plugins.SystemHud"
-             x:Class="TractorTool.Plugins.SystemHud.HudSlotView" x:DataType="local:HudSlotDisplay"
-             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-  <Grid>
+             x:Class="TractorTool.Plugins.SystemHud.HudSlotView" x:Name="Slot" x:DataType="local:HudSlotDisplay"
+             HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ClipToBounds="True">
+  <Grid DataContext="{Binding #Slot.Item}">
     <Path IsVisible="{Binding IsIcon}" Data="{Binding Icon}" Width="20" Height="20"
           Stretch="Uniform" Stroke="{Binding Accent}" StrokeThickness="1.7" />
     <Grid IsVisible="{Binding IsRing}" Width="28" Height="28">

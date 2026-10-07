@@ -34,7 +34,8 @@ internal sealed class WindowsMetrics
         var status = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
         if (!GlobalMemoryStatusEx(ref status)) throw new Win32Exception();
         var used = status.TotalPhysical - status.AvailablePhysical;
-        return new("内存", $"{status.Load}%", $"{used / 1073741824d:0.0} / {status.TotalPhysical / 1073741824d:0.0} GiB", status.Load);
+        return new("内存", $"{status.Load}%", $"{used / 1073741824d:0.0} / {status.TotalPhysical / 1073741824d:0.0} GiB", status.Load,
+            Context: $"可用 {status.AvailablePhysical / 1073741824d:0.0} GiB · 物理内存");
     }
 
     private HudReading Network()
@@ -60,7 +61,8 @@ internal sealed class WindowsMetrics
         // Aggregate interfaces, not Internet traffic: virtual adapters can count forwarded bytes twice.
         return new("网速", comparable ? $"↓ {HudCounters.Speed(received)}" : "—",
             current.Count == 0 ? "没有已连接的网络接口" : comparable ? $"↑ {HudCounters.Speed(sent)} · 活动接口合计" : "正在建立采样基线…",
-            SecondaryValue: comparable ? $"↑ {HudCounters.Speed(sent)}" : "↑ —");
+            SecondaryValue: comparable ? $"↑ {HudCounters.Speed(sent)}" : "↑ —",
+            Context: comparable ? $"{current.Count} 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。" : null);
     }
 
     public static (byte Ac, HudReading Reading) Power()

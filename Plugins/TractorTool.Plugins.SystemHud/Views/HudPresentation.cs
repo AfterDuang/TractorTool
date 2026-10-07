@@ -24,15 +24,22 @@ public static class HudPresentation
         var identity = profile.Metric == 8 && profile.SensorId.StartsWith("/gpu-", StringComparison.OrdinalIgnoreCase)
             ? Icon(12) : Text(title);
         var hasPercent = reading.Percent is { } percent && double.IsFinite(percent);
-        var trailing = hasPercent ? new HudSlotDisplay(HudContent.Progress, "—", icon.Icon, reading.Percent, accent) : identity;
+        var trailing = hasPercent ? new HudSlotDisplay(HudContent.Progress, "—", icon.Icon, reading.Percent, accent) : Text("");
 
         // Metric-specific choices end here. Views consume these named regions for all three states.
-        var strip = new HudStripLayout(icon, Text(value), Text(detail), trailing);
+        var strip = new HudStripLayout(icon, Text(value), Text(title), trailing);
+        if (profile.Metric == 0) strip = strip with { Secondary = Text(detail) };
         if (profile.Metric == 3 && hasPercent) // Capacity and usage are separate, readable fields.
             strip = strip with { Primary = Text(detail), Secondary = Text(value) };
         if (profile.Metric == 4) // Never parse a localized explanation to recover the upload reading.
-            strip = strip with { Secondary = Text(reading.SecondaryValue ?? "↑ —") };
-        var layout = new HudLayout(new(icon, Text(value), identity), strip, Text($"{title}\n{value}\n{detail}"));
+            strip = strip with { Secondary = Text(reading.SecondaryValue ?? "↑ —"), Right = Text(title) };
+        var body = profile.Detail == "{detail}" ? reading.Context ?? detail : detail;
+        var headerText = new[] { strip.Primary.Text, strip.Secondary.Text, strip.Right.Text };
+        if (headerText.Contains(body)) body = "";
+        if (!headerText.Contains(title)) body = string.Join('\n', new[] { title, body }.Where(t => t.Length > 0));
+        if (reading.ObservedAt is { } updated && !body.Contains(updated.ToString("HH:mm:ss", CultureInfo.CurrentCulture)))
+            body = string.Join('\n', new[] { body, $"更新于 {updated:HH:mm:ss}" }.Where(t => t.Length > 0));
+        var layout = new HudLayout(new(icon, Text(value), identity), strip, Text(body));
         return new(title, value, detail, accent, layout);
     }
 }

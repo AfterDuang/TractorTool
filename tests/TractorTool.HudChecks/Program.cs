@@ -3,6 +3,8 @@ using System.Net;
 using System.Text;
 using TractorTool.Plugins.SystemHud;
 
+if (args is ["--ui-only", var output]) { HudVisualChecks.Run(output); return; }
+
 // Pure logic and in-memory HTTP checks: no windows, native counters, user settings or real network.
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 Check(HudCounters.Cpu(150, 250, 150, 100, 150, 100) is { } cpu && Math.Abs(cpu - 66.6666667) < .001,
@@ -108,14 +110,14 @@ Check(HudLayout.AfterClick(HudMode.Compact, false) == HudMode.Strip
     && HudLayout.AfterClick(HudMode.Strip, true) == HudMode.Detail
     && HudLayout.AfterClick(HudMode.Detail, true) == HudMode.Compact,
     "Single and double clicks follow all six state transitions; details always have a return path.");
-var memoryLayout = new HudProfile { Metric = 3 }.Render(new("内存", "41%", "13.2 / 32 GiB", 41)).Layout;
+var memoryLayout = new HudProfile { Metric = 3 }.Render(new("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存")).Layout;
 Check(memoryLayout.Compact is { Left.IsIcon: true, Center.Text: "41%", Right.Text: "内存" }
     && memoryLayout.Strip is { Primary.Text: "13.2 / 32 GiB", Secondary.Text: "41%", Right.IsRing: true }
-    && memoryLayout.Detail.Text == "内存\n41%\n13.2 / 32 GiB",
-    "Memory maps capacity and usage into named regions and retains full text in details.");
-var networkLayout = new HudProfile { Metric = 4 }.Render(new("网速", "↓ 60.6 KiB/s", "↑ 43.0 KiB/s · 活动接口合计", SecondaryValue: "↑ 43.0 KiB/s")).Layout;
+    && memoryLayout.Detail.Text == "内存\n可用 18.8 GiB · 物理内存",
+    "Memory separates capacity/usage from the available-memory explanation.");
+var networkLayout = new HudProfile { Metric = 4 }.Render(new("网速", "↓ 60.6 KiB/s", "↑ 43.0 KiB/s · 活动接口合计", SecondaryValue: "↑ 43.0 KiB/s", Context: "2 个活动接口合计")).Layout;
 Check(networkLayout.Strip is { Left.IsIcon: true, Primary.Text: "↓ 60.6 KiB/s", Secondary.Text: "↑ 43.0 KiB/s", Right.IsText: true, Right.Text: "网速" }
-    && networkLayout.Detail.Text.Contains("活动接口合计"),
+    && networkLayout.Detail.Text == "2 个活动接口合计",
     "Network rates stay separate and concise; the full explanation is retained in details, without a duplicate icon.");
 var gpuLayout = new HudProfile { Metric = 8, SensorId = "/gpu-nvidia/0/temperature/2" }.Render(new("GPU Hot Spot", "43.5 °C", "NVIDIA GPU")).Layout;
 Check(gpuLayout.Compact.Right.IsIcon && gpuLayout.Compact.Right.Icon == HudDisplay.IconFor(12)
@@ -131,7 +133,7 @@ for (var metric = 0; metric <= 11; metric++)
     var layout = new HudProfile { Metric = metric }.Render(new("指标", "—", "尚无读数")).Layout;
     Check(layout.Compact.Center.Text == "—" && layout.Strip.Primary.Text == "—" && layout.Detail.IsText
         && layout.Strip.Right.IsText && !layout.Strip.Right.IsRing
-        && layout.Strip.Secondary.Text == (metric == 4 ? "↑ —" : "尚无读数"),
+        && layout.Strip.Secondary.Text == (metric == 4 ? "↑ —" : metric == 0 ? "尚无读数" : "指标"),
         "All metrics share named regions; absent percentages do not invent progress or repeat the metric icon.");
 }
 Console.WriteLine("PASS HUD three-state transitions, built-in regions and legacy profile compatibility");

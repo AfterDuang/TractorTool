@@ -85,21 +85,24 @@ public partial class HudCard : UserControl
         var size = HudSettings.SizeFor(Mode);
         Width = size.Width; Height = size.Height;
         Island.CornerRadius = new CornerRadius(Mode == HudMode.Detail ? 28 : size.Height / 2);
-        HeaderButton.Height = Mode == HudMode.Detail ? 66 : size.Height - 2;
-        HeaderGrid.ColumnDefinitions = new ColumnDefinitions(Mode switch
-        {
-            HudMode.Compact => "28,*,Auto",
-            HudMode.Strip => "28,1.35*,*,Auto",
-            _ => "36,*,Auto"
-        });
-        HeaderGrid.RowDefinitions = new RowDefinitions(Mode == HudMode.Detail ? "*,*" : "*");
-        Grid.SetRowSpan(First, Mode == HudMode.Detail ? 2 : 1);
-        Grid.SetRowSpan(Second, Mode == HudMode.Detail ? 2 : 1);
-        Grid.SetColumn(Fourth, Mode == HudMode.Detail ? 2 : 3);
-        Grid.SetRow(Fourth, Mode == HudMode.Detail ? 1 : 0);
-        Third.MaxWidth = Mode switch { HudMode.Compact => 64, HudMode.Detail => 148, _ => double.PositiveInfinity };
+        var detailed = Mode == HudMode.Detail;
+        HeaderButton.Height = detailed ? 84 : size.Height - 2;
+        HeaderGrid.Margin = detailed ? new Thickness(20, 10, 20, 0) : new Thickness(14, 0);
+        // Keep the same definitions: replacing the collections can leave Grid's cell cache stale.
+        HeaderGrid.ColumnDefinitions[0].Width = new GridLength(detailed ? 56 : 38);
+        HeaderGrid.ColumnDefinitions[1].Width = new GridLength(Mode == HudMode.Strip ? 1.35 : 1, GridUnitType.Star);
+        HeaderGrid.ColumnDefinitions[2].Width = Mode == HudMode.Compact ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        HeaderGrid.ColumnDefinitions[3].Width = Mode == HudMode.Strip ? GridLength.Auto : new GridLength(0);
+        HeaderGrid.RowDefinitions[1].Height = detailed ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        First.Margin = Second.Margin = new Thickness(0, 0, detailed ? 16 : 10, 0);
+        Third.Margin = new Thickness(0, 0, Mode == HudMode.Strip ? 10 : 0, 0);
+        Grid.SetRowSpan(First, detailed ? 2 : 1);
+        Grid.SetRow(Second, detailed ? 1 : 0);
+        Grid.SetRow(Third, detailed ? 1 : 0);
+        Grid.SetColumn(Fourth, detailed ? 2 : 3);
+        Third.MaxWidth = Mode == HudMode.Compact ? 64 : double.PositiveInfinity;
         Third.FontSize = Mode == HudMode.Compact ? 12 : 14;
-        Fourth.MaxWidth = 64;
+        Fourth.MaxWidth = detailed ? 148 : 64;
         Fourth.IsVisible = Mode != HudMode.Compact;
         // Visibility follows state, never animated opacity (zero is also the start of a fade-in).
         BodyScroll.IsVisible = Mode == HudMode.Detail;
@@ -109,22 +112,26 @@ public partial class HudCard : UserControl
 
     private void UpdateContent()
     {
-        if (DataContext is not HudDisplay display) return;
+        if (DataContext is not HudDisplay display)
+        {
+            First.Item = Second.Item = Third.Item = Fourth.Item = Body.Item = null;
+            return;
+        }
         var layout = display.Layout;
         if (Mode == HudMode.Compact)
         {
-            First.DataContext = layout.Compact.Left;
-            Second.DataContext = layout.Compact.Center;
-            Third.DataContext = layout.Compact.Right;
+            First.Item = layout.Compact.Left;
+            Second.Item = layout.Compact.Center;
+            Third.Item = layout.Compact.Right;
         }
         else
         {
-            First.DataContext = layout.Strip.Left;
-            Second.DataContext = layout.Strip.Primary;
-            Third.DataContext = layout.Strip.Secondary;
-            Fourth.DataContext = layout.Strip.Right;
+            First.Item = layout.Strip.Left;
+            Second.Item = layout.Strip.Primary;
+            Third.Item = layout.Strip.Secondary;
+            Fourth.Item = layout.Strip.Right;
         }
-        Body.DataContext = layout.Detail;
+        Body.Item = layout.Detail;
     }
 
     internal static SpringEasing MorphEasing() => new() { Mass = 1, Stiffness = 360, Damping = 27, InitialVelocity = 0 };

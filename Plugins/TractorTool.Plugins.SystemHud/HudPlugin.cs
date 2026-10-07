@@ -19,7 +19,7 @@ public sealed class HudPlugin : IPlugin, IPluginUiModule, IPluginTrayModule, IPl
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("hud", "桌面状态 HUD", () => new HudView { DataContext = model },
-            new(ToolIconKind.Info, "控制桌面状态显示，选择指标并调整布局。") { UsesCustomHeader = true });
+            new(ToolIconKind.Info, "选择指标，编辑桌面状态显示。") { UsesCustomHeader = true });
         registry.AddSettingsPage("settings", "桌面状态 HUD", () => new HudSettingsView { DataContext = model },
             new(ToolIconKind.Info, "电源变化提醒与桌面状态显示。"));
     }

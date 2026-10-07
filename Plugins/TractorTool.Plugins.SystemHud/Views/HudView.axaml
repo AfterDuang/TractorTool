@@ -2,12 +2,12 @@
   <Grid RowDefinitions="Auto,*,Auto">
     <StackPanel Margin="28,26,28,20" Spacing="6">
       <TextBlock Text="桌面状态 HUD" Classes="pageTitle" />
-      <TextBlock Text="控制桌面状态显示，选择指标并调整布局。" Classes="muted" />
+      <TextBlock Text="选择指标，编辑桌面状态显示。" Classes="muted" />
     </StackPanel>
     <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
       <Grid x:Name="Workspace" ColumnDefinitions="400,*" ColumnSpacing="24" RowSpacing="20" Margin="28,0,28,0">
         <Grid RowDefinitions="Auto,*" RowSpacing="12">
-          <TextBlock VerticalAlignment="Center" FontSize="22" Text="状态预览" Height="40" Classes="sectionTitle" />
+          <TextBlock VerticalAlignment="Center" FontSize="22" Text="编辑预览" Height="40" Classes="sectionTitle" />
           <ScrollViewer x:Name="PreviewScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Grid.Row="1">
             <Border Classes="card" VerticalAlignment="Top">
               <StackPanel Spacing="8">
@@ -21,14 +21,12 @@
                   <Button Content="预览" Command="{Binding PreviewCommand}" ToolTip.Tip="显示当前方案 6 秒" Margin="0,0,0,8" />
                 </WrapPanel>
                 <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
-                <Expander Header="最近显示的内容" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                  <StackPanel Spacing="8" Margin="0,8,0,0">
-                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                      <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding Display}" />
-                    </Viewbox>
-                    <TextBlock Text="隐藏或暂停时保留最后读数；不会为这个预览额外采样。" Classes="caption" TextWrapping="Wrap" />
-                  </StackPanel>
-                </Expander>
+                <StackPanel Spacing="8" Margin="0,12,0,0">
+                  <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                    <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding EditorDisplay}" />
+                  </Viewbox>
+                  <TextBlock Text="示例数据 · 随右侧编辑更新；保存后应用到桌面。" Classes="caption" TextWrapping="Wrap" />
+                </StackPanel>
                 <TextBlock Text="{Binding PlacementHint}" Classes="caption" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
@@ -106,14 +104,6 @@
                     <TextBlock Text="本地盘符" />
                     <TextBox Text="{Binding Drive}" MaxLength="3" PlaceholderText="C:\" AutomationProperties.Name="本地盘符" />
                   </StackPanel>
-                </StackPanel>
-              </Border>
-              <Border Classes="card">
-                <StackPanel Spacing="10">
-                  <TextBlock Text="编辑预览 · 示例数据" Classes="caption" />
-                  <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                    <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding EditorDisplay}" />
-                  </Viewbox>
                 </StackPanel>
               </Border>
               <Expander Header="文字与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">

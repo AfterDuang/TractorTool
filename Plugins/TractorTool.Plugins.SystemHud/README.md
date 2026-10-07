@@ -34,9 +34,9 @@ TractorTool.Plugins.SystemHud/
 
 每份 AXAML 与同名 `.axaml.cs` 放在同一目录。`bin/`、`obj/` 是生成目录，不属于源码分层。
 
-`HudLayout` 定义内部显示数据，不属于用户配置：默认态 `Compact.Left/Center/Right`，长条 `Strip.Left/Primary/Secondary/Right`，详细态复用长条并增加 `Detail`。`HudPresentation` 按指标填入这些具名区域，`HudSlotView` 渲染文字、图标或真实进度环。新增指标复用默认映射，或在 Presentation 调整对应区域，不增加用户区域编辑器。网速的上传值由 `HudReading.SecondaryValue` 提供，避免从说明中拆字符串。
+`HudLayout` 定义内部显示数据，不属于用户配置：默认态 `Compact.Left/Center/Right`，长条 `Strip.Left/Primary/Secondary/Right`，详细态复用长条并增加 `Detail`。`HudPresentation` 按指标填入这些具名区域，`HudSlotView` 渲染文字、图标或真实进度环。新增指标复用默认映射，或在 Presentation 调整对应区域，不增加用户区域编辑器。网速的上传值由 `HudReading.SecondaryValue` 提供，`Context` 提供接口范围、可用内存等补充信息；都不持久化，不从本地化说明中拆字符串。详情不再拼接一遍标题、主值和说明。
 
-`HudCard` 管理三态布局、单/双击与拖动识别、有限形变；`HudWindow` 执行原生移动、DPI/边缘定位与窗口区域裁剪。位置换算集中在 `HudSettings`。两处页面预览与桌面共用卡片，采集器不参与布局或动画，不为每个指标复制视图。
+`HudCard` 管理三态布局、单/双击与拖动识别、有限形变；保留固定行列定义，仅调整尺寸和控件位置。`HudSlotView.Item` 接收区域内容，内部 Grid 绑定 Item；控件自身仍继承父级 HudDisplay，避免编译绑定在两种类型间误转换。`HudWindow` 执行原生移动、DPI/边缘定位与窗口区域裁剪，位置换算集中在 `HudSettings`。左侧唯一的编辑预览和桌面共用卡片，编辑预览用草稿与示例数据，不启动采样；采集器不参与布局或动画，不为每个指标复制视图。
 
 修改布局先看 `Views`，修改操作流程先看 `ViewModels`，修改采集或接口先看 `Sampling`，修改持久化数据先看 `Configuration`。这些目录用于源码导航；类型命名空间保持 `TractorTool.Plugins.SystemHud`，插件入口和配置身份不随目录变化。
 

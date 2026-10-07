@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 绑定/布局） | [E79 · 修正绑定串型、状态重排并合并编辑预览（2026-10-07）](#evidence-hud-binding-review) |
 | 修正与精简（HUD 内部布局） | [E78 · 删除误加的区域编辑器并修正排版（2026-10-07）](#evidence-hud-built-in-layout) |
 | 修正与交互（HUD 三态） | [E77 · 空白回退修正与同指标区域布局（2026-10-07）](#evidence-hud-three-state-layout) |
 | 交互（HUD 形变） | [E76 · 紧凑尺寸、整岛弹性形变与原生轮廓（2026-10-07）](#evidence-hud-morph) |
@@ -2329,3 +2330,26 @@ SystemHud 0.3.5：
 3. 最终 ZIP 67 文件逐一 SHA256 与构建输出一致；无共享 SDK DLL，5 个 AXAML XML 可解析，顶部撑满和无区域编辑入口静态核对通过。234 个 E67 宿主 SDK 文件数量及哈希未变。证据 `artifacts/e78-hud-built-in-layout/static-checks-final.json`，ProductVersion 中的 c69271c 是构建基底，不代表本轮变更已存在于旧提交。
 
 交付 `artifacts/e78-hud-built-in-layout/plugin-final/TractorTool.SystemHud-0.4.1.zip`，附 SHA256 文件。没有启动应用、检查程序、硬件/业务网络、DPAPI 或接管 UI，没有替用户安装。截图排版、长文字、三态往返与此前空白故障的真实闭合仍待用户确认；其他 A26/A27 专项继续保留。文档更新内部区域边界及源码导航；保留用户 .gitignore/.vscode/launch.json，仅本地提交，不推送。
+
+<a id="evidence-hud-binding-review"></a>
+
+## E79：HUD 修正绑定串型、状态重排并合并编辑预览（2026-10-07）
+
+用户提供 0.4.1 运行截图，报告大量 HudDisplay/HudSlotDisplay 转换错误、左右两个预览重复、长条重叠和详细内容重复。要求只保留左侧并叫“编辑预览”，详细态遵循给出的五区域示意。用户本轮明确允许仅 HUD 离屏绑定/布局检查，不启动主程序、不读取真实配置或硬件；此前限制继续适用于其他运行检查。未使用子代理，不把本轮自审称为子代理 Review。
+
+复现与根因：
+
+- 在原实现上运行专项离屏检查，得到 39 条绑定 Warning/Error：区域根控件继承 HudDisplay，但子项按 HudSlotDisplay 编译；直接给区域控件改 DataContext 后，Second.Foreground 又按 HudDisplay 取 Accent。改为 HudSlotView.Item 接收区域内容、内部 Grid 显式绑定 Item，保留根控件的父级上下文；空上下文清除内容。
+- 长条 Third/Fourth 的实际边界相交；状态切换后重新挂载还触发 Grid.MeasureCellsGroup 的 ArgumentOutOfRangeException。HudCard 不再替换行列定义集合，保持四列两行，仅改尺寸和附加位置；详细态主值与次值放下排、右侧身份/环放上排，控件限宽裁剪。不是通过隐藏日志或去掉编译绑定掩盖问题。
+- 左侧只保留 EditorDisplay，删除“最近显示的内容”折叠层和右侧重复卡片；草稿示例随编辑更新，不采样。真实桌面继续显示实际读数。
+- HudReading 增加可选 Context，内存沿用现有快照补充可用容量，网速补充活动接口范围；没有新采样。顶部放关键值，底部不再拼接标题/主值/说明的完整摘要；去掉与顶部完全相同的整段文字，保留自定义模板。参考 [Apple WWDC23 Live Activities 设计说明](https://developer.apple.com/videos/play/wwdc2023/10194/) 的紧凑信息与区域层级，具体尺寸/鼠标规则仍是本插件决定。
+- 保留三态尺寸、鼠标规则、弹性形变、原生窗口边界、位置/偏好和生命周期。生产代码仅改 HUD 插件；测试工程复用仓库已有版本 Avalonia.Headless 12.1.2，不随插件打包，不改软件框架。
+
+验证（证据根目录 `artifacts/e79-hud-review`）：
+
+1. 编译专项检查：`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e79-hud-review/build --force`；后续 `--no-restore` 构建，最终 `page-build.txt` 为 0 警告/0 错误。初次截图保存 API 的弃用警告改为 PngBitmapEncoderOptions 后消除，没有抑制警告。
+2. 实际运行：`dotnet artifacts/e79-hud-review/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e79-hud-review/page`。Avalonia.Headless/Skia 载入实际控件与主题，内存配置、模型不 Start，禁止保存；12 类指标三态及返回、读数更换/空上下文/长文、重新挂载、唯一草稿预览和 1200/800 宽度往返通过。零绑定错误与区域重叠，`page/bindings.txt`、`page/failures.txt` 为空；结果见 `page-run.txt`，边界见 `page/layout.txt`。检查并查看内存/网速三态 PNG；`page/metric-3-Detail.png`、`page/metric-4-Strip.png` 是真实离屏渲染。修正前日志在 `before-run.txt`、`before/bindings.txt`、`before/failures.txt`；首次未捕获 Grid 异常，补齐失败落盘后重新取得复现日志。中间验证见 `after-run.txt`、`content-run.txt`。
+3. 独立构建：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e79-hud-review/plugin`，`plugin-build.txt` 为 0 警告/0 错误。
+4. `static-checks.json`：ZIP 67 文件逐项 SHA256 与构建输出相符，无共享 SDK DLL；5 个 AXAML XML 可解析，234 个原宿主文件数量/哈希未变。ZIP 5,487,557 字节，SHA256 `ADCA1E99D4297C7B5E04F14E905166E9FA75113C96406947D48942F3B9219DAD`。ProductVersion `0.4.2+cb271190972632e37cc9306165892d576f3b32b9` 的提交部分是构建时基底，不代表本轮修改已存在于旧提交。
+
+交付 `artifacts/e79-hud-review/plugin/TractorTool.SystemHud-0.4.2.zip`，附 SHA256。没有执行 HudChecks 默认逻辑/内存 HTTP 套件、原生 HudWindow、主程序、硬件/业务网络/DPAPI 或安装操作。离屏状态切换不等于真实鼠标双击、动画时序、DPI、透明命中、位置持久化和硬件验收；这些继续由 A26/A27 保留。用户安装 ZIP 后需显式退出重启。保留用户 .gitignore/.vscode/launch.json，仅本地提交，不推送。
