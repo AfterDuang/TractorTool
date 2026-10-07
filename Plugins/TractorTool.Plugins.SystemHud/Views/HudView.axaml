@@ -1,170 +1,152 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:TractorTool.Plugins.SystemHud" x:Class="TractorTool.Plugins.SystemHud.HudView" x:DataType="local:HudModel">
-  <Grid RowDefinitions="*,Auto" Margin="0,0,0,24" RowSpacing="12">
-    <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
-      <Grid x:Name="Workspace" ColumnDefinitions="400,*" ColumnSpacing="24" RowSpacing="20">
-        <ScrollViewer x:Name="PreviewScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-          <Border Classes="card" VerticalAlignment="Top">
-            <StackPanel Spacing="8">
-              <StackPanel Spacing="4">
-                <TextBlock Text="{Binding RuntimeState}" Classes="sectionTitle" TextWrapping="Wrap" />
-                <TextBlock Text="{Binding ActiveProfileName, StringFormat='当前方案：{0}'}" Classes="caption" TextWrapping="Wrap" />
-              </StackPanel>
-              <WrapPanel>
-                <Button Content="{Binding VisibilityAction}" Classes="accent" Command="{Binding ToggleVisibilityCommand}" Margin="0,0,8,8" />
-                <Button Content="{Binding PauseAction}" Command="{Binding TogglePauseCommand}" Margin="0,0,8,8" />
-                <Button Content="预览" Command="{Binding PreviewCommand}" ToolTip.Tip="显示当前方案 6 秒" Margin="0,0,0,8" />
-              </WrapPanel>
-              <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
-              <Expander Header="最近显示的内容" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <StackPanel Spacing="8" Margin="0,8,0,0">
-                  <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                    <local:HudCard DataContext="{Binding Display}" />
-                  </Viewbox>
-                  <TextBlock Text="隐藏或暂停时保留最后读数；不会为这个预览额外采样。" Classes="caption" TextWrapping="Wrap" />
+  <Grid RowDefinitions="Auto,*,Auto">
+    <StackPanel Margin="28,26,28,20" Spacing="6">
+      <TextBlock Text="桌面状态 HUD" Classes="pageTitle" />
+      <TextBlock Text="控制桌面状态显示，选择指标并调整布局。" Classes="muted" />
+    </StackPanel>
+    <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
+      <Grid x:Name="Workspace" ColumnDefinitions="400,*" ColumnSpacing="24" RowSpacing="20" Margin="28,0,28,0">
+        <Grid RowDefinitions="Auto,*" RowSpacing="12">
+          <TextBlock VerticalAlignment="Center" FontSize="22" Text="状态预览" Height="40" Classes="sectionTitle" />
+          <ScrollViewer x:Name="PreviewScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Grid.Row="1">
+            <Border Classes="card" VerticalAlignment="Top">
+              <StackPanel Spacing="8">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding RuntimeState}" Classes="sectionTitle" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding ActiveProfileName, StringFormat='当前方案：{0}'}" Classes="caption" TextWrapping="Wrap" />
                 </StackPanel>
-              </Expander>
-            </StackPanel>
-          </Border>
-        </ScrollViewer>
-        <TabControl x:Name="EditorTabs" Grid.Column="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
-          <TabItem Header="显示方案">
-            <ScrollViewer x:Name="ProfileScroll" Margin="0,12,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-              <StackPanel Spacing="12" Margin="0,0,12,12">
-                <StackPanel Spacing="8">
-                  <WrapPanel>
-                    <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding CanSwitchProfile}" MinWidth="240" MaxWidth="400" Margin="0,0,12,8" AutomationProperties.Name="选择要编辑的方案">
+                <WrapPanel>
+                  <Button Content="{Binding VisibilityAction}" Classes="accent" Command="{Binding ToggleVisibilityCommand}" Margin="0,0,8,8" />
+                  <Button Content="{Binding PauseAction}" Command="{Binding TogglePauseCommand}" Margin="0,0,8,8" />
+                  <Button Content="预览" Command="{Binding PreviewCommand}" ToolTip.Tip="显示当前方案 6 秒" Margin="0,0,0,8" />
+                </WrapPanel>
+                <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
+                <Expander Header="最近显示的内容" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                  <StackPanel Spacing="8" Margin="0,8,0,0">
+                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                      <local:HudCard DataContext="{Binding Display}" />
+                    </Viewbox>
+                    <TextBlock Text="隐藏或暂停时保留最后读数；不会为这个预览额外采样。" Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Expander>
+                <TextBlock Text="{Binding PlacementHint}" Classes="caption" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+          </ScrollViewer>
+        </Grid>
+        <Grid RowDefinitions="Auto,*" Grid.Column="1" RowSpacing="12" x:Name="EditorPanel">
+          <TextBlock VerticalAlignment="Center" FontSize="22" Text="显示方案" Height="40" Classes="sectionTitle" />
+          <ScrollViewer x:Name="ProfileScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Grid.Row="1">
+            <StackPanel Spacing="12" Margin="0,0,12,12">
+              <StackPanel Spacing="8">
+                <WrapPanel>
+                  <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding CanSwitchProfile}" MinWidth="240" MaxWidth="400" Margin="0,0,12,8" AutomationProperties.Name="选择要编辑的方案">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="local:HudProfile">
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <Button Content="新增" Command="{Binding AddProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="复制" Command="{Binding CopyProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="删除" Command="{Binding DeleteProfileCommand}" Margin="0,0,8,8" />
+                </WrapPanel>
+                <WrapPanel>
+                  <Button Content="保存并使用" Classes="accent" Command="{Binding SaveProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="预览草稿" Command="{Binding PreviewProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="撤销修改" Command="{Binding RevertProfileCommand}" Margin="0,0,8,8" />
+                </WrapPanel>
+                <TextBlock Text="有未保存的修改，保存或撤销后可以切换方案。" Classes="caption" IsVisible="{Binding HasDraftChanges}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ProfileError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
+              </StackPanel>
+              <Border Classes="card">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="显示什么" Classes="sectionTitle" />
+                  <TextBlock Text="方案名称" />
+                  <TextBox Text="{Binding ProfileName}" MaxLength="40" AutomationProperties.Name="方案名称" />
+                  <TextBlock Text="数据指标" />
+                  <ComboBox ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="方案指标" />
+                  <StackPanel Spacing="8" IsVisible="{Binding HasRequestAddress}">
+                    <TextBlock Text="请求地址" />
+                    <TextBox Text="{Binding Address}" PlaceholderText="{Binding AddressHint}" MaxLength="2048" AutomationProperties.Name="请求地址" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsProbeMetric}">
+                    <ComboBox ItemsSource="{Binding ProbeProtocols}" SelectedIndex="{Binding ProbeProtocol}" HorizontalAlignment="Stretch" AutomationProperties.Name="网络探测协议" />
+                    <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" IsVisible="{Binding IsTcpProbe}" AutomationProperties.Name="TCP 端口" />
+                    <TextBlock Text="ICMP 无回应不代表服务离线；TCP 只验证端口连接，不代表业务正常。" Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsNetworkMetric}">
+                    <TextBlock Text="刷新间隔 · 秒（余额至少 60 秒）" />
+                    <NumericUpDown Value="{Binding RefreshSeconds}" Minimum="5" Maximum="3600" Increment="5" AutomationProperties.Name="网络刷新间隔秒数" />
+                    <TextBlock Text="只在当前方案显示且未暂停时请求，等待最多 4 秒；轮播不会绕过刷新间隔。" Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsJsonMetric}">
+                    <TextBlock Text="JSON 字段路径" />
+                    <TextBox Text="{Binding JsonPointer}" PlaceholderText="例如 /data/temperature 或 /items/0/value" MaxLength="256" AutomationProperties.Name="JSON 字段路径" />
+                    <TextBlock Text="留空读取响应的单个值；/ 分隔字段，数组下标从 0 开始。字段名中的 / 写作 ~1，~ 写作 ~0。HTTP 只做 GET，不携带登录信息，支持公开或本机接口。" Classes="caption" TextWrapping="Wrap" />
+                    <CheckBox Content="这是 0–100 的百分比" IsChecked="{Binding JsonPercentage}" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsHardwareMetric}">
+                    <Button Content="检测传感器" Command="{Binding ScanSensorsCommand}" HorizontalAlignment="Left" />
+                    <ComboBox ItemsSource="{Binding Sensors}" SelectedItem="{Binding SelectedSensor}" HorizontalAlignment="Stretch" AutomationProperties.Name="硬件传感器">
                       <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="local:HudProfile">
-                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                        <DataTemplate x:DataType="local:SensorChoice">
+                          <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
                         </DataTemplate>
                       </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button Content="新增" Command="{Binding AddProfileCommand}" Margin="0,0,8,8" />
-                    <Button Content="复制" Command="{Binding CopyProfileCommand}" Margin="0,0,8,8" />
-                    <Button Content="删除" Command="{Binding DeleteProfileCommand}" Margin="0,0,8,8" />
-                  </WrapPanel>
-                  <WrapPanel>
-                    <Button Content="保存并使用" Classes="accent" Command="{Binding SaveProfileCommand}" Margin="0,0,8,8" />
-                    <Button Content="预览草稿" Command="{Binding PreviewProfileCommand}" Margin="0,0,8,8" />
-                    <Button Content="撤销修改" Command="{Binding RevertProfileCommand}" Margin="0,0,8,8" />
-                  </WrapPanel>
-                  <TextBlock Text="有未保存的修改，保存或撤销后可以切换方案。" Classes="caption" IsVisible="{Binding HasDraftChanges}" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding ProfileError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
+                    <TextBlock Text="{Binding SensorStatus}" Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsDeepSeekMetric}">
+                    <TextBlock Text="币种" />
+                    <ComboBox ItemsSource="{Binding Currencies}" SelectedItem="{Binding Currency}" HorizontalAlignment="Stretch" AutomationProperties.Name="余额币种" />
+                    <TextBlock Text="API Key 在插件设置中保存。这里只读取官方余额接口，不调用模型。" Classes="caption" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding IsDiskMetric}">
+                    <TextBlock Text="本地盘符" />
+                    <TextBox Text="{Binding Drive}" MaxLength="3" PlaceholderText="C:\" AutomationProperties.Name="本地盘符" />
+                  </StackPanel>
                 </StackPanel>
-                <Border Classes="card">
-                  <StackPanel Spacing="10">
-                    <TextBlock Text="显示什么" Classes="sectionTitle" />
-                    <TextBlock Text="方案名称" />
-                    <TextBox Text="{Binding ProfileName}" MaxLength="40" AutomationProperties.Name="方案名称" />
-                    <TextBlock Text="数据指标" />
-                    <ComboBox ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="方案指标" />
-                    <StackPanel Spacing="8" IsVisible="{Binding HasRequestAddress}">
-                      <TextBlock Text="请求地址" />
-                      <TextBox Text="{Binding Address}" PlaceholderText="{Binding AddressHint}" MaxLength="2048" AutomationProperties.Name="请求地址" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsProbeMetric}">
-                      <ComboBox ItemsSource="{Binding ProbeProtocols}" SelectedIndex="{Binding ProbeProtocol}" HorizontalAlignment="Stretch" AutomationProperties.Name="网络探测协议" />
-                      <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" IsVisible="{Binding IsTcpProbe}" AutomationProperties.Name="TCP 端口" />
-                      <TextBlock Text="ICMP 无回应不代表服务离线；TCP 只验证端口连接，不代表业务正常。" Classes="caption" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsNetworkMetric}">
-                      <TextBlock Text="刷新间隔 · 秒（余额至少 60 秒）" />
-                      <NumericUpDown Value="{Binding RefreshSeconds}" Minimum="5" Maximum="3600" Increment="5" AutomationProperties.Name="网络刷新间隔秒数" />
-                      <TextBlock Text="只在当前方案显示且未暂停时请求，等待最多 4 秒；轮播不会绕过刷新间隔。" Classes="caption" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsJsonMetric}">
-                      <TextBlock Text="JSON 字段路径" />
-                      <TextBox Text="{Binding JsonPointer}" PlaceholderText="例如 /data/temperature 或 /items/0/value" MaxLength="256" AutomationProperties.Name="JSON 字段路径" />
-                      <TextBlock Text="留空读取响应的单个值；/ 分隔字段，数组下标从 0 开始。字段名中的 / 写作 ~1，~ 写作 ~0。HTTP 只做 GET，不携带登录信息，支持公开或本机接口。" Classes="caption" TextWrapping="Wrap" />
-                      <CheckBox Content="这是 0–100 的百分比" IsChecked="{Binding JsonPercentage}" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsHardwareMetric}">
-                      <Button Content="检测传感器" Command="{Binding ScanSensorsCommand}" HorizontalAlignment="Left" />
-                      <ComboBox ItemsSource="{Binding Sensors}" SelectedItem="{Binding SelectedSensor}" HorizontalAlignment="Stretch" AutomationProperties.Name="硬件传感器">
-                        <ComboBox.ItemTemplate>
-                          <DataTemplate x:DataType="local:SensorChoice">
-                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
-                          </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                      </ComboBox>
-                      <TextBlock Text="{Binding SensorStatus}" Classes="caption" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsDeepSeekMetric}">
-                      <TextBlock Text="币种" />
-                      <ComboBox ItemsSource="{Binding Currencies}" SelectedItem="{Binding Currency}" HorizontalAlignment="Stretch" AutomationProperties.Name="余额币种" />
-                      <TextBlock Text="API Key 在插件设置中保存。这里只读取官方余额接口，不调用模型。" Classes="caption" TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel Spacing="8" IsVisible="{Binding IsDiskMetric}">
-                      <TextBlock Text="本地盘符" />
-                      <TextBox Text="{Binding Drive}" MaxLength="3" PlaceholderText="C:\" AutomationProperties.Name="本地盘符" />
-                    </StackPanel>
-                  </StackPanel>
-                </Border>
-                <Expander Header="文字与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                  <StackPanel Spacing="10" Margin="0,12,0,0">
-                    <TextBlock Text="变量：{label} 指标名、{value} 显示值、{detail} 说明、{percent} 百分比数字、{name} 方案名、{unit} 单位、{updated} 读取时间。一个方案显示一种指标。" Classes="caption" TextWrapping="Wrap" />
-                    <TextBlock Text="标题" />
-                    <TextBox Text="{Binding TitleTemplate}" MaxLength="60" AutomationProperties.Name="标题模板" />
-                    <TextBlock Text="数值" />
-                    <TextBox Text="{Binding ValueTemplate}" MaxLength="80" AutomationProperties.Name="数值模板" />
-                    <TextBlock Text="说明" />
-                    <TextBox Text="{Binding DetailTemplate}" MaxLength="160" AutomationProperties.Name="说明模板" />
-                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-                      <TextBlock Text="基础颜色" />
-                      <TextBlock Grid.Column="1" Text="规则颜色" />
-                      <TextBox Grid.Row="1" Text="{Binding AccentColor}" MaxLength="7" AutomationProperties.Name="基础颜色" />
-                      <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RuleColor}" MaxLength="7" AutomationProperties.Name="规则颜色" />
-                    </Grid>
-                    <CheckBox Content="按百分比改变颜色" IsChecked="{Binding RuleEnabled}" />
-                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16" IsEnabled="{Binding RuleEnabled}">
-                      <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="阈值比较方式" />
-                      <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="百分比阈值" />
-                    </Grid>
-                    <TextBlock Text="仅百分比指标参与规则；温度、余额和网络延迟不会当作百分比。" Classes="caption" TextWrapping="Wrap" />
-                    <TextBlock Text="编辑预览 · 示例数据，不代表本机读数" Classes="caption" />
-                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                      <local:HudCard DataContext="{Binding EditorDisplay}" />
-                    </Viewbox>
-                  </StackPanel>
-                </Expander>
-                <Expander Header="自动轮播" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                  <StackPanel Spacing="10" Margin="0,12,0,0">
-                    <CheckBox Content="按列表顺序轮播已保存方案" IsChecked="{Binding RotateProfiles}" />
-                    <NumericUpDown Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0' 秒'" AutomationProperties.Name="轮播间隔秒数" />
-                    <TextBlock Text="隐藏、暂停、电源提醒和草稿预览期间停止轮播；这些选项随方案一同保存。" Classes="caption" TextWrapping="Wrap" />
-                  </StackPanel>
-                </Expander>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>
-          <TabItem Header="窗口位置">
-            <ScrollViewer x:Name="PositionScroll" Margin="0,12,0,0" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-              <StackPanel Spacing="12" Margin="0,0,12,12">
-                <Button Content="保存窗口位置" Classes="accent" Command="{Binding ApplyLayoutCommand}" HorizontalAlignment="Left" />
-                <Border Classes="card">
-                  <StackPanel Spacing="12">
-                    <TextBlock Text="所有方案共用" Classes="sectionTitle" />
-                    <TextBlock Text="显示器" />
-                    <ComboBox ItemsSource="{Binding Monitors}" SelectedIndex="{Binding Monitor}" HorizontalAlignment="Stretch" AutomationProperties.Name="显示器" />
-                    <TextBlock Text="锚点" />
-                    <ComboBox ItemsSource="{Binding Anchors}" SelectedIndex="{Binding Anchor}" HorizontalAlignment="Stretch" AutomationProperties.Name="锚点" />
-                    <TextBlock Text="缩放比例" />
-                    <NumericUpDown Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" AutomationProperties.Name="缩放比例" />
-                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-                      <TextBlock Text="水平偏移" />
-                      <TextBlock Grid.Column="1" Text="垂直偏移" />
-                      <NumericUpDown Grid.Row="1" Value="{Binding OffsetX}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="水平偏移" />
-                      <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding OffsetY}" Minimum="-1000" Maximum="1000" Increment="10" FormatString="0" AutomationProperties.Name="垂直偏移" />
-                    </Grid>
-                    <TextBlock Text="窗口位置单独保存，不会提交方案草稿。启用、常驻、穿透等偏好在插件设置中修改。" Classes="caption" TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>
-        </TabControl>
+              </Border>
+              <Expander Header="文字与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <StackPanel Spacing="10" Margin="0,12,0,0">
+                  <TextBlock Text="变量：{label} 指标名、{value} 显示值、{detail} 说明、{percent} 百分比数字、{name} 方案名、{unit} 单位、{updated} 读取时间。一个方案显示一种指标。" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="标题" />
+                  <TextBox Text="{Binding TitleTemplate}" MaxLength="60" AutomationProperties.Name="标题模板" />
+                  <TextBlock Text="数值" />
+                  <TextBox Text="{Binding ValueTemplate}" MaxLength="80" AutomationProperties.Name="数值模板" />
+                  <TextBlock Text="说明" />
+                  <TextBox Text="{Binding DetailTemplate}" MaxLength="160" AutomationProperties.Name="说明模板" />
+                  <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+                    <TextBlock Text="基础颜色" />
+                    <TextBlock Grid.Column="1" Text="规则颜色" />
+                    <TextBox Grid.Row="1" Text="{Binding AccentColor}" MaxLength="7" AutomationProperties.Name="基础颜色" />
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RuleColor}" MaxLength="7" AutomationProperties.Name="规则颜色" />
+                  </Grid>
+                  <CheckBox Content="按百分比改变颜色" IsChecked="{Binding RuleEnabled}" />
+                  <Grid ColumnDefinitions="*,*" ColumnSpacing="16" IsEnabled="{Binding RuleEnabled}">
+                    <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="阈值比较方式" />
+                    <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="百分比阈值" />
+                  </Grid>
+                  <TextBlock Text="仅百分比指标参与规则；温度、余额和网络延迟不会当作百分比。" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="编辑预览 · 示例数据，不代表本机读数" Classes="caption" />
+                  <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                    <local:HudCard DataContext="{Binding EditorDisplay}" />
+                  </Viewbox>
+                </StackPanel>
+              </Expander>
+              <Expander Header="自动轮播" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <StackPanel Spacing="10" Margin="0,12,0,0">
+                  <CheckBox Content="按列表顺序轮播已保存方案" IsChecked="{Binding RotateProfiles}" />
+                  <NumericUpDown Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0' 秒'" AutomationProperties.Name="轮播间隔秒数" />
+                  <TextBlock Text="隐藏、暂停、电源提醒和草稿预览期间停止轮播；这些选项随方案一同保存。" Classes="caption" TextWrapping="Wrap" />
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
       </Grid>
     </ScrollViewer>
-    <TextBlock Grid.Row="1" Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" />
+    <TextBlock Grid.Row="2" Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" Margin="28,12,28,24" />
   </Grid>
 </UserControl>

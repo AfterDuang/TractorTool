@@ -15,7 +15,9 @@ public partial class HudWindow : Window
     private bool _closing;
     public event Action? PowerChanged;
     public event Action? Dismissed;
-    public event Action? MonitorsChanged;
+    public event Action? DragStarted;
+    public event Action<HudSettings>? DragCompleted;
+    public bool IsDragging { get; private set; }
 
     public HudWindow()
     {
@@ -24,7 +26,14 @@ public partial class HudWindow : Window
         Win32Properties.AddWndProcHookCallback(this, WndProc);
         Screens.Changed += ScreensChanged;
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Dismissed?.Invoke(); } };
-        PointerPressed += (_, e) => { if (!_settings.ClickThrough && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) Dismissed?.Invoke(); };
+        PointerPressed += (_, e) =>
+        {
+            if (_closing || IsDragging || _settings.ClickThrough || !e.Pointer.IsPrimary || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            IsDragging = true;
+            DragStarted?.Invoke();
+            e.Handled = true;
+            BeginMoveDrag(e);
+        };
     }
 
     public void RegisterPowerEvents()
@@ -56,6 +65,8 @@ public partial class HudWindow : Window
             Dispatcher.UIThread.Post(() => { if (!_closing) PowerChanged?.Invoke(); });
         if (_settings.ClickThrough && message == 0x0084) { handled = true; return -1; }
         if (message == 0x0021) { handled = true; return 3; } // MA_NOACTIVATE
+        if (message == 0x0232) // WM_EXITSIZEMOVE: persist only after the native drag ends.
+            Dispatcher.UIThread.Post(CompleteDrag);
         return 0;
     }
 
@@ -65,6 +76,7 @@ public partial class HudWindow : Window
     public void Configure(HudSettings settings)
     {
         _settings = settings;
+        Cursor = settings.ClickThrough ? Cursor.Default : new Cursor(StandardCursorType.SizeAll);
         Width = 320 * settings.Scale; Height = 124 * settings.Scale;
         Card.Transitions = settings.Animate ? new Transitions
         {
@@ -82,6 +94,16 @@ public partial class HudWindow : Window
         }
     }
 
+    private void CompleteDrag()
+    {
+        if (_closing || !IsDragging) return;
+        IsDragging = false;
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen is null) { DragCompleted?.Invoke(_settings); return; }
+        var monitor = Screens.All.ToList().IndexOf(screen) + 1;
+        DragCompleted?.Invoke(_settings.AtPosition(Position, screen.WorkingArea, screen.Scaling, screen.DisplayName, monitor));
+    }
+
     public void Reveal()
     {
         if (IsVisible) return;
@@ -91,11 +113,14 @@ public partial class HudWindow : Window
         Dispatcher.UIThread.Post(() => { if (!_closing && IsVisible) Card.Opacity = 1; }, DispatcherPriority.Render);
     }
 
-    private void ScreensChanged(object? sender, EventArgs e) { Reposition(); MonitorsChanged?.Invoke(); }
+    private void ScreensChanged(object? sender, EventArgs e) => Reposition();
     private void Reposition()
     {
+        if (IsDragging) return;
         var index = _settings.Monitor - 1;
-        var screen = index >= 0 && index < Screens.All.Count ? Screens.All[index] : Screens.Primary;
+        var screen = _settings.HasPosition && _settings.ScreenName is { } name
+            ? Screens.All.FirstOrDefault(s => s.DisplayName == name) ?? Screens.Primary
+            : index >= 0 && index < Screens.All.Count ? Screens.All[index] : Screens.Primary;
         if (screen is not null) Position = _settings.Position(screen.WorkingArea, screen.Scaling);
     }
 

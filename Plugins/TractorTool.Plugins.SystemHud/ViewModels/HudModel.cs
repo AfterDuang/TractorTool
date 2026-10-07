@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -21,31 +20,27 @@ public partial class HudModel : ObservableObject
     private bool _stopped, _ready, _pinned, _paused, _powerPreview, _pollWarning, _networkWarning;
     private int _revision;
     private byte? _ac;
+    private bool _resumePreviewAfterDrag;
     private HudReading _power = new("电量", "—", "正在读取电源状态…");
     private string _powerError = "";
     private readonly Dictionary<Guid, string> _samplingErrors = [];
     private IPluginTrayItem? _visibilityItem, _pauseItem, _previewItem, _nextItem;
 
     public string[] Metrics { get; } = ["电量", "时钟", "CPU 使用率", "内存占用", "网络速度", "网络延迟（ICMP/TCP）", "HTTP 服务", "HTTP/JSON 指标", "硬件传感器（GPU / 温度等）", "DeepSeek 余额", "磁盘空间", "系统运行时间"];
-    public string[] Anchors { get; } = ["左上", "上方居中", "右上", "左侧居中", "屏幕居中", "右侧居中", "左下", "下方居中", "右下"];
-    public ObservableCollection<string> Monitors { get; } = ["主显示器"];
     [ObservableProperty] private bool _enabled = true;
     [ObservableProperty] private bool _alwaysVisible;
     [ObservableProperty] private bool _powerReminder = true;
-    [ObservableProperty] private bool _clickThrough = true;
+    [ObservableProperty] private bool _clickThrough;
     [ObservableProperty] private bool _animate = true;
     [ObservableProperty] private int _metric;
-    [ObservableProperty] private int _anchor = 2;
-    [ObservableProperty] private int _monitor;
     [ObservableProperty] private double _scale = 1;
-    [ObservableProperty] private double _offsetX;
-    [ObservableProperty] private double _offsetY;
-    [ObservableProperty] private string _status = "方案与窗口位置分别保存；桌面预览持续 6 秒。";
+    [ObservableProperty] private string _status = "拖动桌面 HUD 可自动保存位置；桌面预览持续 6 秒。";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStartupError))]
     private string _startupError = "";
     public bool HasStartupError => StartupError.Length != 0;
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
+    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可直接拖动桌面 HUD。" : "按住桌面 HUD 拖动，松手自动保存位置。";
     public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
     public string PauseAction => _paused ? "恢复更新" : "暂停更新";
     public string RuntimeState => HasStartupError ? "启动失败" : _stopped ? "已停止" : !_ready ? "正在启动"
@@ -61,7 +56,7 @@ public partial class HudModel : ObservableObject
             Status = "设置读取失败，原文件保留。使用默认值；点击保存才会写入新设置。";
             context.Log.Write(AppLogLevel.Error, context.PluginId, Status, ex);
         }
-        LoadPreferences(); LoadLayout();
+        LoadPreferences();
         LoadSecrets();
         InitializeProfiles();
         _timer.Tick += (_, _) => RefreshReading();
@@ -72,13 +67,7 @@ public partial class HudModel : ObservableObject
     {
         Enabled = _settings.Enabled; AlwaysVisible = _settings.AlwaysVisible;
         PowerReminder = _settings.PowerReminder; ClickThrough = _settings.ClickThrough;
-        Animate = _settings.Animate; HardwareEnabled = _settings.HardwareEnabled;
-    }
-
-    private void LoadLayout()
-    {
-        Anchor = _settings.Anchor;
-        Monitor = _settings.Monitor; Scale = _settings.Scale; OffsetX = _settings.OffsetX; OffsetY = _settings.OffsetY;
+        Animate = _settings.Animate; HardwareEnabled = _settings.HardwareEnabled; Scale = _settings.Scale;
     }
 
     public void Start()
@@ -87,8 +76,8 @@ public partial class HudModel : ObservableObject
         _window = new HudWindow { DataContext = this };
         _window.PowerChanged += ReadPower;
         _window.Dismissed += Hide;
-        _window.MonitorsChanged += UpdateMonitors;
-        UpdateMonitors();
+        _window.DragStarted += DragStarted;
+        _window.DragCompleted += SavePosition;
         try { _window.RegisterPowerEvents(); }
         catch (Exception ex) { ReportFailure("电源通知注册失败，自动提醒不可用；请在修复后重启插件。", ex); }
         ReadPower();
@@ -105,14 +94,23 @@ public partial class HudModel : ObservableObject
         UpdateControls();
     }
 
-    private void UpdateMonitors()
+    private void DragStarted()
     {
-        if (_window is null) return;
-        var selected = Monitor;
-        Monitors.Clear(); Monitors.Add("主显示器");
-        for (var i = 0; i < _window.Screens.All.Count; i++)
-            Monitors.Add($"{i + 1} · {_window.Screens.All[i].DisplayName ?? "显示器"}");
-        Monitor = selected < Monitors.Count ? selected : 0;
+        _resumePreviewAfterDrag = _preview.IsEnabled;
+        _preview.Stop(); _rotation.Stop();
+    }
+
+    private void SavePosition(HudSettings placement)
+    {
+        if (_stopped) return;
+        // Merge only the position, never commit unsaved preference/profile edits.
+        var settings = _settings with { ScreenName = placement.ScreenName, Monitor = placement.Monitor,
+            PositionX = placement.PositionX, PositionY = placement.PositionY };
+        if (settings != _settings && Save(settings)) Status = "HUD 位置已保存。";
+        ConfigureWindow(); // Failed saves restore the last persisted position.
+        if (_resumePreviewAfterDrag) _preview.Start();
+        _resumePreviewAfterDrag = false;
+        UpdateVisibility();
     }
 
     public void RegisterTray(IPluginTrayMenu menu)
@@ -130,30 +128,17 @@ public partial class HudModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ApplyLayout()
-    {
-        if (Save(_settings with
-        {
-            Anchor = Anchor,
-            Monitor = Monitor, Scale = Scale, OffsetX = OffsetX, OffsetY = OffsetY
-        }))
-        {
-            LoadLayout();
-            ApplySavedSettings();
-        }
-    }
-
-    [RelayCommand]
     private void ApplyPreferences()
     {
         if (Save(_settings with
         {
             Enabled = Enabled, AlwaysVisible = AlwaysVisible, PowerReminder = PowerReminder,
-            ClickThrough = ClickThrough, Animate = Animate, HardwareEnabled = HardwareEnabled
+            ClickThrough = ClickThrough, Animate = Animate, HardwareEnabled = HardwareEnabled, Scale = Scale
         }))
         {
             LoadPreferences(); _pinned = _settings.AlwaysVisible; OnPropertyChanged(nameof(CanScanSensors)); ScanSensorsCommand.NotifyCanExecuteChanged();
             EndPreview(); ApplySavedSettings();
+            OnPropertyChanged(nameof(PlacementHint));
         }
     }
 
@@ -232,7 +217,7 @@ public partial class HudModel : ObservableObject
 
     private void UpdateVisibility()
     {
-        if (_stopped || _window is null) return;
+        if (_stopped || _window is null || _window.IsDragging) return;
         var visible = _settings.Enabled && (_pinned || _preview.IsEnabled);
         _timer.Stop(); _rotation.Stop();
         if (!visible) { _window.Hide(); InvalidateSample(); UpdateControls(); return; }
@@ -351,7 +336,8 @@ public partial class HudModel : ObservableObject
         _timer.Stop(); _preview.Stop(); _rotation.Stop();
         if (_window is { } window)
         {
-            window.PowerChanged -= ReadPower; window.Dismissed -= Hide; window.MonitorsChanged -= UpdateMonitors;
+            window.PowerChanged -= ReadPower; window.Dismissed -= Hide;
+            window.DragStarted -= DragStarted; window.DragCompleted -= SavePosition;
             window.Shutdown(); _window = null;
         }
         return _stopTask = FinishStopAsync();

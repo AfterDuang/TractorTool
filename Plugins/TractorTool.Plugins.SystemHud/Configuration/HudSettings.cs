@@ -9,7 +9,7 @@ public sealed record HudSettings : IVersionedSettings
     public bool Enabled { get; init; } = true;
     public bool AlwaysVisible { get; init; }
     public bool PowerReminder { get; init; } = true;
-    public bool ClickThrough { get; init; } = true;
+    public bool ClickThrough { get; init; }
     public bool Animate { get; init; } = true;
     public bool HardwareEnabled { get; init; }
     public int Metric { get; init; }
@@ -18,13 +18,21 @@ public sealed record HudSettings : IVersionedSettings
     public double Scale { get; init; } = 1;
     public double OffsetX { get; init; }
     public double OffsetY { get; init; }
+    public string? ScreenName { get; init; }
+    public double? PositionX { get; init; }
+    public double? PositionY { get; init; }
 
     public HudSettings Normalize() => this with
     {
         Metric = Math.Clamp(Metric, 0, 4), Anchor = Math.Clamp(Anchor, 0, 8),
         Monitor = Math.Max(0, Monitor), Scale = Clamp(Scale, .6, 2, 1),
-        OffsetX = Clamp(OffsetX, -1000, 1000, 0), OffsetY = Clamp(OffsetY, -1000, 1000, 0)
+        OffsetX = Clamp(OffsetX, -1000, 1000, 0), OffsetY = Clamp(OffsetY, -1000, 1000, 0),
+        PositionX = HasPosition ? Math.Clamp(PositionX!.Value, 0, 1) : null,
+        PositionY = HasPosition ? Math.Clamp(PositionY!.Value, 0, 1) : null
     };
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasPosition => PositionX is { } x && double.IsFinite(x) && PositionY is { } y && double.IsFinite(y);
 
     private static double Clamp(double value, double min, double max, double fallback)
         => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
@@ -35,11 +43,28 @@ public sealed record HudSettings : IVersionedSettings
         var settings = Normalize();
         var width = (int)Math.Ceiling(320 * settings.Scale * dpi);
         var height = (int)Math.Ceiling(124 * settings.Scale * dpi);
+        if (settings.HasPosition)
+            return new(area.X + (int)Math.Round(Math.Max(0, area.Width - width) * settings.PositionX!.Value),
+                area.Y + (int)Math.Round(Math.Max(0, area.Height - height) * settings.PositionY!.Value));
+        // Legacy anchor/offset fields still restore older installations until their first drag.
         var margin = 20 * dpi;
         var x = area.X + margin + (area.Width - width - 2 * margin) * (settings.Anchor % 3) / 2;
         var y = area.Y + margin + (area.Height - height - 2 * margin) * (settings.Anchor / 3) / 2;
         return new((int)Math.Clamp(x + settings.OffsetX * dpi, area.X, Math.Max(area.X, area.Right - width)),
             (int)Math.Clamp(y + settings.OffsetY * dpi, area.Y, Math.Max(area.Y, area.Bottom - height)));
+    }
+
+    public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor)
+    {
+        var settings = Normalize();
+        var travelX = Math.Max(0, area.Width - Math.Ceiling(320 * settings.Scale * dpi));
+        var travelY = Math.Max(0, area.Height - Math.Ceiling(124 * settings.Scale * dpi));
+        return settings with
+        {
+            ScreenName = screenName, Monitor = monitor,
+            PositionX = travelX == 0 ? 0 : Math.Clamp((position.X - (double)area.X) / travelX, 0, 1),
+            PositionY = travelY == 0 ? 0 : Math.Clamp((position.Y - (double)area.Y) / travelY, 0, 1)
+        };
     }
 }
 

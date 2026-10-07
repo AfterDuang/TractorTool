@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正（HUD 拖动与对齐） | [E73 · 原生拖动定位、边缘滚动与双栏标题（2026-10-07）](#evidence-hud-drag-layout) |
 | 修正（HUD 分栏） | [E72 · 左右工作区与窄窗口滚动（2026-10-07）](#evidence-hud-responsive-layout) |
 | 文档（框架结构与精简） | [E71 · 软件框架导航、架构边界与文档分工（2026-10-07）](#evidence-framework-source-guide) |
 | HUD 源码组织 | [E70 · 按内部职责整理源码目录（2026-10-07）](#evidence-hud-folders) |
@@ -2156,3 +2157,24 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 交付 ZIP：`artifacts/e72-hud-layout/plugin/TractorTool.SystemHud-0.3.1.zip`，5,471,024 字节，SHA256 `A8917CCE3E7A31EF367892085A783E2A90CC5294088617A4329FBABBBBFA1364`。未替用户安装/重启，未运行应用、检查程序、硬件或 UI 自动化；宽窄/低高度、不同 DPI、页签/草稿保留的真实运行效果待用户确认，不能用构建通过替代。保留用户 .gitignore / .vscode/launch.json 修改，不纳入提交、不推送。
 
 精简后检查：本轮五份文档的 136 个本地文件链接及 README 内部锚点有效，未残留具体插件介绍或已删除标题的日常文档链接，差异无空白错误。并行出现的 HUD 代码/清单改动不纳入本次文档提交。
+
+<a id="evidence-hud-drag-layout"></a>
+
+## E73：HUD 原生拖动、边缘滚动与双栏标题（2026-10-07）
+
+用户要求窄窗口滚动条靠页面边缘、左侧标题与右侧平齐，并用桌面 HUD 拖动代替“窗口位置”页；明确选择默认关闭点击穿透，需要时去设置开启。SystemHud 升至 0.3.2，仅改插件、既有 HudChecks 与文档，没有框架改动。
+
+页面复用 UsesCustomHeader，将 28 DIP 留白放进滚动内容，保留标题与底部状态区。左右“状态预览 / 显示方案”使用同规格标题；删除位置 Tab、ApplyLayout 命令、显示器列表事件同步和编辑字段，缩放并入插件设置。保留宽窗口两栏分别滚动、窄窗口整页滚动，不重建控件或清草稿。
+
+桌面浮层使用 [Avalonia BeginMoveDrag](https://api-docs.avaloniaui.net/docs/M_Avalonia_Controls_Window_BeginMoveDrag)，在 [WM_EXITSIZEMOVE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-exitsizemove) 时投递 UI 工作并保存一次。核对上游实现会异步发起移动，因此不在 BeginMoveDrag 返回时保存。不新增鼠标轮询或持续写配置。位置存为屏幕名称/编号及可移动工作区相对坐标，考虑 DPI/缩放并钳制；名称缺失回主屏，名称重复取首个匹配，不能当硬件唯一标识。旧锚点/偏移仅作首次拖动前兼容回退。
+
+既有显式穿透 true 保留，页面提示关闭后可拖动；单击不再隐藏，使用页面/托盘按钮隐藏。拖动只合并位置，不提交未保存偏好或方案，写入失败恢复旧位置；拖动时暂停预览到期与轮播，结束后原预览重新计时 6 秒。退出解绑新增事件。
+
+验证与交付：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e73-hud-drag/build` 最终 **0 警告/0 错误**。新增负坐标/150% DPI 拖动往返、JSON 往返、越界/缩放/小工作区及默认/旧配置断言；**只编译，未执行**。
+2. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e73-hud-drag/plugin-final` 独立 Rebuild **0 警告/0 错误**。只交付 plugin-final，plugin 是补上重复拖动保护前的中间包。
+3. ZIP 67 文件逐项 SHA256 与输出一致，脚本拒绝共享 SDK 副本；清单/ProductVersion 0.3.2，4 个 AXAML XML 可解析，234 个宿主文件哈希不变。摘要见 `artifacts/e73-hud-drag/static-checks.json`。ProductVersion 的提交部分是构建时基底 080f93f，不代表本轮改动已在该提交中。
+4. ZIP `artifacts/e73-hud-drag/plugin-final/TractorTool.SystemHud-0.3.2.zip`：5,470,072 字节，SHA256 `5E0D6862C576721DBC647E26D9C99C85CE3D5EEC6C644D7DCA22D490893188ED`。本轮文档本地文件链接静态核对通过，代码差异无空白错误。
+
+没有启动应用、检查程序、硬件/网络或 UI 自动化，没有替用户安装或修改真实配置。标题/滚动、拖动/预览到期、跨屏/DPI/拔屏/重启恢复、写入失败、穿透行为待用户运行验证。用户配置和另一轮框架文档整理改动保留，不纳入本轮提交；不配置远程或推送。

@@ -14,8 +14,11 @@
         <ToggleSwitch IsChecked="{Binding PowerReminder}" AutomationProperties.Name="电源变化提醒" />
       </ui:SettingRow>
 
-      <ui:SettingRow Header="点击穿透" Description="鼠标直接操作下方窗口。关闭后，点击 HUD 可将其隐藏。" Icon="Info">
+      <ui:SettingRow Header="点击穿透" Description="默认关闭，可直接拖动 HUD 并自动保存位置。开启后鼠标操作下方窗口，不能拖动 HUD。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding ClickThrough}" AutomationProperties.Name="点击穿透" />
+      </ui:SettingRow>
+      <ui:SettingRow Header="HUD 大小" Description="调整桌面卡片的缩放比例，位置仍保持在屏幕内。" Icon="Info">
+        <NumericUpDown Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" Width="140" AutomationProperties.Name="HUD 缩放比例" />
       </ui:SettingRow>
       <ui:SettingRow Header="显示动画" Description="出现时淡入，同时遵循软件的界面动画开关。" Icon="Motion">
         <ToggleSwitch IsChecked="{Binding Animate}" AutomationProperties.Name="显示动画" />
