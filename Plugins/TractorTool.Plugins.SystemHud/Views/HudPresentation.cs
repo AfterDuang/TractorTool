@@ -16,17 +16,31 @@ public static class HudPresentation
         });
         // ponytail: one percentage rule per profile; add a rule list only when real layouts need it.
         var match = profile.RuleEnabled && reading.Percent is { } p && (profile.Comparison == 0 ? p <= profile.Threshold : p >= profile.Threshold);
-        return new(Expand(profile.Title), Expand(profile.Value), Expand(profile.Detail), reading.Percent, profile.Metric,
+        var display = new HudDisplay(Expand(profile.Title), Expand(profile.Value), Expand(profile.Detail), reading.Percent,
             new ImmutableSolidColorBrush(Color.Parse(match ? profile.RuleColor : profile.Color)));
+        HudSlotDisplay Slot(HudSlot slot) => new(slot.Content, slot.Content switch
+        {
+            HudContent.Title => display.Title, HudContent.Value => display.Value, HudContent.Description => display.Detail,
+            HudContent.Percent => display.HasPercent ? $"{reading.Percent:0.#}%" : "—",
+            HudContent.Summary => $"{display.Title}\n{display.Value}\n{display.Detail}",
+            HudContent.Custom => Expand(slot.Template), _ => ""
+        }, HudDisplay.IconFor(slot.Icon < 0 ? profile.Metric : slot.Icon), reading.Percent, display.Accent);
+        return display with
+        {
+            Compact = profile.Layout.Header(false).Select(Slot).ToArray(),
+            Strip = profile.Layout.Header(true).Select(Slot).ToArray(), Body = Slot(profile.Layout.Detail)
+        };
     }
 }
 
-public sealed record HudDisplay(string Title, string Value, string Detail, double? Percent, int Metric, IBrush Accent)
+public sealed record HudDisplay(string Title, string Value, string Detail, double? Percent, IBrush Accent)
 {
+    public HudSlotDisplay[] Compact { get; init; } = [];
+    public HudSlotDisplay[] Strip { get; init; } = [];
+    public HudSlotDisplay? Body { get; init; }
     public bool HasPercent => Percent is { } p && double.IsFinite(p);
-    public double SweepAngle => HasPercent ? Math.Clamp(Percent!.Value, 0, 100) * 3.6 : 0;
     public string Summary => $"{Title} · {Value}\n{Detail}";
-    public string Icon => Icons[Math.Clamp(Metric, 0, Icons.Length - 1)];
+    internal static string IconFor(int icon) => Icons[Math.Clamp(icon, 0, Icons.Length - 1)];
 
     // Small original line icons; no font glyph dependency or downloaded artwork.
     private static readonly string[] Icons =
@@ -42,6 +56,18 @@ public sealed record HudDisplay(string Title, string Value, string Detail, doubl
         "M9,4 A3,3 0 0 1 15,4 L15,14 A6,6 0 1 1 9,14 Z M12,6 L12,17", // sensor
         "M3,5 L21,5 21,20 3,20 Z M3,5 L17,2 17,5 M16,10 L21,10 M16,15 L21,15 M16,10 L16,15", // balance
         "M5,3 L19,3 22,18 22,21 2,21 2,18 Z M2,16 L22,16 M16,19 L19,19", // disk
-        "M12,3 A9,9 0 1 1 3,12 M3,3 L3,9 9,9 M12,6 L12,12 16,12" // uptime
+        "M12,3 A9,9 0 1 1 3,12 M3,3 L3,9 9,9 M12,6 L12,12 16,12", // uptime
+        "M2,5 L22,5 22,18 2,18 Z M7,8 A3.5,3.5 0 1 1 7,15 A3.5,3.5 0 1 1 7,8 M17,8 A3.5,3.5 0 1 1 17,15 A3.5,3.5 0 1 1 17,8 M6,18 L6,21 M10,18 L10,21 M14,18 L14,21" // GPU
     };
+}
+
+public sealed record HudSlotDisplay(HudContent Content, string Text, string Icon, double? Percent, IBrush Accent)
+{
+    public bool HasPercent => Percent is { } p && double.IsFinite(p);
+    public bool IsRing => Content == HudContent.Progress && HasPercent;
+    public bool IsIcon => Content == HudContent.Icon || Content == HudContent.Progress && !HasPercent;
+    public bool IsText => Content is not (HudContent.Hidden or HudContent.Icon or HudContent.Progress);
+    public bool IsGraphic => Content is HudContent.Icon or HudContent.Progress;
+    public double SweepAngle => HasPercent ? Math.Clamp(Percent!.Value, 0, 100) * 3.6 : 0;
+    public string Description => Content == HudContent.Progress ? HasPercent ? $"{Percent:0.#}%" : "无百分比读数" : Text;
 }

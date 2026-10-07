@@ -2,8 +2,6 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 namespace TractorTool.Plugins.SystemHud;
@@ -11,23 +9,21 @@ namespace TractorTool.Plugins.SystemHud;
 public partial class HudWindow : Window
 {
     // Stable transparent envelope leaves room for the spring; only the visible island receives input.
-    public const double FrameWidth = 360;
-    public const double FrameHeight = 180;
+    public const double FrameWidth = 432;
+    public const double FrameHeight = 208;
     private readonly List<nint> _notifications = [];
     private HudSettings _settings = new();
     private bool _closing;
     private bool _regionFailed;
     private (PixelRect Bounds, int Diameter)? _region;
-    private PointerPressedEventArgs? _press;
-    private Point _pressPosition;
     public event Action? PowerChanged;
     public event Action? Dismissed;
     public event Action? DragStarted;
     public event Action<HudSettings>? DragCompleted;
-    public event Action? ExpansionChanged;
+    public event Action? StateChanged;
     public event Action<Exception>? PresentationFailed;
     public bool IsDragging { get; private set; }
-    public bool IsExpanded => Card.IsExpanded;
+    public bool IsExpanded => Card.Mode != HudMode.Compact;
 
     public HudWindow()
     {
@@ -37,42 +33,22 @@ public partial class HudWindow : Window
         Screens.Changed += ScreensChanged;
         ScalingChanged += (_, _) => { Reposition(); UpdateRegion(); };
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Dismissed?.Invoke(); } };
-        Card.ExpansionChanged += () =>
+        Card.StateChanged += () =>
         {
-            if (IsVisible) ExpansionChanged?.Invoke();
+            if (IsVisible) StateChanged?.Invoke();
         };
         Card.SizeChanged += (_, _) => { Reposition(); UpdateRegion(); };
-        // Both scene headers own the gesture; detail controls keep normal input.
-        foreach (var surface in Card.DragSurfaces) AttachDrag(surface);
-    }
-
-    private void AttachDrag(Control surface)
-    {
-        surface.AddHandler(PointerPressedEvent, (_, e) =>
+        Card.DragRequested += press =>
         {
-            if (_closing || IsDragging || _settings.ClickThrough || !e.Pointer.IsPrimary || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
-            _press = e;
-            _pressPosition = e.GetPosition(this);
-        }, RoutingStrategies.Tunnel);
-        surface.AddHandler(PointerMovedEvent, (_, e) =>
-        {
-            if (_press is not { } press || press.Pointer != e.Pointer || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
-                || !ExceedsDragThreshold(e.GetPosition(this) - _pressPosition)) return;
-            _press = null;
+            if (_closing || IsDragging || _settings.ClickThrough) return;
             Card.FinishMotion();
             IsDragging = true;
             DragStarted?.Invoke();
-            e.Handled = true;
-            // Releasing Button capture cancels its click before entering the native move loop.
-            e.Pointer.Capture(null);
             BeginMoveDrag(press);
-        }, RoutingStrategies.Tunnel);
-        surface.AddHandler(PointerReleasedEvent, (_, _) => _press = null, RoutingStrategies.Tunnel);
-        surface.PointerCaptureLost += (_, _) => _press = null;
+        };
     }
 
-    internal static bool ExceedsDragThreshold(Vector movement) => Math.Abs(movement.X) >= 6 || Math.Abs(movement.Y) >= 6;
-    public void Collapse() => Card.IsExpanded = false;
+    public void Collapse() => Card.Mode = HudMode.Compact;
 
     public void RegisterPowerEvents()
     {

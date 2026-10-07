@@ -41,7 +41,7 @@ public partial class HudModel : ObservableObject
     public bool HasStartupError => StartupError.Length != 0;
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
     public bool MotionEnabled => _settings.Animate;
-    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击小岛展开，点击详情标题收起；按住摘要或标题拖动，松手自动保存位置。";
+    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击切换默认与长条；双击展开详情，再次双击回到默认。按住顶部拖动，松手保存位置。";
     public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
     public string PauseAction => _paused ? "恢复更新" : "暂停更新";
     public string RuntimeState => HasStartupError ? "启动失败" : _stopped ? "已停止" : !_ready ? "正在启动"
@@ -79,7 +79,7 @@ public partial class HudModel : ObservableObject
         _window.Dismissed += Hide;
         _window.DragStarted += UpdateVisibility;
         _window.DragCompleted += SavePosition;
-        _window.ExpansionChanged += UpdateVisibility;
+        _window.StateChanged += UpdateVisibility;
         _window.PresentationFailed += PresentationFailed;
         try { _window.RegisterPowerEvents(); }
         catch (Exception ex) { ReportFailure("电源通知注册失败，自动提醒不可用；请在修复后重启插件。", ex); }
@@ -351,7 +351,7 @@ public partial class HudModel : ObservableObject
         {
             window.PowerChanged -= ReadPower; window.Dismissed -= Hide;
             window.DragStarted -= UpdateVisibility; window.DragCompleted -= SavePosition;
-            window.ExpansionChanged -= UpdateVisibility;
+            window.StateChanged -= UpdateVisibility;
             window.PresentationFailed -= PresentationFailed;
             window.Shutdown(); _window = null;
         }

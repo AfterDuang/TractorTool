@@ -31,29 +31,32 @@ Check(!new HudSettings().ClickThrough && !new HudSettings { PositionX = double.N
     "New HUDs must allow dragging; corrupt or partial positions must fall back to legacy placement.");
 Check(System.Text.Json.JsonSerializer.Deserialize<HudSettings>("{\"ClickThrough\":true,\"Anchor\":8}") is { ClickThrough: true, HasPosition: false },
     "Existing explicit click-through preferences and anchor-only configurations remain compatible.");
-var expandedSize = new Size(HudSettings.ExpandedWidth, HudSettings.ExpandedHeight);
-Check(bottom.Position(area, 1, expandedSize) == new PixelPoint(-336, 932)
-    && bottom.Position(new(0, 0, 1280, 720), 2, expandedSize) == new PixelPoint(608, 424)
+var expandedSize = HudSettings.SizeFor(HudMode.Detail);
+Check(bottom.Position(area, 1, expandedSize) == new PixelPoint(-400, 896)
+    && bottom.Position(new(0, 0, 1280, 720), 2, expandedSize) == new PixelPoint(480, 352)
     && bottom.Position(area, 1) == new PixelPoint(-248, 1036),
     "Expansion fits all edges without rewriting the compact anchor, including high DPI.");
-Check(dragged.Position(area, 1.5, expandedSize) == new PixelPoint(-1366, 422)
+Check(dragged.Position(area, 1.5, expandedSize) == new PixelPoint(-1414, 395)
     && bottom.Position(new(0, 0, 100, 100), 2, expandedSize) == new PixelPoint(0, 0),
     "Expansion grows around the original centre and safely clamps an undersized work area.");
 var expandedDrop = new HudSettings().AtPosition(new(5000, 5000), area, 1, "secondary", 2, expandedSize);
-Check(expandedDrop.Position(area, 1, expandedSize) == new PixelPoint(-336, 932)
-    && expandedDrop.Position(area, 1) == new PixelPoint(-292, 984),
+Check(expandedDrop.Position(area, 1, expandedSize) == new PixelPoint(-400, 896)
+    && expandedDrop.Position(area, 1) == new PixelPoint(-324, 966),
     "An expanded drop stores the clamped centre; collapse shrinks around that centre.");
-Check(HudWindow.ContainsIsland(new(180, 90), new(248, 44), 22)
-    && !HudWindow.ContainsIsland(new(56, 68), new(248, 44), 22)
-    && !HudWindow.ContainsIsland(new(10, 90), expandedSize, 28),
+Check(HudWindow.ContainsIsland(new(216, 104), new(248, 44), 22)
+    && !HudWindow.ContainsIsland(new(92, 82), new(248, 44), 22)
+    && !HudWindow.ContainsIsland(new(10, 104), expandedSize, 28),
     "Transparent envelope and rounded corners must pass pointer input through.");
 var spring = HudCard.MorphEasing();
 var overshoots = false;
+foreach (var from in Enum.GetValues<HudMode>())
+foreach (var to in Enum.GetValues<HudMode>())
 for (var step = 0; step <= 100; step++)
 {
     var progress = spring.Ease(step / 100d);
     overshoots |= progress > 1;
-    var size = new Size(248 + (336 - 248) * progress, 44 + (148 - 44) * progress);
+    var start = HudSettings.SizeFor(from); var end = HudSettings.SizeFor(to);
+    var size = new Size(start.Width + (end.Width - start.Width) * progress, start.Height + (end.Height - start.Height) * progress);
     Check(double.IsFinite(progress) && size.Width > 0 && size.Width <= HudWindow.FrameWidth && size.Height > 0 && size.Height <= HudWindow.FrameHeight,
         "The spring stays inside the transparent native envelope.");
     var position = bottom.Position(area, 1.5, size);
@@ -62,8 +65,8 @@ for (var step = 0; step <= 100; step++)
         "Every intermediate morph size stays on-screen, including spring overshoot.");
 }
 Check(overshoots && Math.Abs(spring.Ease(1) - 1) < .001, "The nonlinear morph has a small overshoot and settles at its target.");
-Check(!HudWindow.ExceedsDragThreshold(new(5, -5)) && HudWindow.ExceedsDragThreshold(new(6, 0))
-    && HudWindow.ExceedsDragThreshold(new(0, -6)), "Small click jitter must not start a drag; either axis can cross the threshold.");
+Check(!HudCard.ExceedsDragThreshold(new(5, -5)) && HudCard.ExceedsDragThreshold(new(6, 0))
+    && HudCard.ExceedsDragThreshold(new(0, -6)), "Small click jitter must not start a drag; either axis can cross the threshold.");
 Console.WriteLine("PASS HUD counters, configuration and positioning");
 
 var legacy = new HudProfiles().Normalize(4);
@@ -79,12 +82,12 @@ Check(high.Title == "CPU · CPU" && high.Value == "80%" && ((Avalonia.Media.ISol
 var unknown = rule.Render(new("CPU", "—", "正在建立基线"));
 Check(!unknown.HasPercent && unknown.Value == "—%" && ((Avalonia.Media.ISolidColorBrush)unknown.Accent).Color == Avalonia.Media.Color.Parse("#FFE66B"),
     "Unknown readings must not become a false zero or trigger a color rule.");
-Check(high.SweepAngle == 288 && (high with { Percent = 100 }).SweepAngle == 360
-    && (high with { Percent = -1 }).SweepAngle == 0 && (high with { Percent = 150 }).SweepAngle == 360
-    && !(high with { Percent = double.NaN }).HasPercent && unknown.SweepAngle == 0,
+Check(high.Strip[3].SweepAngle == 288 && (high.Strip[3] with { Percent = 100 }).SweepAngle == 360
+    && (high.Strip[3] with { Percent = -1 }).SweepAngle == 0 && (high.Strip[3] with { Percent = 150 }).SweepAngle == 360
+    && !(high.Strip[3] with { Percent = double.NaN }).HasPercent && unknown.Strip[3].SweepAngle == 0,
     "The ring uses bounded finite percentages; non-percentage readings do not invent progress.");
 Check(high.Summary.Contains(high.Title) && high.Summary.Contains(high.Detail)
-    && new HudProfile { Metric = 9 }.Render(new("余额", "14.20 CNY", "已更新")).Icon != high.Icon,
+    && new HudProfile { Metric = 9 }.Render(new("余额", "14.20 CNY", "已更新")).Compact[0].Icon != high.Compact[0].Icon,
     "Compact identity follows the metric while full template content stays available to details and accessibility.");
 Check(HudProfile.ValidTemplate("{value}/{detail}", 80) && !HudProfile.ValidTemplate("{unknown}", 80)
     && !HudProfile.ValidTemplate("{value}}", 80) && !HudProfile.ValidColor("# 12345"), "Reject invalid templates and colors without throwing in the renderer.");
@@ -96,6 +99,49 @@ try { (profiles with { Profiles = [second, second] }).Normalize(0); }
 catch (InvalidDataException) { rejected = true; }
 Check(rejected, "Duplicate identities in stored profiles must be rejected, not silently dropped.");
 Console.WriteLine("PASS HUD profiles, templates, color rule and carousel order");
+
+Check(HudLayout.AfterClick(HudMode.Compact, false) == HudMode.Strip
+    && HudLayout.AfterClick(HudMode.Strip, false) == HudMode.Compact
+    && HudLayout.AfterClick(HudMode.Detail, false) == HudMode.Detail
+    && HudLayout.AfterClick(HudMode.Compact, true) == HudMode.Detail
+    && HudLayout.AfterClick(HudMode.Strip, true) == HudMode.Detail
+    && HudLayout.AfterClick(HudMode.Detail, true) == HudMode.Compact,
+    "Single and double clicks follow all six state transitions; details always have a return path.");
+var layoutProfile = new HudProfile
+{
+    Metric = 3, Layout = new HudLayout
+    {
+        CompactRight = new(HudContent.Icon, 12), StripPrimary = new(HudContent.Description),
+        StripSecondary = new(HudContent.Percent), Detail = new(HudContent.Custom, Template: "{label}\n{value}\n{detail}")
+    }
+};
+var laidOut = layoutProfile.Render(new("内存", "41%", "13.2 / 32 GiB", 41));
+Check(laidOut.Compact.Length == 3 && laidOut.Strip.Length == 4
+    && laidOut.Compact[2].Icon == HudDisplay.IconFor(12)
+    && laidOut.Strip[1].Text == "13.2 / 32 GiB" && laidOut.Strip[2].Text == "41%"
+    && laidOut.Strip[3].IsRing && laidOut.Body!.Text == "内存\n41%\n13.2 / 32 GiB",
+    "Every state maps the same reading into independently ordered slots and a multiline detail area.");
+var restoredLayout = System.Text.Json.JsonSerializer.Deserialize<HudProfile>(System.Text.Json.JsonSerializer.Serialize(layoutProfile));
+Check(restoredLayout == layoutProfile && restoredLayout!.Error == ""
+    && (layoutProfile with { Layout = layoutProfile.Layout with { CompactRight = new(HudContent.Title) } }) != layoutProfile,
+    "Layout records preserve copy/save identity and reliably detect draft changes.");
+Check(System.Text.Json.JsonSerializer.Deserialize<HudProfile>("{}")!.Layout == new HudLayout()
+    && (layoutProfile with { Layout = null! }).Error.Length > 0
+    && !(layoutProfile.Layout with { Detail = null! }).IsValid
+    && !(layoutProfile.Layout with { CompactLeft = new((HudContent)99) }).IsValid
+    && !(layoutProfile.Layout with { CompactLeft = new(HudContent.Icon, 13) }).IsValid
+    && !(layoutProfile.Layout with { CompactLeft = new(HudContent.Custom, Template: "{missing}") }).IsValid
+    && !new HudSlot(HudContent.Custom, Template: "a\nb").IsValid(false)
+    && new HudSlot(HudContent.Custom, Template: "a\nb").IsValid(true),
+    "Legacy profiles get defaults; corrupt/null slots, unknown content and invalid templates are rejected.");
+for (var metric = 0; metric <= 11; metric++)
+{
+    var view = (layoutProfile with { Metric = metric }).Render(new("指标", "—", "尚无读数"));
+    Check(view.Compact.Length == 3 && view.Strip.Length == 4 && view.Body!.IsText
+        && view.Strip[3].IsIcon && !view.Strip[3].IsRing && view.Strip[2].Text == "—",
+        "All metrics share the same layout; absent percentages must not invent progress.");
+}
+Console.WriteLine("PASS HUD three-state transitions, slots, layout compatibility and validation");
 
 Check(NetworkMetrics.ValidAddress("localhost", true) && NetworkMetrics.ValidAddress("::1", true)
     && !NetworkMetrics.ValidAddress("localhost:443", true) && !NetworkMetrics.ValidAddress("https://example.com/path", true), "Probe accepts a host, not a URL or port.");

@@ -2,6 +2,9 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FluentAvalonia.Core;
 using TractorTool.UI;
@@ -11,57 +14,117 @@ namespace TractorTool.Plugins.SystemHud;
 public partial class HudCard : UserControl
 {
     public static readonly StyledProperty<bool> AnimateProperty = AvaloniaProperty.Register<HudCard, bool>(nameof(Animate), true);
-    private bool _expanded, _motionEnabled;
+    public static readonly StyledProperty<HudMode> ModeProperty = AvaloniaProperty.Register<HudCard, HudMode>(nameof(Mode));
+    private readonly DispatcherTimer _singleClick = new();
+    private PointerPressedEventArgs? _press;
+    private PixelPoint _pressPosition;
+    private int? _clickCount;
+    private bool _suppressClick, _motionEnabled;
     public bool Animate { get => GetValue(AnimateProperty); set => SetValue(AnimateProperty, value); }
-    public event Action? ExpansionChanged;
-    internal Control[] DragSurfaces => [SummaryButton, CollapseButton];
+    public HudMode Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
+    public event Action? StateChanged;
+    public event Action<PointerPressedEventArgs>? DragRequested;
     internal double Radius => Island.CornerRadius.TopLeft;
-    public bool IsExpanded
-    {
-        get => _expanded;
-        set
-        {
-            if (_expanded == value) return;
-            var restoreFocus = IsKeyboardFocusWithin;
-            _expanded = value;
-            UpdateMotion();
-            // Changing transition targets interrupts/reverses from their current values.
-            Width = value ? HudSettings.ExpandedWidth : HudSettings.CardWidth;
-            Height = value ? HudSettings.ExpandedHeight : HudSettings.CardHeight;
-            Island.CornerRadius = new CornerRadius(value ? 28 : 22);
-            ShowScene(SummaryButton, !value);
-            ShowScene(Details, value);
-            if (restoreFocus) (value ? CollapseButton : SummaryButton).Focus();
-            ExpansionChanged?.Invoke();
-        }
-    }
 
     public HudCard()
     {
         InitializeComponent();
-        SummaryButton.Click += (_, _) => IsExpanded = true;
-        CollapseButton.Click += (_, _) => IsExpanded = false;
-        foreach (var scene in new Control[] { SummaryButton, Details })
-            scene.PropertyChanged += (_, e) =>
-            {
-                if (e.Property == OpacityProperty && scene.Opacity == 0) scene.IsVisible = false;
-            };
+        _singleClick.Tick += (_, _) => { _singleClick.Stop(); ApplyClick(false); };
+        HeaderButton.Click += (_, _) =>
+        {
+            if (_suppressClick) return;
+            var count = _clickCount; _clickCount = null;
+            _singleClick.Stop();
+            if (count is null) ApplyClick(false); // Keyboard activation needs no double-click wait.
+            else if (count.Value % 2 == 0) ApplyClick(true);
+            else _singleClick.Start();
+        };
+        HeaderButton.AddHandler(PointerPressedEvent, (_, e) =>
+        {
+            if (!e.Pointer.IsPrimary || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            var pending = _singleClick.IsEnabled;
+            var isDouble = pending && e.ClickCount % 2 == 0;
+            _singleClick.Stop();
+            if (pending && !isDouble) ApplyClick(false);
+            _press = e; _pressPosition = this.PointToScreen(e.GetPosition(this));
+            _clickCount = isDouble ? 2 : 1; _suppressClick = false;
+            _singleClick.Interval = this.GetPlatformSettings()?.GetDoubleTapTime(e.Pointer.Type) ?? TimeSpan.FromMilliseconds(500);
+        }, RoutingStrategies.Tunnel);
+        HeaderButton.AddHandler(PointerMovedEvent, (_, e) =>
+        {
+            if (_press is not { } press || press.Pointer != e.Pointer || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            var current = this.PointToScreen(e.GetPosition(this));
+            var dpi = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+            if (!ExceedsDragThreshold(new((current.X - _pressPosition.X) / dpi, (current.Y - _pressPosition.Y) / dpi))) return;
+            CancelClick();
+            e.Pointer.Capture(null); // Cancel the native Button click before asking the desktop window to move.
+            e.Handled = true;
+            DragRequested?.Invoke(press);
+        }, RoutingStrategies.Tunnel);
+        HeaderButton.AddHandler(PointerReleasedEvent, (_, _) => _press = null, RoutingStrategies.Tunnel);
+        HeaderButton.PointerCaptureLost += (_, _) => { if (_press is not null) CancelClick(); };
+        HeaderButton.KeyDown += (_, e) =>
+        {
+            _singleClick.Stop(); _clickCount = null; _suppressClick = false;
+            if (e.Key == Key.Down) { SetCurrentValue(ModeProperty, HudMode.Detail); e.Handled = true; }
+        };
+        KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { CancelClick(); SetCurrentValue(ModeProperty, HudMode.Compact); e.Handled = true; }
+        };
+        BodyScroll.DoubleTapped += (_, e) => { CancelClick(); ApplyClick(true); e.Handled = true; };
     }
 
-    private static void ShowScene(Control scene, bool visible)
+    internal static bool ExceedsDragThreshold(Vector movement) => Math.Abs(movement.X) >= 6 || Math.Abs(movement.Y) >= 6;
+    private void ApplyClick(bool doubleClick) => SetCurrentValue(ModeProperty, HudLayout.AfterClick(Mode, doubleClick));
+    private void CancelClick() { _singleClick.Stop(); _press = null; _clickCount = null; _suppressClick = true; }
+
+    private void UpdateState()
     {
-        scene.IsEnabled = scene.IsHitTestVisible = visible;
-        if (visible) scene.IsVisible = true;
-        scene.Opacity = visible ? 1 : 0;
+        UpdateMotion();
+        var size = HudSettings.SizeFor(Mode);
+        Width = size.Width; Height = size.Height;
+        Island.CornerRadius = new CornerRadius(Mode == HudMode.Detail ? 28 : size.Height / 2);
+        HeaderButton.Height = Mode == HudMode.Detail ? 66 : size.Height - 2;
+        // Visibility follows state, never animated opacity (zero is also the start of a fade-in).
+        BodyScroll.IsVisible = Mode == HudMode.Detail;
+        UpdateContent();
+        StateChanged?.Invoke();
+    }
+
+    private void UpdateContent()
+    {
+        if (DataContext is not HudDisplay display) return;
+        var slots = Mode == HudMode.Compact ? display.Compact : display.Strip;
+        var controls = new[] { First, Second, Third, Fourth };
+        HeaderGrid.ColumnDefinitions.Clear();
+        HeaderGrid.RowDefinitions = Mode == HudMode.Detail ? new RowDefinitions("*,*") : new RowDefinitions("*");
+        for (var i = 0; i < controls.Length; i++)
+        {
+            var control = controls[i];
+            control.IsVisible = i < slots.Length && slots[i].Content != HudContent.Hidden;
+            control.DataContext = i < slots.Length ? slots[i] : null;
+            Grid.SetRow(control, 0); Grid.SetRowSpan(control, 1); Grid.SetColumn(control, i);
+            control.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
+            if (Mode != HudMode.Detail && i < slots.Length)
+                HeaderGrid.ColumnDefinitions.Add(new ColumnDefinition(slots[i].Content == HudContent.Hidden ? new GridLength(0)
+                    : slots[i].IsGraphic ? new GridLength(28) : new GridLength(i == 1 ? 1.7 : 1, GridUnitType.Star)));
+        }
+        if (Mode == HudMode.Detail)
+        {
+            HeaderGrid.ColumnDefinitions = new ColumnDefinitions("*,1.7*,*");
+            if (slots.Length > 0 && slots[0].IsGraphic) HeaderGrid.ColumnDefinitions[0].Width = new GridLength(28);
+            Grid.SetRowSpan(First, 2); Grid.SetRowSpan(Second, 2);
+            Grid.SetColumn(Third, 2); Grid.SetColumn(Fourth, 2); Grid.SetRow(Fourth, 1);
+        }
+        Body.DataContext = display.Body;
     }
 
     internal static SpringEasing MorphEasing() => new() { Mass = 1, Stiffness = 360, Damping = 27, InitialVelocity = 0 };
-
     private void UpdateMotion()
     {
         var enabled = Animate && Motion.GetIsEnabled(this) && FAUISettings.AreAnimationsEnabled()
             && this.IsAttachedToVisualTree() && IsEffectivelyVisible;
-        // Native, finite transitions: no animation timer, worker or host clock override.
         if (enabled == _motionEnabled) return;
         _motionEnabled = enabled;
         var duration = TimeSpan.FromMilliseconds(420);
@@ -75,32 +138,24 @@ public partial class HudCard : UserControl
             new CornerRadiusTransition { Property = Border.CornerRadiusProperty, Duration = duration, Easing = MorphEasing() },
             new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(180) }
         } : null;
-        foreach (var scene in new Control[] { SummaryButton, Details })
-            scene.Transitions = enabled ? new Transitions
-            {
-                new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(140), Easing = new CubicEaseOut() }
-            } : null;
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (Island is not null && (change.Property == AnimateProperty || change.Property == Motion.IsEnabledProperty)) UpdateMotion();
+        if (Island is null) return;
+        if (change.Property == ModeProperty) UpdateState();
+        else if (change.Property == DataContextProperty) UpdateContent();
+        else if (change.Property == AnimateProperty || change.Property == Motion.IsEnabledProperty) UpdateMotion();
     }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); UpdateMotion(); }
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnDetachedFromVisualTree(e);
-        FinishMotion();
-    }
-
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); UpdateState(); }
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) { base.OnDetachedFromVisualTree(e); FinishMotion(); }
     internal void FinishMotion()
     {
-        Transitions = Island.Transitions = SummaryButton.Transitions = Details.Transitions = null;
+        CancelClick();
+        Transitions = Island.Transitions = null;
         _motionEnabled = false;
     }
-
     internal void PrepareReveal() { FinishMotion(); Island.Opacity = 0; UpdateMotion(); }
     internal void Reveal() { UpdateMotion(); Island.Opacity = 1; }
 }

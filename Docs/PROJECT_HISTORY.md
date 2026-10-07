@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与交互（HUD 三态） | [E77 · 空白回退修正与同指标区域布局（2026-10-07）](#evidence-hud-three-state-layout) |
 | 交互（HUD 形变） | [E76 · 紧凑尺寸、整岛弹性形变与原生轮廓（2026-10-07）](#evidence-hud-morph) |
 | 交互（HUD 横条与详情） | [E75 · 横向摘要、点击展开与拖动分离（2026-10-07）](#evidence-hud-compact-interaction) |
 | 样式（HUD 胶囊） | [E74 · Apple 灵动岛风格卡片（2026-10-07）](#evidence-hud-island-style) |
@@ -2278,3 +2279,30 @@ SystemHud 0.3.5：
 4. 交付 artifacts/e76-hud-morph/plugin/TractorTool.SystemHud-0.3.5.zip，5,479,410 字节，SHA256 8F2CB134559EB918B40DD00CEEA973039AA41B3BF5CA8CC3BB2E97FAC3CAB6C5。ProductVersion 的提交部分为构建时基底 388555b，不代表本轮代码已在该旧提交中。
 
 未启动应用、检查程序、硬件/业务网络/DPAPI 或接管 UI；未替用户安装。实际形变观感、快速反向、动画中拖动、两级动画偏好、透明区域可操作下层程序、长文/键盘焦点和 DPI/四边/跨屏恢复仍待用户确认。静态自查不代替原生运行证据。保留用户 .gitignore 和 .vscode/launch.json，仅提交本轮代码/文档，不推送。
+
+<a id="evidence-hud-three-state-layout"></a>
+
+## E77：HUD 空白回退修正与同指标三态区域布局（2026-10-07）
+
+用户真实运行 0.3.5 后报告展开空白、无法回退，要求统一默认三格、长条四格、详细四格加底部的布局；明确本轮先做同一指标自由布局，不组合不同指标。静态追查 E76 的 ShowScene 与 OpacityProperty 回调：淡入起点也是零透明度，回调可能把准备显示的场景设为不可见，并隐藏其中的收起按钮。这是源码解释与用户故障证据，本轮没有启动程序复现。
+
+参考 [Apple HIG Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities)、[Motion](https://developer.apple.com/design/human-interface-guidelines/motion)、[Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)：紧凑状态保留重点、扩大后保持内容关系、动作简短且可打断、遵循动画偏好。默认/长条/详细的单击与双击规则来自用户要求，不宣称 Apple 规定了桌面鼠标行为或具体尺寸。
+
+实现 SystemHud 0.4.0：
+
+- 删除双场景交叉隐藏和旧展开布尔控制；一个持续存在的顶部 Button 加通用 HudSlotView。默认 248×44 DIP 三格、长条 400×48 四格、详细 400×184 顶部沿用四格（左、中央、右上、右下）加底部。所有指标只投影同一 HudReading，不各写三套视图。
+- HudLayout/HudSlot 保存区域内容与图标/模板；每格可用图标、标题、数值、说明、百分比、进度环、完整信息、自定义文字或隐藏。无百分比时环退回图标；内置指标图标外补 GPU。字段记录使用值相等语义，接入既有草稿脏检查、保存/复制/撤销；旧 JSON 缺字段得到默认，非法/null 区域阻止保存。区域模板 120 字符单行，底部 320 字符可多行，不执行脚本/递归插值。
+- 顶部按系统双击时限延迟单击，双击取消待执行单击；拖动前 6 DIP 阈值，超过即取消点击。单击默认与长条往返；双击默认/长条进入详细、详细回默认；详细单击保留状态。页面预览支持 Enter/Space、向下键和 Escape；桌面不抢焦点。拖动识别统一移到 Card，Window 只执行原生移动，删除原重复手势代码。拖动后不把无待执行单击的第二次原生 ClickCount 当双击。
+- 保留有限 420ms 弹性尺寸/圆角与 180ms 出现动效，不再以动画透明度驱动内容可见性。固定透明绘制边界改为 432×208，原生轮廓和命中测试沿用；尺寸改变仍围绕默认中心并避让屏幕边界。长条/详细都暂停轮播与预览到期；数据采集、位置保存、草稿隔离、穿透和退出边界不变。
+- 仅插件、现有 HudChecks 和文档变化；没有改宿主/Core/Contracts/UI、加入新依赖、运行时安装或动作注册框架。
+
+验证与交付：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e77-hud-layout/build --force` 首次出现 6 个 NU1900 和一个 CS1061。Avalonia 12 的 TopLevel.PlatformSettings 不能从插件访问；根据 [12.1.2 官方源码](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/VisualTree/VisualExtensions.cs) 改为公开 `GetPlatformSettings()` 扩展。联网刷新还原后 0 警告/0 错误，最后清理与手势修改后 `--no-restore` 再编译仍 0 警告/0 错误。
+2. HudChecks 补充六个状态转移、同读数不同区域顺序、GPU 图标、多行详情、布局保存相等/脏检查、旧 JSON 默认、非法/null 字段、十二指标未知百分比以及全部状态形变方向的窗口边界断言。只编译，未执行，不能视为断言运行通过。
+3. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e77-hud-layout/plugin-final` 独立 Rebuild 0 警告/0 错误。67 个 ZIP 文件逐项哈希与输出一致，无共享 SDK DLL，5 个 AXAML XML 可解析，234 个宿主 SDK 文件数量/哈希未变。证据 `artifacts/e77-hud-layout/static-checks.json`。
+4. ZIP `artifacts/e77-hud-layout/plugin-final/TractorTool.SystemHud-0.4.0.zip`，5,493,453 字节，SHA256 `BBDE588A9FA22C496F52671C999F892D654757AF182D3AE7E253BA9F4E94C72F`。ProductVersion `0.4.0+b363eaa7153f8527c031e05a583ef08c3beb4760` 的提交部分是构建时基底，不表示本轮变更已存在于该旧提交。
+
+最终补齐编辑预览模式与区域状态选择双向同步，再编译并打包至 plugin-final；plugin 为此前中间产物，不作为交付。四份当前文档的 72 个本地文件链接已核对，限定本轮文件的 git diff --check 通过。
+
+按约定未启动应用、检查程序、硬件/业务网络/DPAPI 或接管 UI；未替用户安装。原空白故障的真实闭合、单/双击/拖动、区域编辑、动效/动画偏好、边缘/DPI/透明输入、保存/重启均保留用户确认。静态自查不等于子代理 Review 或运行验收。保留用户 .gitignore 与 .vscode/launch.json，按约定仅本地提交，不推送。

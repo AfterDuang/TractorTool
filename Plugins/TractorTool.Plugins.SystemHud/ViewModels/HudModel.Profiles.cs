@@ -62,7 +62,7 @@ public partial class HudModel
     private HudProfile Draft => new()
     {
         Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
-        Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor,
+        Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor, Layout = DraftLayout,
         RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = RuleColor,
         Address = (Address ?? "").Trim(), JsonPointer = JsonPointer, RefreshSeconds = RefreshSeconds, JsonPercentage = JsonPercentage,
         ProbeProtocol = ProbeProtocol, Port = Port, SensorId = SensorId, Currency = Currency, Drive = Drive
@@ -70,6 +70,7 @@ public partial class HudModel
 
     private void InitializeProfiles()
     {
+        InitializeLayoutEditors();
         try { _profiles = _context.Settings.Load<HudProfiles>("profiles").Normalize(_settings.Metric); }
         catch (Exception ex)
         {
@@ -93,6 +94,7 @@ public partial class HudModel
         _loadingEditor = true;
         ProfileName = profile.Name; Metric = profile.Metric;
         TitleTemplate = profile.Title; ValueTemplate = profile.Value; DetailTemplate = profile.Detail;
+        LoadLayout(profile.Layout);
         AccentColor = profile.Color; RuleEnabled = profile.RuleEnabled; Comparison = profile.Comparison;
         Threshold = profile.Threshold; RuleColor = profile.RuleColor;
         Address = profile.Address; JsonPointer = profile.JsonPointer; RefreshSeconds = profile.RefreshSeconds; JsonPercentage = profile.JsonPercentage;

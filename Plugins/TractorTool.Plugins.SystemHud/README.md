@@ -7,6 +7,7 @@ TractorTool.Plugins.SystemHud/
 ├─ HudPlugin.cs          插件入口与宿主接入
 ├─ Configuration/       方案、设置、凭据保存格式与校验
 │  ├─ HudProfile.cs     方案及轮播配置
+│  ├─ HudLayout.cs      三种状态、区域配置与切换规则
 │  ├─ HudSettings.cs    共用设置、读数模型与计数计算
 │  └─ HudSecrets.cs     Windows 凭据加解密
 ├─ Sampling/            单次读取与数据来源
@@ -17,12 +18,14 @@ TractorTool.Plugins.SystemHud/
 ├─ ViewModels/          运行状态、命令和编辑交互
 │  ├─ HudModel.cs       显示、暂停、采样与停止
 │  ├─ HudModel.Profiles.cs  方案编辑、轮播与预览
+│  ├─ HudModel.Layout.cs    区域草稿与编辑选项
 │  └─ HudModel.Sources.cs   传感器选择与凭据操作
 ├─ Views/               界面与显示转换
 │  ├─ HudView.axaml            主页面
 │  ├─ HudSettingsView.axaml    插件设置页
 │  ├─ HudWindow.axaml          桌面悬浮窗口
-│  ├─ HudCard.axaml            共用紧凑/展开场景与弹性形变
+│  ├─ HudCard.axaml            共用三态布局、手势与弹性形变
+│  ├─ HudSlotView.axaml        共用文字、图标与环形区域
 │  └─ HudPresentation.cs       模板、颜色与显示模型
 ├─ Licenses/            第三方许可原文
 ├─ NOTICE.md            依赖及源码来源
@@ -32,7 +35,7 @@ TractorTool.Plugins.SystemHud/
 
 每份 AXAML 与同名 `.axaml.cs` 放在同一目录。`bin/`、`obj/` 是生成目录，不属于源码分层。
 
-小岛视觉与有限动效在 `HudCard.axaml(.cs)`，桌面拖动、DPI/边缘定位及原生窗口区域在 `HudWindow.axaml.cs`；位置换算仍集中在 `HudSettings`，不另建动画框架。两处页面预览与桌面共用卡片，采集器不参与动画。
+`HudLayout` 保存同一指标的默认三格、长条四格和详情底部；`HudPresentation` 投影读数，`HudSlotView` 渲染区域。`HudCard` 管理三态布局、单/双击与拖动识别、有限形变；`HudWindow` 执行原生移动、DPI/边缘定位与窗口区域裁剪。位置换算集中在 `HudSettings`。两处页面预览与桌面共用卡片，采集器不参与布局或动画，不为每个指标复制视图。
 
 修改布局先看 `Views`，修改操作流程先看 `ViewModels`，修改采集或接口先看 `Sampling`，修改持久化数据先看 `Configuration`。这些目录用于源码导航；类型命名空间保持 `TractorTool.Plugins.SystemHud`，插件入口和配置身份不随目录变化。
 
