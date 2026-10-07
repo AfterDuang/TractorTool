@@ -5,20 +5,6 @@
         ShowInTaskbar="False" WindowDecorations="None" Topmost="True" Background="Transparent"
         TransparencyLevelHint="Transparent" WindowStartupLocation="Manual">
   <Viewbox Stretch="Uniform">
-    <Border x:Name="Card" Width="320" Height="124" Padding="22,16" CornerRadius="22"
-            Background="#EF191C21" BorderBrush="#FFE66B" BorderThickness="1" Opacity="0">
-      <Grid ColumnDefinitions="36,*" RowDefinitions="Auto,*,Auto,Auto">
-        <Path Grid.RowSpan="2" Data="M 18,0 L 2,22 L 13,22 L 7,42 L 31,15 L 19,15 Z"
-              Fill="#FFE66B" Width="28" Height="38" Stretch="Uniform" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" Text="{Binding Reading.Label}" Foreground="#BCC3CE" FontSize="12" />
-        <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding Reading.Value}" Foreground="#FFF1AF"
-                   FontSize="27" FontWeight="SemiBold" VerticalAlignment="Center" />
-        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding Reading.Detail}" Foreground="#D1D6DE"
-                   FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Reading.Detail}" />
-        <ProgressBar Grid.Row="3" Grid.ColumnSpan="2" Height="3" Margin="0,7,0,0" Minimum="0" Maximum="100"
-                     Value="{Binding Reading.Percent}" IsVisible="{Binding Reading.HasPercent}"
-                     Foreground="#FFE66B" Background="#41454C" />
-      </Grid>
-    </Border>
+    <local:HudCard x:Name="Card" DataContext="{Binding Display}" Width="320" Height="124" Opacity="0" />
   </Viewbox>
 </Window>

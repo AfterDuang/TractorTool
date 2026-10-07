@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| HUD 第二步 | [E68 · 多方案、轮播、模板、颜色规则与编辑预览（2026-10-07）](#evidence-hud-profiles) |
 | 修正（插件框架依赖） | [E67 · SDK 平台清单与私有依赖边界（2026-10-07）](#evidence-framework-assembly-inventory) |
 | 修正（HUD 启动与页面） | [E66 · Win32 框架程序集解析与主页面/设置分工（2026-10-07）](#evidence-hud-startup-page) |
 | 新插件（HUD 第一步） | [E65 · 原生电源通知与基础桌面状态（2026-10-07）](#evidence-system-hud) |
@@ -2050,3 +2051,26 @@ Core 只扩充显式框架名称 Microsoft.Win32.Primitives / Microsoft.Win32.Re
 没有启动应用、检查程序、FFmpeg 或 UI，没有改动 Debug/已安装插件/真实数据。新宿主未装插件，夹具未打 ZIP；HUD 沿用 E66 包。运行边界和 A03/A25/A24 继续待用户验证，不能把编译及子代理静态复核记为运行通过。用户 .gitignore 与 .vscode/launch.json 修改仍保留在提交外。
 
 最终静态检查：本轮四份文档的 135 个本地文件链接存在，本轮差异无空白错误。
+
+<a id="evidence-hud-profiles"></a>
+
+## E68：HUD 多方案、轮播与编辑预览（2026-10-07）
+
+用户对上一版表示“看着没问题，继续”，并明确今后修改软件框架代码必须先停下说明，再由架构侧分析。本轮将该约定写入根 AGENTS.md 与交接快照；只改 SystemHud 插件、HudChecks 和相关文档，未改 TractorTool/Core/Contracts/UI 框架源码，没有重新发布宿主。
+
+SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标方案，新增/复制/删除/改名、保存并使用和撤销；3–300 秒顺序轮播；标题/数值/说明模板支持 label/value/detail/percent/name；基础颜色与一个百分比阈值颜色规则。没有加入表达式/脚本平台、混合多指标采集或高级数据源。共用窗口位置和五项长期偏好保留原入口，第三步未实施。
+
+方案存入插件私有 profiles.json schema 1；旧 hud.json schema 1 保持，不为此改公共存储接口。缺少方案文件时继承旧 Metric，第一次显式保存才写入。新增/复制/删除先持久化成功再原位更新列表；草稿期间禁切换，撤销恢复保存值；各保存区域互不提交别处草稿。未知百分比改为 nullable，不伪造零值和误触发颜色。
+
+抽取插件内部 HudCard：桌面 HUD、最近读数和编辑示例使用同一个控件。编辑预览明确标注示例，真实草稿预览用当前指标的原生采集且不写配置。轮播只在显示/未暂停时运行，电源提醒/草稿预览暂挂；停止沿用已有生命周期。静态复核补正了预览期间再暂停时的到期恢复：缓存当前方案最后读数，预览到期即回到该显示，再依可见性刷新。切换使旧采样失效，不叠加读取或逐帧日志。
+
+验证：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e68-hud-profiles/build`：首次及最终构建均 0 警告/0 错误，涵盖新 AXAML 编译绑定、模板/颜色/轮播纯逻辑检查。检查未运行。
+2. `scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e68-hud-profiles/plugin`：引用既有发布 SDK 独立 Rebuild，通过，0 警告/0 错误。
+3. ZIP 9 个文件与输出逐一 SHA256 相符，清单及 ProductVersion 为 0.2.0，未夹带共享 SDK/运行时 DLL。234 个既有宿主文件哈希不变。ZIP SHA256：EBC810C57DAF6BAD693B50BBCC43654C02911381F5E30BDD1614C2627DFF174B。
+4. HudChecks 增加旧 Metric 继承、轮播回绕/间隔、模板合法性/非递归替换、阈值/未知数据、JSON 往返及重复标识拒绝断言；仅编译，不能记为运行通过。未使用子代理，不沿用其他轮次 Review 当本轮证据。
+
+未启动软件、检查程序、硬件读取或 UI 自动化，未安装新 ZIP、改真实配置或替换运行文件。已有修正加载器的宿主仅需用户安装新版插件并显式退出重启；本轮不要求再次升级宿主。用户“看着没问题”作为 A25 基本反馈，未扩写成专项硬件验收；新增 A26 保留待用户验证。文档和本地提交不包含用户原有 .gitignore / .vscode/launch.json 修改，不配置远程或推送。
+
+最终静态核对：本轮文档的 108 个本地文件链接存在，4 个 AXAML XML 可解析；框架源码无 diff。

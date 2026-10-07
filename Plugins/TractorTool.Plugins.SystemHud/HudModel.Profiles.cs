@@ -1,0 +1,178 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using TractorTool.Contracts;
+
+namespace TractorTool.Plugins.SystemHud;
+
+public partial class HudModel
+{
+    private HudProfiles _profiles = new();
+    private HudProfile _activeProfile = new();
+    private HudProfile? _draftPreview;
+    private static readonly HudProfile PowerProfile = new();
+    private readonly DispatcherTimer _rotation = new();
+    private bool _loadingEditor;
+    public ObservableCollection<HudProfile> Profiles { get; } = [];
+    public string[] Comparisons { get; } = ["低于或等于", "高于或等于"];
+    [ObservableProperty] private HudProfile? _selectedProfile;
+    [ObservableProperty] private string _profileName = "";
+    [ObservableProperty] private string _titleTemplate = "{label}";
+    [ObservableProperty] private string _valueTemplate = "{value}";
+    [ObservableProperty] private string _detailTemplate = "{detail}";
+    [ObservableProperty] private string _accentColor = "#FFE66B";
+    [ObservableProperty] private bool _ruleEnabled;
+    [ObservableProperty] private int _comparison;
+    [ObservableProperty] private double _threshold = 20;
+    [ObservableProperty] private string _ruleColor = "#FF8A90";
+    [ObservableProperty] private bool _rotateProfiles;
+    [ObservableProperty] private int _rotationSeconds = 10;
+    [ObservableProperty] private string _profileError = "";
+    [ObservableProperty] private bool _hasDraftChanges;
+    [ObservableProperty] private HudDisplay _editorDisplay = PowerProfile.Render(new("电量", "72%", "示例：正在使用电池", 72));
+    [ObservableProperty] private HudDisplay _display = PowerProfile.Render(new("桌面状态", "—", "等待显示"));
+    private HudDisplay _activeDisplay = PowerProfile.Render(new("桌面状态", "—", "等待显示"));
+    public string ActiveProfileName => _activeProfile.Name;
+    public bool CanSwitchProfile => !HasDraftChanges;
+    public bool CanAddProfile => CanSwitchProfile && Profiles.Count < 32;
+    public bool CanDeleteProfile => CanSwitchProfile && Profiles.Count > 1;
+    public bool CanSaveProfile => SelectedProfile is not null && ProfileError.Length == 0;
+    public bool CanPreviewProfile => CanSaveProfile && CanControl && !_paused;
+    private HudProfile EffectiveProfile => _powerPreview ? PowerProfile : _draftPreview ?? _activeProfile;
+    private HudProfile Draft => new()
+    {
+        Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
+        Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor,
+        RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = RuleColor
+    };
+
+    private void InitializeProfiles()
+    {
+        try { _profiles = _context.Settings.Load<HudProfiles>("profiles").Normalize(_settings.Metric); }
+        catch (Exception ex)
+        {
+            Status = "方案读取失败，使用默认方案；原文件保留，点击保存才会写入新方案。";
+            _context.Log.Write(AppLogLevel.Error, _context.PluginId, Status, ex);
+            _profiles = new HudProfiles().Normalize(_settings.Metric);
+        }
+        ActivateProfile(_profiles.Active);
+        foreach (var profile in _profiles.Profiles) Profiles.Add(profile);
+        SelectedProfile = _activeProfile;
+        _rotation.Tick += (_, _) => AdvanceProfile();
+    }
+
+    partial void OnSelectedProfileChanged(HudProfile? value) { if (value is not null) LoadProfile(value); }
+    private void LoadProfile(HudProfile profile)
+    {
+        _loadingEditor = true;
+        ProfileName = profile.Name; Metric = profile.Metric;
+        TitleTemplate = profile.Title; ValueTemplate = profile.Value; DetailTemplate = profile.Detail;
+        AccentColor = profile.Color; RuleEnabled = profile.RuleEnabled; Comparison = profile.Comparison;
+        Threshold = profile.Threshold; RuleColor = profile.RuleColor;
+        RotateProfiles = _profiles.Rotate; RotationSeconds = _profiles.Seconds;
+        _loadingEditor = false;
+        UpdateEditor();
+    }
+
+    protected override void OnPropertyChanged(PropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (!_loadingEditor && e.PropertyName is nameof(ProfileName) or nameof(Metric) or nameof(TitleTemplate)
+            or nameof(ValueTemplate) or nameof(DetailTemplate) or nameof(AccentColor) or nameof(RuleEnabled)
+            or nameof(Comparison) or nameof(Threshold) or nameof(RuleColor) or nameof(RotateProfiles) or nameof(RotationSeconds)) UpdateEditor();
+    }
+
+    private void UpdateEditor()
+    {
+        var draft = Draft;
+        ProfileError = draft.Error.Length != 0 ? draft.Error : RotationSeconds is < 3 or > 300 ? "轮播间隔为 3–300 秒。" : "";
+        HasDraftChanges = draft != SelectedProfile || RotateProfiles != _profiles.Rotate || RotationSeconds != _profiles.Seconds;
+        if (ProfileError.Length == 0) EditorDisplay = draft.Render(Metric switch
+        {
+            0 => new("电量", "72%", "示例：正在使用电池", 72),
+            1 => new("时钟", "12:34:56", "示例：2026/10/07 星期三"),
+            2 => new("CPU", "36%", "示例：处理器使用率", 36),
+            3 => new("内存", "64%", "示例：10.2 / 16.0 GiB", 64),
+            _ => new("网速", "↓ 1.2 MiB/s", "示例：↑ 128 KiB/s · 活动接口合计")
+        });
+        OnPropertyChanged(nameof(CanSwitchProfile));
+        AddProfileCommand.NotifyCanExecuteChanged(); CopyProfileCommand.NotifyCanExecuteChanged(); DeleteProfileCommand.NotifyCanExecuteChanged();
+        SaveProfileCommand.NotifyCanExecuteChanged(); PreviewProfileCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanAddProfile))]
+    private void AddProfile() => CommitProfiles([.. _profiles.Profiles, new HudProfile { Name = $"方案 {Profiles.Count + 1}" }]);
+    [RelayCommand(CanExecute = nameof(CanAddProfile))]
+    private void CopyProfile()
+    {
+        if (SelectedProfile is not { } profile) return;
+        var name = profile.Name.Length > 35 ? profile.Name[..35] : profile.Name;
+        CommitProfiles([.. _profiles.Profiles, profile with { Id = Guid.NewGuid(), Name = name + " 副本" }]);
+    }
+    // Add/copy commits first, so a failed save cannot leave a phantom profile in the list.
+    private void CommitProfiles(HudProfile[] profiles) => SaveProfiles(_profiles with { Profiles = profiles, ActiveId = profiles[^1].Id });
+    [RelayCommand(CanExecute = nameof(CanDeleteProfile))]
+    private void DeleteProfile()
+    {
+        if (SelectedProfile is not { } selected) return;
+        var remaining = _profiles.Profiles.Where(p => p.Id != selected.Id).ToArray();
+        SaveProfiles(_profiles with { Profiles = remaining, ActiveId = remaining[0].Id });
+    }
+    [RelayCommand]
+    private void RevertProfile() { if (SelectedProfile is { } profile) LoadProfile(profile); }
+    [RelayCommand(CanExecute = nameof(CanSaveProfile))]
+    private void SaveProfile()
+    {
+        if (!CanSaveProfile) return;
+        var draft = Draft;
+        SaveProfiles(_profiles with { Profiles = _profiles.Profiles.Select(p => p.Id == draft.Id ? draft : p).ToArray(),
+            ActiveId = draft.Id, Rotate = RotateProfiles, Seconds = RotationSeconds });
+    }
+
+    private void SaveProfiles(HudProfiles settings)
+    {
+        try { _context.Settings.Save("profiles", settings); }
+        catch (Exception ex) { ReportFailure("方案保存失败，尚未应用。", ex); return; }
+        _profiles = settings;
+        // Retain unchanged list entries; replace only edited entries to preserve selection/focus.
+        for (var i = Profiles.Count - 1; i >= 0; i--) if (!settings.Profiles.Any(p => p.Id == Profiles[i].Id)) Profiles.RemoveAt(i);
+        for (var i = 0; i < settings.Profiles.Length; i++)
+            if (i == Profiles.Count) Profiles.Add(settings.Profiles[i]);
+            else if (Profiles[i] != settings.Profiles[i]) Profiles[i] = settings.Profiles[i];
+        SelectedProfile = settings.Active; LoadProfile(settings.Active);
+        EndPreview(); ActivateProfile(settings.Active); UpdateVisibility();
+        Status = "方案已保存并使用。轮播顺序与方案列表一致。";
+    }
+
+    [RelayCommand(CanExecute = nameof(CanPreviewProfile))]
+    private void PreviewProfile()
+    {
+        if (!CanPreviewProfile) return;
+        _draftPreview = Draft; _powerPreview = false; InvalidateSample();
+        _preview.Stop(); _preview.Start(); UpdateVisibility();
+    }
+    private void AdvanceProfile(bool preview = false)
+    {
+        if (preview) { EndPreview(); _preview.Start(); }
+        ActivateProfile(_profiles.Next(_activeProfile.Id)); UpdateVisibility();
+    }
+    private void ActivateProfile(HudProfile profile)
+    {
+        _activeProfile = profile;
+        _activeDisplay = profile.Render(new(Metrics[profile.Metric], "—", "等待新读数"));
+        Display = _activeDisplay;
+        InvalidateSample(); OnPropertyChanged(nameof(ActiveProfileName));
+    }
+    private void SetReading(HudReading reading)
+    {
+        Display = EffectiveProfile.Render(reading);
+        if (!_powerPreview && _draftPreview is null) _activeDisplay = Display;
+    }
+    private void EndPreview()
+    {
+        _preview.Stop(); _powerPreview = false; _draftPreview = null;
+        Display = _activeDisplay; InvalidateSample();
+    }
+}

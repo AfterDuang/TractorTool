@@ -18,7 +18,7 @@ public partial class HudModel : ObservableObject
     private HudWindow? _window;
     private Task _sampling = Task.CompletedTask;
     private bool _stopped, _ready, _pinned, _paused, _powerPreview, _pollWarning;
-    private int _revision, _activeMetric;
+    private int _revision;
     private byte? _ac;
     private HudReading _power = new("电量", "—", "正在读取电源状态…");
     private string _samplingError = "", _powerError = "";
@@ -38,11 +38,10 @@ public partial class HudModel : ObservableObject
     [ObservableProperty] private double _scale = 1;
     [ObservableProperty] private double _offsetX;
     [ObservableProperty] private double _offsetY;
-    [ObservableProperty] private string _status = "修改后请保存；预览展示已保存的布局，持续 6 秒。";
+    [ObservableProperty] private string _status = "方案与窗口位置分别保存；桌面预览持续 6 秒。";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStartupError))]
     private string _startupError = "";
-    [ObservableProperty] private HudReading _reading = new("桌面状态", "—", "等待显示");
     public bool HasStartupError => StartupError.Length != 0;
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
     public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
@@ -61,9 +60,9 @@ public partial class HudModel : ObservableObject
             context.Log.Write(AppLogLevel.Error, context.PluginId, Status, ex);
         }
         LoadPreferences(); LoadLayout();
-        _activeMetric = _settings.Metric;
+        InitializeProfiles();
         _timer.Tick += (_, _) => RefreshReading();
-        _preview.Tick += (_, _) => { _preview.Stop(); _powerPreview = false; UpdateVisibility(); };
+        _preview.Tick += (_, _) => { EndPreview(); UpdateVisibility(); };
     }
 
     private void LoadPreferences()
@@ -75,7 +74,7 @@ public partial class HudModel : ObservableObject
 
     private void LoadLayout()
     {
-        Metric = _settings.Metric; Anchor = _settings.Anchor;
+        Anchor = _settings.Anchor;
         Monitor = _settings.Monitor; Scale = _settings.Scale; OffsetX = _settings.OffsetX; OffsetY = _settings.OffsetY;
     }
 
@@ -118,11 +117,10 @@ public partial class HudModel : ObservableObject
         _visibilityItem = menu.Add("visible", new("显示 HUD", IsEnabled: false, IsChecked: false), _ => { ToggleVisibility(); return Task.CompletedTask; });
         _pauseItem = menu.Add("pause", new("暂停更新", IsEnabled: false, IsChecked: false), _ => { TogglePause(); return Task.CompletedTask; });
         _previewItem = menu.Add("preview", new("预览 6 秒", IsEnabled: false), _ => { Preview(); return Task.CompletedTask; });
-        _nextItem = menu.Add("next", new("切换下一项指标", IsEnabled: false), _ =>
+        _nextItem = menu.Add("next", new("下一个方案", IsEnabled: false), _ =>
         {
             if (!CanControl) return Task.CompletedTask;
-            _activeMetric = (_activeMetric + 1) % Metrics.Length;
-            InvalidateSample(); Preview();
+            AdvanceProfile(preview: true);
             return Task.CompletedTask;
         });
         UpdateControls();
@@ -133,12 +131,11 @@ public partial class HudModel : ObservableObject
     {
         if (Save(_settings with
         {
-            Metric = Metric, Anchor = Anchor,
+            Anchor = Anchor,
             Monitor = Monitor, Scale = Scale, OffsetX = OffsetX, OffsetY = OffsetY
         }))
         {
-            LoadLayout(); _activeMetric = _settings.Metric;
-            _powerPreview = false;
+            LoadLayout();
             ApplySavedSettings();
         }
     }
@@ -153,7 +150,7 @@ public partial class HudModel : ObservableObject
         }))
         {
             LoadPreferences(); _pinned = _settings.AlwaysVisible;
-            _preview.Stop(); _powerPreview = false; ApplySavedSettings();
+            EndPreview(); ApplySavedSettings();
         }
     }
 
@@ -163,7 +160,7 @@ public partial class HudModel : ObservableObject
         try { _context.Settings.Save("hud", settings); }
         catch (Exception ex) { ReportFailure("设置保存失败，尚未应用。请重试。", ex); return false; }
         _settings = settings; InvalidateSample();
-        Status = "已保存。预览和桌面显示使用当前已保存配置。";
+        Status = "已保存。";
         return true;
     }
 
@@ -182,7 +179,7 @@ public partial class HudModel : ObservableObject
     private void Preview()
     {
         if (!CanControl) return;
-        _powerPreview = false; _preview.Stop(); _preview.Start();
+        EndPreview(); _preview.Start();
         UpdateVisibility();
     }
 
@@ -191,7 +188,7 @@ public partial class HudModel : ObservableObject
     {
         if (!CanControl) return;
         _pinned = _window?.IsVisible != true;
-        _preview.Stop(); _powerPreview = false; UpdateVisibility();
+        EndPreview(); UpdateVisibility();
     }
 
     [RelayCommand(CanExecute = nameof(CanControl))]
@@ -203,7 +200,7 @@ public partial class HudModel : ObservableObject
 
     private void Hide()
     {
-        _pinned = false; _preview.Stop(); _powerPreview = false; UpdateVisibility();
+        _pinned = false; EndPreview(); UpdateVisibility();
     }
 
     private void ReadPower()
@@ -216,16 +213,16 @@ public partial class HudModel : ObservableObject
             _ac = power.Ac; _power = power.Reading; _powerError = "";
             if (changed && _settings.Enabled && _settings.PowerReminder)
             {
-                _powerPreview = true; _preview.Stop(); _preview.Start();
+                _powerPreview = true; _draftPreview = null; _preview.Stop(); _preview.Start();
                 _context.Log.Write(_context.PluginId, "电源状态变化：" + _power.Detail);
                 InvalidateSample(); UpdateVisibility();
             }
-            else if (_window?.IsVisible == true && (_powerPreview || _activeMetric == 0)) Reading = _power;
+            else if (_window?.IsVisible == true && EffectiveProfile.Metric == 0) SetReading(_power);
         }
         catch (Exception ex)
         {
             _power = new("电量", "—", FailureText(ex));
-            if (_window?.IsVisible == true && (_powerPreview || _activeMetric == 0)) Reading = _power;
+            if (_window?.IsVisible == true && EffectiveProfile.Metric == 0) SetReading(_power);
             if (_powerError != ex.Message) { _powerError = ex.Message; ReportFailure("电源状态读取失败。", ex); }
         }
     }
@@ -234,14 +231,16 @@ public partial class HudModel : ObservableObject
     {
         if (_stopped || _window is null) return;
         var visible = _settings.Enabled && (_pinned || _preview.IsEnabled);
-        _timer.Stop();
+        _timer.Stop(); _rotation.Stop();
         if (!visible) { _window.Hide(); InvalidateSample(); UpdateControls(); return; }
         _window.Reveal();
         UpdateControls();
         if (!_paused)
         {
             RefreshReading();
-            if (!_powerPreview && _activeMetric != 0) _timer.Start();
+            if (EffectiveProfile.Metric != 0) _timer.Start();
+            if (_profiles.Rotate && _profiles.Profiles.Length > 1 && !_powerPreview && _draftPreview is null)
+            { _rotation.Interval = TimeSpan.FromSeconds(_profiles.Seconds); _rotation.Start(); }
         }
     }
 
@@ -250,10 +249,11 @@ public partial class HudModel : ObservableObject
         OnPropertyChanged(nameof(CanControl)); OnPropertyChanged(nameof(RuntimeState));
         OnPropertyChanged(nameof(VisibilityAction)); OnPropertyChanged(nameof(PauseAction));
         ToggleVisibilityCommand.NotifyCanExecuteChanged(); TogglePauseCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged();
+        PreviewProfileCommand.NotifyCanExecuteChanged();
         _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: _window?.IsVisible == true));
         _pauseItem?.Update(new("暂停更新", IsEnabled: CanControl, IsChecked: _paused));
         _previewItem?.Update(new("预览 6 秒", IsEnabled: CanControl));
-        _nextItem?.Update(new("切换下一项指标", IsEnabled: CanControl));
+        _nextItem?.Update(new("下一个方案", IsEnabled: CanControl && _profiles.Profiles.Length > 1));
     }
 
     // Never mutate the counters while the worker is reading them. Reset at the next sample instead.
@@ -263,12 +263,12 @@ public partial class HudModel : ObservableObject
     private void RefreshReading()
     {
         if (_stopped || _paused || _window?.IsVisible != true) return;
-        var metric = _powerPreview ? 0 : _activeMetric;
-        if (metric == 0) { Reading = _power; return; }
+        var metric = EffectiveProfile.Metric;
+        if (metric == 0) { SetReading(_power); return; }
         if (metric == 1)
         {
             var now = DateTimeOffset.Now;
-            Reading = new("时钟", now.ToString("HH:mm:ss"), now.ToString("yyyy/MM/dd dddd")); return;
+            SetReading(new("时钟", now.ToString("HH:mm:ss"), now.ToString("yyyy/MM/dd dddd"))); return;
         }
         if (!_sampling.IsCompleted) return;
         if (!_pollWarning)
@@ -288,7 +288,7 @@ public partial class HudModel : ObservableObject
         try { reading = await Task.Run(() => { if (reset) _metrics.Reset(); return _metrics.Read(metric); }); }
         catch (Exception ex) { error = ex; reading = new(Metrics[metric], "—", FailureText(ex)); }
         if (_stopped || revision != _revision || _window?.IsVisible != true) return;
-        Reading = reading;
+        SetReading(reading);
         if (error is not null && _samplingError != error.Message) ReportFailure("性能采样失败。", error);
         else if (error is null && _samplingError.Length != 0) _context.Log.Write(_context.PluginId, "性能采样已恢复。");
         _samplingError = error?.Message ?? "";
@@ -307,7 +307,7 @@ public partial class HudModel : ObservableObject
         if (_stopped) return _sampling;
         _stopped = true; _ready = false; _revision++;
         UpdateControls();
-        _timer.Stop(); _preview.Stop();
+        _timer.Stop(); _preview.Stop(); _rotation.Stop();
         if (_window is { } window)
         {
             window.PowerChanged -= ReadPower; window.Dismissed -= Hide; window.MonitorsChanged -= UpdateMonitors;

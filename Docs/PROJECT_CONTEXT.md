@@ -4,13 +4,15 @@
 
 ## 1. 当前工作
 
-宿主仍处于 M5 发布准备；本轮处理用户指出的加载器名称硬编码，证据见 [E67](PROJECT_HISTORY.md#evidence-framework-assembly-inventory)。Core 构建时嵌入 SDK 已解析的 Microsoft.NETCore.App 平台清单，替换逐个名称和 System.* 前缀判断；包含运行时实现程序集，部署不依赖 SDK。共享 SDK 版本、私有依赖和路径边界保持不变，不增加库/公共 API。
+宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态、显示/隐藏、暂停/恢复、预览、最近内容和布局；设置保留启用、默认常驻、提醒、穿透、动画。两处保存各自字段，不隐式提交另一页草稿；托盘临时指标与持久指标分开。启动失败禁用所有控制，错误进入统一日志；采样策略未增加主页面轮询。
+本轮 E68 仅推进 HUD 第二步，SystemHud 0.2.0 支持最多 32 个单指标方案，新增/复制/删除/重命名、保存并使用、撤销、3–300 秒顺序轮播；五个文字变量及单百分比阈值颜色规则。编辑预览标明示例数据，真实桌面草稿预览 6 秒；两者和运行 HUD 复用 HudCard。主页面负责这些功能和共用位置，设置页仍只有五项持久偏好。
 
-E67 两项 Review 已修正：私有依赖缺失/解析后消失使用 FileLoadException 终止解析；现有夹具改为真实 System.* DLL，校验 Default 按名解析前提、随包隔离、缺失原因和全局 AssemblyResolve 不触发，删除动态替身。原 gpt-6.1-sol / high 子代理静态复核未发现新增确定缺陷。最新 15 工程隔离 Release 构建及独立夹具 Rebuild 均为 0 警告/0 错误，自包含发布通过，PE 引用/deps.json 静态一致。检查只编译未运行，不是运行验收通过。
+方案独立保存在 profiles.json schema 1；旧 hud.json 不迁移，首次由旧 Metric 建立默认方案。三处保存互不提交草稿；坏文件保留到用户显式保存，保存失败不更新内存列表。隐藏/暂停停止采样与轮播，提醒/草稿预览暂挂轮播，到期恢复原方案及最近读数；未知百分比不冒充零。未增加依赖库或公共 API。
 
-产物路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)。E67 更新宿主，HUD 沿用 E66 的 0.1.1 ZIP，不重打插件。F5 用户显式退出后重新构建宿主；HUD 尚为 0.1.0 时才需安装 0.1.1 并显式退出重启。E66 的独立打包证据为历史，A25 实际修复效果仍待复测。不覆盖已安装 DLL/数据，不启动程序。三步计划仍为基础 HUD → 多方案/轮播/模板/颜色规则/编辑 → 高级传感器/数据源，后两步未实施。
+HudChecks 与插件隔离构建、引用现有 E67 宿主 SDK 的独立 Rebuild 均 0 警告/0 错误。ZIP 9 文件与输出一致，无共享 SDK DLL，234 个宿主文件哈希未变。纯逻辑检查仅编译未执行，Windows 交互未接管，A26 待验；A25 只增加用户基本反馈，不外推专项硬件通过。当前 ZIP 路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)，证据见 [E68](PROJECT_HISTORY.md#evidence-hud-profiles)。
+
+本轮没有修改框架源码或重新发布宿主。在已更新 E67 加载器的宿主上只需安装 0.2.0 ZIP、显式退出重启。第三步 GPU/温度/硬件传感器/探测/HTTP/JSON/DeepSeek 尚未实施，不能把前两步当作整个参考程序已复刻。
 
 ## 2. 保留的产品决定
 
@@ -35,6 +37,7 @@ E67 两项 Review 已修正：私有依赖缺失/解析后消失使用 FileLoadE
 | 工作 | 入口 |
 | --- | --- |
 | 插件依赖装载 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[Core 清单嵌入](../TractorTool.Core/TractorTool.Core.csproj)、[机制夹具](../tests/IndependentPlugin/ProbePlugin.cs) |
+| HUD 方案/编辑 | [HudProfile](../Plugins/TractorTool.Plugins.SystemHud/HudProfile.cs)、[编辑模型](../Plugins/TractorTool.Plugins.SystemHud/HudModel.Profiles.cs)、[共享卡片](../Plugins/TractorTool.Plugins.SystemHud/HudCard.axaml) |
 | HUD 页面/生命周期 | [HudView](../Plugins/TractorTool.Plugins.SystemHud/HudView.axaml)、[HudModel](../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) |
 | Windows 采集/窗口 | [WindowsMetrics](../Plugins/TractorTool.Plugins.SystemHud/WindowsMetrics.cs)、[HudWindow](../Plugins/TractorTool.Plugins.SystemHud/HudWindow.axaml.cs) |
 | HUD 规则/纯逻辑检查 | [插件文档](Plugins/SystemHud.md)、[HudChecks](../tests/TractorTool.HudChecks/Program.cs) |
@@ -42,4 +45,4 @@ E67 两项 Review 已修正：私有依赖缺失/解析后消失使用 FileLoadE
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户确认 E67 加载器边界与 HUD 0.1.1 的运行行为；两项 Review 实现已闭合，A03/A25/A24 运行验收未关闭。HUD 第二步及宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话和无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)。
+下一步由用户验证 0.2.0 的 A26 交互，再按三步计划接续高级数据源；需要框架修改时先停下说明，等架构侧分析。A03/A25/A24 专项和宿主 M5 的远程发布、媒体/硬件、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)。

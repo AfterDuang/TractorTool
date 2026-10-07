@@ -26,7 +26,7 @@ internal sealed class WindowsMetrics
         _cpu = (idle, kernel, user);
         // ponytail: GetSystemTimes covers one processor group; use PDH if >64-CPU aggregate is required.
         var scope = GetActiveProcessorGroupCount() > 1 ? "当前处理器组 · 每秒采样" : "处理器使用率 · 每秒采样";
-        return new("CPU", percent is { } p ? $"{p:0}%" : "—", percent is null ? "正在建立采样基线…" : scope, percent ?? 0);
+        return new("CPU", percent is { } p ? $"{p:0}%" : "—", percent is null ? "正在建立采样基线…" : scope, percent);
     }
 
     private static HudReading Memory()
@@ -69,7 +69,7 @@ internal sealed class WindowsMetrics
         var percent = !missing && status.Percent <= 100 ? (double?)status.Percent : null;
         var detail = status.Ac == 1 ? "已连接电源" : status.Ac == 0 ? "正在使用电池" : "电源状态未知";
         if (!missing && status.BatteryFlags != 255 && (status.BatteryFlags & 8) != 0) detail = "正在充电";
-        return (status.Ac, new("电量", percent is { } p ? $"{p:0}%" : "—", missing ? "未检测到电池 · " + detail : detail, percent ?? 0));
+        return (status.Ac, new("电量", percent is { } p ? $"{p:0}%" : "—", missing ? "未检测到电池 · " + detail : detail, percent));
     }
 
     [StructLayout(LayoutKind.Sequential)]

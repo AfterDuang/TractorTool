@@ -42,10 +42,7 @@ public sealed record HudSettings : IVersionedSettings
     }
 }
 
-public sealed record HudReading(string Label, string Value, string Detail, double Percent = 0)
-{
-    public bool HasPercent => Label is "电量" or "CPU" or "内存";
-}
+public sealed record HudReading(string Label, string Value, string Detail, double? Percent = null);
 
 public static class HudCounters
 {

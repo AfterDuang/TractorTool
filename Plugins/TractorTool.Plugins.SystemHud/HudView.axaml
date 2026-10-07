@@ -6,6 +6,7 @@
       <Border Classes="card">
         <StackPanel Spacing="12">
           <TextBlock Text="{Binding RuntimeState}" Classes="sectionTitle" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ActiveProfileName, StringFormat='当前方案：{0}'}" Classes="caption" />
           <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
           <WrapPanel Orientation="Horizontal">
             <Button Content="{Binding VisibilityAction}" Classes="accent" Command="{Binding ToggleVisibilityCommand}" Margin="0,0,10,8" />
@@ -13,24 +14,72 @@
             <Button Content="预览 6 秒" Command="{Binding PreviewCommand}" Margin="0,0,0,8" />
           </WrapPanel>
           <TextBlock Text="最近显示的内容" Classes="caption" />
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <TextBlock Text="{Binding Reading.Label}" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding Reading.Value}" FontSize="28" FontWeight="SemiBold" />
-          </StackPanel>
-          <TextBlock Text="{Binding Reading.Detail}" TextWrapping="Wrap" Classes="caption" />
+          <local:HudCard DataContext="{Binding Display}" HorizontalAlignment="Left" />
           <TextBlock Text="HUD 隐藏或暂停时停止刷新，保留最后一次显示内容。启用、默认常驻和提醒等偏好在插件设置中调整。" TextWrapping="Wrap" Classes="caption" />
         </StackPanel>
       </Border>
       <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="显示方案" Classes="sectionTitle" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" IsEnabled="{Binding CanSwitchProfile}"
+                      HorizontalAlignment="Stretch" AutomationProperties.Name="选择要编辑的方案">
+              <ComboBox.ItemTemplate><DataTemplate x:DataType="local:HudProfile"><TextBlock Text="{Binding Name}" /></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+              <Button Content="新增" Command="{Binding AddProfileCommand}" />
+              <Button Content="复制" Command="{Binding CopyProfileCommand}" />
+              <Button Content="删除" Command="{Binding DeleteProfileCommand}" />
+            </StackPanel>
+          </Grid>
+          <TextBlock Text="有未保存的修改：保存或撤销后可以切换方案。" Classes="caption" IsVisible="{Binding HasDraftChanges}" />
+          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+            <TextBlock Text="方案名称" /><TextBlock Grid.Column="1" Text="指标" />
+            <TextBox Grid.Row="1" Text="{Binding ProfileName}" MaxLength="40" AutomationProperties.Name="方案名称" />
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="方案指标" />
+          </Grid>
+          <Expander Header="文字模板与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <StackPanel Spacing="10" Margin="0,12,0,0">
+              <TextBlock Text="可用变量：{label} 指标名，{value} 显示值，{detail} 状态说明，{percent} 百分比数字，{name} 方案名。每个方案显示一种指标；不支持脚本或表达式。" Classes="caption" />
+              <TextBlock Text="标题" /><TextBox Text="{Binding TitleTemplate}" MaxLength="60" AutomationProperties.Name="标题模板" />
+              <TextBlock Text="数值" /><TextBox Text="{Binding ValueTemplate}" MaxLength="80" AutomationProperties.Name="数值模板" />
+              <TextBlock Text="说明" /><TextBox Text="{Binding DetailTemplate}" MaxLength="160" AutomationProperties.Name="说明模板" />
+              <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+                <TextBlock Text="基础颜色" /><TextBlock Grid.Column="1" Text="满足规则时的颜色" />
+                <TextBox Grid.Row="1" Text="{Binding AccentColor}" MaxLength="7" AutomationProperties.Name="基础颜色" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RuleColor}" MaxLength="7" AutomationProperties.Name="规则颜色" />
+              </Grid>
+              <CheckBox Content="按百分比改变颜色（电量、CPU、内存）" IsChecked="{Binding RuleEnabled}" />
+              <Grid ColumnDefinitions="*,*" ColumnSpacing="16" IsEnabled="{Binding RuleEnabled}">
+                <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="阈值比较方式" />
+                <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="百分比阈值" />
+              </Grid>
+              <TextBlock Text="编辑预览 · 示例数据，不代表本机读数。错误时保留上一次有效预览。" Classes="caption" />
+              <local:HudCard DataContext="{Binding EditorDisplay}" HorizontalAlignment="Left" />
+            </StackPanel>
+          </Expander>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <CheckBox Content="按列表顺序轮播已保存方案" IsChecked="{Binding RotateProfiles}" />
+            <NumericUpDown Grid.Column="1" Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" Width="150" FormatString="0' 秒'" AutomationProperties.Name="轮播间隔秒数" />
+          </Grid>
+          <TextBlock Text="轮播仅在显示且未暂停时进行；电源提醒和草稿预览期间暂停轮播。" Classes="caption" />
+          <TextBlock Text="{Binding ProfileError}" Foreground="{DynamicResource AppLogErrorBrush}" />
+          <WrapPanel>
+            <Button Content="保存并使用" Classes="accent" Command="{Binding SaveProfileCommand}" Margin="0,0,10,8" />
+            <Button Content="桌面预览草稿" Command="{Binding PreviewProfileCommand}" Margin="0,0,10,8" />
+            <Button Content="撤销修改" Command="{Binding RevertProfileCommand}" Margin="0,0,0,8" />
+          </WrapPanel>
+        </StackPanel>
+      </Border>
+      <Border Classes="card">
         <StackPanel Spacing="14">
-          <TextBlock Text="显示内容与位置" FontWeight="SemiBold" FontSize="16" />
-          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-            <TextBlock Text="指标" /><TextBlock Grid.Column="1" Text="显示器" />
-            <ComboBox Grid.Row="1" ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="指标" />
-            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Monitors}" SelectedIndex="{Binding Monitor}" HorizontalAlignment="Stretch" AutomationProperties.Name="显示器" />
-            <TextBlock Grid.Row="2" Text="锚点" /><TextBlock Grid.Row="2" Grid.Column="1" Text="缩放比例" />
-            <ComboBox Grid.Row="3" ItemsSource="{Binding Anchors}" SelectedIndex="{Binding Anchor}" HorizontalAlignment="Stretch" AutomationProperties.Name="锚点" />
-            <NumericUpDown Grid.Row="3" Grid.Column="1" Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" AutomationProperties.Name="缩放比例" />
+          <TextBlock Text="窗口位置 · 所有方案共用" FontWeight="SemiBold" FontSize="16" />
+          <TextBlock Text="显示器" />
+          <ComboBox ItemsSource="{Binding Monitors}" SelectedIndex="{Binding Monitor}" HorizontalAlignment="Stretch" AutomationProperties.Name="显示器" />
+          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
+            <TextBlock Text="锚点" /><TextBlock Grid.Column="1" Text="缩放比例" />
+            <ComboBox Grid.Row="1" ItemsSource="{Binding Anchors}" SelectedIndex="{Binding Anchor}" HorizontalAlignment="Stretch" AutomationProperties.Name="锚点" />
+            <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding Scale}" Minimum="0.6" Maximum="2" Increment="0.1" FormatString="0.0" AutomationProperties.Name="缩放比例" />
           </Grid>
           <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
             <TextBlock Text="水平偏移" /><TextBlock Grid.Column="1" Text="垂直偏移" />
@@ -40,7 +89,7 @@
           <TextBlock Text="CPU、内存和网速仅在显示时每秒读取。网速是活动接口的总和，虚拟网卡可能重复统计。" Classes="caption" TextWrapping="Wrap" />
         </StackPanel>
       </Border>
-      <Button Content="保存布局" Classes="accent" Command="{Binding ApplyLayoutCommand}" HorizontalAlignment="Left" />
+      <Button Content="保存窗口位置" Classes="accent" Command="{Binding ApplyLayoutCommand}" HorizontalAlignment="Left" />
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" />
     </StackPanel>
   </ScrollViewer>

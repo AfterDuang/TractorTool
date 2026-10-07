@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.SystemHud",
   "name": "桌面状态 HUD",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "entryAssembly": "TractorTool.Plugins.SystemHud.dll",
   "entryType": "TractorTool.Plugins.SystemHud.HudPlugin",
   "apiVersion": "1.7",
