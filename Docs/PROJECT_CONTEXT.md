@@ -8,7 +8,7 @@
 
 本轮 E73 交付 SystemHud 0.3.2：左右“状态预览 / 显示方案”标题同规格对齐；复用 UsesCustomHeader 让窄窗口滚动条贴页面右边缘，内容保留 28 DIP 留白。沿用可用宽度 900 DIP 断点、左 400 DIP/右剩余宽度和单一滚动所有者，不重建控件或清草稿。
 
-E70 已将 HUD 源码按 Configuration / Sampling / ViewModels / Views 分目录，[源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md) 标明修改落点。E71 精简[项目首页](../README.md)与[架构](ARCHITECTURE.md)：分别保留框架入口、公共机制与失败边界；SDK 细则归[插件规范](PLUGIN_DEVELOPMENT.md)，业务归插件文档，参考过程归历史。文档整理未改实现或验收状态。
+E70 的 HUD 源码职责见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。E71 整理框架文档及引用：需求/架构/接入/状态分工见[文档导航](README.md)，依赖归属见[分类表](PLUGIN_DEVELOPMENT.md#dependency-kinds)。已纠正宿主自有源的旧说明；Build-Plugin 仍有 MVVM 和许可收集限制，详见[脚本边界](../scripts/README.md#插件打包的现有适用范围)。仅改文档，未改实现或验收状态。
 
 按用户选择默认关闭点击穿透，桌面 HUD 直接原生拖动，结束时保存一次；删除“窗口位置”页及锚点/偏移/显示器编辑同步代码，缩放移到设置。新位置用屏幕显示名称和可移动工作区相对坐标恢复；旧锚点配置仅作首次拖动前兼容回退，已保存的穿透 true 保留并在页面提示关闭。拖动只合并位置、不提交草稿；保存失败回到原位置，拖动期间暂停预览到期和轮播。六项开关、缩放及独立 DeepSeek 凭据仍在设置。
 

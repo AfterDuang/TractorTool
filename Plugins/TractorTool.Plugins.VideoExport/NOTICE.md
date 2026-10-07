@@ -4,3 +4,14 @@
 FFmpeg 由宿主包管理器按需下载，不包含在插件 ZIP 内。
 私有依赖 CommunityToolkit.Mvvm 8.4.2 的许可见 Licenses。
 Avalonia 和 TractorTool SDK 由宿主共享，不随插件分发。
+
+## 外部工具来源
+
+本插件清单固定 Gyan 的 FFmpeg / ffprobe 9.0.2 essentials Windows x64 构建，通过 GitHub Release 附件按需取得。上游将该构建标为 GPLv3；下载包内 LICENSE 与 README.txt 保留原样。
+
+- Release / 对应源码：[GyanD/codexffmpeg 9.0.2](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2)
+- 附件：`ffmpeg-9.0.2-essentials_build.zip`
+- 构建和许可说明：[Gyan FFmpeg builds](https://www.gyan.dev/ffmpeg/builds/)
+- SHA256：`60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`
+
+版本、附件和校验值以随包 `plugin.json` 为准。

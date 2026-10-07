@@ -20,13 +20,13 @@
 
 插件只依赖公开 Contracts/UI 及自己的私有依赖，不引用 TractorTool 应用工程或 TractorTool.Core。Contracts 不依赖 Avalonia/Windows；UI 负责 Avalonia 页面和共享控件。平台专属能力放在对应插件或适配层。
 
-宿主不得通过静态项目引用绑定具体插件。首版两个正式插件也按普通插件独立构建和加载；[独立测试插件](../tests/IndependentPlugin/ProbePlugin.cs) 只验证机制，不替代正式业务。
+宿主不得通过静态项目引用绑定具体插件。所有插件按同一 SDK 独立构建和加载；[独立测试插件](../tests/IndependentPlugin/ProbePlugin.cs) 只验证机制，不替代正式业务。
 
 <a id="source-organization"></a>
 
 ### 1.1 源码组织与职责
 
-以下为插件源码布局示例，真实目录及阅读顺序见 [SystemHud 源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。目录名是插件内部约定，宿主按清单和公开接口加载，不按 `Views`、`ViewModels` 等目录扫描注册；小插件无需套齐所有目录。
+以下为可选的职责布局，具体目录由插件决定。宿主按清单和公开接口加载，不按 `Views`、`ViewModels` 等目录扫描注册；小插件无需套齐所有目录。
 
 ```text
 TractorTool.Plugins.Example/
@@ -43,7 +43,7 @@ TractorTool.Plugins.Example/
 └─ TractorTool.Plugins.Example.csproj
 ```
 
-业务目录使用具体名称，例如 HUD 的 `Sampling/`。从 `plugin.json` 和入口类读起，再跟到模型、业务实现和页面；接入示例见 [IndependentPlugin](../tests/IndependentPlugin/ProbePlugin.cs)，交付步骤见[独立构建与打包](#6-开发构建与安装验证)。
+业务目录按用途命名。从 `plugin.json` 和入口类读起，再跟到模型、业务实现和页面；最小接入见 [IndependentPlugin](../tests/IndependentPlugin/ProbePlugin.cs)，交付见[独立构建与打包](#6-开发构建与安装验证)。
 
 | 修改内容 | 建议落点与边界 |
 | --- | --- |
@@ -99,13 +99,18 @@ TractorTool.Plugins.Example/
 
 AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。DataRoot 默认位于 %LOCALAPPDATA%/TractorTool；修改数据根目录不改变插件代码位置。软件目录不可写时明确报错，不改装到数据目录。完整目录和启动指针规则见 [架构：目录与迁移](ARCHITECTURE.md#storage)。
 
-三类依赖分别处理：
+<a id="dependency-kinds"></a>
 
-- **宿主共享 SDK**：TractorTool.Contracts、TractorTool.UI、Avalonia 及 Avalonia.*、FluentAvalonia、MicroCom.Runtime 由宿主提供，插件包不携带另一套 DLL。固定已验证版本；复制共享副本或程序集身份不匹配会导致拒绝加载。
-- **插件私有依赖**：随插件提供 DLL、必要的 deps.json、资源和与目标平台匹配的原生库；不能依赖开发机 NuGet 缓存、工程相对路径或软件目录外的链接。依赖可由自己的项目或包构建，但不能成为宿主到具体插件的静态引用。
-- **外部可执行工具**：由宿主包服务提供版本化路径和占用保护，不混入插件代码目录。包来源及版本由宿主维护，插件不自行下载或搜索系统 PATH。
+### 依赖分类
 
-.NET 基础框架由宿主运行时提供，无需插件携带或向加载器添加 DLL 名称。Core 构建时嵌入 SDK 的 Microsoft.NETCore.App 平台清单，覆盖 Win32、Visual Basic 及运行时实现程序集；第三方 DLL 即使叫 System.* / Microsoft.* 也不会因此获得宿主兜底，仍须随插件提供。共享 SDK 的显式列表和版本校验保持独立。
+| 类型 | 谁声明/提供 | 交付与使用方式 |
+| --- | --- | --- |
+| .NET 平台程序集 | 目标框架及宿主运行时 | 不随插件重复打包；范围来自 SDK 平台清单，不向加载器逐个补 DLL 名称 |
+| 共享 SDK | 宿主提供 Contracts、UI、Avalonia / Avalonia.*、FluentAvalonia、MicroCom.Runtime | 编译引用兼容版本，插件 ZIP 不带副本；共享程序集身份不匹配会拒绝加载 |
+| 私有托管/原生库 | 插件自身的项目或 NuGet 依赖 | 随插件携带 DLL、必要的 deps.json、平台原生库、资源与许可；不得依赖开发机缓存或包外链接 |
+| 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
+
+NuGet 是构建期依赖渠道，GitHub Release 是当前外部工具安装渠道，两者不是同一种“源”。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
 
 插件代码是可信的进程内代码；AssemblyLoadContext 不是安全沙箱。不承诺热卸载、不可信代码隔离或任意插件故障都不影响宿主。
 
@@ -156,11 +161,11 @@ public void RegisterTrayMenu(IPluginTrayMenu menu)
 
 ### 有限任务（API 1.6）
 
-使用 `context.Tasks` 的 [任务契约](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)。QueueAsync 提交单项，QueueBatchAsync 一次登记整批并持久化摘要后返回句柄；业务按自己的顺序逐项等待 RunAsync，不以并行提交绕过串行要求。任务申请只包含批次标识和名称，具体参数快照及结果校验由插件拥有。
+使用 `context.Tasks` 的 [任务契约](../TractorTool.Contracts/Tasks/BackgroundTasks.cs)。QueueAsync 提交单项，QueueBatchAsync 先持久化整批摘要再返回句柄；执行顺序和并发策略由插件决定，通用服务不要求所有插件串行。任务申请只包含批次标识和名称，具体参数快照及结果校验由插件拥有。
 
 RunAsync 在后台线程调用业务回调，回调通过 IProgress 报告百分比和状态，使用提供的令牌响应取消；UI 状态自行经调度投递。回调只能在输出校验、最终提交和所属资源清理结束后正常返回实际结果。正常返回记成功并保留结果；提交后的迟到取消不把结果改成已取消。清理失败须抛出实际错误，不伪装成取消。
 
-页面切换和隐藏不释放任务句柄或包租约；插件停止时响应生命周期取消并等待工作。宿主“日志 → 任务进度”汇总所有接入插件的任务，提供查询、单项/整批取消及“打开＋插件名”入口，按 PluginId 打开该插件第一个普通页面；没有可用页面则进入插件管理，插件无需自建任务中心。活跃任务的显式退出先确认，系统退出跳过确认并有界停止。任务摘要仅保存通用状态和结果，重启将未完成项记为中断，插件引导用户重新提交，不自动恢复编码或删除遗留用户输出。损坏摘要文件保留并阻止新执行，任务页可重试记录保存。原 PluginContext 构造/解构及旧程序集身份保留，手工测试上下文仍可能没有 Tasks，使用新能力的插件需声明 API 1.6。
+页面切换和隐藏不释放任务句柄或包租约；插件停止时响应生命周期取消并等待工作。宿主“日志 → 任务进度”汇总所有接入插件的任务，提供查询、单项/整批取消及“打开＋插件名”入口，按 PluginId 打开该插件第一个普通页面；没有可用页面则进入插件管理，插件无需自建任务中心。活跃任务的显式退出先确认，系统退出跳过确认并有界停止。任务摘要仅保存通用状态和结果，重启将未完成项记为中断，插件引导用户重新提交，不自动恢复执行或删除遗留用户输出。损坏摘要文件保留并阻止新执行，任务页可重试记录保存。原 PluginContext 构造/解构及旧程序集身份保留，手工测试上下文仍可能没有 Tasks，使用新能力的插件需声明 API 1.6。
 
 ### 工具进程（API 1.1）
 
@@ -168,24 +173,24 @@ RunAsync 在后台线程调用业务回调，回调通过 IProgress 报告百分
 
 执行等待与页面无关，传入业务取消令牌；宿主退出/插件加载失败时服务封闭新调用并取消已有调用。根进程结束时其后代也会结束，不得用此接口启动应独立常驻的软件。返回非零退出码时由插件展示业务失败；调用取消为 OperationCanceledException，执行超时为 TimeoutException，清理失败为 IOException，不能把清理异常显示成“已安全取消”。
 
-输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限内容仍被读取以免管道阻塞。解析 ffprobe JSON 前必须检查截断，必要时显式增大上限。API 1.5 的可选 `ProcessRequest.StandardOutputReceived` 接收 worker 顺序发送的数据块，不保证完整行，超过最终捕获上限也继续通知；插件自行有界组行、解析和投递 UI，回调必须快速返回，不同步等待 UI，抛异常会终止本次进程。进度达到结束标记不代表输出已校验成功；未使用回调的旧调用保持原行为。具体进程所有权及平台限制见 [架构 4.2](ARCHITECTURE.md#42-进程服务)。
+输出为 UTF-8，stdout/stderr 各自有长度上限和截断标记；超限仍排空管道。解析结构化输出前检查截断，必要时显式增大上限。API 1.5 的可选 `ProcessRequest.StandardOutputReceived` 顺序通知数据块，不保证完整行，超过最终捕获上限也继续通知；插件自行有界组行、解析和投递 UI。回调须快速返回、不同步等待 UI，抛异常会终止本次进程；结束标记不等于结果已校验。平台与清理边界见[进程服务](ARCHITECTURE.md#42-进程服务)。
 
 ### 外部工具接入（API 1.4）
 
 插件在用户使用功能时调用 `TryRequestAsync`，由宿主复用已有包，或解析可信源并确认下载、安装。用户选择“先不安装”正常返回 `null`，插件保留输入并结束本次操作，不作为异常；调用方 token 取消仍抛出 `OperationCanceledException`，未提供的版本/平台抛出 `NotSupportedException`。旧 API 1.3 `RequestAsync` 的签名与拒绝时抛取消异常的语义保持兼容，新插件使用 1.4。失败应在功能页显示可处理状态。插件不自建下载器。安装包独立于插件保留，宿主设置统一清理未引用包。
 
-清单声明固定包身份及 GitHub 安装资料，详见下节。插件初始化不自动下载，不执行安装脚本，不持有无业务需要的长期租约。清单仅扩展 JSON 字段，公开 PackageReference/Contracts ABI 不变；旧版宿主不具备本轮 GitHub 解析能力，新清单请配合 E60 或之后的宿主使用。
+清单声明固定包身份及 GitHub 安装资料，详见下节。插件初始化不自动下载、不执行安装脚本、不持有无业务需要的长期租约。GitHub 接入扩展的是 JSON 字段，未改变 PackageReference/Contracts ABI；仅 API 1.4 声明不能证明旧宿主具备此解析能力，应使用[当前宿主构建](DEVELOPMENT.md#local-artifacts)。
 
-通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)；仅在执行任务时取得租约：
+通过 `context.Packages` 查询 [PackageStatus](../TractorTool.Contracts/Packages/IExternalPackageService.cs)，在实际使用工具时取得租约。下例与后文清单使用同一个机制夹具：
 
 ```csharp
 var packages = context.Packages ?? throw new NotSupportedException("需要支持 API 1.4 的宿主。");
-using var lease = await packages.TryRequestAsync(new("FFmpeg", "9.0.2"), cancellationToken);
+using var lease = await packages.TryRequestAsync(new("ripgrep", "14.1.1"), cancellationToken);
 if (lease is null) return; // 用户暂不安装；保留已选择的输入，允许稍后重试。
 var result = await context.Processes!.RunAsync(
-    new(lease.Tools["ffprobe"], ["-v", "error", "-show_format", "-show_streams", "-of", "json", inputPath]),
+    new(lease.Tools["rg"], ["--version"]),
     cancellationToken);
-// 检查退出码、截断状态，再解析 JSON；退出 using 之后才释放该版本占用。
+// 检查退出码、截断状态与版本输出；退出 using 后才释放该版本占用。
 ```
 
 不能缓存租约外的工具路径再启动进程，不能在进程/输出读取仍活跃时释放租约。页面切换不应释放后台任务拥有的租约。宿主按插件生命周期收回遗漏租约，但这不替代正确的 using/取消逻辑。并发申请合并确认与安装；取消自己的等待不取消其他插件的下载。原 `AcquireAsync` 保持只获取已安装包的语义。禁用插件仍保留依赖引用，卸载重启后才解除，包文件不会联动删除。存储/事务边界见 [包管理](ARCHITECTURE.md#41-包管理)。
@@ -226,7 +231,7 @@ var result = await context.Processes!.RunAsync(
 
 工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
-[视频插件](../Plugins/TractorTool.Plugins.VideoExport/plugin.json) 自带 GyanD/codexffmpeg 的 FFmpeg 9.0.2 声明；Core 没有 FFmpeg 专属目录。[PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 独立申请 ripgrep 14.1.1 并只执行 `--version`，不搜索文件、不进入正式分发。GitHub 接口依据 [Release by tag](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name)，测试附件见 [ripgrep Release](https://github.com/BurntSushi/ripgrep/releases/tag/14.1.1)。
+[PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 演示上述声明与调用，只读取版本、不搜索文件、不进入正式分发。GitHub 接口依据 [Release by tag](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name)，测试附件见 [ripgrep Release](https://github.com/BurntSushi/ripgrep/releases/tag/14.1.1)。
 
 运行验收仍由用户安排，使用新宿主和隔离 profile，不需搭建虚拟源：
 
@@ -248,8 +253,8 @@ var result = await context.Processes!.RunAsync(
 - 后台变化经 UI 调度更新状态；列表、日志和订阅须有边界。加载、空、失败状态明确，长路径与较窄窗口可用。
 - 保持绑定类型正确。字符串是否为空使用显式布尔属性并通知变化，不用 `!!字符串` 强制转换；不能用关闭编译绑定掩盖路径错误。
 - 配置模型实现 `IVersionedSettings`，通过 `context.Settings.Load<T>(name)` / `Save<T>(name, value)` 读写；该存储已绑定插件 ID。名称变化不能导致数据换目录。
-- 模型变更须兼顾已有配置、版本拒绝/迁移与回退，不在读取失败时覆盖原文件。插件专属设置由插件自己解释；宿主不知道码率等业务字段。
-- 日志通过上下文记录可定位的插件/操作信息，不输出剪贴板正文、完整媒体内容或其他敏感数据。API 1.7 支持 `context.Log.Write(AppLogLevel.Warning, context.PluginId, message)`；原 Write 签名保留，无异常为 INFO、带异常为 ERROR。调用新重载的插件须声明 API 1.7。
+- 模型变更须兼顾已有配置、版本拒绝/迁移与回退，不在读取失败时覆盖原文件。插件专属设置由插件自己解释，宿主不理解业务字段。
+- 日志通过上下文记录可定位的插件/操作信息，不输出用户正文、凭据或其他敏感数据。API 1.7 支持 `context.Log.Write(AppLogLevel.Warning, context.PluginId, message)`；原 Write 签名保留，无异常为 INFO、带异常为 ERROR。调用新重载的插件须声明 API 1.7。
 - 记录重要操作结果、生命周期和失败，不记录日常导航、逐帧进度或重复刷新。正常取消记 INFO，能力降级记 WARNING，真正失败带必要异常记 ERROR；未请求的取消不能冒充用户取消。公共任务服务已记录排队/执行/取消/终态和每 10% 或阶段变化，插件无需重复写一套公共任务日志。
 - 更新优先订阅事件；若确有无法避免的轮询，应在实际启用时记录一次面向开发者的优化 WARNING，说明范围、频率和退出条件，禁止每轮刷屏。宿主已对 Windows 进程树终止确认提供该提醒，不需要插件重复实现。
 
@@ -276,11 +281,13 @@ registry.AddNavigationPage("main", "我的工具", () => new MyToolView(),
 | 用途 | 引用与构建方式 |
 | --- | --- |
 | 日常编辑/构建 | 不传 `HostSdkDir`；插件 `ProjectReference` 公开 Contracts/UI，普通解决方案还原、构建和设计时分析使用同一依赖图；无需预先发布宿主 |
-| 独立插件交付 | 显式传入有效 `HostSdkDir`；插件只引用已发布 Contracts/UI DLL，`Private=false`；通过打包脚本正常 restore 并 `-t:Rebuild`，校验包内没有共享 SDK 副本 |
+| 独立插件交付 | 显式传入有效 `HostSdkDir`；公共 SDK 改为已发布 Contracts/UI DLL，`Private=false`，私有项目/NuGet 依赖仍正常构建；打包脚本 restore 并 `-t:Rebuild`，检查共享副本 |
 | 检查源码开发 | 检查工程默认引用被测项目；这只方便编辑和编译，不能作为独立安装证明 |
 | 发布产物检查 | IntegrationChecks 显式传 `HostSdkDir`；ClipboardChecks 同时传 `HostSdkDir` 和 `PluginBuildDir`，只引用指定产物。缺少任意路径或 DLL 明确失败 |
 
 参考 [IndependentPlugin.csproj](../tests/IndependentPlugin/IndependentPlugin.csproj) 的互斥条件。模式取决于是否显式提供产物路径，不随 Debug/Release 或 `DesignTimeBuild` 偷换。指定坏路径不会回退源码；切换模式时不要使用 `--no-restore`，条件依赖变化需要重新还原。正式脚本强制重新编译，避免沿用日常源码构建的 DLL。
+
+共享 Avalonia 引用仅包含编译/构建资产，不能仅凭 `PrivateAssets=all` 推定输出中没有运行库；以实际产物及打包检查为准。CommunityToolkit.Mvvm 等不在共享名单中的库仍属于插件私有依赖，须随包提供和保留许可。
 
 在 VS Code 中正常开发可直接构建解决方案：
 
@@ -290,37 +297,22 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 
 插件开发输出保留在该工程的 bin 下，不自动复制进调试宿主的 Plugins，不绕过安装状态覆盖现有版本。源码模式可能包含公共项目的传递依赖，不能把整个 bin 目录当正式插件包。需要安装时使用下方独立打包流程；宿主和插件版本各自维护。
 
-验证顺序：
+独立交付须先发布宿主到新目录并记录原文件哈希，再引用该 SDK 构建插件、核对完整依赖与许可，最后复核宿主哈希未变。源码模式编译不能代替独立构建证据；ZIP 安装、DLL 装载及真实交互也分别取证。
 
-1. 先发布宿主到新的空目录并记录原有文件 SHA256。
-2. 再以发布 SDK 模式单独重新构建插件；收集清单、入口、私有依赖、资源与许可。之前的日常源码构建不计作独立交付证据。
-3. 复制到该发布副本的 Plugins/PluginId/Version。
-4. 重新核对原有宿主文件哈希，确认无需修改/重编宿主。
-5. 使用隔离 profile 重启宿主，真实验证导航和设置注册、设置持久化、错误状态及生命周期；编译和文件复制不能替代 DLL 加载证据。
+当前 [Build-Plugin](../scripts/Build-Plugin.ps1) 适用于使用 CommunityToolkit.Mvvm 的仓库插件，要求 PowerShell 7.4+ 和根 global.json 指定的 SDK；该要求来自脚本，不是插件协议。它复制 MVVM 和插件自备许可，不自动补齐其他私有库许可，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
 
-构建、核心检查、独立机制插件加载与宿主哈希验证入口是 [Verify-PluginHost.ps1](../scripts/Verify-PluginHost.ps1)，UI 部分使用 Headless，不能代替真实 Windows 交互验收。单独构建示例（需把变量指向已发布宿主的绝对路径，从仓库根目录执行）：
+以下是命令示例，未表示已经执行；从仓库根目录操作，两个输出位置均使用新目录：
 
 ```powershell
-$publishedHost = 'H:\ProjH\TractorTool\artifacts\manual-publish'
-dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Release "-p:HostSdkDir=$publishedHost" -o .\artifacts\manual-plugin
-# 将 manual-plugin 完整输出放入该发布副本 Plugins/Test.Independent/1.0.1（版本以输出清单为准）。
-# 用隔离 --profile-root 启动宿主，具体命令见 DEVELOPMENT.md。
+# 已有兼容发布宿主时可复用其目录，省略本行。
+./scripts/Publish-Host.ps1 -Output ./artifacts/manual-publish
+# 同前文的依赖机制夹具；Project 可替换为适用的插件工程。
+./scripts/Build-Plugin.ps1 -Project ./tests/PackageProbePlugin/PackageProbePlugin.csproj -HostSdkDir ./artifacts/manual-publish -Output ./artifacts/manual-plugin
 ```
 
-此代码块是操作示例，不是新增执行证据。首次构建需要正常还原。宿主发布和隔离启动入口见 [开发操作](DEVELOPMENT.md#workflow)。
+将输出 ZIP 拖入“插件”页或选择“安装 / 更新”，确认后显式退出并重启；关闭到托盘不算重启。检查使用隔离发布副本与 profile，不覆盖正在使用的版本。新版本不得原位覆盖；SDK 投影等不在共享名单中的私有库及其许可仍须随插件交付。
 
-所有插件直接使用 [Build-Plugin](../scripts/Build-Plugin.ps1)，通过 `-Project` 指定工程。需要 PowerShell 7.4+ 和根 global.json 指定的 SDK；读取清单版本作为插件产品版本，复制实际还原依赖的许可，输出 ZIP 与 SHA256。两个正式插件的独立打包示例（从仓库根目录执行）：
-
-```powershell
-./scripts/Build-Plugin.ps1 `
-    -Project ./Plugins/TractorTool.Plugins.ClipboardHistory/TractorTool.Plugins.ClipboardHistory.csproj `
-    -HostSdkDir ./artifacts/manual-publish -Output ./artifacts/manual-clipboard
-./scripts/Build-Plugin.ps1 `
-    -Project ./Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj `
-    -HostSdkDir ./artifacts/manual-publish -Output ./artifacts/manual-video
-```
-
-输出必须是新空目录。将单个本地 ZIP 拖到宿主插件面板，或通过“插件 → 安装 / 更新”选择 ZIP；两者共用可信来源确认及校验流程。确认后显式退出并重新启动，不能只关闭到托盘。日常解决方案可以编译全部工程；发布宿主仍只指定 `TractorTool.csproj`，不会因此静态包含插件，随后独立编译/打包才是插件正式路径。SDK 投影/WinRT 等插件私有库可随插件分发，须携带自己的许可，不误作宿主共享 SDK 删除。
+[Verify-PluginHost](../scripts/Verify-PluginHost.ps1) 会运行核心和 Headless 集成检查，不属于普通打包步骤；[验证入口](DEVELOPMENT.md#automated-checks)区分会运行程序的检查与纯静态校验，未经新授权不自动执行。插件安装后仍须验证页面/设置注册、持久化、错误状态及生命周期；结果只登记到开发台账。
 
 ## 7. 插件交付要求
 
@@ -329,5 +321,3 @@ dotnet build .\tests\IndependentPlugin\IndependentPlugin.csproj -t:Rebuild -c Re
 - 验证页面与设置注册、深浅色/主题色、重启持久化和相关生命周期；有限任务与常驻服务各自验收。
 - 仅使用隔离数据和临时发布副本。静态检查、构建、自动化、集成、真实系统/UI/硬件分别报告。
 - 业务特有的用例和实现范围放各插件文档；当前结果和限制写 DEVELOPMENT.md，已完成轮次的执行详情归 PROJECT_HISTORY.md。用户接手运行测试，未经新指示不自动启动验收程序。
-
-视频插件源码为 [VideoExport 工程](../Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj)。ZIP 不捆绑 FFmpeg；首次功能使用交给宿主申请。具体版本/可测范围只见开发台账，不能以 JSON 夹具或独立编译代替真实工具执行。

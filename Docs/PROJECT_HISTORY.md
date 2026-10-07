@@ -944,6 +944,33 @@ git diff --check
 
 随后按用户截图补查 Watt 的图标实现：固定提交的主导航使用图片，设置操作使用字体符号；当时 TractorTool 的 ToolIcon 和注册元数据只接了单色符号。公共设计及固定源码链接集中在 [图标分工与扩展](#icon-reference)。参考文本保留于 `artifacts/reference-icons/`，通过 `Invoke-WebRequest` 获取固定提交源码，并用 `rg` 核对导航、SDK 和本地 NuGet XML 类型声明。该次仅调研和文档更新，没有构建或运行测试；后续彩色资源和协议接入结果见 [E09](#evidence-icons-review)，不再列为尚未实现。
 
+<a id="product-references"></a>
+
+## 产品参考资料与截图（归档）
+
+E71 从产品说明移入，保留原参考与截图；仅用于追查设计背景，不作为当前需求、依赖清单或实现证据。
+
+参考项目用于理解架构与交互，具体实现按 TractorTool 的需求选取。直接复用源码或分发第三方二进制前，确认对应版本的许可证和分发要求。
+
+- [Watt Toolkit / SteamTools](https://github.com/BeyondDimension/SteamTools)：参考插件组织、软件布局与发布形式。仓库标注 GPL-3.0。
+- [SteamTools 插件接口](https://github.com/BeyondDimension/SteamTools/blob/develop/src/BD.WTTS.Client/Plugins/Abstractions/IPlugin.cs)：参考菜单、配置和生命周期注册。
+- [CC Switch](https://github.com/farion1231/cc-switch)：参考视觉与交互；其 [package.json](https://github.com/farion1231/cc-switch/blob/main/package.json) 和 [components.json](https://github.com/farion1231/cc-switch/blob/main/components.json) 表明它使用 Tauri、React、Tailwind 和 shadcn/ui，不能直接复用为 Avalonia 控件。
+- [Apple 人机界面指南](https://developer.apple.com/design/human-interface-guidelines)：作为交互参考，具体行为符合 Windows 桌面使用习惯。
+
+参考项目结构，不要求复制其工程数量或 Avalonia 内部工程：
+
+![参考项目结构](image-2.png)
+
+参考导航和内容区布局：
+
+![参考软件主界面](image.png)
+
+![参考插件操作页面](image-1.png)
+
+参考发布资产展示方式，首版只落实 Windows：
+
+![参考发布包与校验信息](image-3.png)
+
 <a id="ui-reference"></a>
 
 ## UI 参考实现依据（M1 调研）
@@ -2143,6 +2170,10 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 同轮继续精简架构：按分层依赖、装载、生命周期、公共服务、存储、UI 和发布组织，删除具体插件业务、过时工程计数、重复版本/尺寸及实施过程；SDK 细则和操作步骤改为规范/源码入口，选型与 Python 参考链接归历史。保留私有加载终止边界、共享版本检查、事务归属/引用/租约、迁移提交前后恢复、退出限时和现有限制。核对加载器、来源服务、页面容器源码，仅改文档，未执行构建或运行程序；并行 HUD 改动不纳入本次提交。
 
 精简结果：架构正文按 LF 归一后字符数减少约 56%。本轮五份文档的 240 个本地链接、140 处锚点引用及 14 处架构反向引用均有效，文档差异空白检查通过；仅属静态文档证据。
+
+随后核对其他框架文档的引用与依赖：产品说明保留需求编号和行为，业务细节回指插件文档，参考截图归档；插件规范集中 .NET/共享 SDK/私有库/外部工具分类，区分源码与发布 SDK 引用、解决方案归属与运行装载。依赖调用和清单统一用现有机制夹具示例，收敛重复打包步骤；开发台账移除已有历史记录的过程长段，验收行保留。第三方通知移除已失效的宿主包目录说明，外部工具资料归回使用它的插件 NOTICE。源码核对还发现 Build-Plugin 要求唯一 MVVM 依赖、只自动收集该库及自备许可，已如实补充脚本限制，不修改脚本。仅文档整理，未构建、联网核验资料或执行应用/检查程序；并行插件实现和用户配置不纳入本次提交。
+
+本次静态核对：13 份文档的 382 个本地链接、177 处锚点引用有效；17 条 R 需求和 27 条 A 验收行相对当前 HEAD 均未改变。工程引用与脚本边界已对照源码，外部工具通知中的版本、仓库、标签、附件和 SHA256 与插件清单一致；本次文档差异空白检查通过。106 处外部引用未联网核验，不作为新增资料或运行证据。
 
 <a id="evidence-hud-responsive-layout"></a>
 

@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [Build-Distribution.ps1](Build-Distribution.ps1) | **完整分发总入口**：发布宿主、独立编译两个正式插件、收集许可、打 ZIP、生成版本与 SHA256 信息，最后校验；提供 CompilerPath 时同时生成安装包 | 日常发布；VS Code 菜单和 CI 都调用它 |
 | [Build-Installer.ps1](Build-Installer.ps1) | 把**已有且校验通过的分发 ZIP**编译成 setup.exe，附带 installer.json 来源信息及 SHA256SUMS；不运行生成的安装器 | 完整发布时自动调用；也可对已有 ZIP 单独生成安装包，无需重编宿主 |
-| [Build-Plugin.ps1](Build-Plugin.ps1) | 指定一个插件工程，引用已发布宿主的公开 SDK 独立构建，收集私有许可，输出插件 ZIP 和 .sha256；检查没有夹带宿主共享 DLL | 只更新某个插件时；完整分发也会调用 |
+| [Build-Plugin.ps1](Build-Plugin.ps1) | 引用发布 SDK 独立构建插件，复制 MVVM 许可与插件自备 Licenses，输出 ZIP/.sha256 并拒绝共享 DLL 副本 | 单独更新插件；适用条件见下方，完整分发也调用 |
 | [Export-DependencyNotices.ps1](Export-DependencyNotices.ps1) | 根据实际还原/发布依赖，收集第三方许可原文、NuGet 元数据和 dependencies.json；材料缺失则失败 | 完整分发自动调用，平时不用单独运行 |
 | [Generate-AppIcon.ps1](Generate-AppIcon.ps1) | 把 Artwork 中的图标母版导出为 PNG 和多尺寸 ICO，默认重写 TractorTool/Assets 中对应资源 | 更换应用图标后手动运行；普通构建直接使用已入库的图标，详见 [图标说明](../Artwork/README.md) |
 | [Get-InnoCompiler.ps1](Get-InnoCompiler.ps1) | 下载固定版本的 Inno Setup，校验 SHA256 和签名，以便携方式展开编译器，返回 ISCC.exe 路径 | 需要安装包时准备构建工具；VS Code 安装包选项和 CI 自动调用，ZIP 模式不需要 |
@@ -44,6 +44,12 @@ Build-Distribution 的输出目录结构如下；VS Code 菜单会自动使用�
 - **AssetsDir / CompilerPath**：已有分发的 `assets` 目录 / Inno Setup 的 `ISCC.exe` 文件路径。
 - **ExpectedTag / ExpectedCommit**：Verify-Distribution 的可选 Release 身份校验；两项须同时提供，要求标签等于 `v` 加构建版本、源码提交相同、工作区干净，且包含安装器。普通本地包校验不要求这两项。
 - 分发使用 PowerShell 7.4+ 和 [global.json](../global.json) 指定的 .NET SDK。宿主版本默认来自 [Directory.Build.props](../Directory.Build.props)，插件版本来自各自 plugin.json；菜单不用每次填写版本。
+
+### 插件打包的现有适用范围
+
+Build-Plugin 当前要求还原图中有且仅有一个 CommunityToolkit.Mvvm 版本，自动复制其许可及第三方通知，并复制插件源码的 `Licenses/`。它**不会自动收集所有私有 NuGet/原生库的许可**，其余材料由插件作者随项目维护；无 MVVM 依赖的插件会被此脚本拒绝，这是打包脚本限制，不是 SDK 或装载协议要求。宿主的全依赖许可收集由 Export-DependencyNotices 另行负责。
+
+`HostSdkDir` 只切换公开 SDK 的引用来源，插件私有项目与 NuGet 依赖仍正常构建。`files/`、宿主完整 `layout/` 和 `assets/` 是不同产物层级，不能把日常源码模式的 bin 当作独立插件包；依赖归属见[插件规范](../Docs/PLUGIN_DEVELOPMENT.md#dependency-kinds)。
 
 命令示例集中在 [开发入口](../Docs/DEVELOPMENT.md#workflow) 与 [独立插件打包](../Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。本页只解释脚本，当前实现和验收结果统一看 [开发台账](../Docs/DEVELOPMENT.md#current-status)。
 

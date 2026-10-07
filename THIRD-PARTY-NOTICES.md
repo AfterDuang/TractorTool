@@ -19,16 +19,13 @@ revision `6ef32198ef1f7b7b375cd4b6b90896c2a58eb4c2`,
 `Files/Languages/ChineseSimplified.isl`; author attribution is preserved in the
 translation file and the installer's About dialog.
 
-## Optional external tools: FFmpeg / ffprobe
+## Optional external tools
 
-The host catalog pins Gyan's FFmpeg 9.0.2 essentials build for Windows x64.
-It is downloaded only on user request, separately from the host and plugin DLLs.
-Upstream identifies this build as GPLv3; the ZIP's LICENSE and README.txt are retained intact.
-
-- Release / source reference: https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2
-- Build information and license: https://www.gyan.dev/ffmpeg/builds/
-- Pinned ZIP: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
-- SHA-256: `60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba`
+External tool versions, upstream releases, archive hashes and license metadata
+are declared by each plugin, not by a host catalog. The host resolves the declared
+GitHub Release asset and downloads it after user confirmation, separately from
+the host and plugin DLLs. Each plugin's NOTICE.md identifies its external tools;
+original license and notice files remain in the downloaded package.
 
 ## UI dependencies
 
