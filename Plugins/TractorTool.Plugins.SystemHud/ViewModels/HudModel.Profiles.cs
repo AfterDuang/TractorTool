@@ -62,7 +62,7 @@ public partial class HudModel
     private HudProfile Draft => new()
     {
         Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
-        Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor, Layout = DraftLayout,
+        Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor,
         RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = RuleColor,
         Address = (Address ?? "").Trim(), JsonPointer = JsonPointer, RefreshSeconds = RefreshSeconds, JsonPercentage = JsonPercentage,
         ProbeProtocol = ProbeProtocol, Port = Port, SensorId = SensorId, Currency = Currency, Drive = Drive
@@ -70,7 +70,6 @@ public partial class HudModel
 
     private void InitializeProfiles()
     {
-        InitializeLayoutEditors();
         try { _profiles = _context.Settings.Load<HudProfiles>("profiles").Normalize(_settings.Metric); }
         catch (Exception ex)
         {
@@ -94,7 +93,6 @@ public partial class HudModel
         _loadingEditor = true;
         ProfileName = profile.Name; Metric = profile.Metric;
         TitleTemplate = profile.Title; ValueTemplate = profile.Value; DetailTemplate = profile.Detail;
-        LoadLayout(profile.Layout);
         AccentColor = profile.Color; RuleEnabled = profile.RuleEnabled; Comparison = profile.Comparison;
         Threshold = profile.Threshold; RuleColor = profile.RuleColor;
         Address = profile.Address; JsonPointer = profile.JsonPointer; RefreshSeconds = profile.RefreshSeconds; JsonPercentage = profile.JsonPercentage;
@@ -126,7 +124,7 @@ public partial class HudModel
             1 => new("时钟", "12:34:56", "示例：2026/10/07 星期三"),
             2 => new("CPU", "36%", "示例：处理器使用率", 36),
             3 => new("内存", "64%", "示例：10.2 / 16.0 GiB", 64),
-            4 => new("网速", "↓ 1.2 MiB/s", "示例：↑ 128 KiB/s · 活动接口合计"),
+            4 => new("网速", "↓ 1.2 MiB/s", "示例：↑ 128 KiB/s · 活动接口合计", SecondaryValue: "↑ 128 KiB/s"),
             5 => new("网络延迟", "24 ms", "示例：ICMP 往返"),
             6 => new("HTTP 服务", "85 ms", "示例：HTTP 200 · 响应头耗时"),
             7 => new("JSON 指标", JsonPercentage ? "72" : "就绪", "示例：选定字段的值", JsonPercentage ? 72 : null),

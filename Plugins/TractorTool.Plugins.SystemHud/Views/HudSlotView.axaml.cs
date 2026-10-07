@@ -10,5 +10,8 @@ public partial class HudSlotView : UserControl
     public static readonly StyledProperty<TextWrapping> TextWrappingProperty =
         AvaloniaProperty.Register<HudSlotView, TextWrapping>(nameof(TextWrapping), TextWrapping.NoWrap);
     public TextWrapping TextWrapping { get => GetValue(TextWrappingProperty); set => SetValue(TextWrappingProperty, value); }
+    public static readonly StyledProperty<TextAlignment> TextAlignmentProperty =
+        AvaloniaProperty.Register<HudSlotView, TextAlignment>(nameof(TextAlignment));
+    public TextAlignment TextAlignment { get => GetValue(TextAlignmentProperty); set => SetValue(TextAlignmentProperty, value); }
     public HudSlotView() => InitializeComponent();
 }

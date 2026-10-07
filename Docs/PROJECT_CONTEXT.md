@@ -6,15 +6,17 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-本轮 E77 交付 SystemHud 0.4.0。用户实测 0.3.5 展开后空白、无法收起；静态追查发现 opacity=0 回调可能把正在淡入的场景永久隐藏。已删除双场景与该回调，顶部按钮持续存在。按用户最新决定实现同一指标自由布局：默认 248×44 三格、长条 400×48 四格、详细 400×184 顶部复用四格（左/中/右上/右下）加底部。单击默认与长条往返，双击两者进入详细，再双击回默认；详细单击不改变状态。手势按系统双击时限判定，6 DIP 移动取消点击并拖动。
+本轮 E78 交付 SystemHud 0.4.1。用户更正：区域划分用于开发者新增指标时填内容，不是让用户编辑排布；0.4.0 的区域编辑器是代理误解。已删入口、持久化模型与编辑 VM，改为 Views/HudLayout 的内部具名区域。顶部 Button 明确撑满，悬停不再画嵌套胶囊，去掉遮挡读数的提示框；网速下载/上传、内存容量/占用率分列，无百分比不重复同一图标，GPU 传感器提供 GPU 身份图标。长文在详情保留完整内容。
 
-区域配置在 HudLayout，编辑在 HudModel.Layout；HudPresentation 把同一读数投影到所有区域，HudSlotView 共用文字/图标/进度环，HudCard 管理布局/手势/形变，HudWindow 管理原生窗口。旧方案缺少 Layout 时自动补默认，配置记录支持保存/撤销/复制及草稿隔离。没有混合指标、脚本引擎、空动作接口或新依赖。E70 源码职责已同步[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)；完整设计见[插件文档](Plugins/SystemHud.md)。
+HudPresentation 把同一读数填入 Compact.Left/Center/Right、Strip.Left/Primary/Secondary/Right 和 Detail；详细顶部复用 Strip。HudSlotView 共用文字/图标/进度环，HudCard 管理布局/手势/形变，HudWindow 管理原生窗口。旧方案 layout 字段由 JSON 自然忽略，其余字段保留，正常保存时不再写 layout；不自动改写真实配置。不新增混合指标、游戏 FPS 采集、脚本引擎、空动作接口或依赖。阅读入口见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)与[插件文档](Plugins/SystemHud.md)。
+
+三态尺寸仍是默认 248×44、长条 400×48、详细 400×184 DIP。单击默认与长条往返，双击两者进入详细，再双击回默认；详细单击不改变状态。手势按系统双击时限判定，6 DIP 移动取消点击并拖动。保留持续存在的顶部与 E77 空白回退修正，不恢复双场景透明度隐藏回调。
 
 保留插件内 420ms 弹性宽高/圆角、180ms 出现动画和全局/已保存动画偏好；移除会相互隐藏的内容淡入逻辑。透明绘制边界 432×208，用 Win32 圆角区域与命中测试排除留白遮挡。四边避让不写配置，拖动结束保存中心一次；旧锚点、DPI/相对位置、保存失败恢复保持。长条/详细或拖动期间暂停预览到期与轮播，显式隐藏/关闭优先；点击穿透默认关闭，旧 true 保留。
 
-E77 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0 错误；仅编译未执行检查程序。ZIP 67 文件逐项哈希相符，无共享 SDK 副本，5 个 AXAML XML 可解析，234 个宿主文件哈希/数量未变。交付 `artifacts/e77-hud-layout/plugin-final/TractorTool.SystemHud-0.4.0.zip`，详见 [E77](PROJECT_HISTORY.md#evidence-hud-three-state-layout)。没有启动软件、硬件/业务网络、DPAPI 或 UI 自动化，没有替用户安装。故障修正和三态布局的真实视觉/交互仍待用户确认。
+E78 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0 错误；仅编译未执行检查程序。ZIP 67 文件逐项哈希相符，无共享 SDK 副本，5 个 AXAML XML 可解析，234 个宿主文件哈希/数量未变。交付 `artifacts/e78-hud-built-in-layout/plugin-final/TractorTool.SystemHud-0.4.1.zip`，详见 [E78](PROJECT_HISTORY.md#evidence-hud-built-in-layout)。没有启动软件、硬件/业务网络、DPAPI 或 UI 自动化，没有替用户安装。布局及此前空白/回退问题的真实闭合仍待用户确认。
 
-本轮未改框架或重新发布宿主。硬件库、采集器、凭据和宿主 M5 状态不变。部分温度传感器需要管理员/PawnIO，插件不装驱动或提权。E71 框架文档职责与打包脚本限制继续有效，见[文档导航](README.md)和[脚本边界](../scripts/README.md#插件打包的现有适用范围)。
+本轮未改框架或重新发布宿主。网速读取增加独立上传显示字段，不改采样频率或算法；硬件库、凭据和宿主 M5 状态不变。部分温度传感器需要管理员/PawnIO，插件不装驱动或提权。E71 框架文档职责与打包脚本限制继续有效，见[文档导航](README.md)和[脚本边界](../scripts/README.md#插件打包的现有适用范围)。
 
 ## 2. 保留的产品决定
 
@@ -48,4 +50,4 @@ E77 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户安装并显式退出重启 0.4.0，优先确认三态都有内容、单击/双击可返回、拖动互斥；验证区域编辑、保存/撤销/复制及旧配置。两级动画偏好、透明区域、DPI/四边/跨屏恢复、计时与写入失败继续按 A26/A27 保留。需要框架改动时先停下说明并等架构侧分析。宿主 M5 的远程发布、长期内存、迁移故障、跨会话及无 SDK 机器缺口见[验收台账](DEVELOPMENT.md#acceptance)。
+下一步由用户安装并显式退出重启 0.4.1，优先确认三态内容撑满、网速/内存分列与详情完整，单击/双击可返回、拖动互斥；不再有区域编辑入口，旧方案正常保存/撤销/复制。两级动画偏好、透明区域、DPI/四边/跨屏恢复、计时与写入失败继续按 A26/A27 保留。需要框架改动时先停下说明并等架构侧分析。宿主 M5 的远程发布、长期内存、迁移故障、跨会话及无 SDK 机器缺口见[验收台账](DEVELOPMENT.md#acceptance)。

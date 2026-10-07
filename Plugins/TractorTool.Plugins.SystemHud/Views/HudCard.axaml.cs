@@ -86,6 +86,21 @@ public partial class HudCard : UserControl
         Width = size.Width; Height = size.Height;
         Island.CornerRadius = new CornerRadius(Mode == HudMode.Detail ? 28 : size.Height / 2);
         HeaderButton.Height = Mode == HudMode.Detail ? 66 : size.Height - 2;
+        HeaderGrid.ColumnDefinitions = new ColumnDefinitions(Mode switch
+        {
+            HudMode.Compact => "28,*,Auto",
+            HudMode.Strip => "28,1.35*,*,Auto",
+            _ => "36,*,Auto"
+        });
+        HeaderGrid.RowDefinitions = new RowDefinitions(Mode == HudMode.Detail ? "*,*" : "*");
+        Grid.SetRowSpan(First, Mode == HudMode.Detail ? 2 : 1);
+        Grid.SetRowSpan(Second, Mode == HudMode.Detail ? 2 : 1);
+        Grid.SetColumn(Fourth, Mode == HudMode.Detail ? 2 : 3);
+        Grid.SetRow(Fourth, Mode == HudMode.Detail ? 1 : 0);
+        Third.MaxWidth = Mode switch { HudMode.Compact => 64, HudMode.Detail => 148, _ => double.PositiveInfinity };
+        Third.FontSize = Mode == HudMode.Compact ? 12 : 14;
+        Fourth.MaxWidth = 64;
+        Fourth.IsVisible = Mode != HudMode.Compact;
         // Visibility follows state, never animated opacity (zero is also the start of a fade-in).
         BodyScroll.IsVisible = Mode == HudMode.Detail;
         UpdateContent();
@@ -95,29 +110,21 @@ public partial class HudCard : UserControl
     private void UpdateContent()
     {
         if (DataContext is not HudDisplay display) return;
-        var slots = Mode == HudMode.Compact ? display.Compact : display.Strip;
-        var controls = new[] { First, Second, Third, Fourth };
-        HeaderGrid.ColumnDefinitions.Clear();
-        HeaderGrid.RowDefinitions = Mode == HudMode.Detail ? new RowDefinitions("*,*") : new RowDefinitions("*");
-        for (var i = 0; i < controls.Length; i++)
+        var layout = display.Layout;
+        if (Mode == HudMode.Compact)
         {
-            var control = controls[i];
-            control.IsVisible = i < slots.Length && slots[i].Content != HudContent.Hidden;
-            control.DataContext = i < slots.Length ? slots[i] : null;
-            Grid.SetRow(control, 0); Grid.SetRowSpan(control, 1); Grid.SetColumn(control, i);
-            control.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
-            if (Mode != HudMode.Detail && i < slots.Length)
-                HeaderGrid.ColumnDefinitions.Add(new ColumnDefinition(slots[i].Content == HudContent.Hidden ? new GridLength(0)
-                    : slots[i].IsGraphic ? new GridLength(28) : new GridLength(i == 1 ? 1.7 : 1, GridUnitType.Star)));
+            First.DataContext = layout.Compact.Left;
+            Second.DataContext = layout.Compact.Center;
+            Third.DataContext = layout.Compact.Right;
         }
-        if (Mode == HudMode.Detail)
+        else
         {
-            HeaderGrid.ColumnDefinitions = new ColumnDefinitions("*,1.7*,*");
-            if (slots.Length > 0 && slots[0].IsGraphic) HeaderGrid.ColumnDefinitions[0].Width = new GridLength(28);
-            Grid.SetRowSpan(First, 2); Grid.SetRowSpan(Second, 2);
-            Grid.SetColumn(Third, 2); Grid.SetColumn(Fourth, 2); Grid.SetRow(Fourth, 1);
+            First.DataContext = layout.Strip.Left;
+            Second.DataContext = layout.Strip.Primary;
+            Third.DataContext = layout.Strip.Secondary;
+            Fourth.DataContext = layout.Strip.Right;
         }
-        Body.DataContext = display.Body;
+        Body.DataContext = layout.Detail;
     }
 
     internal static SpringEasing MorphEasing() => new() { Mass = 1, Stiffness = 360, Damping = 27, InitialVelocity = 0 };

@@ -12,7 +12,6 @@ public sealed record HudProfile
     public string Title { get; init; } = "{label}";
     public string Value { get; init; } = "{value}";
     public string Detail { get; init; } = "{detail}";
-    public HudLayout Layout { get; init; } = new();
     public string Color { get; init; } = "#FFE66B";
     public bool RuleEnabled { get; init; }
     public int Comparison { get; init; }
@@ -32,9 +31,9 @@ public sealed record HudProfile
     internal static readonly Regex Token = new(@"\{(label|value|detail|percent|name|unit|updated)\}", RegexOptions.CultureInvariant);
     public static bool ValidColor(string? text) => text is { Length: 7 } && text[0] == '#'
         && text.Skip(1).All(Uri.IsHexDigit);
-    public static bool ValidTemplate(string? text, int limit, bool multiline = false)
+    public static bool ValidTemplate(string? text, int limit)
     {
-        if (text is null || text.Length > limit || (!multiline && (text.Contains('\n') || text.Contains('\r')))) return false;
+        if (text is null || text.Length > limit || text.Contains('\n') || text.Contains('\r')) return false;
         var remaining = Token.Replace(text, "");
         return !remaining.Contains('{') && !remaining.Contains('}');
     }
@@ -51,7 +50,6 @@ public sealed record HudProfile
         : Metric == 10 && (Drive is not { Length: 3 } || !char.IsAsciiLetter(Drive[0]) || Drive[1] != ':' || Drive[2] != '\\') ? "请填写本地盘符，例如 C:\\。"
         : !ValidTemplate(Title, 60) || !ValidTemplate(Value, 80) || !ValidTemplate(Detail, 160)
             ? "模板仅支持列出的变量；标题/数值/说明上限为 60/80/160 个字符，不支持换行。"
-        : Layout is null || !Layout.IsValid ? "区域布局无效：请选择内容/图标；区域模板最多 120 字符，详情模板最多 320 字符且可换行。"
         : !ValidColor(Color) || !ValidColor(RuleColor) ? "颜色请填写 #RRGGBB，例如 #FFE66B。"
         : Comparison is < 0 or > 1 || !double.IsFinite(Threshold) || Threshold is < 0 or > 100
             ? "百分比阈值必须在 0–100 之间。" : "";

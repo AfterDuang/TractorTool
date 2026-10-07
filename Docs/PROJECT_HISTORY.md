@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与精简（HUD 内部布局） | [E78 · 删除误加的区域编辑器并修正排版（2026-10-07）](#evidence-hud-built-in-layout) |
 | 修正与交互（HUD 三态） | [E77 · 空白回退修正与同指标区域布局（2026-10-07）](#evidence-hud-three-state-layout) |
 | 交互（HUD 形变） | [E76 · 紧凑尺寸、整岛弹性形变与原生轮廓（2026-10-07）](#evidence-hud-morph) |
 | 交互（HUD 横条与详情） | [E75 · 横向摘要、点击展开与拖动分离（2026-10-07）](#evidence-hud-compact-interaction) |
@@ -2306,3 +2307,25 @@ SystemHud 0.3.5：
 最终补齐编辑预览模式与区域状态选择双向同步，再编译并打包至 plugin-final；plugin 为此前中间产物，不作为交付。四份当前文档的 72 个本地文件链接已核对，限定本轮文件的 git diff --check 通过。
 
 按约定未启动应用、检查程序、硬件/业务网络/DPAPI 或接管 UI；未替用户安装。原空白故障的真实闭合、单/双击/拖动、区域编辑、动效/动画偏好、边缘/DPI/透明输入、保存/重启均保留用户确认。静态自查不等于子代理 Review 或运行验收。保留用户 .gitignore 与 .vscode/launch.json，按约定仅本地提交，不推送。
+
+<a id="evidence-hud-built-in-layout"></a>
+
+## E78：HUD 删除误加的区域编辑器并修正排版（2026-10-07）
+
+用户提供 0.4.0 的真实截图：顶部内容挤在左侧、右侧留空，网速重复图标及长说明挤占短区域，提示框遮挡岛。并明确更正 E77：区域用于开发者组织显示代码，便于以后新增指标，不是让用户配置布局。此次以更正为准删除编辑器；没有新增游戏 FPS 或修改框架。
+
+静态根因：HeaderButton 未明确水平撑满；[Avalonia 12.1.2 Fluent Button 源码](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Themes.Fluent/Controls/Button.xaml) 的默认 HorizontalAlignment 为 Left，按下还有默认缩放。原无百分比进度区回退为相同指标图标，网速说明直接填短格，造成重复和拥挤。未启动程序复现，不把源码推断等同真实 UI 验证。
+
+- SystemHud 0.4.1 删除 Configuration/HudLayout.cs、HudModel.Layout.cs、区域 AXAML 编辑入口、草稿保存/预览同步与校验分支。新的 Views/HudLayout 只表达 Compact.Left/Center/Right、Strip.Left/Primary/Secondary/Right、Detail 及三态切换规则。类型不进入用户配置，不留弃用字段或空接口。
+- 旧 layout 字段由现有 JSON 反序列化自然忽略，名称、指标、模板等保留，下次正常保存不再写 layout；不自动改写真实文件。既有方案模板、颜色规则和草稿操作保留。
+- HudPresentation 统一填具名区域，HudSlotView 共用绘制。内存长条显示图标/容量/占用率/环；网速显示图标/下载/上传/名称，采样结果独立给出上传文字，不解析本地化说明。GPU 传感器右端使用 GPU 身份图标。无真实百分比不画环或重复同一图标；详情保留完整标题、数值和说明。
+- 顶部及区域内容撑满，短区域限宽、次要文字靠右，详细右端对齐；悬停只强调岛轮廓，取消嵌套 hover 胶囊、按钮默认按压缩放及重复 tooltip。保留键盘、无障碍摘要和焦点反馈。行列只在状态切换时重排，不逐次采样重建。
+- 保留 E77 的三个尺寸、单/双击规则、拖动、弹性形变、原生轮廓、位置保存与轮播/预览暂停。没有修改宿主、Core、Contracts、公共 UI、硬件库、凭据或采样频率。
+
+验证：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e78-hud-built-in-layout/build --force`：沙箱首次还原因 NuGet 漏洞元数据不可达出现 6 个 NU1900，正常联网重试后 0 警告/0 错误。最终对齐调整后以 `--no-restore` 再编译仍 0 警告/0 错误。新增/更新内存、网速、GPU、未知值和旧 layout 兼容断言，保留三态等已有断言；**只编译未运行检查程序**。日志 `checks-build.txt`、`checks-build-final.txt`。
+2. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e78-hud-built-in-layout/plugin-final`：独立 Rebuild 0 警告/0 错误，日志 `plugin-build-final.txt`。`plugin` 为中间产物，交付以 `plugin-final` 为准。
+3. 最终 ZIP 67 文件逐一 SHA256 与构建输出一致；无共享 SDK DLL，5 个 AXAML XML 可解析，顶部撑满和无区域编辑入口静态核对通过。234 个 E67 宿主 SDK 文件数量及哈希未变。证据 `artifacts/e78-hud-built-in-layout/static-checks-final.json`，ProductVersion 中的 c69271c 是构建基底，不代表本轮变更已存在于旧提交。
+
+交付 `artifacts/e78-hud-built-in-layout/plugin-final/TractorTool.SystemHud-0.4.1.zip`，附 SHA256 文件。没有启动应用、检查程序、硬件/业务网络、DPAPI 或接管 UI，没有替用户安装。截图排版、长文字、三态往返与此前空白故障的真实闭合仍待用户确认；其他 A26/A27 专项继续保留。文档更新内部区域边界及源码导航；保留用户 .gitignore/.vscode/launch.json，仅本地提交，不推送。

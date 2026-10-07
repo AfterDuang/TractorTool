@@ -16,29 +16,29 @@ public static class HudPresentation
         });
         // ponytail: one percentage rule per profile; add a rule list only when real layouts need it.
         var match = profile.RuleEnabled && reading.Percent is { } p && (profile.Comparison == 0 ? p <= profile.Threshold : p >= profile.Threshold);
-        var display = new HudDisplay(Expand(profile.Title), Expand(profile.Value), Expand(profile.Detail), reading.Percent,
-            new ImmutableSolidColorBrush(Color.Parse(match ? profile.RuleColor : profile.Color)));
-        HudSlotDisplay Slot(HudSlot slot) => new(slot.Content, slot.Content switch
-        {
-            HudContent.Title => display.Title, HudContent.Value => display.Value, HudContent.Description => display.Detail,
-            HudContent.Percent => display.HasPercent ? $"{reading.Percent:0.#}%" : "—",
-            HudContent.Summary => $"{display.Title}\n{display.Value}\n{display.Detail}",
-            HudContent.Custom => Expand(slot.Template), _ => ""
-        }, HudDisplay.IconFor(slot.Icon < 0 ? profile.Metric : slot.Icon), reading.Percent, display.Accent);
-        return display with
-        {
-            Compact = profile.Layout.Header(false).Select(Slot).ToArray(),
-            Strip = profile.Layout.Header(true).Select(Slot).ToArray(), Body = Slot(profile.Layout.Detail)
-        };
+        var title = Expand(profile.Title); var value = Expand(profile.Value); var detail = Expand(profile.Detail);
+        var accent = new ImmutableSolidColorBrush(Color.Parse(match ? profile.RuleColor : profile.Color));
+        HudSlotDisplay Text(string text) => new(HudContent.Text, text, "", null, accent);
+        HudSlotDisplay Icon(int metric) => new(HudContent.Icon, "", HudDisplay.IconFor(metric), null, accent);
+        var icon = Icon(profile.Metric);
+        var identity = profile.Metric == 8 && profile.SensorId.StartsWith("/gpu-", StringComparison.OrdinalIgnoreCase)
+            ? Icon(12) : Text(title);
+        var hasPercent = reading.Percent is { } percent && double.IsFinite(percent);
+        var trailing = hasPercent ? new HudSlotDisplay(HudContent.Progress, "—", icon.Icon, reading.Percent, accent) : identity;
+
+        // Metric-specific choices end here. Views consume these named regions for all three states.
+        var strip = new HudStripLayout(icon, Text(value), Text(detail), trailing);
+        if (profile.Metric == 3 && hasPercent) // Capacity and usage are separate, readable fields.
+            strip = strip with { Primary = Text(detail), Secondary = Text(value) };
+        if (profile.Metric == 4) // Never parse a localized explanation to recover the upload reading.
+            strip = strip with { Secondary = Text(reading.SecondaryValue ?? "↑ —") };
+        var layout = new HudLayout(new(icon, Text(value), identity), strip, Text($"{title}\n{value}\n{detail}"));
+        return new(title, value, detail, accent, layout);
     }
 }
 
-public sealed record HudDisplay(string Title, string Value, string Detail, double? Percent, IBrush Accent)
+public sealed record HudDisplay(string Title, string Value, string Detail, IBrush Accent, HudLayout Layout)
 {
-    public HudSlotDisplay[] Compact { get; init; } = [];
-    public HudSlotDisplay[] Strip { get; init; } = [];
-    public HudSlotDisplay? Body { get; init; }
-    public bool HasPercent => Percent is { } p && double.IsFinite(p);
     public string Summary => $"{Title} · {Value}\n{Detail}";
     internal static string IconFor(int icon) => Icons[Math.Clamp(icon, 0, Icons.Length - 1)];
 
@@ -65,9 +65,7 @@ public sealed record HudSlotDisplay(HudContent Content, string Text, string Icon
 {
     public bool HasPercent => Percent is { } p && double.IsFinite(p);
     public bool IsRing => Content == HudContent.Progress && HasPercent;
-    public bool IsIcon => Content == HudContent.Icon || Content == HudContent.Progress && !HasPercent;
-    public bool IsText => Content is not (HudContent.Hidden or HudContent.Icon or HudContent.Progress);
-    public bool IsGraphic => Content is HudContent.Icon or HudContent.Progress;
+    public bool IsIcon => Content == HudContent.Icon;
+    public bool IsText => !IsIcon && !IsRing;
     public double SweepAngle => HasPercent ? Math.Clamp(Percent!.Value, 0, 100) * 3.6 : 0;
-    public string Description => Content == HudContent.Progress ? HasPercent ? $"{Percent:0.#}%" : "无百分比读数" : Text;
 }

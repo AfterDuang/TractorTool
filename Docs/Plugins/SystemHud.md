@@ -28,10 +28,10 @@
 
 | 部分 | 所有权与修改边界 |
 | --- | --- |
-| [HudProfile](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudProfile.cs) / [HudLayout](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudLayout.cs) / [HudSettings](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSettings.cs) | 配置、区域内容、三态切换规则、校验与稳定标识；不执行 I/O 或创建窗口。新字段带默认值，原指标编号 0–4 不重排 |
+| [HudProfile](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudProfile.cs) / [HudSettings](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSettings.cs) | 配置、校验与稳定标识；不执行 I/O 或创建窗口。区域排布不是用户配置，原指标编号 0–4 不重排 |
 | [HudSampler](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/HudSampler.cs) / WindowsMetrics / [NetworkMetrics](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/NetworkMetrics.cs) / [HardwareMetrics](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/HardwareMetrics.cs) | 单次读取返回 HudReading 和可展示失败原因；超时、请求缓存、资源释放。更换硬件库或增加具体来源主要改这里，不改变页面协议 |
-| [HudModel](../../Plugins/TractorTool.Plugins.SystemHud/ViewModels/HudModel.cs) 及 Profiles / Layout / Sources 分部 | 单一 VM 按职责拆文件：运行协调、方案/区域编辑、传感器检测和凭据操作；取消/迟到隔离、电源优先和轮播。区域草稿沿用现有保存/撤销/复制流程，页面不直接访问采集器 |
-| [HudPresentation](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudPresentation.cs) / HudSlotView / HudCard / HudView / HudSettingsView / HudWindow | Presentation 将同一读数投影到区域；SlotView 只画文字/图标/环，Card 管理布局、手势与形变，Window 管理原生窗口及拖动保存。各指标不另写三套界面 |
+| [HudModel](../../Plugins/TractorTool.Plugins.SystemHud/ViewModels/HudModel.cs) 及 Profiles / Sources 分部 | 单一 VM 按职责拆文件：运行协调、方案编辑、传感器检测和凭据操作；取消/迟到隔离、电源优先和轮播。页面不直接访问采集器 |
+| [HudPresentation](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudPresentation.cs) / [HudLayout](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudLayout.cs) / HudSlotView / HudCard / HudView / HudSettingsView / HudWindow | Presentation 将同一读数填入 Layout 的具名区域；SlotView 只画文字/图标/环，Card 管理布局、手势与形变，Window 管理原生窗口及拖动保存。各指标不另写三套界面 |
 | [HudSecrets](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSecrets.cs) | 当前 Windows 用户 DPAPI 加解密；凭据与可编辑方案分开，网络层仅取得本次请求所需的内存密钥 |
 
 数据流为 `保存的方案/草稿快照 → 单次采样 → HudReading → 模板呈现 → HudCard`。窗口和采集资源属于插件实例，页面只是编辑入口；没有另建服务容器、采集插件系统、通用表达式引擎或后台监控平台。隐藏 HUD 不销毁页面草稿；显示未读到数据时明确未知，失败不继续把旧读数当新数据。
@@ -50,7 +50,7 @@
 | 长条 | 400 × 48；四格横排 | 单击回默认；双击进入详细 |
 | 详细 | 400 × 184；沿用长条四格，排成左侧、中央、右上、右下，下方增加详情区域 | 双击回默认；单击保留详细 |
 
-顶部使用一个持续存在的原生 Button，提供当前读数、操作说明、悬停/按下与焦点反馈，不再因透明度为零隐藏内容或收起入口。按系统双击时限延迟单击；第二次点击取消待执行单击。移动任一轴达到 6 DIP 时取消点击并请求原生拖动，拖动开始结束形变；详情区域可滚动、双击收起。页面预览支持 Enter/Space 切换默认与长条、向下键进入详细、Escape 回默认；桌面不抢焦点。详情区不预建空动作接口。
+顶部使用一个持续存在、明确水平撑满的原生 Button，提供当前读数、操作说明、按下与焦点反馈；悬停反馈作用于整岛轮廓，不画嵌套胶囊，也不弹出遮挡读数的重复提示框。无障碍名称保留完整摘要，详细区保留完整文字。不再因透明度为零隐藏内容或收起入口。按系统双击时限延迟单击；第二次点击取消待执行单击。移动任一轴达到 6 DIP 时取消点击并请求原生拖动，拖动开始结束形变；详情区域可滚动、双击收起。页面预览支持 Enter/Space 切换默认与长条、向下键进入详细、Escape 回默认；桌面不抢焦点。详情区不预建空动作接口。
 
 形变在插件 Views 内用 Avalonia 原生有限 Transitions 实现：宽、高、圆角共用 420ms SpringEasing（质量 1、刚度 360、阻尼 27），出现用 180ms 淡入。尺寸可以从当前动画值反向切换，文字固定字号、不随轮廓拉伸；区域按状态重排，删除旧的两个场景交叉隐藏回调。读取既有 FAUISettings/Motion 动画偏好，关闭动画直接呈现目标；隐藏、分离和退出清理过渡及待执行单击，不添加动画轮询或覆盖全局时钟。页面预览使用已保存的动画偏好。
 
@@ -68,9 +68,11 @@
 ## 方案、模板与预览
 
 - 最多 32 个方案，支持新增、复制、重命名、编辑和删除，至少保留一个。选择下拉项只载入编辑区；“保存并使用”才提交并应用。新增/复制/删除先保存成功再更新列表；有草稿时先保存或撤销再切换方案，不暗中丢弃编辑。
-- 每个方案选择一个指标，标题/数值/说明模板最多 60/80/160 字符，作为区域可选内容。变量支持 `{label}`、`{value}`、`{detail}`、`{percent}`、`{name}`、`{unit}`、`{updated}`；单位仅在指标有统一单位时提供，无读取时间则显示未知。不执行脚本、表达式或递归插值。
-- “区域布局”分别配置默认三格、长条四格和详细底部。每格可选择不显示、图标、标题、数值、说明、百分比、环形进度、完整信息或自定义文字；图标可跟随指标或手选内置图标（含 GPU）。同类内容可重复或交换位置。详细顶部直接复用长条四格，不维护第二份配置。自定义区域模板最多 120 字符、单行；底部最多 320 字符、可换行。文本超长省略，底部换行/滚动。无百分比的环退回图标，不造假进度。
-- 布局与方案一起保存、复制、撤销；恢复默认布局只改草稿。旧 JSON 缺少布局字段时使用默认值，非法内容/图标/模板阻止保存。编辑状态选择同步示例预览；所有区域来自同一个读数，不混合不同指标。
+- 每个方案选择一个指标，标题/数值/说明模板最多 60/80/160 字符。变量支持 `{label}`、`{value}`、`{detail}`、`{percent}`、`{name}`、`{unit}`、`{updated}`；单位仅在指标有统一单位时提供，无读取时间则显示未知。不执行脚本、表达式或递归插值。
+- 区域是开发者组织显示代码的约定，不提供区域设置、图标选择或自定义排布。默认使用 `Compact.Left/Center/Right`；长条使用 `Strip.Left/Primary/Secondary/Right`；详细顶部复用长条四项，下方使用 `Detail`。只在切换状态时调整行列，读数更新只替换内容。短区域限宽省略，完整文字在详情区换行/滚动。
+- 通用映射为图标、数值、说明，以及有真实百分比时的进度环或指标名称。内存长条依次是图标、容量、占用率、环；网速依次是图标、下载、上传、名称，上传值由采集器独立提供，不拆解本地化说明；GPU 传感器右端用 GPU 身份图标，与左侧温度图标区分。无百分比不画假环或重复同一图标。主读数、图标和环使用方案强调色，其余文字降低强调。
+- 新增指标时，在采集层产生 `HudReading`，在 `HudPresentation.Render` 中按需填这些具名区域，复用 `HudSlotView/HudCard`；不为每个指标增加布局编辑器或三套视图。游戏 FPS 仅是扩展示例，本轮没有新增该采集能力。
+- 0.4.0 写入的旧 `layout` 属性由 JSON 反序列化自然忽略，原有名称、指标、模板等保留；下次正常保存方案时不再写入该属性。加载不自动改写或删除用户文件，不留兼容占位字段。没有混合不同指标。
 - 颜色使用 `#RRGGBB`。每个方案提供一个百分比阈值规则，选择低于等于或高于等于，满足时改变数值、图标和进度环颜色；用于电量/CPU/内存/磁盘/传感器负载/明确声明百分比的 JSON。未知值不按 0 处理，温度/余额/延迟不冒充百分比。首版不做多段规则和混合多指标布局。
 - 编辑区复用同一 HudCard 即时展示模板/颜色，明确标记“示例数据”；模板无效时保留上一次有效预览。桌面“预览草稿”读取真实指标、冻结本次草稿快照并显示 6 秒，不写配置；暂停更新时禁用该按钮。到期恢复原方案及最近读数，再按可见状态更新，不把草稿残留当当前方案。
 - 可按列表顺序轮播已保存方案，间隔 3–300 秒。隐藏、暂停、关闭、退出、电源提醒或草稿预览时停止轮播；恢复后重新计时，不补跑隐藏期间的轮次。电源提醒结束返回原方案，轮播不改编辑区选择与未保存内容。
@@ -121,7 +123,7 @@ CPU 采用 `GetSystemTimes` 时间差，内核时间包括空闲时间；内存�
 - 用自己允许访问的 HTTP/JSON 服务验证合法字段、缺失/null/对象/错误百分比、超时、重定向、超大响应；轮播切换与暂停不串数据，低于网络间隔的轮播不会重复请求。余额需用户自己的密钥验证；保存、清除、重启及密文迁移失败不泄露密钥、不沿用旧余额。
 - 拖动到高低 DPI/负坐标副屏、移出边界、重启、拔掉目标屏幕和改变缩放；核对位置恢复与可见性。拖动 6 秒预览时不能中途隐藏；写入失败恢复旧位置，且不提交未保存偏好或方案。
 - 点击穿透、无焦点抢占、隐藏/预览到期、动画开/关、托盘快捷项、重复应用、退出恰逢采样。
-- 检查默认/长条/详细三态：连续单击往返、两种状态双击进详情、再双击回默认，动画期间仍显示内容且可回退；按下抖动、拖动、拖后立即点击不误判。区域调换/重复/隐藏、GPU 图标、自定义多行、复制/保存/撤销及旧配置恢复。检查明暗桌面、100%/150%/200% DPI、0.6–2 倍缩放、快速反向、四边避让、关闭动画即时到位、透明留白不挡下层窗口。长条/详细期间暂停预览到期与轮播，显式隐藏/穿透优先。页面预览验证 Tab/Space/向下键/Escape；纯逻辑断言不代表原生交互验收。
+- 检查默认/长条/详细三态：连续单击往返、两种状态双击进详情、再双击回默认，动画期间仍显示内容且可回退；按下抖动、拖动、拖后立即点击不误判。网速上传/下载分列、内存容量/占用率/环、GPU 身份、长文字省略和详情完整；无区域编辑入口，旧方案正常复制/保存/撤销。检查明暗桌面、100%/150%/200% DPI、0.6–2 倍缩放、快速反向、四边避让、关闭动画即时到位、透明留白不挡下层窗口。长条/详细期间暂停预览到期与轮播，显式隐藏/穿透优先。页面预览验证 Tab/Space/向下键/Escape；纯逻辑断言不代表原生交互验收。
 - [HudChecks](../../tests/TractorTool.HudChecks/Program.cs) 是逻辑及内存 HTTP 检查，覆盖计数/位置、方案/模板/规则、配置往返、JSON Pointer/百分比/边界、余额、凭据路由、缓存及取消。不创建窗口、不读硬件或真实网络。命令 `dotnet run --project tests/TractorTool.HudChecks -c Release` 供获准时执行；编译不等于检查运行通过。
 
 API 依据：[Windows 电源通知](https://learn.microsoft.com/en-us/windows/win32/power/registering-for-power-events)、[电源 GUID](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes)、[GlobalMemoryStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex)、[NetworkChange](https://learn.microsoft.com/en-us/dotnet/api/system.net.networkinformation.networkchange)。上游调研和固定提交记录见 [E65](../PROJECT_HISTORY.md#evidence-system-hud)。

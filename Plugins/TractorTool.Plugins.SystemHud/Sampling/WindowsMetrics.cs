@@ -59,7 +59,8 @@ internal sealed class WindowsMetrics
         _network = current; _networkTime = now;
         // Aggregate interfaces, not Internet traffic: virtual adapters can count forwarded bytes twice.
         return new("网速", comparable ? $"↓ {HudCounters.Speed(received)}" : "—",
-            current.Count == 0 ? "没有已连接的网络接口" : comparable ? $"↑ {HudCounters.Speed(sent)} · 活动接口合计" : "正在建立采样基线…");
+            current.Count == 0 ? "没有已连接的网络接口" : comparable ? $"↑ {HudCounters.Speed(sent)} · 活动接口合计" : "正在建立采样基线…",
+            SecondaryValue: comparable ? $"↑ {HudCounters.Speed(sent)}" : "↑ —");
     }
 
     public static (byte Ac, HudReading Reading) Power()

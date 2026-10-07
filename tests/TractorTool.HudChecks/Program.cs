@@ -80,14 +80,15 @@ var high = rule.Render(new("CPU", "80%", "真实读数", 80));
 Check(high.Title == "CPU · CPU" && high.Value == "80%" && ((Avalonia.Media.ISolidColorBrush)high.Accent).Color == Avalonia.Media.Color.Parse("#FF8A90"),
     "Template and inclusive percentage threshold must agree between editor and HUD.");
 var unknown = rule.Render(new("CPU", "—", "正在建立基线"));
-Check(!unknown.HasPercent && unknown.Value == "—%" && ((Avalonia.Media.ISolidColorBrush)unknown.Accent).Color == Avalonia.Media.Color.Parse("#FFE66B"),
+Check(!unknown.Layout.Strip.Right.IsRing && unknown.Value == "—%" && ((Avalonia.Media.ISolidColorBrush)unknown.Accent).Color == Avalonia.Media.Color.Parse("#FFE66B"),
     "Unknown readings must not become a false zero or trigger a color rule.");
-Check(high.Strip[3].SweepAngle == 288 && (high.Strip[3] with { Percent = 100 }).SweepAngle == 360
-    && (high.Strip[3] with { Percent = -1 }).SweepAngle == 0 && (high.Strip[3] with { Percent = 150 }).SweepAngle == 360
-    && !(high.Strip[3] with { Percent = double.NaN }).HasPercent && unknown.Strip[3].SweepAngle == 0,
+var ring = high.Layout.Strip.Right;
+Check(ring.SweepAngle == 288 && (ring with { Percent = 100 }).SweepAngle == 360
+    && (ring with { Percent = -1 }).SweepAngle == 0 && (ring with { Percent = 150 }).SweepAngle == 360
+    && !(ring with { Percent = double.NaN }).HasPercent && unknown.Layout.Strip.Right.SweepAngle == 0,
     "The ring uses bounded finite percentages; non-percentage readings do not invent progress.");
 Check(high.Summary.Contains(high.Title) && high.Summary.Contains(high.Detail)
-    && new HudProfile { Metric = 9 }.Render(new("余额", "14.20 CNY", "已更新")).Compact[0].Icon != high.Compact[0].Icon,
+    && new HudProfile { Metric = 9 }.Render(new("余额", "14.20 CNY", "已更新")).Layout.Compact.Left.Icon != high.Layout.Compact.Left.Icon,
     "Compact identity follows the metric while full template content stays available to details and accessibility.");
 Check(HudProfile.ValidTemplate("{value}/{detail}", 80) && !HudProfile.ValidTemplate("{unknown}", 80)
     && !HudProfile.ValidTemplate("{value}}", 80) && !HudProfile.ValidColor("# 12345"), "Reject invalid templates and colors without throwing in the renderer.");
@@ -107,41 +108,33 @@ Check(HudLayout.AfterClick(HudMode.Compact, false) == HudMode.Strip
     && HudLayout.AfterClick(HudMode.Strip, true) == HudMode.Detail
     && HudLayout.AfterClick(HudMode.Detail, true) == HudMode.Compact,
     "Single and double clicks follow all six state transitions; details always have a return path.");
-var layoutProfile = new HudProfile
-{
-    Metric = 3, Layout = new HudLayout
-    {
-        CompactRight = new(HudContent.Icon, 12), StripPrimary = new(HudContent.Description),
-        StripSecondary = new(HudContent.Percent), Detail = new(HudContent.Custom, Template: "{label}\n{value}\n{detail}")
-    }
-};
-var laidOut = layoutProfile.Render(new("内存", "41%", "13.2 / 32 GiB", 41));
-Check(laidOut.Compact.Length == 3 && laidOut.Strip.Length == 4
-    && laidOut.Compact[2].Icon == HudDisplay.IconFor(12)
-    && laidOut.Strip[1].Text == "13.2 / 32 GiB" && laidOut.Strip[2].Text == "41%"
-    && laidOut.Strip[3].IsRing && laidOut.Body!.Text == "内存\n41%\n13.2 / 32 GiB",
-    "Every state maps the same reading into independently ordered slots and a multiline detail area.");
-var restoredLayout = System.Text.Json.JsonSerializer.Deserialize<HudProfile>(System.Text.Json.JsonSerializer.Serialize(layoutProfile));
-Check(restoredLayout == layoutProfile && restoredLayout!.Error == ""
-    && (layoutProfile with { Layout = layoutProfile.Layout with { CompactRight = new(HudContent.Title) } }) != layoutProfile,
-    "Layout records preserve copy/save identity and reliably detect draft changes.");
-Check(System.Text.Json.JsonSerializer.Deserialize<HudProfile>("{}")!.Layout == new HudLayout()
-    && (layoutProfile with { Layout = null! }).Error.Length > 0
-    && !(layoutProfile.Layout with { Detail = null! }).IsValid
-    && !(layoutProfile.Layout with { CompactLeft = new((HudContent)99) }).IsValid
-    && !(layoutProfile.Layout with { CompactLeft = new(HudContent.Icon, 13) }).IsValid
-    && !(layoutProfile.Layout with { CompactLeft = new(HudContent.Custom, Template: "{missing}") }).IsValid
-    && !new HudSlot(HudContent.Custom, Template: "a\nb").IsValid(false)
-    && new HudSlot(HudContent.Custom, Template: "a\nb").IsValid(true),
-    "Legacy profiles get defaults; corrupt/null slots, unknown content and invalid templates are rejected.");
+var memoryLayout = new HudProfile { Metric = 3 }.Render(new("内存", "41%", "13.2 / 32 GiB", 41)).Layout;
+Check(memoryLayout.Compact is { Left.IsIcon: true, Center.Text: "41%", Right.Text: "内存" }
+    && memoryLayout.Strip is { Primary.Text: "13.2 / 32 GiB", Secondary.Text: "41%", Right.IsRing: true }
+    && memoryLayout.Detail.Text == "内存\n41%\n13.2 / 32 GiB",
+    "Memory maps capacity and usage into named regions and retains full text in details.");
+var networkLayout = new HudProfile { Metric = 4 }.Render(new("网速", "↓ 60.6 KiB/s", "↑ 43.0 KiB/s · 活动接口合计", SecondaryValue: "↑ 43.0 KiB/s")).Layout;
+Check(networkLayout.Strip is { Left.IsIcon: true, Primary.Text: "↓ 60.6 KiB/s", Secondary.Text: "↑ 43.0 KiB/s", Right.IsText: true, Right.Text: "网速" }
+    && networkLayout.Detail.Text.Contains("活动接口合计"),
+    "Network rates stay separate and concise; the full explanation is retained in details, without a duplicate icon.");
+var gpuLayout = new HudProfile { Metric = 8, SensorId = "/gpu-nvidia/0/temperature/2" }.Render(new("GPU Hot Spot", "43.5 °C", "NVIDIA GPU")).Layout;
+Check(gpuLayout.Compact.Right.IsIcon && gpuLayout.Compact.Right.Icon == HudDisplay.IconFor(12)
+    && gpuLayout.Compact.Left.Icon != gpuLayout.Compact.Right.Icon, "GPU sensor identity is distinct from the temperature icon.");
+var oldProfile = System.Text.Json.JsonSerializer.Deserialize<HudProfile>(
+    """{"name":"旧方案","metric":4,"title":"{name}","layout":{"compactLeft":{"content":99}}}""",
+    System.Text.Json.JsonSerializerOptions.Web)!;
+Check(oldProfile.Name == "旧方案" && oldProfile.Metric == 4 && oldProfile.Title == "{name}" && oldProfile.Error == ""
+    && !System.Text.Json.JsonSerializer.Serialize(oldProfile, System.Text.Json.JsonSerializerOptions.Web).Contains("\"layout\""),
+    "Old user-layout fields are ignored without losing profile data and are absent on the next ordinary save.");
 for (var metric = 0; metric <= 11; metric++)
 {
-    var view = (layoutProfile with { Metric = metric }).Render(new("指标", "—", "尚无读数"));
-    Check(view.Compact.Length == 3 && view.Strip.Length == 4 && view.Body!.IsText
-        && view.Strip[3].IsIcon && !view.Strip[3].IsRing && view.Strip[2].Text == "—",
-        "All metrics share the same layout; absent percentages must not invent progress.");
+    var layout = new HudProfile { Metric = metric }.Render(new("指标", "—", "尚无读数")).Layout;
+    Check(layout.Compact.Center.Text == "—" && layout.Strip.Primary.Text == "—" && layout.Detail.IsText
+        && layout.Strip.Right.IsText && !layout.Strip.Right.IsRing
+        && layout.Strip.Secondary.Text == (metric == 4 ? "↑ —" : "尚无读数"),
+        "All metrics share named regions; absent percentages do not invent progress or repeat the metric icon.");
 }
-Console.WriteLine("PASS HUD three-state transitions, slots, layout compatibility and validation");
+Console.WriteLine("PASS HUD three-state transitions, built-in regions and legacy profile compatibility");
 
 Check(NetworkMetrics.ValidAddress("localhost", true) && NetworkMetrics.ValidAddress("::1", true)
     && !NetworkMetrics.ValidAddress("localhost:443", true) && !NetworkMetrics.ValidAddress("https://example.com/path", true), "Probe accepts a host, not a URL or port.");

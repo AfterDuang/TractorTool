@@ -108,31 +108,11 @@
                   </StackPanel>
                 </StackPanel>
               </Border>
-              <Expander Header="区域布局" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <StackPanel Spacing="10" Margin="0,12,0,0">
-                  <ComboBox ItemsSource="{Binding LayoutSections}" SelectedIndex="{Binding LayoutSection}" HorizontalAlignment="Stretch" AutomationProperties.Name="编辑哪种状态的区域" />
-                  <TextBlock Text="{Binding LayoutHint}" Classes="caption" TextWrapping="Wrap" />
-                  <ItemsControl ItemsSource="{Binding VisibleLayoutSlots}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="local:HudSlotEditor">
-                        <StackPanel Spacing="8" Margin="0,0,0,16">
-                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                          <ComboBox ItemsSource="{Binding ContentNames}" SelectedIndex="{Binding ContentIndex}" HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding Name}" />
-                          <ComboBox ItemsSource="{Binding IconNames}" SelectedIndex="{Binding IconIndex}" IsVisible="{Binding HasIcon}" HorizontalAlignment="Stretch" AutomationProperties.Name="区域图标" />
-                          <TextBox Text="{Binding Template}" IsVisible="{Binding IsCustom}" MaxLength="{Binding TemplateLimit}" AcceptsReturn="{Binding IsDetail}" TextWrapping="Wrap" AutomationProperties.Name="区域自定义文字" />
-                        </StackPanel>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                  <TextBlock Text="自定义变量：{label} 指标名、{value} 数值、{detail} 说明、{percent} 百分比数字、{name} 方案名、{unit} 单位、{updated} 读取时间。" Classes="caption" TextWrapping="Wrap" />
-                  <Button Content="恢复默认布局" Command="{Binding ResetLayoutCommand}" HorizontalAlignment="Left" />
-                </StackPanel>
-              </Expander>
               <Border Classes="card">
                 <StackPanel Spacing="10">
                   <TextBlock Text="编辑预览 · 示例数据" Classes="caption" />
                   <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                    <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" Mode="{Binding $parent[UserControl].((local:HudModel)DataContext).LayoutPreviewMode, Mode=TwoWay}" DataContext="{Binding EditorDisplay}" />
+                    <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding EditorDisplay}" />
                   </Viewbox>
                 </StackPanel>
               </Border>

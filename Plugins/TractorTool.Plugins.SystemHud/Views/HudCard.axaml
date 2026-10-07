@@ -2,7 +2,7 @@
              xmlns:local="using:TractorTool.Plugins.SystemHud"
              x:Class="TractorTool.Plugins.SystemHud.HudCard" x:DataType="local:HudDisplay"
              Width="{x:Static local:HudSettings.CardWidth}" Height="{x:Static local:HudSettings.CardHeight}"
-             FontFamily="Segoe UI, Microsoft YaHei UI">
+             FontFamily="Segoe UI, Microsoft YaHei UI" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
   <UserControl.Styles>
     <Style Selector="Button.islandAction">
       <Setter Property="Cursor" Value="Hand" />
@@ -14,8 +14,11 @@
         </ControlTemplate>
       </Setter>
     </Style>
-    <Style Selector="Button.islandAction:pointerover /template/ Border#Surface">
-      <Setter Property="Background" Value="#0CFFFFFF" />
+    <Style Selector="Border#Island">
+      <Setter Property="BorderBrush" Value="#22FFFFFF" />
+    </Style>
+    <Style Selector="Border#Island:pointerover">
+      <Setter Property="BorderBrush" Value="#48FFFFFF" />
     </Style>
     <Style Selector="Button.islandAction:pressed /template/ Border#Surface">
       <Setter Property="Background" Value="#16FFFFFF" />
@@ -24,23 +27,23 @@
       <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
   </UserControl.Styles>
-  <Border x:Name="Island" CornerRadius="22" Background="#171719" BorderBrush="#22FFFFFF" BorderThickness="1" ClipToBounds="True">
+  <Border x:Name="Island" CornerRadius="22" Background="#171719" BorderThickness="1" ClipToBounds="True">
     <Grid RowDefinitions="Auto,*">
       <!-- This hit target and its content stay present throughout every transition. -->
-      <Button x:Name="HeaderButton" Classes="islandAction" Height="42"
+      <Button x:Name="HeaderButton" Classes="islandAction" Height="42" HorizontalAlignment="Stretch"
+              HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" RenderTransform="none"
               AutomationProperties.Name="{Binding Summary}"
-              AutomationProperties.HelpText="单击切换默认和长条；双击切换详细和默认。Enter 或空格切换长条，向下键进入详细，Escape 返回默认。"
-              ToolTip.Tip="{Binding Summary}">
-        <Grid x:Name="HeaderGrid" Margin="14,0" ColumnDefinitions="28,*,*" ColumnSpacing="10" IsHitTestVisible="False">
-          <local:HudSlotView x:Name="First" FontSize="14" />
-          <local:HudSlotView x:Name="Second" Grid.Column="1" FontSize="18" FontWeight="SemiBold" />
-          <local:HudSlotView x:Name="Third" Grid.Column="2" FontSize="12" />
-          <local:HudSlotView x:Name="Fourth" IsVisible="False" FontSize="12" />
+              AutomationProperties.HelpText="单击切换默认和长条；双击切换详细和默认。Enter 或空格切换长条，向下键进入详细，Escape 返回默认。">
+        <Grid x:Name="HeaderGrid" Margin="14,0" ColumnDefinitions="28,*,Auto" ColumnSpacing="10" IsHitTestVisible="False">
+          <local:HudSlotView x:Name="First" FontSize="14" Foreground="#F5F5F7" />
+          <local:HudSlotView x:Name="Second" Grid.Column="1" FontSize="18" FontWeight="SemiBold" Foreground="{Binding Accent}" />
+          <local:HudSlotView x:Name="Third" Grid.Column="2" FontSize="14" Foreground="#BDBDC5" TextAlignment="Right" />
+          <local:HudSlotView x:Name="Fourth" IsVisible="False" FontSize="12" Foreground="#BDBDC5" TextAlignment="Right" HorizontalAlignment="Right" />
         </Grid>
       </Button>
       <ScrollViewer x:Name="BodyScroll" Grid.Row="1" Margin="20,8,20,18" IsVisible="False"
                     HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <local:HudSlotView x:Name="Body" FontSize="14" TextWrapping="Wrap" />
+        <local:HudSlotView x:Name="Body" FontSize="14" Foreground="#BDBDC5" TextWrapping="Wrap" VerticalAlignment="Top" />
       </ScrollViewer>
     </Grid>
   </Border>
