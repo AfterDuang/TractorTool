@@ -40,7 +40,8 @@ public partial class HudModel : ObservableObject
     private string _startupError = "";
     public bool HasStartupError => StartupError.Length != 0;
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
-    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击摘要展开或收起详情；按住摘要拖动，松手自动保存位置。";
+    public bool MotionEnabled => _settings.Animate;
+    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击小岛展开，点击详情标题收起；按住摘要或标题拖动，松手自动保存位置。";
     public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
     public string PauseAction => _paused ? "恢复更新" : "暂停更新";
     public string RuntimeState => HasStartupError ? "启动失败" : _stopped ? "已停止" : !_ready ? "正在启动"
@@ -79,6 +80,7 @@ public partial class HudModel : ObservableObject
         _window.DragStarted += UpdateVisibility;
         _window.DragCompleted += SavePosition;
         _window.ExpansionChanged += UpdateVisibility;
+        _window.PresentationFailed += PresentationFailed;
         try { _window.RegisterPowerEvents(); }
         catch (Exception ex) { ReportFailure("电源通知注册失败，自动提醒不可用；请在修复后重启插件。", ex); }
         ReadPower();
@@ -154,7 +156,7 @@ public partial class HudModel : ObservableObject
         settings = settings.Normalize();
         try { _context.Settings.Save("hud", settings); }
         catch (Exception ex) { ReportFailure("设置保存失败，尚未应用。请重试。", ex); return false; }
-        _settings = settings; InvalidateSample();
+        _settings = settings; InvalidateSample(); OnPropertyChanged(nameof(MotionEnabled));
         Status = "已保存。";
         return true;
     }
@@ -169,6 +171,8 @@ public partial class HudModel : ObservableObject
         try { _window?.Configure(_settings); }
         catch (Exception ex) { ReportFailure("HUD 窗口设置未能完整应用。", ex); }
     }
+
+    private void PresentationFailed(Exception ex) => ReportFailure("HUD 窗口轮廓更新失败，已隐藏；可重试显示。", ex);
 
     [RelayCommand(CanExecute = nameof(CanControl))]
     private void Preview()
@@ -348,6 +352,7 @@ public partial class HudModel : ObservableObject
             window.PowerChanged -= ReadPower; window.Dismissed -= Hide;
             window.DragStarted -= UpdateVisibility; window.DragCompleted -= SavePosition;
             window.ExpansionChanged -= UpdateVisibility;
+            window.PresentationFailed -= PresentationFailed;
             window.Shutdown(); _window = null;
         }
         return _stopTask = FinishStopAsync();

@@ -6,9 +6,10 @@ namespace TractorTool.Plugins.SystemHud;
 public sealed record HudSettings : IVersionedSettings
 {
     // Shared by the card, native window and screen-bound positioning (DIPs).
-    public const double CardWidth = 360;
-    public const double CardHeight = 60;
-    public const double ExpandedHeight = 224;
+    public const double CardWidth = 248;
+    public const double CardHeight = 44;
+    public const double ExpandedWidth = 336;
+    public const double ExpandedHeight = 148;
 
     public int SchemaVersion { get; init; } = 1;
     public bool Enabled { get; init; } = true;
@@ -43,7 +44,7 @@ public sealed record HudSettings : IVersionedSettings
         => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
 
     // WorkingArea and window position use physical pixels; settings offsets use DIPs.
-    public PixelPoint Position(PixelRect area, double dpi, bool expanded = false)
+    public PixelPoint Position(PixelRect area, double dpi, Size? visibleSize = null)
     {
         var settings = Normalize();
         var width = (int)Math.Ceiling(CardWidth * settings.Scale * dpi);
@@ -61,23 +62,31 @@ public sealed record HudSettings : IVersionedSettings
             position = new((int)Math.Clamp(x + settings.OffsetX * dpi, area.X, Math.Max(area.X, area.Right - width)),
                 (int)Math.Clamp(y + settings.OffsetY * dpi, area.Y, Math.Max(area.Y, area.Bottom - height)));
         }
-        // Expansion is transient: keep the compact anchor, moving up only at the screen edge.
-        var visibleHeight = (int)Math.Ceiling((expanded ? ExpandedHeight : CardHeight) * settings.Scale * dpi);
-        return new(position.X, Math.Clamp(position.Y, area.Y, Math.Max(area.Y, area.Bottom - visibleHeight)));
+        // Morph around the compact centre, avoiding all four edges without rewriting settings.
+        var size = visibleSize ?? new Size(CardWidth, CardHeight);
+        var visibleWidth = (int)Math.Ceiling(size.Width * settings.Scale * dpi);
+        var visibleHeight = (int)Math.Ceiling(size.Height * settings.Scale * dpi);
+        return new(Math.Clamp(position.X + (int)Math.Round((width - visibleWidth) / 2d), area.X, Math.Max(area.X, area.Right - visibleWidth)),
+            Math.Clamp(position.Y + (int)Math.Round((height - visibleHeight) / 2d), area.Y, Math.Max(area.Y, area.Bottom - visibleHeight)));
     }
 
-    public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor, bool expanded = false)
+    public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor, Size? visibleSize = null)
     {
         var settings = Normalize();
         var travelX = Math.Max(0, area.Width - Math.Ceiling(CardWidth * settings.Scale * dpi));
         var travelY = Math.Max(0, area.Height - Math.Ceiling(CardHeight * settings.Scale * dpi));
-        var visibleTravelY = Math.Max(0, area.Height - Math.Ceiling((expanded ? ExpandedHeight : CardHeight) * settings.Scale * dpi));
+        var size = visibleSize ?? new Size(CardWidth, CardHeight);
+        var visibleWidth = Math.Ceiling(size.Width * settings.Scale * dpi);
+        var visibleHeight = Math.Ceiling(size.Height * settings.Scale * dpi);
+        var x = Math.Clamp(position.X - (double)area.X, 0, Math.Max(0, area.Width - visibleWidth));
+        var y = Math.Clamp(position.Y - (double)area.Y, 0, Math.Max(0, area.Height - visibleHeight));
+        x += (visibleWidth - Math.Ceiling(CardWidth * settings.Scale * dpi)) / 2;
+        y += (visibleHeight - Math.Ceiling(CardHeight * settings.Scale * dpi)) / 2;
         return settings with
         {
             ScreenName = screenName, Monitor = monitor,
-            PositionX = travelX == 0 ? 0 : Math.Clamp((position.X - (double)area.X) / travelX, 0, 1),
-            // Save the visible drop location using the compact coordinate system for both states.
-            PositionY = travelY == 0 ? 0 : Math.Clamp(position.Y - (double)area.Y, 0, visibleTravelY) / travelY
+            PositionX = travelX == 0 ? 0 : Math.Clamp(x / travelX, 0, 1),
+            PositionY = travelY == 0 ? 0 : Math.Clamp(y / travelY, 0, 1)
         };
     }
 }

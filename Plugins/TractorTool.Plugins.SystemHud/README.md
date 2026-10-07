@@ -22,7 +22,7 @@ TractorTool.Plugins.SystemHud/
 │  ├─ HudView.axaml            主页面
 │  ├─ HudSettingsView.axaml    插件设置页
 │  ├─ HudWindow.axaml          桌面悬浮窗口
-│  ├─ HudCard.axaml            共用横向摘要、点击展开详情
+│  ├─ HudCard.axaml            共用紧凑/展开场景与弹性形变
 │  └─ HudPresentation.cs       模板、颜色与显示模型
 ├─ Licenses/            第三方许可原文
 ├─ NOTICE.md            依赖及源码来源
@@ -31,6 +31,8 @@ TractorTool.Plugins.SystemHud/
 ```
 
 每份 AXAML 与同名 `.axaml.cs` 放在同一目录。`bin/`、`obj/` 是生成目录，不属于源码分层。
+
+小岛视觉与有限动效在 `HudCard.axaml(.cs)`，桌面拖动、DPI/边缘定位及原生窗口区域在 `HudWindow.axaml.cs`；位置换算仍集中在 `HudSettings`，不另建动画框架。两处页面预览与桌面共用卡片，采集器不参与动画。
 
 修改布局先看 `Views`，修改操作流程先看 `ViewModels`，修改采集或接口先看 `Sampling`，修改持久化数据先看 `Configuration`。这些目录用于源码导航；类型命名空间保持 `TractorTool.Plugins.SystemHud`，插件入口和配置身份不随目录变化。
 

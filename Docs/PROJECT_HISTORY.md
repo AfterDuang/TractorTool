@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 交互（HUD 形变） | [E76 · 紧凑尺寸、整岛弹性形变与原生轮廓（2026-10-07）](#evidence-hud-morph) |
 | 交互（HUD 横条与详情） | [E75 · 横向摘要、点击展开与拖动分离（2026-10-07）](#evidence-hud-compact-interaction) |
 | 样式（HUD 胶囊） | [E74 · Apple 灵动岛风格卡片（2026-10-07）](#evidence-hud-island-style) |
 | 修正（HUD 拖动与对齐） | [E73 · 原生拖动定位、边缘滚动与双栏标题（2026-10-07）](#evidence-hud-drag-layout) |
@@ -2251,3 +2252,29 @@ SystemHud 0.3.4：
 4. ZIP `artifacts/e75-hud-interaction/plugin-final/TractorTool.SystemHud-0.3.4.zip`，5,474,831 字节，SHA256 `BF9F2857AB27E3241E59D5D31769CD010A77BB65F44FC3BA3950215ADDF89719`。ProductVersion 提交部分为构建时基底 2d48de4，不代表本轮代码已包含在该旧提交。
 
 没有启动应用、检查程序、硬件、业务网络请求或 UI 自动化，未替用户安装。真实横条观感、环形进度、点击/拖动互斥、展开计时、长文滚动、穿透及屏幕边缘/DPI/跨屏恢复待用户确认。未改框架，保留用户 .gitignore/.vscode/launch.json；仅本地提交，不推送。
+
+<a id="evidence-hud-morph"></a>
+
+## E76：HUD 紧凑尺寸、整岛弹性形变与原生轮廓（2026-10-07）
+
+用户指出 0.3.4 设计过大、缺少动效，点击表现仍是下拉，要求深入参考原软件与 Apple，将专属动效留在插件；需要框架支持时先停下列问题。本轮现有 Avalonia Transitions、SpringEasing 和公开动画偏好足够，无框架改动。
+
+调研核对 [zmd-charge-plus 固定提交 eada0e2](https://github.com/GlacierGlimmer/zmd-charge-plus/tree/eada0e216aed59297dee02e6cbb2815429584410) 的 HudAnimations、HudWindow 与 WindowsHudHitTest：原程序用多条时间线一起改变整体轮廓、尺寸和内容位置，带回弹曲线，默认 560 × 60 配合 0.8 缩放；原生绘制窗口大于可见内容。其当前命中实现是整窗穿透，不能直接满足本插件可点击/可拖动需求，因此没有照搬。源码仅保存于 artifacts/e76-hud-morph/reference 供研究，未进入交付包。
+
+参考 [Apple WWDC23 Live Activities](https://developer.apple.com/videos/play/wwdc2023/10194/)、[HIG Motion](https://developer.apple.com/design/human-interface-guidelines/motion) 与 [Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)：紧凑态减少空白，展开有连贯形变，动作简短且可打断，遵循动画偏好。本插件的尺寸、时长和曲线参数是实现选择，不声称 Apple 规定了这些数值。
+
+SystemHud 0.3.5：
+
+- 紧凑态 248 × 44 DIP；展开 336 × 148 DIP。删除摘要下追加详情的 StackPanel，改为共享圆角轮廓的两个场景，交叉淡入替换内容。原生 SpringEasing（1/360/27）驱动 420ms 宽高/圆角变化；内容 140ms CubicEaseOut，出现 180ms 淡入，字体保持原大小，不进行拉伸。
+- 使用现有 FAUISettings.AreAnimationsEnabled 与 Motion 偏好；插件已保存的 Animate 同时用于桌面与页面预览。关闭动画直接到位；隐藏/分离/关闭或开始拖动结束过渡。没有新动画轮询、全局时钟覆盖或额外依赖。独立 SDK 构建补上既有共享 FluentAvalonia 编译引用，Private=false，不打包副本。
+- 原生 Button 负责两个场景的点击，键盘焦点随场景移交；紧凑摘要和展开标题保留 6 DIP 拖动阈值，详情普通输入保持独立。沿用展开/拖动暂停预览到期与轮播的既有逻辑。
+- 形变围绕紧凑中心，四边钳制只影响临时显示；不拖动则收起恢复原锚点，展开拖动保存新中心。保留 DPI、旧锚点/相对坐标配置、草稿隔离、写入失败恢复。新增 360 × 180 透明绘制边界允许超调，Win32 圆角区域随可见轮廓更新，配合命中测试避免挡住下层窗口；成功的 region 交系统管理，失败释放、隐藏并提示，不从布局回调反复抛异常。API 依据：[SetWindowRgn](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowrgn)、[CreateRoundRectRgn](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createroundrectrgn)。
+
+验证和交付：
+
+1. HudChecks 新增中心展开/高 DPI/四边避让、展开越界拖动保存、圆角命中、原生 SpringEasing 超调与中间尺寸边界断言。命令 dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e76-hud-morph/build --force。初次受网络沙箱影响有 6 个 NU1900；允许联网刷新还原后为 0 警告/0 错误，最后源代码调整后 --no-restore 编译仍为 0 警告/0 错误。只编译，没有执行检查程序。
+2. pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e76-hud-morph/plugin，独立 Rebuild 0 警告/0 错误。
+3. ZIP 67 个文件逐一与输出 SHA256 一致，清单/ProductVersion 为 0.3.5，无共享 SDK 副本，4 个 AXAML XML 可解析。234 个现有宿主 SDK 文件数量和哈希不变。摘要 artifacts/e76-hud-morph/static-checks.json。
+4. 交付 artifacts/e76-hud-morph/plugin/TractorTool.SystemHud-0.3.5.zip，5,479,410 字节，SHA256 8F2CB134559EB918B40DD00CEEA973039AA41B3BF5CA8CC3BB2E97FAC3CAB6C5。ProductVersion 的提交部分为构建时基底 388555b，不代表本轮代码已在该旧提交中。
+
+未启动应用、检查程序、硬件/业务网络/DPAPI 或接管 UI；未替用户安装。实际形变观感、快速反向、动画中拖动、两级动画偏好、透明区域可操作下层程序、长文/键盘焦点和 DPI/四边/跨屏恢复仍待用户确认。静态自查不代替原生运行证据。保留用户 .gitignore 和 .vscode/launch.json，仅提交本轮代码/文档，不推送。

@@ -1,52 +1,65 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:TractorTool.Plugins.SystemHud"
              x:Class="TractorTool.Plugins.SystemHud.HudCard" x:DataType="local:HudDisplay"
+             Width="{x:Static local:HudSettings.CardWidth}" Height="{x:Static local:HudSettings.CardHeight}"
              FontFamily="Segoe UI, Microsoft YaHei UI">
   <UserControl.Styles>
-    <Style Selector="ToggleButton.hudSummary:pointerover /template/ Border#Surface">
-      <Setter Property="Background" Value="#262628" />
+    <Style Selector="Button.islandAction">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border x:Name="Surface" Background="Transparent" CornerRadius="22" BorderThickness="1" BorderBrush="Transparent">
+            <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
     </Style>
-    <Style Selector="ToggleButton.hudSummary:pressed /template/ Border#Surface">
-      <Setter Property="Background" Value="#303033" />
+    <Style Selector="Button.islandAction:pointerover /template/ Border#Surface">
+      <Setter Property="Background" Value="#0CFFFFFF" />
     </Style>
-    <Style Selector="ToggleButton.hudSummary:focus-visible /template/ Border#Surface">
+    <Style Selector="Button.islandAction:pressed /template/ Border#Surface">
+      <Setter Property="Background" Value="#16FFFFFF" />
+    </Style>
+    <Style Selector="Button.islandAction:focus-visible /template/ Border#Surface">
       <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
   </UserControl.Styles>
-  <Border Width="{x:Static local:HudSettings.CardWidth}" CornerRadius="30" Background="#171719"
-          BorderBrush="#28FFFFFF" BorderThickness="1" ClipToBounds="True">
-    <StackPanel>
-      <ToggleButton x:Name="SummaryButton" Classes="hudSummary" Height="58" HorizontalAlignment="Stretch"
-                    Cursor="Hand" AutomationProperties.Name="展开或收起 HUD 详情"
-                    AutomationProperties.HelpText="{Binding Summary}" ToolTip.Tip="{Binding Summary}">
-        <ToggleButton.Template>
-          <ControlTemplate>
-            <Border x:Name="Surface" Background="Transparent" CornerRadius="29" BorderThickness="1" BorderBrush="Transparent" Padding="18,0,12,0">
-              <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
-            </Border>
-          </ControlTemplate>
-        </ToggleButton.Template>
-        <Grid ColumnDefinitions="24,*,38" ColumnSpacing="14" IsHitTestVisible="False">
-          <Path Data="{Binding Icon}" Width="24" Height="24" Stretch="Uniform" Stroke="{Binding Accent}" StrokeThickness="1.8" VerticalAlignment="Center" />
-          <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{Binding Accent}" FontSize="22" FontWeight="SemiBold"
+  <Border x:Name="Island" CornerRadius="22" Background="#171719" BorderBrush="#22FFFFFF" BorderThickness="1" ClipToBounds="True">
+    <!-- Two scenes share one changing silhouette; details never append below a fixed header. -->
+    <Grid>
+      <Button x:Name="SummaryButton" Classes="islandAction" Width="246" Height="42"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              AutomationProperties.Name="展开 HUD 详情" AutomationProperties.HelpText="{Binding Summary}" ToolTip.Tip="{Binding Summary}">
+        <Grid ColumnDefinitions="18,*,28" ColumnSpacing="10" Margin="14,0,10,0" IsHitTestVisible="False">
+          <Path Data="{Binding Icon}" Width="18" Height="18" Stretch="Uniform" Stroke="{Binding Accent}" StrokeThickness="1.7" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="#F5F5F7" FontSize="18" FontWeight="SemiBold"
                      VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-          <Grid Grid.Column="2" Width="38" Height="38">
-            <Ellipse Width="34" Height="34" Stroke="#3A3A3D" StrokeThickness="3" IsVisible="{Binding HasPercent}" />
-            <Arc Width="34" Height="34" StartAngle="-90" SweepAngle="{Binding SweepAngle}" Stroke="{Binding Accent}"
-                 StrokeThickness="3" IsVisible="{Binding HasPercent}" />
-            <Path x:Name="Chevron" Data="M0,0 L4,4 8,0" Width="8" Height="4" Stroke="#BDBDC5" StrokeThickness="1.5"
-                  HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="50%,50%" />
+          <Grid Grid.Column="2" Width="28" Height="28">
+            <Ellipse Width="26" Height="26" Stroke="#38383B" StrokeThickness="2.5" IsVisible="{Binding HasPercent}" />
+            <Arc Width="26" Height="26" StartAngle="-90" SweepAngle="{Binding SweepAngle}" Stroke="{Binding Accent}"
+                 StrokeThickness="2.5" IsVisible="{Binding HasPercent}" />
+            <Path Data="M0,0 L3,3 6,0" Width="6" Height="3" Stroke="#BDBDC5" StrokeThickness="1.3"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Grid>
         </Grid>
-      </ToggleButton>
-      <ScrollViewer Height="164" Padding="20,4,20,20" IsVisible="{Binding IsChecked, ElementName=SummaryButton}"
-                    HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{Binding Title}" Foreground="#BDBDC5" FontSize="13" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Value}" Foreground="{Binding Accent}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding Detail}" Foreground="#BDBDC5" FontSize="13" TextWrapping="Wrap" />
-        </StackPanel>
-      </ScrollViewer>
-    </StackPanel>
+      </Button>
+      <Grid x:Name="Details" Width="334" Height="146" RowDefinitions="40,*" Opacity="0" IsVisible="False"
+            HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" IsEnabled="False">
+        <Button x:Name="CollapseButton" Classes="islandAction" Margin="8,4,8,0"
+                AutomationProperties.Name="收起 HUD 详情" AutomationProperties.HelpText="{Binding Summary}" ToolTip.Tip="{Binding Summary}">
+          <Grid ColumnDefinitions="18,*,12" ColumnSpacing="10" Margin="12,0" IsHitTestVisible="False">
+            <Path Data="{Binding Icon}" Width="18" Height="18" Stretch="Uniform" Stroke="{Binding Accent}" StrokeThickness="1.7" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12" Foreground="#BDBDC5" TextTrimming="CharacterEllipsis" />
+            <Path Grid.Column="2" Data="M0,3 L3,0 6,3" Width="6" Height="3" Stroke="#BDBDC5" StrokeThickness="1.3" VerticalAlignment="Center" />
+          </Grid>
+        </Button>
+        <ScrollViewer Grid.Row="1" Margin="22,0,14,14" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="5" Margin="0,0,8,0">
+            <TextBlock Text="{Binding Value}" Foreground="{Binding Accent}" FontSize="28" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding Detail}" Foreground="#BDBDC5" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Grid>
   </Border>
 </UserControl>

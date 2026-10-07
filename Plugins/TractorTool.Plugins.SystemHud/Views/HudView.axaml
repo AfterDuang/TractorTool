@@ -24,7 +24,7 @@
                 <Expander Header="最近显示的内容" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                   <StackPanel Spacing="8" Margin="0,8,0,0">
                     <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                      <local:HudCard DataContext="{Binding Display}" />
+                      <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding Display}" />
                     </Viewbox>
                     <TextBlock Text="隐藏或暂停时保留最后读数；不会为这个预览额外采样。" Classes="caption" TextWrapping="Wrap" />
                   </StackPanel>
@@ -131,7 +131,7 @@
                   <TextBlock Text="仅百分比指标参与规则；温度、余额和网络延迟不会当作百分比。" Classes="caption" TextWrapping="Wrap" />
                   <TextBlock Text="编辑预览 · 示例数据，不代表本机读数" Classes="caption" />
                   <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
-                    <local:HudCard DataContext="{Binding EditorDisplay}" />
+                    <local:HudCard Animate="{Binding $parent[UserControl].((local:HudModel)DataContext).MotionEnabled}" DataContext="{Binding EditorDisplay}" />
                   </Viewbox>
                 </StackPanel>
               </Expander>
