@@ -26,7 +26,24 @@
 
 ### 1.1 源码组织与职责
 
-源码布局示例见 [项目首页](../README.md#插件源码组织)，真实目录及阅读顺序见 [SystemHud 源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。目录名是插件内部约定，宿主按清单和公开接口加载，不按 `Views`、`ViewModels` 等目录扫描注册；小插件无需套齐所有目录。
+以下为插件源码布局示例，真实目录及阅读顺序见 [SystemHud 源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。目录名是插件内部约定，宿主按清单和公开接口加载，不按 `Views`、`ViewModels` 等目录扫描注册；小插件无需套齐所有目录。
+
+```text
+TractorTool.Plugins.Example/
+├─ ExamplePlugin.cs              入口：初始化、页面/托盘注册和停止清理
+├─ Configuration/               配置模型、保存格式与校验
+├─ Processing/                  业务处理与外部接口适配，按业务命名
+├─ ViewModels/                  页面状态、命令和操作协调
+├─ Views/                       AXAML、同名后台代码及显示转换
+├─ Assets/                      图标等静态资源（需要时）
+├─ Licenses/                    第三方许可原文（使用第三方依赖时）
+├─ NOTICE.md                    依赖及素材来源说明
+├─ README.md                    职责目录、阅读顺序和开发入口
+├─ plugin.json                  插件身份、入口、兼容性与外部依赖声明
+└─ TractorTool.Plugins.Example.csproj
+```
+
+业务目录使用具体名称，例如 HUD 的 `Sampling/`。从 `plugin.json` 和入口类读起，再跟到模型、业务实现和页面；接入示例见 [IndependentPlugin](../tests/IndependentPlugin/ProbePlugin.cs)，交付步骤见[独立构建与打包](#6-开发构建与安装验证)。
 
 | 修改内容 | 建议落点与边界 |
 | --- | --- |

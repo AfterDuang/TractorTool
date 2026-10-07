@@ -6,7 +6,7 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-本轮 E71 只补文档：[项目首页](../README.md#插件源码组织)提供插件源码职责图，[插件规范](PLUGIN_DEVELOPMENT.md#source-organization)补充按需拆分与身份/资源路径注意事项，并链接 HUD 实例。没有改代码、构建或运行程序，既有交付和验收状态不变。
+本轮 E71 按用户澄清修正文档：[项目首页](../README.md#设计与结构)补充软件框架自身的目录职责图、项目依赖和关键源码阅读入口；插件内部目录示例移入[插件规范](PLUGIN_DEVELOPMENT.md#source-organization)。没有改代码、构建或运行程序，既有交付和验收状态不变。
 
 E70 已将 HUD 源码整理为 Configuration / Sampling / ViewModels / Views 四个目录，入口/清单保留根目录；19 文件移动前后哈希一致，命名空间保留，AXAML 与后台文件同目录。[源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md) 标明阅读顺序与修改落点；代码和现有 HudChecks 编译 0 警告/0 错误，未执行、未重打包或改版本。E69 的 SystemHud 0.3.0 仍是当前安装包，包含三步核心能力；用户后续主要迭代 UI/操作流，职责边界继续按插件文档。
 
