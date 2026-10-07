@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 详情） | [E81 · 即时收起与详细态层级（2026-10-07）](#evidence-hud-detail-refinement) |
 | 修正与离屏验证（HUD 输入） | [E80 · 点击响应、整岛反馈与长条布局复核（2026-10-07）](#evidence-hud-input-review) |
 | 修正与离屏验证（HUD 绑定/布局） | [E79 · 修正绑定串型、状态重排并合并编辑预览（2026-10-07）](#evidence-hud-binding-review) |
 | 修正与精简（HUD 内部布局） | [E78 · 删除误加的区域编辑器并修正排版（2026-10-07）](#evidence-hud-built-in-layout) |
@@ -2378,3 +2379,21 @@ SystemHud 0.3.5：
 5. 独立打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e80-hud-interaction/plugin`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json` 记录 ZIP 67 文件逐项 SHA256 一致、无共享 SDK 副本、5 个 AXAML 可解析、234 个原宿主文件不变。
 
 交付 `artifacts/e80-hud-interaction/plugin/TractorTool.SystemHud-0.4.3.zip`，5,487,783 字节，SHA256 `E4713925964A92B93004FAE837CFD04CFF7E40500D44D0DEA39F355B76E7B9DE`，附哈希文件。ProductVersion 的 31ee8e7 是构建时基底，不表示本轮修正已在旧提交。未替用户安装或启动；用户安装后需显式退出重启。本轮为主代理自审与离屏回归，不冒称子代理复审。保留 .gitignore/.vscode/launch.json 的用户修改，只保存本地提交，不推送。
+
+<a id="evidence-hud-detail-refinement"></a>
+
+## E81：HUD 即时收起与详细态层级（2026-10-07）
+
+用户反馈长条回短条仍慢，CPU/网速详细态空散、信息层级不佳。删除 E80 有意保留的收起计时器及对应测试等待路径，两个方向均在松手时切换。第二击沿系统 ClickCount 识别；已向用户说明双击需要落在收窄后仍可见的中央，长条两端消失后不保留输入目标，未增加透明阻挡或跨窗口捕获。
+
+参照 [Apple HIG Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 的紧凑内容和连贯位置、[Layout](https://developer.apple.com/design/human-interface-guidelines/layout) 的层级及对齐，将详细态从 400×184 调整到 360×152 DIP：图标与名称同排，主读数放大至 24，辅助值靠右；补充说明与独立读取时间使用较小字号和较弱颜色。Expanded 复用四槽数据类型，不强套长条顺序；CPU 环不再重复图标，内存右侧显示容量，网络右侧显示上传。保留模板、未知状态、滚动正文和无障碍摘要；自定义说明不能因塞入辅助槽而丢失。没有改变生产依赖、配置格式、采样、原生窗口或软件框架。
+
+证据根目录 `artifacts/e81-hud-detail`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e81-hud-detail/build --force`，后续 `--no-restore`；`checks-build-final.txt` 为 0 警告/0 错误。同步默认逻辑检查中的详细尺寸位置期望，但未运行默认套件。
+2. 沿用已授权的 `--ui-only` 专项：`dotnet artifacts/e81-hud-detail/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e81-hud-detail/final`。`checks-run-final.txt` 通过，`final/bindings.txt`、`final/failures.txt` 为空。原始鼠标检查中央/两端立即收起、中央双击接续，键盘、拖动/点击区分、显式状态重置、动画中途反转保持通过；12 指标三态/长文/上下文/重新挂载/单一预览/宽窄切换保持通过。新增正文与时间不重叠、时间不重复、自定义说明保留检查。
+3. 实际查看 CPU/内存/网速详细 PNG，以及浅色按下和内存长条 PNG；新图保存于 `final/metric-2-Detail.png`、`metric-3-Detail.png`、`metric-4-Detail.png`、`Light-Detail-pressed.png`、`metric-3-Strip.png`。初次相同范围检查也通过，见 `first/`；没有将静态尺寸或状态规则当成渲染证据。
+4. 收尾补查标题、正文、时间区域的原始双击返回，发现时间文字旁的空白没有命中 TextBlock；`footer-before-run.txt`、`footer-before-failures.txt` 留存该 1 项失败。为时间行设置透明背景覆盖自身矩形，不扩大岛外命中范围；重新运行专项后全部通过，最终日志和 PNG 已更新。
+5. 独立打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e81-hud-detail/plugin-final`，`plugin-build-final.txt` 为 0 警告/0 错误。`static-checks-final.json`：ZIP 67 个文件逐项哈希一致，无共享 SDK 副本，234 个原宿主文件未变，5 个 AXAML 可解析。早期 `plugin/` 仅为候选产物，不是交付包。
+
+交付 `artifacts/e81-hud-detail/plugin-final/TractorTool.SystemHud-0.4.4.zip`，5,488,150 字节，SHA256 `43C8830F1F60A0C2B39DB57277F4406C45ACC56A8A59AB3DFFF75915DCBA110A`。ProductVersion `0.4.4+7464bc370503b4b0d7d86c70482467b999babb60` 中提交为构建基底，不代表本轮代码在旧提交中。未安装、未启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；原生手感、DPI/透明区域/位置恢复仍由 A26/A27 保留。源码和检查由主代理复核，没有声称子代理 Review。保留 .gitignore/.vscode/launch.json 的用户修改，仅保存本地提交。

@@ -44,11 +44,13 @@ internal static class HudVisualChecks
                 var profile = new HudProfile { Metric = metric, SensorId = "/gpu-nvidia/0/temperature/2" };
                 var reading = metric switch
                 {
+                    2 => new HudReading("CPU", "8%", "处理器使用率 · 每秒采样", 8),
                     3 => new HudReading("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存"),
                     4 => new HudReading("网速", "↓ 551.1 KiB/s", "↑ 48.2 KiB/s · 活动接口合计", SecondaryValue: "↑ 48.2 KiB/s",
                         Context: "2 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。"),
                     _ => new HudReading("指标", "43.5 °C", "硬件设备与采样说明")
                 };
+                reading = reading with { ObservedAt = new DateTimeOffset(2026, 10, 7, 23, 7, 1, TimeSpan.FromHours(8)) };
                 var display = profile.Render(reading);
                 card.DataContext = display;
                 card.Mode = mode;
@@ -67,7 +69,19 @@ internal static class HudVisualChecks
                     for (var j = i + 1; j < bounds.Length; j++)
                         if (bounds[i].Intersects(bounds[j])) failures.Add($"{metric}/{mode}: {slots[i].Name} overlaps {slots[j].Name}");
                 }
-                if (metric is 3 or 4)
+                if (mode == HudMode.Detail)
+                {
+                    var body = card.FindControl<ScrollViewer>("BodyScroll")!;
+                    var updated = card.FindControl<TextBlock>("Updated")!;
+                    var bodyBounds = new Rect(body.TranslatePoint(default, card)!.Value, body.Bounds.Size);
+                    var updatedBounds = new Rect(updated.TranslatePoint(default, card)!.Value, updated.Bounds.Size);
+                    if (bounds.Any(b => b.Intersects(bodyBounds)) || bodyBounds.Intersects(updatedBounds)
+                        || !new Rect(card.Bounds.Size).Contains(updatedBounds))
+                        failures.Add($"{metric}: expanded header, explanation and timestamp must have separate space.");
+                    if (!updated.Text!.Contains("23:07:01") || display.Layout.Detail.Text.Contains("23:07:01"))
+                        failures.Add($"{metric}: observation time must appear once in the footer.");
+                }
+                if (metric is 2 or 3 or 4)
                 {
                     if (display.Layout.Detail.Text.Contains(reading.Value)
                         || reading.SecondaryValue is { } secondary && display.Layout.Detail.Text.Contains(secondary))
@@ -86,6 +100,14 @@ internal static class HudVisualChecks
                 if (slots.Any(s => !s.ClipToBounds)) failures.Add($"{metric}/{mode}: long content can escape its region");
                 window.Content = null; window.Content = card;
                 Pump();
+            }
+            foreach (var metric in new[] { 0, 3 })
+            {
+                const string explanation = "自定义说明必须完整保留在可滚动的详情区域，而不是缩进一个小读数槽位。";
+                card.DataContext = new HudProfile { Metric = metric, Detail = explanation }.Render(new("指标", "41%", "读数说明", 41));
+                card.Mode = HudMode.Detail; Pump();
+                if (card.FindControl<HudSlotView>("Body")!.Item?.Text != explanation)
+                    failures.Add("A custom explanation must remain in the scrollable body.");
             }
             var memory = new MemorySettings();
             var model = new HudModel(new("HUD.UI.Checks", null!, memory, memory, default));
@@ -122,13 +144,14 @@ internal static class HudVisualChecks
         File.WriteAllLines(Path.Combine(output, "failures.txt"), failures);
         if (logs.Messages.Count != 0 || failures.Count != 0)
             throw new InvalidOperationException($"HUD UI checks: {logs.Messages.Count} binding warnings/errors, {failures.Count} layout failures. See {output}.");
-        Console.WriteLine("PASS HUD headless: light/dark hover and press, immediate expansion, strip-end double clicks, keyboard, drag cancellation and collapse timer; 12 metrics/three states, context/long text/reattachment and single responsive editor preview; zero binding errors or layout failures.");
+        Console.WriteLine("PASS HUD headless: light/dark hover and press, immediate expansion/collapse including strip ends, central double clicks, keyboard and drag cancellation; 12 metrics/three states, context/long text/reattachment and single responsive editor preview; zero binding errors or layout failures.");
 
         void Pump() { Dispatcher.UIThread.RunJobs(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); }
 
         void CheckInput()
         {
             card.DataContext = new HudProfile { Metric = 4 }.Render(new("网速", "↓ 7.1 KiB/s", "活动接口合计",
+                ObservedAt: new DateTimeOffset(2026, 10, 7, 23, 7, 1, TimeSpan.FromHours(8)),
                 SecondaryValue: "↑ 1.0 KiB/s", Context: "40 个活动接口 · 含虚拟网卡\n转发流量可能重复计入。"));
             var header = card.FindControl<Button>("HeaderButton")!;
             foreach (var theme in new[] { ThemeVariant.Dark, ThemeVariant.Light })
@@ -163,9 +186,22 @@ internal static class HudVisualChecks
                 Click(new Point(1, 1)); // Reset the platform click sequence outside the island.
                 var end = header.TranslatePoint(new Point(edge, 20), window)!.Value;
                 Click(end);
-                if (card.Mode != HudMode.Strip) failures.Add("The strip must keep the second-click target at its ends.");
-                Click(end);
-                if (card.Mode != HudMode.Detail) failures.Add("Double click at a strip end must enter details.");
+                if (card.Mode != HudMode.Compact) failures.Add("Clicking either strip end must collapse on release without a timer.");
+            }
+            card.Mode = HudMode.Strip; Pump();
+            Click(new Point(1, 1));
+            var stripCenter = header.TranslatePoint(new Point(header.Bounds.Width / 2, 20), window)!.Value;
+            Click(stripCenter);
+            if (card.Mode != HudMode.Compact) failures.Add("The central strip click must also collapse immediately.");
+            Click(stripCenter);
+            if (card.Mode != HudMode.Detail) failures.Add("A second click on the visible island must enter details after immediate collapse.");
+            foreach (var target in new Control[] { header, card.FindControl<ScrollViewer>("BodyScroll")!, card.FindControl<TextBlock>("Updated")! })
+            {
+                card.Mode = HudMode.Compact; card.Mode = HudMode.Detail; Pump();
+                Click(new Point(1, 1));
+                var point = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)!.Value;
+                Click(point); Click(point);
+                if (card.Mode != HudMode.Compact) failures.Add($"Double click in {target.Name} must return from details.");
             }
             // Keyboard and cancellation remain available after mouse input.
             header.Focus();
@@ -190,13 +226,12 @@ internal static class HudVisualChecks
             Click(new Point(1, 1));
             var stripPoint = header.TranslatePoint(new Point(120, 20), window)!.Value;
             Click(stripPoint);
-            WaitForCollapse();
             if (card.Mode != HudMode.Compact) failures.Add($"A single strip click must finish collapsing (actual: {card.Mode}).");
             card.Mode = HudMode.Strip; Pump();
             Click(new Point(1, 1)); Click(stripPoint);
-            card.Mode = HudMode.Compact; Pump(); // Hide/click-through can explicitly collapse the desktop card.
-            WaitForCollapse();
-            if (card.Mode != HudMode.Compact) failures.Add("An explicit state change must cancel the pending collapse, not reopen the island.");
+            card.Mode = HudMode.Strip; Pump(); // An external mode change must clear the old double-click candidate.
+            Click(stripPoint);
+            if (card.Mode != HudMode.Compact) failures.Add("An explicit state change must reset the click sequence.");
             card.Animate = true; Pump();
             if (card.Transitions is { Count: > 0 })
             {
@@ -211,11 +246,6 @@ internal static class HudVisualChecks
             card.Animate = false;
 
             void Click(Point point) { window.MouseDown(point, MouseButton.Left); window.MouseUp(point, MouseButton.Left); Pump(); }
-            void WaitForCollapse()
-            {
-                var delay = window.GetPlatformSettings()!.GetDoubleTapTime(PointerType.Mouse) + TimeSpan.FromMilliseconds(80);
-                Wait(delay);
-            }
             void Wait(TimeSpan delay)
             {
                 using var timeout = new CancellationTokenSource(delay);

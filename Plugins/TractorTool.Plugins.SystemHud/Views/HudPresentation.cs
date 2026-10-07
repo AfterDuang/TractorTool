@@ -33,18 +33,23 @@ public static class HudPresentation
             strip = strip with { Primary = Text(detail), Secondary = Text(value) };
         if (profile.Metric == 4) // Never parse a localized explanation to recover the upload reading.
             strip = strip with { Secondary = Text(reading.SecondaryValue ?? "↑ —"), Right = Text(title) };
+        // The expanded header groups icon/name above a primary reading and one supporting item.
+        // Reuse the four regions, but do not carry strip-only ordering or duplicate icons into details.
+        var expanded = new HudStripLayout(icon, Text(value), Text(title), trailing with { Icon = "" });
+        if ((profile.Metric is 0 or 3) && hasPercent && profile.Detail == "{detail}")
+            expanded = expanded with { Right = Text(detail) };
+        if (profile.Metric == 4) expanded = expanded with { Right = strip.Secondary };
         var body = profile.Detail == "{detail}" ? reading.Context ?? detail : detail;
-        var headerText = new[] { strip.Primary.Text, strip.Secondary.Text, strip.Right.Text };
+        var headerText = new[] { expanded.Primary.Text, expanded.Secondary.Text, expanded.Right.Text };
         if (headerText.Contains(body)) body = "";
-        if (!headerText.Contains(title)) body = string.Join('\n', new[] { title, body }.Where(t => t.Length > 0));
-        if (reading.ObservedAt is { } updated && !body.Contains(updated.ToString("HH:mm:ss", CultureInfo.CurrentCulture)))
-            body = string.Join('\n', new[] { body, $"更新于 {updated:HH:mm:ss}" }.Where(t => t.Length > 0));
-        var layout = new HudLayout(new(icon, Text(value), identity), strip, Text(body));
-        return new(title, value, detail, accent, layout);
+        var updated = reading.ObservedAt?.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
+        var footer = updated is not null && !headerText.Append(body).Any(t => t.Contains(updated)) ? $"更新于 {updated}" : "";
+        var layout = new HudLayout(new(icon, Text(value), identity), strip, expanded, Text(body));
+        return new(title, value, detail, accent, layout, footer);
     }
 }
 
-public sealed record HudDisplay(string Title, string Value, string Detail, IBrush Accent, HudLayout Layout)
+public sealed record HudDisplay(string Title, string Value, string Detail, IBrush Accent, HudLayout Layout, string Updated)
 {
     public string Summary => $"{Title} · {Value}\n{Detail}";
     internal static string IconFor(int icon) => Icons[Math.Clamp(icon, 0, Icons.Length - 1)];

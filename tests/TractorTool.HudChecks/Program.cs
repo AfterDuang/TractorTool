@@ -34,16 +34,16 @@ Check(!new HudSettings().ClickThrough && !new HudSettings { PositionX = double.N
 Check(System.Text.Json.JsonSerializer.Deserialize<HudSettings>("{\"ClickThrough\":true,\"Anchor\":8}") is { ClickThrough: true, HasPosition: false },
     "Existing explicit click-through preferences and anchor-only configurations remain compatible.");
 var expandedSize = HudSettings.SizeFor(HudMode.Detail);
-Check(bottom.Position(area, 1, expandedSize) == new PixelPoint(-400, 896)
-    && bottom.Position(new(0, 0, 1280, 720), 2, expandedSize) == new PixelPoint(480, 352)
+Check(bottom.Position(area, 1, expandedSize) == new PixelPoint(-360, 928)
+    && bottom.Position(new(0, 0, 1280, 720), 2, expandedSize) == new PixelPoint(560, 416)
     && bottom.Position(area, 1) == new PixelPoint(-248, 1036),
     "Expansion fits all edges without rewriting the compact anchor, including high DPI.");
-Check(dragged.Position(area, 1.5, expandedSize) == new PixelPoint(-1414, 395)
+Check(dragged.Position(area, 1.5, expandedSize) == new PixelPoint(-1384, 419)
     && bottom.Position(new(0, 0, 100, 100), 2, expandedSize) == new PixelPoint(0, 0),
     "Expansion grows around the original centre and safely clamps an undersized work area.");
 var expandedDrop = new HudSettings().AtPosition(new(5000, 5000), area, 1, "secondary", 2, expandedSize);
-Check(expandedDrop.Position(area, 1, expandedSize) == new PixelPoint(-400, 896)
-    && expandedDrop.Position(area, 1) == new PixelPoint(-324, 966),
+Check(expandedDrop.Position(area, 1, expandedSize) == new PixelPoint(-360, 928)
+    && expandedDrop.Position(area, 1) == new PixelPoint(-304, 982),
     "An expanded drop stores the clamped centre; collapse shrinks around that centre.");
 Check(HudWindow.ContainsIsland(new(216, 104), new(248, 44), 22)
     && !HudWindow.ContainsIsland(new(92, 82), new(248, 44), 22)
@@ -113,7 +113,8 @@ Check(HudLayout.AfterClick(HudMode.Compact, false) == HudMode.Strip
 var memoryLayout = new HudProfile { Metric = 3 }.Render(new("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存")).Layout;
 Check(memoryLayout.Compact is { Left.IsIcon: true, Center.Text: "41%", Right.Text: "内存" }
     && memoryLayout.Strip is { Primary.Text: "13.2 / 32 GiB", Secondary.Text: "41%", Right.IsRing: true }
-    && memoryLayout.Detail.Text == "内存\n可用 18.8 GiB · 物理内存",
+    && memoryLayout.Expanded is { Primary.Text: "41%", Secondary.Text: "内存", Right.Text: "13.2 / 32 GiB" }
+    && memoryLayout.Detail.Text == "可用 18.8 GiB · 物理内存",
     "Memory separates capacity/usage from the available-memory explanation.");
 var networkLayout = new HudProfile { Metric = 4 }.Render(new("网速", "↓ 60.6 KiB/s", "↑ 43.0 KiB/s · 活动接口合计", SecondaryValue: "↑ 43.0 KiB/s", Context: "2 个活动接口合计")).Layout;
 Check(networkLayout.Strip is { Left.IsIcon: true, Primary.Text: "↓ 60.6 KiB/s", Secondary.Text: "↑ 43.0 KiB/s", Right.IsText: true, Right.Text: "网速" }
