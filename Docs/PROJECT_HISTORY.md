@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
 | 修正与离屏验证（HUD 结构） | [E82 · 左右分组、整体比例与字形居中（2026-10-08）](#evidence-hud-grouped-structure) |
 | 修正与离屏验证（HUD 详情） | [E81 · 即时收起与详细态层级（2026-10-07）](#evidence-hud-detail-refinement) |
 | 修正与离屏验证（HUD 输入） | [E80 · 点击响应、整岛反馈与长条布局复核（2026-10-07）](#evidence-hud-input-review) |
@@ -2415,3 +2416,17 @@ SystemHud 0.3.5：
 - 独立构建：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e82-hud-structure/plugin`，`plugin-build.txt` 为 0 警告/0 错误。`static-checks.json`：ZIP 67 文件哈希逐项一致，无共享 SDK DLL，234 个宿主文件未变，5 个 AXAML 可解析。
 
 交付 `artifacts/e82-hud-structure/plugin/TractorTool.SystemHud-0.4.5.zip`，5,488,554 字节，SHA256 `136F7030103154091CB2B151FED06FEAFCCA0BEE784E4F88109557B9DC6E4DFE`。ProductVersion 中 f350820 是构建基底，不表示本轮修改在旧提交中。未自动安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；离屏倍率不替代真实显示器 DPI/原生手感验收，A26/A27 缺口继续保留。主代理自审，未称子代理 Review；保留用户 .gitignore/.vscode/launch.json 修改，仅本地提交。
+
+<a id="evidence-hud-inline-identity"></a>
+
+## E83：所有指标统一图标与名称横排（2026-10-08）
+
+用户先以网速截图要求“图标在左文字在右”，随后明确此排列适用于所有指标。仅修改共享 HudCard 的详情行列：图标与名称分列并跨两行居中，右侧仍为上辅助/下主值；切回短条/长条恢复单行跨度。保留 400×160 尺寸、字号、正文、时间、动画和输入逻辑，无指标特判、配置项或框架修改。
+
+证据根目录 `artifacts/e83-hud-inline-identity`：
+
+- `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e83-hud-inline-identity/build --force`，`checks-build.txt` 为 0 警告/0 错误。
+- 沿用已授权专项：`dotnet artifacts/e83-hud-inline-identity/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e83-hud-inline-identity/final`。`checks-run.txt` 通过；既有 12 指标三态断言改为验证图标在名称左侧且中心对齐，区域不重叠、三态往返、绑定、长文字、正文/时间、输入、字形与动画反转检查通过。`final/bindings.txt`、`final/failures.txt` 为空；实际查看 CPU/内存/网速的 `metric-2-Detail.png`、`metric-3-Detail.png`、`metric-4-Detail.png`。
+- 独立构建：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e83-hud-inline-identity/plugin`，`plugin-build.txt` 为 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
+
+交付 `artifacts/e83-hud-inline-identity/plugin/TractorTool.SystemHud-0.4.6.zip`，5,488,570 字节，SHA256 `137FB5AAD6797E972A179A2B83D674F16FA256D56B405C3F5545B56A1B08A7C9`。ProductVersion 的 acebad5 是构建基底。未安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；原生 UI/DPI 仍待用户安装并显式退出重启后验证。保留 .gitignore/.vscode/launch.json 的用户修改，仅保存本地提交。

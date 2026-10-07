@@ -78,10 +78,10 @@ internal static class HudVisualChecks
                     }
                     var first = Region("First"); var second = Region("Second");
                     var third = Region("Third"); var fourth = Region("Fourth");
-                    if (Math.Abs(first.Left - third.Left) > 1 || first.Bottom > third.Top
+                    if (first.Right > third.Left || Math.Abs(first.Center.Y - third.Center.Y) > 1
                         || Math.Abs(second.Right - fourth.Right) > 1 || fourth.Bottom > second.Top
                         || third.Right > second.Left)
-                        failures.Add($"{metric}: details must form leading identity and trailing readings, not one mixed header row.");
+                        failures.Add($"{metric}: details must place the icon left of the name with aligned centers, separate from trailing readings.");
                     var body = card.FindControl<ScrollViewer>("BodyScroll")!;
                     var updated = card.FindControl<TextBlock>("Updated")!;
                     var bodyBounds = new Rect(body.TranslatePoint(default, card)!.Value, body.Bounds.Size);

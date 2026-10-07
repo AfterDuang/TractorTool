@@ -82,8 +82,8 @@ public partial class HudCard : UserControl
         HeaderButton.Height = detailed ? 88 : size.Height - 2;
         HeaderGrid.Margin = detailed ? new Thickness(20, 14) : new Thickness(14, 0);
         // Keep the same definitions: replacing the collections can leave Grid's cell cache stale.
-        HeaderGrid.ColumnDefinitions[0].Width = detailed ? new GridLength(1, GridUnitType.Star) : new GridLength(38);
-        HeaderGrid.ColumnDefinitions[1].Width = detailed ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        HeaderGrid.ColumnDefinitions[0].Width = new GridLength(detailed ? 32 : 38);
+        HeaderGrid.ColumnDefinitions[1].Width = new GridLength(detailed ? 0.8 : 1, GridUnitType.Star);
         HeaderGrid.ColumnDefinitions[2].Width = Mode switch
         {
             HudMode.Detail => new GridLength(1.35, GridUnitType.Star),
@@ -98,8 +98,9 @@ public partial class HudCard : UserControl
         Third.Margin = new Thickness(0, 0, Mode == HudMode.Strip ? 20 : 0, 0);
         Grid.SetColumn(Second, detailed ? 2 : 1);
         Grid.SetRow(Second, detailed ? 1 : 0);
-        Grid.SetColumn(Third, detailed ? 0 : 2);
-        Grid.SetRow(Third, detailed ? 1 : 0);
+        Grid.SetRowSpan(First, detailed ? 2 : 1);
+        Grid.SetColumn(Third, detailed ? 1 : 2);
+        Grid.SetRowSpan(Third, detailed ? 2 : 1);
         Grid.SetColumn(Fourth, detailed ? 2 : 3);
         Second.FontSize = detailed ? 24 : 18;
         Second.TextAlignment = detailed ? Avalonia.Media.TextAlignment.Right : Avalonia.Media.TextAlignment.Left;
