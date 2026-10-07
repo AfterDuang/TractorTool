@@ -15,7 +15,7 @@
 | 阶段 | 记录 |
 | --- | --- |
 | 修正（HUD 分栏） | [E72 · 左右工作区与窄窗口滚动（2026-10-07）](#evidence-hud-responsive-layout) |
-| 文档（框架源码导航） | [E71 · 软件框架目录职责与开发入口（2026-10-07）](#evidence-framework-source-guide) |
+| 文档（框架结构与精简） | [E71 · 软件框架导航、架构边界与文档分工（2026-10-07）](#evidence-framework-source-guide) |
 | HUD 源码组织 | [E70 · 按内部职责整理源码目录（2026-10-07）](#evidence-hud-folders) |
 | HUD 第一版 | [E69 · 首版高级数据源与插件内部职责设计（2026-10-07）](#evidence-hud-v1) |
 | HUD 第二步 | [E68 · 多方案、轮播、模板、颜色规则与编辑预览（2026-10-07）](#evidence-hud-profiles) |
@@ -832,7 +832,7 @@ ZIP：`artifacts/m2-ui-fixes/clipboard/TractorTool.ClipboardHistory-1.1.1.zip`�
 
 用户截图提示正式剪贴板工程不属于当前解决方案。原因是此前把“独立发布后编译”过度施加在日常开发上：根 slnx 漏掉插件及相关检查；只在 DesignTimeBuild 下使用源码引用，普通编译硬需已发布 SDK。源码目录本身不需要搬迁。
 
-对照 Watt 固定提交 `d04213147e77a8d73277fa8b86eeecfa444df071` 的 `WattToolkit.slnx`、Authenticator/GameTools csproj：插件列入同一解决方案的 Plugins 分组，并引用公共客户端/UI 工程。其 `src/README.md` 主体仍是 TODO/旧注释，结构判断以实际 slnx/csproj 为准。文件缓存在 `artifacts/reference-projects`，链接和采用边界见 [架构第 1 节](ARCHITECTURE.md#1-当前代码与目标结构)。网页正文获取失败后用正常网络权限下载公开固定源码，仅阅读，未执行。
+对照 Watt 固定提交 `d04213147e77a8d73277fa8b86eeecfa444df071` 的 [WattToolkit.slnx](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/WattToolkit.slnx)、[GameTools csproj](https://github.com/BeyondDimension/SteamTools/blob/d04213147e77a8d73277fa8b86eeecfa444df071/src/BD.WTTS.Client.Plugins.GameTools/BD.WTTS.Client.Plugins.GameTools.csproj) 等工程：插件列入同一解决方案的 Plugins 分组，并引用公共客户端/UI 工程。其 `src/README.md` 主体仍是 TODO/旧注释，结构判断以实际 slnx/csproj 为准。文件缓存在 `artifacts/reference-projects`；本项目采用边界见 [架构第 1 节](ARCHITECTURE.md#1-当前代码与目标结构)。网页正文获取失败后用正常网络权限下载公开固定源码，仅阅读，未执行。
 
 修改范围：
 
@@ -1226,7 +1226,9 @@ dotnet build TractorTool.slnx -c Debug --no-restore -m:1 -nr:false
 
 用户询问未来能否使用 pip 安装源，并确认将其列入后续计划。本轮核对现有包契约、本地源与分层后，只修正产品需求、架构、开发计划及交接快照；首版便携包范围与 M3 媒体工作不变。
 
-方案保留宿主统一申请/确认/引用/清理，由 Core 在实际接入 Python 时区分安装流程，增加解释器和隔离环境的管理。重点记录版本冲突、间接依赖保护、完整环境复用条件，以及 venv 在数据根迁移时需重建的限制。官方依据留在[架构方案](ARCHITECTURE.md#python-dependencies)，尚未决定环境共享粒度、锁定格式或源码分发包支持策略。
+方案保留宿主统一申请/确认/引用/清理，由 Core 在实际接入 Python 时区分安装流程，增加解释器和隔离环境的管理。重点记录版本冲突、间接依赖保护、完整环境复用条件，以及 venv 在数据根迁移时需重建的限制；现行边界见[架构计划](ARCHITECTURE.md#python-dependencies)。环境共享粒度、锁定格式和源码分发支持尚未决定。
+
+调研依据：[Python venv 的隔离与迁移限制](https://docs.python.org/3/library/venv.html)、[pip 的进程调用方式](https://pip.pypa.io/en/stable/user_guide/#using-pip-from-your-program)、[pip 依赖解析](https://pip.pypa.io/en/stable/topics/dependency-resolution/)、[Python 包索引协议](https://packaging.python.org/en/latest/specifications/simple-repository-api/)。E71 将这些参考链接从架构归回本记录，不增加 Python 实现或改变原验收结论。
 
 5 份改动文档的 165 处本地链接/锚点与文档范围 diff 空白检查通过。不构建、不运行应用或测试，不安装 Python/pip 依赖；本轮不产生功能通过结论。已有 `.vscode/launch.json` 工作区修改保持原样，不纳入文档提交。
 
@@ -2136,6 +2138,10 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 修正后静态核对：177 个本地文件链接与结构图中的 37 个实际目录/文件路径存在，更新锚点可定位，日常文档无旧插件示例锚点引用，本轮差异无空白错误。
 
 后续按用户要求进一步精简框架 README：删除剪贴板、视频、HUD 的业务介绍、参数和专属操作，改为框架公共能力概览；去掉具体业务输出路径、测试插件与业务后续计划，压缩重复构建说明。保留框架源码职责图和阅读入口、安装/数据边界、开发与 Release 草稿入口；插件内容通过文档目录查阅。仅改文档，未构建、运行或改变产品实现与验收状态。
+
+同轮继续精简架构：按分层依赖、装载、生命周期、公共服务、存储、UI 和发布组织，删除具体插件业务、过时工程计数、重复版本/尺寸及实施过程；SDK 细则和操作步骤改为规范/源码入口，选型与 Python 参考链接归历史。保留私有加载终止边界、共享版本检查、事务归属/引用/租约、迁移提交前后恢复、退出限时和现有限制。核对加载器、来源服务、页面容器源码，仅改文档，未执行构建或运行程序；并行 HUD 改动不纳入本次提交。
+
+精简结果：架构正文按 LF 归一后字符数减少约 56%。本轮五份文档的 240 个本地链接、140 处锚点引用及 14 处架构反向引用均有效，文档差异空白检查通过；仅属静态文档证据。
 
 <a id="evidence-hud-responsive-layout"></a>
 

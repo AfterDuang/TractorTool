@@ -8,7 +8,7 @@
 
 本轮 E72 修复用户截图中的 HUD 编辑区挤压：SystemHud 0.3.1 在页面宽度至少 900 DIP 时左侧状态预览、右侧方案/位置编辑，两栏分别滚动；更窄时同一组控件上下排列并整页滚动，关闭栏内滚动。预览展开不再占用宽窗口编辑区高度，方案按钮随表单滚动，低高度也可访问；原有 72 个绑定和业务逻辑保留。
 
-E70 已将 HUD 源码按 Configuration / Sampling / ViewModels / Views 分目录，[源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md) 标明修改落点。E71 [项目首页](../README.md) 只说明框架公共能力和源码导航，插件内部组织归[插件规范](PLUGIN_DEVELOPMENT.md#source-organization)，业务说明归插件文档；本轮不调整框架。
+E70 已将 HUD 源码按 Configuration / Sampling / ViewModels / Views 分目录，[源码导航](../Plugins/TractorTool.Plugins.SystemHud/README.md) 标明修改落点。E71 精简[项目首页](../README.md)与[架构](ARCHITECTURE.md)：分别保留框架入口、公共机制与失败边界；SDK 细则归[插件规范](PLUGIN_DEVELOPMENT.md)，业务归插件文档，参考过程归历史。文档整理未改实现或验收状态。
 
 主页面遵循 Apple HIG 的可用空间适配和单一方向滚动边界；宽窄切换不重建控件、不清空草稿。设置仍保留六项长期偏好及独立 DeepSeek 凭据。配置兼容 schema 1，原五个指标编号不动；密钥使用当前用户 DPAPI，不写入方案/日志。隐藏/暂停停止采样，网络取消；方案级缓存包含尝试时间，轮播不能绕过刷新间隔，迟到结果不能覆盖新配置。
 
