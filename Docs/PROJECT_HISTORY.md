@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 新插件（HUD 第一步） | [E65 · 原生电源通知与基础桌面状态（2026-10-07）](#evidence-system-hud) |
 | 修正（测试日志） | [E64 · 独立插件移除定时心跳（2026-10-06）](#evidence-quiet-probe) |
 | 扩展（插件托盘） | [E63 · 托盘菜单与生命周期（2026-10-06）](#evidence-plugin-tray) |
 | 反馈（本机测试） | [E62 · 用户测试暂未发现问题（2026-10-05）](#evidence-user-local-validation) |
@@ -1953,3 +1954,26 @@ Test.Independent 清单升至 1.0.1，供现有 1.0.0 正常更新。原切页/�
 新包 `artifacts/e64-tray-quiet/Test.Independent-1.0.1.zip` 使用标准 ZipFile 打包，根清单版本、共享 DLL 排除及随包资源许可静态核对通过。SHA256：`22115c4ec571dd717574920f40cce95314bd149d67d7ee05a023edbcf00db76f`。没有覆盖 E63 旧包、旧宿主内插件或用户实际安装；用户需安装此更新 ZIP、显式退出并重新启动，单纯修改源码不会让正在运行的旧 DLL 停止 tick。
 
 检查代码仅编译未执行；没有启动软件、接管 UI、修改用户数据或停止进程。E63 的子代理审查属于上一轮，未把它当成本轮再次审查证据；本轮为局部源码/调用方静态复核。保留用户 .gitignore 与 .vscode/launch.json 修改，需求/宿主架构不变，同步开发台账、交接快照和插件规范。
+
+<a id="evidence-system-hud"></a>
+
+## E65：桌面状态 HUD 第一步（2026-10-07）
+
+用户参考 GlacierGlimmer/zmd-charge-plus，明确使用自己的 .NET 10 / Avalonia 12.1.2；采集优先原生通知，不能替代时再周期采样；权限不足直告管理员运行，不构建提权服务；无需导航 API，托盘打开软件足够。认可基础 HUD、方案编辑、高级数据源三个阶段。本轮实施第一步，后两步未实现。
+
+调研对象固定提交 eada0e216aed59297dee02e6cbb2815429584410。参考程序为 .NET 8 / Avalonia 11.2.1，含自己的应用壳、100ms 热区/时间调度、150ms 电源检查、计数器/WMI/LibreHardwareMonitor 和外部数据源。只参考功能及 CPU/网络计数差分思路，未复制代码或美术/字体/动画资源。原生 API 依据见 [插件文档](Plugins/SystemHud.md)：电源/电量可通知，NetworkChange 只通知连接/地址变化，不能提供实时吞吐。精确利用率仍需区间采样，不为消灭一秒读取而引入 ETW 跟踪平台。
+
+实现 SystemHud 0.1.0，只注册设置与 4 个托盘项，不更改宿主/Contracts/UI。常驻服务拥有窗口，停止使用 TaskCompletionSource，无正常取消异常。电源通知在隐藏时仍可提醒；性能仅采可见指标，每秒后台读取，不重叠，隐藏/暂停停止，新读取重建基线，迟到结果失效。支持无电池/未知/权限不足/保存失败状态、不激活、穿透、位置/DPI/缩放及淡入。设置页复用宿主样式。
+
+静态自查补正：消除 Styles 名称遮蔽警告；电源读取失败不继续显示旧值；SchemaVersion 可反序列化，公共存储可拒绝未来版本。复核 Windows 消息、UI 调度、退出等待和采样失效。本轮未使用子代理，不把 E63 复审当作本轮证据。
+
+构建与产物证据：
+
+1. dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release --artifacts-path H:/ProjH/TractorTool/artifacts/e65-hud-build -m:1 -nr:false：首次 1 个 CS0108 警告，修正后最终 0 警告/0 错误，覆盖插件、AXAML 绑定及纯逻辑检查。未执行检查；未改宿主代码，不重复全方案构建或发布。
+2. scripts/Build-Plugin.ps1 使用 artifacts/e63-tray/host 的 SDK，最终输出 artifacts/e65-system-hud/package：独立 Rebuild/Release 0 警告/0 错误。9 个 ZIP 文件与输出哈希一致，清单、入口元数据、许可及共享 DLL 排除通过；244 个原宿主文件 SHA256 未变。
+3. 最终 ZIP SHA256：DE151912BADB4244C566C361AA14DB703AB25661FBCBBA21C639A13016F62006。父目录的同轮中间包不是交付入口；最终路径只见开发台账。
+4. HudChecks 留下 CPU 差分、零间隔/回退计数、网络实际间隔、无效配置及负坐标/小屏定位断言，仅编译。电源、穿透/焦点、动画、DPI、网卡变化、休眠恢复、退出竞争与长期使用尚无运行证据，记 A25 待用户验证。
+
+同步插件文档、产品索引、README、台账与交接。首版整包仍组装原两个正式插件，HUD 独立安装；没有覆盖已装 DLL/配置，没有启动应用、硬件读取、检查程序、UI 接管或远程推送。保留用户 .gitignore 与 .vscode/launch.json 修改。
+
+最终静态核对：当前涉及的文档中 100 个本地文件链接存在，AXAML XML 可解析，slnx 为 15 工程；暂存 diff 空白检查通过。

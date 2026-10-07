@@ -1,47 +1,44 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-06。本页是接续快照；唯一当前状态台账为 [DEVELOPMENT](DEVELOPMENT.md#current-status)，逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-10-07。唯一当前台账为 [DEVELOPMENT](DEVELOPMENT.md#current-status)，逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
 
-处于 M5 发布准备阶段，最新 [E63](PROJECT_HISTORY.md#evidence-plugin-tray) 按用户授权实现插件托盘菜单扩展。子代理复审及构建完成，新功能运行由用户接手；不开发悬浮球业务。[E62](PROJECT_HISTORY.md#evidence-user-local-validation) 用户已反馈依赖安装/拒绝重试/修复清理、视频/GPU、插件升级与数据迁移测试暂未发现问题，不重复要求这些常规测试，也不外推未报告的故障/硬件细项。E60 GitHub 依赖决定及 E61 Release 草稿流程保持有效。
+宿主仍处于 M5 发布准备；本轮按用户确认新增桌面状态 HUD 独立插件，第一步实现和打包见 [E65](PROJECT_HISTORY.md#evidence-system-hud)。使用 .NET 10 / Avalonia 12.1.2，原生事件优先，必要采样按需启停，权限不足明确管理员提示；不补导航接口，复用托盘“显示 TractorTool”。不改公共接口，不复制参考程序的应用/托盘/自启动壳。
 
-后续 [E64](PROJECT_HISTORY.md#evidence-quiet-probe) 按用户反馈清理测试插件刷屏：Test.Independent 1.0.1 删除 200ms 定时器及 tick 日志，常驻服务只等待停止信号，托盘菜单不变。仅独立构建插件和受影响集成检查，0 警告/0 错误，检查未执行；Verify-PluginHost 改读输出清单版本，语法通过。新 ZIP/更新步骤见 [本地产物](DEVELOPMENT.md#local-artifacts)，未替用户安装或运行；E63 旧包仍需手工升级，不重打宿主。
+三步范围：基础 HUD → 多方案/轮播/变量模板/颜色规则/编辑预览 → GPU/温度/传感器/探测/HTTP/JSON/DeepSeek。当前只实现第一步；业务设计和验收方法见 [SystemHud](Plugins/SystemHud.md)。主窗口关闭或切页不停止 HUD；HUD 自身隐藏/暂停停止性能采样，显式退出注销通知、关闭窗口并等待在途读取。
 
-- 新可选 UI API 1.5：`IPluginTrayModule.RegisterTrayMenu` → 每插件一级子菜单 → 普通/勾选动作与可更新状态句柄。宿主保留显示/退出；显式推送状态，无轮询；不扩展任意菜单树或悬浮窗平台。
-- 菜单注册资源归 PluginHost 生命周期持有，Core 只接 `IAsyncDisposable`；切页/隐藏保留，失败回滚、停止封闭入口并取消/解绑，等待动作结束再释放插件。回调在 UI 线程开始，插件自行异步处理耗时工作，有限任务复用现有 Tasks；意外取消记 Error，正常停止取消记 Info。
+电源用 Windows 通知；CPU/内存/网速每秒按当前可见指标读取，使用原生 API/.NET，不引入 WMI 或硬件驱动库。实际开始性能采样时只写一次优化 Warning。大于 64 逻辑处理器注明处理器组范围，网速注明接口合计，未知/重置不伪装成有效零值。
 
-- 外部依赖分为 **Packages**（已安装包及修复进度）与 **依赖来源**。默认 GitHub，额外来源只支持公开 GitHub Enterprise API 地址；pip 等安装能力接入后才开放，不做空入口。
-- 插件在 `dependencies[].downloads` 声明 RID、仓库、精确标签/ZIP、SHA256、许可、工具路径和版本检查。宿主负责解析/首次确认/下载/事务/租约，无 FFmpeg 专属目录。PackageReference / Contracts API 1.7 不变；UI 1.5 保留 UI 1.0–1.4 的旧接口 ABI，未知更高版本拒绝加载。
-- 视频源码清单升至 0.5.5，FFmpeg 9.0.2 改用 GyanD/codexffmpeg Release；独立 Test.PackageProbe 1.1.0 改用 ripgrep 14.1.1 真实 Release，只调用 --version，不搜索用户文件。
-- 已装 receipt v2 可离线复用；旧 v1 等插件声明补资料，SHA/工具不符拒绝复用。损坏旧包保留可修复状态。相同身份的声明冲突要明确失败，不能暗中换工具。已装清理继续检查禁用/待重启/回退引用与使用租约。
-- GitHub API 查询仅实际申请/修复时触发；共享查询、限时限量、精确附件/hash 校验，退出取消并等待；无轮询。来源配置在 DataRoot/Config/dependency-sources.json，旧源文件/缓存不再读取，真实用户数据不删除。
-- E61 保留损坏/缺失 receipt 的目录身份及可读 hash，匹配声明到达后恢复为可管理的 Failed 状态，仍经用户同意才能修复；旧 hash 不符拒绝替换。Windows 大小写别名申请被拒绝，引用状态不完整时禁清理。来源保存完成不会抹掉用户后续输入。
-- 现有 distribution.yml 增加 v* 标签 push → 独立写权限 job → 同次构建附件校验 → Release 草稿。校验 tag/version/commit/dirty 及安装器，不覆盖已有 Release；公开发布由维护者确认。上传失败/中断可能留下部分草稿，人工核对删除本次失败草稿后仅重跑发布 job。
+插件与 HudChecks 构建 0 警告/0 错误，独立 ZIP 的 9 个文件与输出一致、无共享 SDK DLL，发布 SDK 的 244 文件哈希不变。纯逻辑检查仅编译；A25 电源/穿透/DPI/退出等真实行为由用户验证。ZIP 路径唯一维护在 [本地产物](DEVELOPMENT.md#local-artifacts)，未替用户安装；HUD 暂未并入首版完整分发。
 
-E63 全 13 工程 Release 隔离构建通过，0 警告/0 错误。子代理 gpt-6.1-sol / high 指出意外取消分类问题，修复后再审无剩余确定问题。托盘状态/回调/资源及独立 DLL 检查只编译未运行。已生成新自包含宿主与独立编译的 Test.Independent 菜单夹具，234 个原宿主文件哈希不变；路径及用户启动命令只在 [本地产物](DEVELOPMENT.md#local-artifacts) 维护。未启动应用/检查程序、替换日常安装或打正式分发包；CI/草稿未执行。
+## 2. 保留的产品决定
 
-## 2. 必须保留的约定
+- E62 用户已测试依赖安装/拒绝重试/修复清理、视频/GPU、插件升级、数据迁移，反馈暂未发现问题；不重复要求常规测试，不外推未说明的专项/硬件矩阵。
+- E63 UI API 1.5 托盘注册支持一级插件子菜单、普通/勾选动作和状态句柄；宿主保留显示/退出。资源随插件生命周期，回调从 UI 线程开始，停止封闭入口并等待动作结束。A24 仍待真实运行证据。
+- E64 Test.Independent 1.0.1 删除了 200ms 心跳和 tick 日志。源码构建不会替换已安装 1.0.0，需 ZIP 更新后显式退出重启。
+- E60 外部依赖仅 Packages/依赖来源；默认 GitHub，可加公开 GitHub Enterprise API。插件声明精确仓库/tag/ZIP/hash/许可/工具，宿主负责确认、下载、事务、租约。无自有源，pip/AI/Worker 平台不留空入口。
+- receipt v1/损坏记录保留可修复状态；身份/hash 冲突不暗中替换，引用不完整禁清理。来源配置在 DataRoot/Config/dependency-sources.json，旧缓存不读取、不删真实数据；查询仅实际申请时触发。
+- E61 标签流程只创建 Release 草稿，不覆盖已有 Release。远程未配置，CI/Release 未实跑，公开发布由用户决定。
+- E55 页面持有路径已修，历史隔离检查通过，实际长期内存曲线待复测。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒轮询并警告一次。
 
-- 用户接手测试，未经新指示不启动应用、检查程序、FFmpeg、UI 自动化，不接管真实配置、媒体、剪贴板或用户进程。可做必要构建/静态核对。新源码构建不自动替换已安装插件，插件更新需 ZIP 和显式退出重启。
-- 保留 `.vscode/launch.json` 空白修改、`.gitignore` 的 Docs/ 规则，不纳入提交。Docs 已跟踪，可 `git add -u -- Docs`。使用子代理显式 gpt-6.1-sol / high；本地提交不等于远程推送授权。
-- 框架精简，只承担公共连接、管理、生命周期和交互，业务留插件；不预建 pip/AI/Worker 平台，不静态引用插件。
-- 唯一 MainWindow 承担启动/迁移/错误；初始化后关闭到托盘，切页/隐藏不取消任务。日志承载重要运行记录与任务进度，不记录导航；正常取消不记 Error。
-- 迁移保持 profile/数据根/插件目录互斥；提交前保留旧指针，提交后失败暂停插件并待恢复；不迁移插件代码、不删除旧根。实例/维护保护和恢复记录不能省略。
-- 分发用现有脚本，只写新目录；ZIP 不覆盖升级。安装器保留现有 Plugins、用户数据及管理状态，首次安装残留只允许同包恢复。Windows 维护互斥当前限同一会话，跨会话待验。
-- VS Code + PowerShell 7.4+、SDK 10.0.401、Inno Setup 6.7.3；不更换 IDE，不启用 Native AOT/未经验证的裁剪，不自动配置 Git 远程或推送。
+## 3. 工作约定
 
-## 3. 代码入口与下一步
+- 用户接手运行测试，未经新指示不启动软件、检查程序、FFmpeg、UI 自动化，不接管真实配置/媒体/剪贴板/用户进程。构建、静态和 ZIP 校验不能冒充运行验收。
+- 保留 .vscode/launch.json 空白修改、.gitignore 的 Docs/ 规则，不纳入提交。已跟踪文档用 git add -u -- Docs；新文档指定文件 git add -f。使用子代理时显式 gpt-6.1-sol / high；本地提交不代表远程推送授权。
+- 框架精简，业务留插件，只依赖 Contracts/UI。VS Code、SDK 10.0.401，不更换 IDE 配置，不启用 AOT/未经验证裁剪。
+- 数据根与软件目录分开；迁移保持互斥及恢复记录，不迁移插件代码、不删除旧根。分发只写新目录，ZIP 不覆盖升级，安装器保留插件和用户数据。跨会话维护仍待验。
+- 日志只记录重要事件，正常取消不记 Error；任务在日志页，标题栏不放独立任务按钮。
+
+## 4. 入口与下一步
 
 | 工作 | 入口 |
 | --- | --- |
-| 托盘公开接口与实现 | [PluginTray](../TractorTool.UI/PluginTray.cs)、[TrayService](../TractorTool/Services/TrayService.cs)、[PluginTrayMenu](../TractorTool/Services/PluginTrayMenu.cs)、[插件接入](PLUGIN_DEVELOPMENT.md#tray-menu) |
-| GitHub 解析/来源设置 | [PackageSources](../TractorTool.Core/Packages/PackageSources.cs)、[GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs) |
-| 安装/旧记录/租约 | [ExternalPackageService](../TractorTool.Core/Packages/ExternalPackageService.cs)、[PackageManagement](../TractorTool.Core/Packages/PackageManagement.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) |
-| 设置与来源 UI | [SettingsViewModel](../TractorTool/ViewModels/SettingsViewModel.cs)、[ExternalToolsViewModel](../TractorTool/ViewModels/ExternalToolsViewModel.cs)、[DependencySourcesView](../TractorTool/Views/DependencySourcesView.axaml) |
-| 测试插件 | [PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs)、[GitHub 接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance) |
-| 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1)、[安装脚本](../packaging/TractorTool.iss) |
+| HUD 生命周期/设置 | [HudPlugin](../Plugins/TractorTool.Plugins.SystemHud/HudPlugin.cs)、[HudModel](../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) |
+| Windows 采集/窗口 | [WindowsMetrics](../Plugins/TractorTool.Plugins.SystemHud/WindowsMetrics.cs)、[HudWindow](../Plugins/TractorTool.Plugins.SystemHud/HudWindow.axaml.cs) |
+| HUD 规则/纯逻辑检查 | [插件文档](Plugins/SystemHud.md)、[HudChecks](../tests/TractorTool.HudChecks/Program.cs) |
+| 托盘公共接口 | [PluginTray](../TractorTool.UI/PluginTray.cs)、[接入规范](PLUGIN_DEVELOPMENT.md#tray-menu) |
+| GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
+| 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步用户验证新增 A24 托盘交互；随后确定 GitHub 仓库及项目自身授权，具备远程目标与上传授权后实跑普通 CI 和标签草稿。目前 git remote 为空，没有推送或远程 CI 证据。E62 是用户本机运行反馈，不代表 GitHub 流程或新增托盘扩展已验收；不因缺少代理运行记录而否定用户反馈。
-
-未关闭的专项覆盖只看 [A01–A24](DEVELOPMENT.md#acceptance)：新托盘、未说明的媒体细项、硬件矩阵、长期内存曲线、迁移近满盘/ACL/中断、跨会话及无 SDK 机器。旧取消调试输出触发不明，Job 终止仍有 20ms/最多 3 秒轮询并警告一次。运行测试仍由用户接手，本轮不扩展代理测试权限。
+下一步按三步方案继续 HUD 第二步；第一步 A25 与 A24 运行证据由用户补充。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
