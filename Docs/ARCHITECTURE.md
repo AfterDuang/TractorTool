@@ -85,7 +85,7 @@ PluginContext 按插件生命周期提供进程、依赖和有限任务作用域
 
 使用 .NET `AssemblyLoadContext` 和 `AssemblyDependencyResolver` 的现有机制。私有依赖可按插件隔离；共享程序集不能任由每个插件携带任意版本。M1 拒绝插件根目录夹带 Contracts/UI/Avalonia/FluentAvalonia/MicroCom.Runtime 的 DLL 副本；加载器从默认上下文解析共享类型并检查程序集版本。缺失私有托管依赖报错，不依赖开发机 NuGet 缓存；禁止直接引用宿主或 Core。首版插件 SDK 使用明确的已验证版本组合，版本不匹配时给出错误而不是强行加载。[微软插件指南](https://learn.microsoft.com/en-us/dotnet/core/tutorials/creating-app-with-plugin-support)
 
-.NET 框架范围来自构建 SDK 已解析的 Microsoft.NETCore.App 平台清单，嵌入 Core，包含公开引用和运行时实现程序集；部署后无需安装 SDK 或扫描宿主 DLL。加载器先解析插件私有依赖，找不到时仅允许清单内名称交给默认运行时，实际版本/平台可用性仍由 .NET 校验；不维护逐个名称特例，不按 System.* / Microsoft.* 前缀或整份 TPA 列表放行。TPA 包含应用依赖，不能当作纯框架目录。缺少清单时构建失败，缺少插件私有依赖仍明确报错；普通构建和自包含发布使用同一规则。[默认探测规则](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/default-probing)
+.NET 框架范围来自构建 SDK 已解析的 Microsoft.NETCore.App 平台清单，嵌入 Core，包含公开引用和运行时实现程序集；部署后无需安装 SDK 或扫描宿主 DLL。加载器先解析插件私有依赖，找不到时仅允许清单内名称交给默认运行时，实际版本/平台可用性仍由 .NET 校验；不维护逐个名称特例，不按 System.* / Microsoft.* 前缀或整份 TPA 列表放行。TPA 包含应用依赖，不能当作纯框架目录。缺少清单时构建失败；私有依赖缺失或解析后文件消失使用 FileLoadException 终止解析，避免 FileNotFoundException 的特殊回退允许全局 AssemblyResolve 补救。普通构建和自包含发布使用同一规则。[默认探测规则](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/default-probing)
 
 入口初始化、页面工厂和任务调用分别记录异常。可以处理普通失败并保持其他功能可用，但进程内可信插件仍可能使整个进程崩溃；加载上下文不是安全沙箱。
 

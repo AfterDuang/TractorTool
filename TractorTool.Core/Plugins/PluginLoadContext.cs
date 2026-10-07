@@ -31,11 +31,17 @@ internal sealed class PluginLoadContext(string entryPath, string packageRoot) : 
         }
         if (path is not null)
         {
-            return LoadFromAssemblyPath(ManifestValidator.PackagePath(packageRoot, path));
+            try { return LoadFromAssemblyPath(ManifestValidator.PackagePath(packageRoot, path)); }
+            catch (FileNotFoundException ex)
+            {
+                // A file disappearing after resolution must not reopen global assembly resolution either.
+                throw new FileLoadException($"无法加载插件私有依赖：{name}", path, ex);
+            }
         }
         // Only SDK platform assemblies may fall back to the runtime. TPA also contains host-private libraries.
         if (FrameworkAssemblies.Contains(name.Name!)) return null;
-        throw new FileNotFoundException($"插件缺少私有依赖：{name}");
+        // FileNotFoundException would allow AppDomain.AssemblyResolve to bypass this rejection.
+        throw new FileLoadException($"插件缺少私有依赖：{name}", name.FullName);
     }
 
     private static HashSet<string> ReadFrameworkAssemblies()

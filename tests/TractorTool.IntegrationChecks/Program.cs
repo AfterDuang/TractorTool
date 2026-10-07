@@ -273,13 +273,16 @@ foreach (var blockedDirectory in new[] { false, true })
 
 var fixtureDirectory = Directory.GetDirectories(Path.Combine(published, "Plugins", "Test.Independent")).Single();
 var originalManifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(Path.Combine(fixtureDirectory, "plugin.json")), JsonOptions.Value)!;
+const string privateAssemblyName = "System.TractorTool.FixtureDependency";
+const string missingPrivateDependency = "插件缺少私有依赖：" + privateAssemblyName;
+void RemovePrivateDependency(string directory) => File.Move(Path.Combine(directory, privateAssemblyName + ".dll"), Path.Combine(directory, privateAssemblyName + ".missing"));
 void CopyTree(string source, string destination)
 {
     Directory.CreateDirectory(destination);
     foreach (var file in Directory.GetFiles(source)) File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
     foreach (var child in Directory.GetDirectories(source)) CopyTree(child, Path.Combine(destination, Path.GetFileName(child)));
 }
-void Fault(string name, PluginManifest manifest, PluginState expected, Action<string>? mutate = null, bool disabled = false, bool expectIconFallback = false)
+void Fault(string name, PluginManifest manifest, PluginState expected, Action<string>? mutate = null, bool disabled = false, bool expectIconFallback = false, string? expectedFailure = null)
 {
     Check(name, () =>
     {
@@ -299,7 +302,9 @@ void Fault(string name, PluginManifest manifest, PluginState expected, Action<st
         {
             caseHost.Discover(disabled ? [manifest.Id] : []);
             Pump(caseVm.InitializeAsync());
-            Assert(caseHost.Records.Single().State == expected);
+            var record = caseHost.Records.Single();
+            Assert(record.State == expected);
+            if (expectedFailure is not null) Assert(record.Detail.Contains(expectedFailure, StringComparison.Ordinal));
             if (expectIconFallback)
             {
                 var card = caseVm.Home.InstalledPlugins.Single();
@@ -337,12 +342,31 @@ Fault("Initialization exception contained", originalManifest with { EntryType = 
 Fault("Partial registration rolled back", originalManifest with { EntryType = "IndependentPlugin.BadRegistrationPlugin" }, PluginState.Failed);
 Fault("Page factory exception keeps host navigation working", originalManifest with { EntryType = "IndependentPlugin.BrokenPagePlugin" }, PluginState.Loaded);
 Fault("Shared SDK DLL conflict rejected", originalManifest, PluginState.Failed, d => File.WriteAllText(Path.Combine(d, "Avalonia.Controls.dll"), "conflicting-sdk"));
-Fault("Missing private dependency reported", originalManifest, PluginState.Failed, d => File.Move(Path.Combine(d, "FixtureDependency.dll"), Path.Combine(d, "FixtureDependency.missing")));
+Fault("Missing private dependency reported", originalManifest, PluginState.Failed, RemovePrivateDependency, expectedFailure: missingPrivateDependency);
 Fault("Win32, VisualBasic and XML implementation assemblies resolve from runtime", originalManifest with { EntryType = "IndependentPlugin.FrameworkReferencePlugin" }, PluginState.Loaded);
-var hostOnly = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(
-    new("System.TractorTool.HostOnlyProbe"), System.Reflection.Emit.AssemblyBuilderAccess.Run);
+// Preload a real DLL and prove default name binding works; an emitted assembly is not a valid substitute.
+var hostOnly = System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(fixtureDirectory, privateAssemblyName + ".dll"));
+Assert(!hostOnly.IsDynamic);
 Assert(System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(hostOnly) == System.Runtime.Loader.AssemblyLoadContext.Default);
-Fault("Missing System-prefixed private dependency cannot borrow the host copy", originalManifest with { EntryType = "IndependentPlugin.MissingHostDependencyPlugin" }, PluginState.Failed);
+Assert(ReferenceEquals(System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyName(hostOnly.GetName()), hostOnly));
+Fault("Packaged System-prefixed dependency stays private even when the host has a copy", originalManifest with { EntryType = "IndependentPlugin.FrameworkReferencePlugin" }, PluginState.Loaded);
+Fault("Missing System-prefixed private dependency cannot borrow the host copy", originalManifest, PluginState.Failed,
+    RemovePrivateDependency, expectedFailure: missingPrivateDependency);
+var globalResolverCalled = false;
+ResolveEventHandler resolveMissing = (_, eventArgs) =>
+{
+    if (new System.Reflection.AssemblyName(eventArgs.Name).Name != privateAssemblyName) return null;
+    globalResolverCalled = true;
+    return hostOnly;
+};
+AppDomain.CurrentDomain.AssemblyResolve += resolveMissing;
+try
+{
+    Fault("Missing private dependency cannot be supplied by a global resolver", originalManifest, PluginState.Failed,
+        RemovePrivateDependency, expectedFailure: missingPrivateDependency);
+    Check("Private dependency rejection does not invoke the global resolver", () => Assert(!globalResolverCalled));
+}
+finally { AppDomain.CurrentDomain.AssemblyResolve -= resolveMissing; }
 Fault("Missing plugin icon does not prevent registration", originalManifest, PluginState.Loaded,
     d => File.Move(Path.Combine(d, "Assets", "icon.png"), Path.Combine(d, "Assets", "icon.missing")), expectIconFallback: true);
 Check("One broken plugin does not prevent another plugin from loading", () =>

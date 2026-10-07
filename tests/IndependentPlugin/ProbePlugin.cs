@@ -105,16 +105,8 @@ public sealed class FrameworkReferencePlugin : ProbePlugin
         if (error.NativeErrorCode != 5 || Microsoft.VisualBasic.Strings.Len("fixture") != 7 ||
             frameworks.Any(a => System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(a) != System.Runtime.Loader.AssemblyLoadContext.Default))
             throw new InvalidOperationException("Framework assemblies must resolve from the runtime.");
-        return base.InitializeAsync(context, token);
-    }
-}
-public sealed class MissingHostDependencyPlugin : ProbePlugin
-{
-    public override ValueTask InitializeAsync(PluginContext context, CancellationToken token)
-    {
-        // The check host supplies this assembly; a plugin must still package its own private dependency.
-        System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(GetType().Assembly)!
-            .LoadFromAssemblyName(new("System.TractorTool.HostOnlyProbe"));
+        if (System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(FixtureDependency.Message).Assembly) != loadContext)
+            throw new InvalidOperationException("Packaged private dependencies must stay in the plugin context.");
         return base.InitializeAsync(context, token);
     }
 }

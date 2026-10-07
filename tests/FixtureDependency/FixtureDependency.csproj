@@ -1,3 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Exercise the host's private-dependency boundary even for System.* names. -->
+    <AssemblyName>System.TractorTool.FixtureDependency</AssemblyName>
+  </PropertyGroup>
 </Project>

@@ -2033,3 +2033,20 @@ Core 只扩充显式框架名称 Microsoft.Win32.Primitives / Microsoft.Win32.Re
 - **继承 P2**：PluginLoadContext 的 FileNotFoundException 不能作为完全终止解析的拒绝信号。若其他可信插件/依赖注册全局 AppDomain.AssemblyResolve 并返回相应程序集，缺失私有依赖仍可被解析；当前仓库未发现该订阅，不声称默认配置已出现串用。建议改为 FileLoadException 并加全局回调不得被调用的检查。官方 [Load 文档](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.loader.assemblyloadcontext.load?view=net-10.0) 指出 FileNotFoundException 的特殊回退；[.NET 10 AppDomain 实现](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/appdomain.cpp#L2876) 进一步确认全局事件路径，不能扩写为该异常后一定继续 Default 缓存查找。
 
 两项均待修，非运行复现结论。清单解析、MSBuild 嵌入、私有路径边界未发现其他确定缺陷；未新增库、服务或重复抽象。原构建/静态产物证据保留，但“缺失依赖拒绝”的行为不能据此记为已验收。同步台账与交接，不把待修项只留在历史中。
+
+### E67 Review 问题修正（2026-10-07）
+
+用户要求处理上述两项。PluginLoadContext 对缺失私有依赖改抛 FileLoadException，并将解析成功后加载时出现的 FileNotFoundException 包装为相同终止语义，避免文件消失再次开放全局解析。框架清单、共享 SDK、路径边界和公开 API 不变。
+
+复用 FixtureDependency 项目，将实际程序集名改为 System.TractorTool.FixtureDependency；删除 Reflection.Emit 动态替身和 MissingHostDependencyPlugin。IntegrationChecks 先预载真实 DLL 并断言非动态、属于 Default、按名解析返回同一实例，再检查插件随包依赖仍属于其私有上下文、漏带依赖的失败原因，以及全局 AssemblyResolve 回调完全不被调用；事件在 finally 中解绑。缺失检查复用现有 Fault，不新增项目或依赖库。原 gpt-6.1-sol / high 子代理只读复核认为两项源码问题已闭合，未发现新增确定缺陷；未执行检查。
+
+验证记录：
+
+1. `dotnet build TractorTool.slnx -c Release --artifacts-path H:/ProjH/TractorTool/artifacts/e67-review-fix/build -m:1 -nr:false`：15 工程，0 警告/0 错误。
+2. 设置当前构建进程 `ArtifactsPath=H:/ProjH/TractorTool/artifacts/e67-review-fix/publish-build`，执行 `scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/e67-review-fix/host`：win-x64 自包含发布成功，无裁剪/AOT；取代旧 host-final 作为本轮最新宿主。
+3. `dotnet build tests/IndependentPlugin/IndependentPlugin.csproj -t:Rebuild -c Release -m:1 -nr:false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/e67-review-fix/host --artifacts-path H:/ProjH/TractorTool/artifacts/e67-review-fix/independent-build -o H:/ProjH/TractorTool/artifacts/e67-review-fix/plugin-files`：独立构建 0 警告/0 错误。
+4. PEReader 只读核对真实 DLL 的 AssemblyDefinition，以及 IndependentPlugin 的 AssemblyReference/deps.json runtime 条目，均为 System.TractorTool.FixtureDependency；新输出没有旧 FixtureDependency.dll。源码/脚本无旧动态入口引用。此步骤未装载/执行插件。
+
+没有启动应用、检查程序、FFmpeg 或 UI，没有改动 Debug/已安装插件/真实数据。新宿主未装插件，夹具未打 ZIP；HUD 沿用 E66 包。运行边界和 A03/A25/A24 继续待用户验证，不能把编译及子代理静态复核记为运行通过。用户 .gitignore 与 .vscode/launch.json 修改仍保留在提交外。
+
+最终静态检查：本轮四份文档的 135 个本地文件链接存在，本轮差异无空白错误。
