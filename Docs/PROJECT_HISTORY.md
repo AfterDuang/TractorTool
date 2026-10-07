@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正（插件框架依赖） | [E67 · SDK 平台清单与私有依赖边界（2026-10-07）](#evidence-framework-assembly-inventory) |
 | 修正（HUD 启动与页面） | [E66 · Win32 框架程序集解析与主页面/设置分工（2026-10-07）](#evidence-hud-startup-page) |
 | 新插件（HUD 第一步） | [E65 · 原生电源通知与基础桌面状态（2026-10-07）](#evidence-system-hud) |
 | 修正（测试日志） | [E64 · 独立插件移除定时心跳（2026-10-06）](#evidence-quiet-probe) |
@@ -2000,3 +2001,26 @@ Core 只扩充显式框架名称 Microsoft.Win32.Primitives / Microsoft.Win32.Re
 本轮必须更新宿主和插件：F5 用户重新构建宿主后安装新 ZIP 并显式退出重启；旧宿主仅更换插件仍无法解析。新发布宿主没有预装插件，也不是完整分发。未替换用户 Debug/正在运行 DLL，未启动应用或接管 UI，未修改实际设置、硬件配置或用户数据；A25 从“未运行”更新为“用户复现失败、代码修正后待复测”。保留用户 .gitignore / .vscode/launch.json 修改，不纳入提交。当前文档与产品分工同步，后两步未提前开发。
 
 最终静态核对：本轮涉及文档的 171 个本地文件链接存在，两页 AXAML XML 可解析，diff 空白检查通过。
+
+<a id="evidence-framework-assembly-inventory"></a>
+
+## E67：插件框架依赖识别（2026-10-07）
+
+用户指出 E66 按名称补充 Win32 DLL 不够通用，要求处理并保持核心框架质量。本轮只调整托管插件加载边界，不扩展 HUD 业务、外部包管理或公开接口。
+
+移除逐个框架名称和 System.* 前缀兜底。Core 构建从 SDK 已解析的 Microsoft.NETCore.App targeting pack 取得 PlatformManifest.txt，直接嵌入程序集；运行时读取一次，按精确名称（忽略大小写）判断是否可交给默认运行时解析。只使用含程序集版本的 DLL 条目；缺少文件在构建时失败，缺失/空/格式无效资源明确失败。插件私有 resolver/相邻 DLL、版本目录边界、禁止引用宿主/Core、共享 SDK 的显式列表及版本校验不变。
+
+自审纠正了中间方案：只收集引用程序集会漏掉 System.Private.Xml 等运行时实现，故最终使用 SDK 平台清单；不保留中间生成器或 corelib 名称补丁。不使用完整 TRUSTED_PLATFORM_ASSEMBLIES，因为其中也有宿主应用依赖；不用目录扫描或新依赖库。依据为 [SDK targeting pack 解析](https://github.com/dotnet/sdk/blob/main/src/Tasks/Microsoft.NET.Build.Tasks/ResolveTargetingPackAssets.cs) 和 [.NET 默认探测](https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/default-probing)，并核对本机 SDK 10.0.401 / targeting pack 10.0.12 的实际输出。
+
+沿用 IndependentPlugin / IntegrationChecks 夹具：扩展 Win32Exception、Visual Basic、大小写 Registry 名称和 XML 实现程序集的 Default 上下文断言；宿主先定义同名 System.* 私有程序集，插件漏带时仍须失败。原有随包私有依赖和缺失失败用例保留。所有检查只编译，未执行；本轮为主代理自审，不借用此前子代理结论。
+
+最终验证：
+
+1. `dotnet build TractorTool.slnx -c Release --artifacts-path H:/ProjH/TractorTool/artifacts/e67-framework-loader/build -m:1 -nr:false`：15 工程，0 警告/0 错误。
+2. 设置本次进程 `ArtifactsPath=H:/ProjH/TractorTool/artifacts/e67-framework-loader/publish-build`，执行 `scripts/Publish-Host.ps1 -Output H:/ProjH/TractorTool/artifacts/e67-framework-loader/host-final`：win-x64 自包含发布通过，不启用裁剪/AOT。`host` 是修正清单范围前的同轮中间产物，最终入口为 host-final。
+3. 使用 PEReader 只读解析普通构建和发布的 Core DLL：嵌入资源各一份，内容与 SDK 原清单完全一致；得到 176 个平台名称，覆盖发布 deps.json 中全部 172 个 .NET runtime pack 程序集。宿主 Core、Avalonia、CommunityToolkit.Mvvm 和 System.TractorTool.HostOnlyProbe 不在清单中；这证明产物内容，不冒充加载运行测试。
+4. 沙箱 Git 差异读取曾报“must be run in a work tree”；不修改仓库配置，使用授权后的 Git 读取正常。构建/发布使用隔离输出；最终产物没有预装插件，也不是完整分发。HUD 沿用 E66 的 0.1.1 ZIP，本轮未重打或安装。
+
+同步架构、插件接入规范、当前台账与交接快照；A03 新边界运行检查和 A25 修复复测仍待用户确认。未启动应用、检查程序、FFmpeg 或 UI，未修改真实安装/数据，未推送远程；.gitignore 与 .vscode/launch.json 用户修改保留在提交外。
+
+最终文档静态核对：本轮涉及文档的 171 个本地文件链接存在，Core 工程 XML 可解析。

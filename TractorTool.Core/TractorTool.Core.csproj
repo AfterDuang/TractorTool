@@ -1,4 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../TractorTool.Contracts/TractorTool.Contracts.csproj" /></ItemGroup>
+  <!-- Use the SDK's framework inventory, not name prefixes or the host's application dependencies.
+       Include runtime implementations too; deployed applications do not need an installed SDK. -->
+  <Target Name="EmbedPluginFrameworkManifest" BeforeTargets="AssignTargetPaths"
+          DependsOnTargets="ResolveTargetingPackAssets" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_PluginFrameworkManifest Include="%(ResolvedTargetingPack.Path)/data/PlatformManifest.txt"
+                                Condition="'%(ResolvedTargetingPack.Identity)' == 'Microsoft.NETCore.App'" />
+    </ItemGroup>
+    <Error Condition="'@(_PluginFrameworkManifest)' == '' or !Exists('@(_PluginFrameworkManifest)')"
+           Text="无法获取 .NET 平台清单，停止构建以免生成不完整的插件加载器。" />
+    <ItemGroup>
+      <EmbeddedResource Include="@(_PluginFrameworkManifest)" LogicalName="TractorTool.Core.PluginFrameworkManifest.txt" />
+    </ItemGroup>
+  </Target>
 </Project>

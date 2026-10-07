@@ -5,6 +5,7 @@ namespace TractorTool.Core.Plugins;
 
 internal sealed class PluginLoadContext(string entryPath, string packageRoot) : AssemblyLoadContext(isCollectible: false)
 {
+    private static readonly HashSet<string> FrameworkAssemblies = ReadFrameworkAssemblies();
     private readonly AssemblyDependencyResolver _resolver = new(entryPath);
     private readonly string _directory = Path.GetDirectoryName(entryPath)!;
 
@@ -32,11 +33,27 @@ internal sealed class PluginLoadContext(string entryPath, string packageRoot) : 
         {
             return LoadFromAssemblyPath(ManifestValidator.PackagePath(packageRoot, path));
         }
-        // Framework assemblies are provided by .NET; private dependencies must ship with the plugin.
-        if (name.Name is "netstandard" or "mscorlib" or "System" or "Microsoft.CSharp"
-            or "Microsoft.Win32.Primitives" or "Microsoft.Win32.Registry"
-            || name.Name!.StartsWith("System.", StringComparison.Ordinal)) return null;
+        // Only SDK platform assemblies may fall back to the runtime. TPA also contains host-private libraries.
+        if (FrameworkAssemblies.Contains(name.Name!)) return null;
         throw new FileNotFoundException($"插件缺少私有依赖：{name}");
+    }
+
+    private static HashSet<string> ReadFrameworkAssemblies()
+    {
+        using var stream = typeof(PluginLoadContext).Assembly.GetManifestResourceStream("TractorTool.Core.PluginFrameworkManifest.txt")
+            ?? throw new InvalidOperationException("宿主缺少 .NET 框架程序集清单，请重新构建宿主。");
+        using var reader = new StreamReader(stream);
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.ReadLine() is { } line)
+        {
+            // SDK format: file | package | assembly version | file version. Skip entries without an assembly version.
+            var fields = line.Split('|');
+            if (fields.Length != 4) throw new InvalidDataException(".NET 平台清单格式无效，请重新构建宿主。");
+            if (fields[2].Length > 0 && fields[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                names.Add(Path.GetFileNameWithoutExtension(fields[0]));
+        }
+        if (names.Count == 0) throw new InvalidDataException(".NET 平台程序集清单为空，请重新构建宿主。");
+        return names;
     }
 
     protected override nint LoadUnmanagedDll(string name)

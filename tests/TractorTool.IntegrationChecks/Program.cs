@@ -338,7 +338,11 @@ Fault("Partial registration rolled back", originalManifest with { EntryType = "I
 Fault("Page factory exception keeps host navigation working", originalManifest with { EntryType = "IndependentPlugin.BrokenPagePlugin" }, PluginState.Loaded);
 Fault("Shared SDK DLL conflict rejected", originalManifest, PluginState.Failed, d => File.WriteAllText(Path.Combine(d, "Avalonia.Controls.dll"), "conflicting-sdk"));
 Fault("Missing private dependency reported", originalManifest, PluginState.Failed, d => File.Move(Path.Combine(d, "FixtureDependency.dll"), Path.Combine(d, "FixtureDependency.missing")));
-Fault("Win32 framework dependency resolves from runtime", originalManifest with { EntryType = "IndependentPlugin.FrameworkReferencePlugin" }, PluginState.Loaded);
+Fault("Win32, VisualBasic and XML implementation assemblies resolve from runtime", originalManifest with { EntryType = "IndependentPlugin.FrameworkReferencePlugin" }, PluginState.Loaded);
+var hostOnly = System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(
+    new("System.TractorTool.HostOnlyProbe"), System.Reflection.Emit.AssemblyBuilderAccess.Run);
+Assert(System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(hostOnly) == System.Runtime.Loader.AssemblyLoadContext.Default);
+Fault("Missing System-prefixed private dependency cannot borrow the host copy", originalManifest with { EntryType = "IndependentPlugin.MissingHostDependencyPlugin" }, PluginState.Failed);
 Fault("Missing plugin icon does not prevent registration", originalManifest, PluginState.Loaded,
     d => File.Move(Path.Combine(d, "Assets", "icon.png"), Path.Combine(d, "Assets", "icon.missing")), expectIconFallback: true);
 Check("One broken plugin does not prevent another plugin from loading", () =>

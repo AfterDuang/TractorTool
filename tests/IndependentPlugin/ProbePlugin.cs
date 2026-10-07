@@ -98,9 +98,23 @@ public sealed class FrameworkReferencePlugin : ProbePlugin
     {
         // Construction does not call native APIs; it exercises the framework assembly used by HUD errors.
         var error = new System.ComponentModel.Win32Exception(5, "fixture access denied");
-        if (error.NativeErrorCode != 5 || System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(error.GetType().Assembly)
-            != System.Runtime.Loader.AssemblyLoadContext.Default)
-            throw new InvalidOperationException("Win32 framework assembly must resolve from the runtime.");
+        var loadContext = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(GetType().Assembly)!;
+        var frameworks = new[] { error.GetType().Assembly, typeof(Microsoft.VisualBasic.Strings).Assembly,
+            loadContext.LoadFromAssemblyName(new("microsoft.win32.registry")), typeof(object).Assembly,
+            loadContext.LoadFromAssemblyName(typeof(System.Xml.XmlDocument).Assembly.GetName()) };
+        if (error.NativeErrorCode != 5 || Microsoft.VisualBasic.Strings.Len("fixture") != 7 ||
+            frameworks.Any(a => System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(a) != System.Runtime.Loader.AssemblyLoadContext.Default))
+            throw new InvalidOperationException("Framework assemblies must resolve from the runtime.");
+        return base.InitializeAsync(context, token);
+    }
+}
+public sealed class MissingHostDependencyPlugin : ProbePlugin
+{
+    public override ValueTask InitializeAsync(PluginContext context, CancellationToken token)
+    {
+        // The check host supplies this assembly; a plugin must still package its own private dependency.
+        System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(GetType().Assembly)!
+            .LoadFromAssemblyName(new("System.TractorTool.HostOnlyProbe"));
         return base.InitializeAsync(context, token);
     }
 }

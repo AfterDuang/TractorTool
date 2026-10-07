@@ -4,13 +4,13 @@
 
 ## 1. 当前工作
 
-宿主仍处于 M5 发布准备；本轮修复用户实测的 HUD 常驻服务失败，并补齐插件主页面，证据见 [E66](PROJECT_HISTORY.md#evidence-hud-startup-page)。根因是插件加载器没有把 Microsoft.Win32.Primitives 归为 .NET 框架程序集，导致 Win32Exception 连同错误处理都无法解析。Core 补上 Win32 框架名称，未放开任意 Microsoft.* 或缺失私有依赖兜底。
+宿主仍处于 M5 发布准备；本轮处理用户指出的加载器名称硬编码，证据见 [E67](PROJECT_HISTORY.md#evidence-framework-assembly-inventory)。Core 构建时嵌入 SDK 已解析的 Microsoft.NETCore.App 平台清单，替换逐个名称和 System.* 前缀判断；包含运行时实现程序集，部署不依赖 SDK。共享 SDK 版本、私有依赖和路径边界保持不变，不增加库/公共 API。
 
 SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态、显示/隐藏、暂停/恢复、预览、最近内容和布局；设置保留启用、默认常驻、提醒、穿透、动画。两处保存各自字段，不隐式提交另一页草稿；托盘临时指标与持久指标分开。启动失败禁用所有控制，错误进入统一日志；采样策略未增加主页面轮询。
 
-15 工程隔离 Release 构建、宿主自包含发布及新 SDK 独立插件打包通过；回归夹具覆盖 Win32Exception 在默认上下文解析，保留私有依赖缺失失败用例，只编译未运行。ZIP 9 文件哈希一致、无共享 DLL，打包前后 234 个发布宿主文件未变。实际修复效果未运行确认，A25 保留待复测；不是“第一步运行已通过”。
+E67 的 15 工程隔离 Release 构建 0 警告/0 错误，自包含发布通过。PE 元数据核对两种产物的清单与 SDK 一致，176 个平台名称覆盖发布包全部 172 个 .NET 程序集，并排除宿主私有名称。回归夹具覆盖 Win32/Visual Basic/XML 实现、大小写和宿主已有同名 System.* 私有 DLL 时的拒绝，仅编译未运行；本轮自审，未使用子代理。
 
-产物路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)。本次需要更新宿主及插件：F5 用户先显式退出并重新构建宿主，再更新 0.1.1 ZIP、显式退出重启；旧加载器仅更新插件仍会失败。不覆盖已安装 DLL/数据，不启动程序。三步计划仍为基础 HUD → 多方案/轮播/模板/颜色规则/编辑 → 高级传感器/数据源，后两步未实施。
+产物路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)。E67 更新宿主，HUD 沿用 E66 的 0.1.1 ZIP，不重打插件。F5 用户显式退出后重新构建宿主；HUD 尚为 0.1.0 时才需安装 0.1.1 并显式退出重启。E66 的独立打包证据为历史，A25 实际修复效果仍待复测。不覆盖已安装 DLL/数据，不启动程序。三步计划仍为基础 HUD → 多方案/轮播/模板/颜色规则/编辑 → 高级传感器/数据源，后两步未实施。
 
 ## 2. 保留的产品决定
 
@@ -34,6 +34,7 @@ SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态
 
 | 工作 | 入口 |
 | --- | --- |
+| 插件依赖装载 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[Core 清单嵌入](../TractorTool.Core/TractorTool.Core.csproj)、[机制夹具](../tests/IndependentPlugin/ProbePlugin.cs) |
 | HUD 页面/生命周期 | [HudView](../Plugins/TractorTool.Plugins.SystemHud/HudView.axaml)、[HudModel](../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) |
 | Windows 采集/窗口 | [WindowsMetrics](../Plugins/TractorTool.Plugins.SystemHud/WindowsMetrics.cs)、[HudWindow](../Plugins/TractorTool.Plugins.SystemHud/HudWindow.axaml.cs) |
 | HUD 规则/纯逻辑检查 | [插件文档](Plugins/SystemHud.md)、[HudChecks](../tests/TractorTool.HudChecks/Program.cs) |
@@ -41,4 +42,4 @@ SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步先由用户确认 E66 启动修复与主页面/设置分工，再接续 HUD 第二步；A25/A24 未关闭。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
+下一步由用户确认 E67 加载器与 HUD 0.1.1 的启动和页面分工，再接续 HUD 第二步；A03 的新加载边界、A25/A24 未关闭。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
