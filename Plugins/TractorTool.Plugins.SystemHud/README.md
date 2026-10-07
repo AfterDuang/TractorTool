@@ -22,7 +22,7 @@ TractorTool.Plugins.SystemHud/
 │  ├─ HudView.axaml            主页面
 │  ├─ HudSettingsView.axaml    插件设置页
 │  ├─ HudWindow.axaml          桌面悬浮窗口
-│  ├─ HudCard.axaml            共用读数卡片
+│  ├─ HudCard.axaml            共用横向摘要、点击展开详情
 │  └─ HudPresentation.cs       模板、颜色与显示模型
 ├─ Licenses/            第三方许可原文
 ├─ NOTICE.md            依赖及源码来源

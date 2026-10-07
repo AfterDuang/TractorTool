@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 namespace TractorTool.Plugins.SystemHud;
@@ -13,11 +14,15 @@ public partial class HudWindow : Window
     private readonly List<nint> _notifications = [];
     private HudSettings _settings = new();
     private bool _closing;
+    private PointerPressedEventArgs? _press;
+    private Point _pressPosition;
     public event Action? PowerChanged;
     public event Action? Dismissed;
     public event Action? DragStarted;
     public event Action<HudSettings>? DragCompleted;
+    public event Action? ExpansionChanged;
     public bool IsDragging { get; private set; }
+    public bool IsExpanded => Card.IsExpanded;
 
     public HudWindow()
     {
@@ -26,15 +31,37 @@ public partial class HudWindow : Window
         Win32Properties.AddWndProcHookCallback(this, WndProc);
         Screens.Changed += ScreensChanged;
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; Dismissed?.Invoke(); } };
-        PointerPressed += (_, e) =>
+        Card.ExpansionChanged += () =>
+        {
+            Height = (IsExpanded ? HudSettings.ExpandedHeight : HudSettings.CardHeight) * _settings.Scale;
+            Reposition();
+            if (IsVisible) ExpansionChanged?.Invoke();
+        };
+        // Only the summary owns the gesture; detail controls keep normal pointer/keyboard input.
+        Card.DragSurface.AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (_closing || IsDragging || _settings.ClickThrough || !e.Pointer.IsPrimary || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+            _press = e;
+            _pressPosition = e.GetPosition(this);
+        }, RoutingStrategies.Tunnel);
+        Card.DragSurface.AddHandler(PointerMovedEvent, (_, e) =>
+        {
+            if (_press is not { } press || press.Pointer != e.Pointer || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed
+                || !ExceedsDragThreshold(e.GetPosition(this) - _pressPosition)) return;
+            _press = null;
             IsDragging = true;
             DragStarted?.Invoke();
             e.Handled = true;
-            BeginMoveDrag(e);
-        };
+            // Releasing Button capture cancels its click before entering the native move loop.
+            e.Pointer.Capture(null);
+            BeginMoveDrag(press);
+        }, RoutingStrategies.Tunnel);
+        Card.DragSurface.AddHandler(PointerReleasedEvent, (_, _) => _press = null, RoutingStrategies.Tunnel);
+        Card.DragSurface.PointerCaptureLost += (_, _) => _press = null;
     }
+
+    internal static bool ExceedsDragThreshold(Vector movement) => Math.Abs(movement.X) >= 6 || Math.Abs(movement.Y) >= 6;
+    public void Collapse() => Card.IsExpanded = false;
 
     public void RegisterPowerEvents()
     {
@@ -76,8 +103,9 @@ public partial class HudWindow : Window
     public void Configure(HudSettings settings)
     {
         _settings = settings;
-        Cursor = settings.ClickThrough ? Cursor.Default : new Cursor(StandardCursorType.SizeAll);
-        Width = HudSettings.CardWidth * settings.Scale; Height = HudSettings.CardHeight * settings.Scale;
+        if (settings.ClickThrough) Collapse();
+        Width = HudSettings.CardWidth * settings.Scale;
+        Height = (IsExpanded ? HudSettings.ExpandedHeight : HudSettings.CardHeight) * settings.Scale;
         Card.Transitions = settings.Animate ? new Transitions
         {
             new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(220) }
@@ -101,7 +129,7 @@ public partial class HudWindow : Window
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
         if (screen is null) { DragCompleted?.Invoke(_settings); return; }
         var monitor = Screens.All.ToList().IndexOf(screen) + 1;
-        DragCompleted?.Invoke(_settings.AtPosition(Position, screen.WorkingArea, screen.Scaling, screen.DisplayName, monitor));
+        DragCompleted?.Invoke(_settings.AtPosition(Position, screen.WorkingArea, screen.Scaling, screen.DisplayName, monitor, IsExpanded));
     }
 
     public void Reveal()
@@ -121,7 +149,7 @@ public partial class HudWindow : Window
         var screen = _settings.HasPosition && _settings.ScreenName is { } name
             ? Screens.All.FirstOrDefault(s => s.DisplayName == name) ?? Screens.Primary
             : index >= 0 && index < Screens.All.Count ? Screens.All[index] : Screens.Primary;
-        if (screen is not null) Position = _settings.Position(screen.WorkingArea, screen.Scaling);
+        if (screen is not null) Position = _settings.Position(screen.WorkingArea, screen.Scaling, IsExpanded);
     }
 
     public void Shutdown()

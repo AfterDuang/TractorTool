@@ -213,7 +213,7 @@ public partial class HudModel
     }
     private void EndPreview()
     {
-        _preview.Stop(); _powerPreview = false; _draftPreview = null;
+        _preview.Stop(); _resumePreviewAfterInteraction = false; _powerPreview = false; _draftPreview = null;
         Display = _activeDisplay; InvalidateSample();
     }
 }

@@ -14,7 +14,7 @@
         <ToggleSwitch IsChecked="{Binding PowerReminder}" AutomationProperties.Name="电源变化提醒" />
       </ui:SettingRow>
 
-      <ui:SettingRow Header="点击穿透" Description="默认关闭，可直接拖动 HUD 并自动保存位置。开启后鼠标操作下方窗口，不能拖动 HUD。" Icon="Info">
+      <ui:SettingRow Header="点击穿透" Description="默认关闭，可点击摘要展开详情或拖动位置。开启后鼠标操作下方窗口，HUD 无法点击或拖动。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding ClickThrough}" AutomationProperties.Name="点击穿透" />
       </ui:SettingRow>
       <ui:SettingRow Header="HUD 大小" Description="调整桌面卡片的缩放比例，位置仍保持在屏幕内。" Icon="Info">

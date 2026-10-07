@@ -20,7 +20,7 @@ public partial class HudModel : ObservableObject
     private bool _stopped, _ready, _pinned, _paused, _powerPreview, _pollWarning, _networkWarning;
     private int _revision;
     private byte? _ac;
-    private bool _resumePreviewAfterDrag;
+    private bool _resumePreviewAfterInteraction;
     private HudReading _power = new("电量", "—", "正在读取电源状态…");
     private string _powerError = "";
     private readonly Dictionary<Guid, string> _samplingErrors = [];
@@ -40,7 +40,7 @@ public partial class HudModel : ObservableObject
     private string _startupError = "";
     public bool HasStartupError => StartupError.Length != 0;
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
-    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可直接拖动桌面 HUD。" : "按住桌面 HUD 拖动，松手自动保存位置。";
+    public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击摘要展开或收起详情；按住摘要拖动，松手自动保存位置。";
     public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
     public string PauseAction => _paused ? "恢复更新" : "暂停更新";
     public string RuntimeState => HasStartupError ? "启动失败" : _stopped ? "已停止" : !_ready ? "正在启动"
@@ -76,8 +76,9 @@ public partial class HudModel : ObservableObject
         _window = new HudWindow { DataContext = this };
         _window.PowerChanged += ReadPower;
         _window.Dismissed += Hide;
-        _window.DragStarted += DragStarted;
+        _window.DragStarted += UpdateVisibility;
         _window.DragCompleted += SavePosition;
+        _window.ExpansionChanged += UpdateVisibility;
         try { _window.RegisterPowerEvents(); }
         catch (Exception ex) { ReportFailure("电源通知注册失败，自动提醒不可用；请在修复后重启插件。", ex); }
         ReadPower();
@@ -94,10 +95,18 @@ public partial class HudModel : ObservableObject
         UpdateControls();
     }
 
-    private void DragStarted()
+    private void UpdateInteraction()
     {
-        _resumePreviewAfterDrag = _preview.IsEnabled;
-        _preview.Stop(); _rotation.Stop();
+        if (_window is { IsDragging: true } or { IsExpanded: true })
+        {
+            _resumePreviewAfterInteraction |= _preview.IsEnabled;
+            _preview.Stop(); _rotation.Stop();
+        }
+        else
+        {
+            if (_resumePreviewAfterInteraction) _preview.Start();
+            _resumePreviewAfterInteraction = false;
+        }
     }
 
     private void SavePosition(HudSettings placement)
@@ -108,8 +117,6 @@ public partial class HudModel : ObservableObject
             PositionX = placement.PositionX, PositionY = placement.PositionY };
         if (settings != _settings && Save(settings)) Status = "HUD 位置已保存。";
         ConfigureWindow(); // Failed saves restore the last persisted position.
-        if (_resumePreviewAfterDrag) _preview.Start();
-        _resumePreviewAfterDrag = false;
         UpdateVisibility();
     }
 
@@ -217,10 +224,12 @@ public partial class HudModel : ObservableObject
 
     private void UpdateVisibility()
     {
-        if (_stopped || _window is null || _window.IsDragging) return;
-        var visible = _settings.Enabled && (_pinned || _preview.IsEnabled);
+        if (_stopped || _window is null) return;
+        UpdateInteraction();
+        if (_window.IsDragging) return;
+        var visible = _settings.Enabled && (_pinned || _preview.IsEnabled || _resumePreviewAfterInteraction);
         _timer.Stop(); _rotation.Stop();
-        if (!visible) { _window.Hide(); InvalidateSample(); UpdateControls(); return; }
+        if (!visible) { _window.Hide(); _window.Collapse(); InvalidateSample(); UpdateControls(); return; }
         _window.Reveal();
         UpdateControls();
         if (!_paused)
@@ -228,7 +237,7 @@ public partial class HudModel : ObservableObject
             _timer.Interval = TimeSpan.FromSeconds(EffectiveProfile.IsNetwork ? EffectiveProfile.RefreshSeconds : 1);
             RefreshReading();
             if (EffectiveProfile.Metric != 0) _timer.Start();
-            if (_profiles.Rotate && _profiles.Profiles.Length > 1 && !_powerPreview && _draftPreview is null)
+            if (_profiles.Rotate && _profiles.Profiles.Length > 1 && !_powerPreview && _draftPreview is null && !_window.IsExpanded)
             { _rotation.Interval = TimeSpan.FromSeconds(_profiles.Seconds); _rotation.Start(); }
         }
     }
@@ -337,7 +346,8 @@ public partial class HudModel : ObservableObject
         if (_window is { } window)
         {
             window.PowerChanged -= ReadPower; window.Dismissed -= Hide;
-            window.DragStarted -= DragStarted; window.DragCompleted -= SavePosition;
+            window.DragStarted -= UpdateVisibility; window.DragCompleted -= SavePosition;
+            window.ExpansionChanged -= UpdateVisibility;
             window.Shutdown(); _window = null;
         }
         return _stopTask = FinishStopAsync();

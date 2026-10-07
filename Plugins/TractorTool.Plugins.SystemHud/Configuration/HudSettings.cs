@@ -6,8 +6,9 @@ namespace TractorTool.Plugins.SystemHud;
 public sealed record HudSettings : IVersionedSettings
 {
     // Shared by the card, native window and screen-bound positioning (DIPs).
-    public const double CardWidth = 320;
-    public const double CardHeight = 104;
+    public const double CardWidth = 360;
+    public const double CardHeight = 60;
+    public const double ExpandedHeight = 224;
 
     public int SchemaVersion { get; init; } = 1;
     public bool Enabled { get; init; } = true;
@@ -42,32 +43,41 @@ public sealed record HudSettings : IVersionedSettings
         => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
 
     // WorkingArea and window position use physical pixels; settings offsets use DIPs.
-    public PixelPoint Position(PixelRect area, double dpi)
+    public PixelPoint Position(PixelRect area, double dpi, bool expanded = false)
     {
         var settings = Normalize();
         var width = (int)Math.Ceiling(CardWidth * settings.Scale * dpi);
         var height = (int)Math.Ceiling(CardHeight * settings.Scale * dpi);
+        PixelPoint position;
         if (settings.HasPosition)
-            return new(area.X + (int)Math.Round(Math.Max(0, area.Width - width) * settings.PositionX!.Value),
+            position = new(area.X + (int)Math.Round(Math.Max(0, area.Width - width) * settings.PositionX!.Value),
                 area.Y + (int)Math.Round(Math.Max(0, area.Height - height) * settings.PositionY!.Value));
-        // Legacy anchor/offset fields still restore older installations until their first drag.
-        var margin = 20 * dpi;
-        var x = area.X + margin + (area.Width - width - 2 * margin) * (settings.Anchor % 3) / 2;
-        var y = area.Y + margin + (area.Height - height - 2 * margin) * (settings.Anchor / 3) / 2;
-        return new((int)Math.Clamp(x + settings.OffsetX * dpi, area.X, Math.Max(area.X, area.Right - width)),
-            (int)Math.Clamp(y + settings.OffsetY * dpi, area.Y, Math.Max(area.Y, area.Bottom - height)));
+        else
+        {
+            // Legacy anchor/offset fields still restore older installations until their first drag.
+            var margin = 20 * dpi;
+            var x = area.X + margin + (area.Width - width - 2 * margin) * (settings.Anchor % 3) / 2;
+            var y = area.Y + margin + (area.Height - height - 2 * margin) * (settings.Anchor / 3) / 2;
+            position = new((int)Math.Clamp(x + settings.OffsetX * dpi, area.X, Math.Max(area.X, area.Right - width)),
+                (int)Math.Clamp(y + settings.OffsetY * dpi, area.Y, Math.Max(area.Y, area.Bottom - height)));
+        }
+        // Expansion is transient: keep the compact anchor, moving up only at the screen edge.
+        var visibleHeight = (int)Math.Ceiling((expanded ? ExpandedHeight : CardHeight) * settings.Scale * dpi);
+        return new(position.X, Math.Clamp(position.Y, area.Y, Math.Max(area.Y, area.Bottom - visibleHeight)));
     }
 
-    public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor)
+    public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor, bool expanded = false)
     {
         var settings = Normalize();
         var travelX = Math.Max(0, area.Width - Math.Ceiling(CardWidth * settings.Scale * dpi));
         var travelY = Math.Max(0, area.Height - Math.Ceiling(CardHeight * settings.Scale * dpi));
+        var visibleTravelY = Math.Max(0, area.Height - Math.Ceiling((expanded ? ExpandedHeight : CardHeight) * settings.Scale * dpi));
         return settings with
         {
             ScreenName = screenName, Monitor = monitor,
             PositionX = travelX == 0 ? 0 : Math.Clamp((position.X - (double)area.X) / travelX, 0, 1),
-            PositionY = travelY == 0 ? 0 : Math.Clamp((position.Y - (double)area.Y) / travelY, 0, 1)
+            // Save the visible drop location using the compact coordinate system for both states.
+            PositionY = travelY == 0 ? 0 : Math.Clamp(position.Y - (double)area.Y, 0, visibleTravelY) / travelY
         };
     }
 }

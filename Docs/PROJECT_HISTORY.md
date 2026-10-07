@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 交互（HUD 横条与详情） | [E75 · 横向摘要、点击展开与拖动分离（2026-10-07）](#evidence-hud-compact-interaction) |
 | 样式（HUD 胶囊） | [E74 · Apple 灵动岛风格卡片（2026-10-07）](#evidence-hud-island-style) |
 | 修正（HUD 拖动与对齐） | [E73 · 原生拖动定位、边缘滚动与双栏标题（2026-10-07）](#evidence-hud-drag-layout) |
 | 修正（HUD 分栏） | [E72 · 左右工作区与窄窗口滚动（2026-10-07）](#evidence-hud-responsive-layout) |
@@ -2229,3 +2230,24 @@ SystemHud 0.3.3 的共用 HudCard 改为 320 × 104 DIP、52 DIP 圆角胶囊，
 - ZIP `artifacts/e74-hud-island/plugin-final/TractorTool.SystemHud-0.3.3.zip`，5,469,995 字节，SHA256 `2A278490676997ACBBAA68510A0EAE4CCAB5FAB9138F2EBA3CBE40B69E9F0CE2`。ProductVersion 提交部分是构建时基底 63ae9d2，不代表本轮代码已在该提交中。
 
 没有启动应用、检查程序、硬件或 UI 自动化，未替用户安装。实际字体/圆角、明暗桌面对比、长文、各 DPI/缩放和位置恢复待用户确认；编译和静态校验不代表视觉验收通过。没有框架改动，保留用户 .gitignore/.vscode/launch.json，提交不包含这两项，不配置远程或推送。
+
+<a id="evidence-hud-compact-interaction"></a>
+
+## E75：HUD 横向摘要、点击展开与拖动分离（2026-10-07）
+
+用户指出 E74 仍是三行卡片，提供参考程序的横向内存条和 Apple 紧凑/展开示例，并明确选择本次加入“单击展开详情，再点收起”。核对 [参考软件 HudWindow](https://github.com/GlacierGlimmer/zmd-charge-plus/blob/eada0e216aed59297dee02e6cbb2815429584410/Views/HudWindow.axaml) 的图标/主数值/右侧环布局，及 [Apple WWDC23](https://developer.apple.com/videos/play/wwdc2023/10194/) 的重要信息优先、减少紧凑态高度、按相关内容展开、按钮只承载实际操作的原则。读取的四份上游源码暂存于 `artifacts/e75-hud-interaction/reference`；用于研究，没有复制到插件或打包分发，也未引入其计时动画和配置引擎。
+
+SystemHud 0.3.4：
+
+- 共用 HudCard 紧凑态为 360 × 60 DIP，原创指标线条图标/方案数值/百分比环和箭头横排；展开为 360 × 224 DIP，完整标题、数值、说明支持滚动，保留自定义模板及颜色规则。不为温度、余额和未知读数画假百分比。使用 Avalonia Arc，无进度绘制计时器；删除旧 Progress 显示属性。
+- 原生 ToggleButton 处理单击和页面键盘展开，带可访问名称、状态与焦点反馈。桌面窗口仅在摘要按住移动达到 6 DIP 后取消按钮捕获、调用 BeginMoveDrag；删除整窗 PointerPressed 直接拖动，详情区不拦截输入，未来具体按钮可直接放普通控件，没有空接口或动作注册框架。
+- 展开/拖动期间暂停预览到期与轮播，沿用当前采样频率；收起且结束拖动才重新计时，显式隐藏/关闭/穿透仍优先。展开空间不足时向上钳制，未拖动则收起恢复紧凑锚点，不写配置；实际拖动仍合并位置字段并在失败时恢复。尺寸和旧位置断言同步，schema/采集器/凭据不变。
+
+验证与交付：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e75-hud-interaction/build --force` 最终 **0 警告/0 错误**。初次沙箱还原有 6 个 NU1900；联网 Rebuild 仍有 4 个缓存的审计源不可达警告，最终使用 --force 刷新还原已消失。新增展开边缘/DPI/小工作区、展开越界拖动保存、点击抖动阈值、进度环 0/100/未知/越界及身份/模板断言。**只编译，未运行**，不代表原生鼠标交互通过。
+2. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e75-hud-interaction/plugin-final` 独立 Rebuild **0 警告/0 错误**。自查补齐展开拖动超出底部时先钳制再保存，防止收起后跳动；`plugin` 是该修正前的中间产物，不作为交付。
+3. ZIP 67 个文件与输出逐项 SHA256 一致，4 个 AXAML XML 可解析，清单/ProductVersion 0.3.4，无共享 SDK 副本，234 个宿主文件哈希和文件数不变。摘要：`artifacts/e75-hud-interaction/static-checks.json`。
+4. ZIP `artifacts/e75-hud-interaction/plugin-final/TractorTool.SystemHud-0.3.4.zip`，5,474,831 字节，SHA256 `BF9F2857AB27E3241E59D5D31769CD010A77BB65F44FC3BA3950215ADDF89719`。ProductVersion 提交部分为构建时基底 2d48de4，不代表本轮代码已包含在该旧提交。
+
+没有启动应用、检查程序、硬件、业务网络请求或 UI 自动化，未替用户安装。真实横条观感、环形进度、点击/拖动互斥、展开计时、长文滚动、穿透及屏幕边缘/DPI/跨屏恢复待用户确认。未改框架，保留用户 .gitignore/.vscode/launch.json；仅本地提交，不推送。

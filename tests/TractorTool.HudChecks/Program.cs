@@ -15,7 +15,7 @@ Check(HudCounters.Rate(100, 1000, 1) is null && HudCounters.Rate(100, 10, 0) is 
 var invalid = new HudSettings { Metric = 99, Anchor = -1, Scale = double.NaN, OffsetX = double.PositiveInfinity };
 Check(invalid.Normalize() is { Metric: 4, Anchor: 0, Scale: 1, OffsetX: 0 }, "Stored settings must be bounded.");
 var area = new PixelRect(-1920, 0, 1920, 1080);
-Check(new HudSettings { Anchor = 8 }.Position(area, 1) == new PixelPoint(-340, 956), "Bottom-right respects secondary-monitor origin and inset.");
+Check(new HudSettings { Anchor = 8 }.Position(area, 1) == new PixelPoint(-380, 1000), "Bottom-right respects secondary-monitor origin and inset.");
 Check(new HudSettings { Anchor = 0, OffsetX = -1000, OffsetY = -1000 }.Position(area, 1) == new PixelPoint(-1920, 0), "Offsets cannot lose the HUD off-screen.");
 Check(new HudSettings { Anchor = 8, Scale = 2 }.Position(new(0, 0, 400, 200), 2) == new PixelPoint(0, 0), "Oversized HUD clamps to the available origin.");
 var dragged = new HudSettings().AtPosition(new(-1300, 500), area, 1.5, "secondary", 2);
@@ -23,7 +23,7 @@ Check(dragged.Position(area, 1.5) == new PixelPoint(-1300, 500), "Dragging must 
 var restored = System.Text.Json.JsonSerializer.Deserialize<HudSettings>(System.Text.Json.JsonSerializer.Serialize(dragged))!;
 Check(restored == dragged && restored.Position(area, 1.5) == new PixelPoint(-1300, 500), "Saved drag position and monitor must survive restart.");
 var bottom = new HudSettings().AtPosition(new(5000, 5000), area, 1, "secondary", 2);
-Check(bottom.Position(area, 1) == new PixelPoint(-320, 976) && bottom.Position(new(0, 0, 1280, 720), 2) == new PixelPoint(640, 512),
+Check(bottom.Position(area, 1) == new PixelPoint(-360, 1020) && bottom.Position(new(0, 0, 1280, 720), 2) == new PixelPoint(560, 600),
     "Dragging outside the work area and restoring on another DPI must keep the entire HUD visible.");
 Check(bottom.Position(new(0, 0, 100, 100), 2) == new PixelPoint(0, 0), "A work area smaller than the HUD must clamp safely.");
 Check(!new HudSettings().ClickThrough && !new HudSettings { PositionX = double.NaN, PositionY = .5 }.Normalize().HasPosition
@@ -31,6 +31,19 @@ Check(!new HudSettings().ClickThrough && !new HudSettings { PositionX = double.N
     "New HUDs must allow dragging; corrupt or partial positions must fall back to legacy placement.");
 Check(System.Text.Json.JsonSerializer.Deserialize<HudSettings>("{\"ClickThrough\":true,\"Anchor\":8}") is { ClickThrough: true, HasPosition: false },
     "Existing explicit click-through preferences and anchor-only configurations remain compatible.");
+Check(bottom.Position(area, 1, expanded: true) == new PixelPoint(-360, 856)
+    && bottom.Position(new(0, 0, 1280, 720), 2, expanded: true) == new PixelPoint(560, 272)
+    && bottom.Position(area, 1) == new PixelPoint(-360, 1020),
+    "Expansion fits above the screen edge without rewriting the compact anchor, including high DPI.");
+Check(dragged.Position(area, 1.5, expanded: true) == dragged.Position(area, 1.5)
+    && bottom.Position(new(0, 0, 100, 100), 2, expanded: true) == new PixelPoint(0, 0),
+    "Expansion keeps an interior anchor and safely clamps a work area smaller than the panel.");
+var expandedDrop = new HudSettings().AtPosition(new(5000, 5000), area, 1, "secondary", 2, expanded: true);
+Check(expandedDrop.Position(area, 1, expanded: true) == new PixelPoint(-360, 856)
+    && expandedDrop.Position(area, 1) == new PixelPoint(-360, 856),
+    "Dragging an expanded panel past the bottom must persist the clamped location without a later collapse jump.");
+Check(!HudWindow.ExceedsDragThreshold(new(5, -5)) && HudWindow.ExceedsDragThreshold(new(6, 0))
+    && HudWindow.ExceedsDragThreshold(new(0, -6)), "Small click jitter must not start a drag; either axis can cross the threshold.");
 Console.WriteLine("PASS HUD counters, configuration and positioning");
 
 var legacy = new HudProfiles().Normalize(4);
@@ -46,6 +59,13 @@ Check(high.Title == "CPU · CPU" && high.Value == "80%" && ((Avalonia.Media.ISol
 var unknown = rule.Render(new("CPU", "—", "正在建立基线"));
 Check(!unknown.HasPercent && unknown.Value == "—%" && ((Avalonia.Media.ISolidColorBrush)unknown.Accent).Color == Avalonia.Media.Color.Parse("#FFE66B"),
     "Unknown readings must not become a false zero or trigger a color rule.");
+Check(high.SweepAngle == 288 && (high with { Percent = 100 }).SweepAngle == 360
+    && (high with { Percent = -1 }).SweepAngle == 0 && (high with { Percent = 150 }).SweepAngle == 360
+    && !(high with { Percent = double.NaN }).HasPercent && unknown.SweepAngle == 0,
+    "The ring uses bounded finite percentages; non-percentage readings do not invent progress.");
+Check(high.Summary.Contains(high.Title) && high.Summary.Contains(high.Detail)
+    && new HudProfile { Metric = 9 }.Render(new("余额", "14.20 CNY", "已更新")).Icon != high.Icon,
+    "Compact identity follows the metric while full template content stays available to details and accessibility.");
 Check(HudProfile.ValidTemplate("{value}/{detail}", 80) && !HudProfile.ValidTemplate("{unknown}", 80)
     && !HudProfile.ValidTemplate("{value}}", 80) && !HudProfile.ValidColor("# 12345"), "Reject invalid templates and colors without throwing in the renderer.");
 Check(rule.Render(new("{name}", "{label}", "{value}", 10)).Detail == "{value}", "Variable values are data, never recursively expanded.");

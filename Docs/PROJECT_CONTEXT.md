@@ -6,13 +6,13 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-本轮 E74 交付 SystemHud 0.3.3：参考 Apple HIG Live Activities 和 WWDC23，将桌面/两处预览共用卡片改为 320 × 104 DIP 黑色胶囊，删除闪电图标和彩色整圈描边，保留强调色数值、灰色辅助文字与细进度条。卡片、窗口和位置计算统一引用 HudSettings.CardWidth/CardHeight，修改尺寸不会遗留旧边界计算；位置断言按新尺寸调整，配置格式、拖动及采集不变。
+本轮 E75 交付 SystemHud 0.3.4：用户否定 0.3.3 的三行胶囊，并确认加入点击展开/收起。核对参考软件横条源码与 Apple 紧凑/展开规则后，共用 HudCard 改为 360 × 60 DIP 的图标/数值/进度环摘要，点击后在 360 × 224 DIP 面板阅读完整模板。普通 ToggleButton 负责点击；摘要移动超过 6 DIP 才取消点击并原生拖动，详情区保留正常事件以便具体交互。删除旧进度条属性和整窗按下即拖动处理；没有新依赖、通用动作接口或空按钮。
 
 E70 的 HUD 源码职责见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。E71 整理框架文档及引用：需求/架构/接入/状态分工见[文档导航](README.md)，依赖归属见[分类表](PLUGIN_DEVELOPMENT.md#dependency-kinds)。已纠正宿主自有源的旧说明；Build-Plugin 仍有 MVVM 和许可收集限制，详见[脚本边界](../scripts/README.md#插件打包的现有适用范围)。仅改文档，未改实现或验收状态。
 
-按用户选择默认关闭点击穿透，桌面 HUD 直接原生拖动，结束时保存一次；删除“窗口位置”页及锚点/偏移/显示器编辑同步代码，缩放移到设置。新位置用屏幕显示名称和可移动工作区相对坐标恢复；旧锚点配置仅作首次拖动前兼容回退，已保存的穿透 true 保留并在页面提示关闭。拖动只合并位置、不提交草稿；保存失败回到原位置，拖动期间暂停预览到期和轮播。六项开关、缩放及独立 DeepSeek 凭据仍在设置。
+按用户选择默认关闭点击穿透；展开/拖动期间暂停预览到期与轮播，收起且拖动结束后恢复，显式隐藏或关闭优先。展开靠近底部时向上避让，不写配置，收起恢复紧凑锚点；拖动结束才保存一次新位置。沿用屏幕名称/可移动工作区相对坐标、旧锚点兼容、草稿隔离和写入失败恢复。已保存的穿透 true 保留并提示关闭；开启时收起详情且不能点击或拖动。六项开关、缩放及独立 DeepSeek 凭据仍在设置。
 
-E74 HudChecks 编译、引用现有 E67 SDK 独立 Rebuild 均 0 警告/0 错误；ZIP 67 文件与输出哈希一致，无共享 SDK 副本，234 个宿主文件未变。没有启动应用、检查程序、硬件/网络/DPAPI 或接管 UI。交付 `artifacts/e74-hud-island/plugin-final/TractorTool.SystemHud-0.3.3.zip`，证据见 [E74](PROJECT_HISTORY.md#evidence-hud-island-style)，旧包转历史。
+E75 引用现有 E67 SDK 独立 Rebuild 为 0 警告/0 错误；HudChecks 新增定位/手势阈值/进度环断言，只编译，刷新还原后的最终构建为 0 警告/0 错误。ZIP 67 文件与输出哈希一致，无共享 SDK 副本，234 个宿主文件未变。没有启动应用、检查程序、硬件/业务网络/DPAPI 或接管 UI。交付 `artifacts/e75-hud-interaction/plugin-final/TractorTool.SystemHud-0.3.4.zip`，证据见 [E75](PROJECT_HISTORY.md#evidence-hud-compact-interaction)，旧包转历史。
 
 本轮未改框架或重新发布宿主。硬件库 LibreHardwareMonitorLib 0.9.6 及运行依赖继续随插件分发，设置启用后按需检测。部分传感器需管理员/PawnIO，插件不装驱动或提权。首版不做任意 HTTP 头、混合指标、脚本、价格日程、桌面嵌入或全部参考变量，不声称完整复刻。
 
@@ -48,4 +48,4 @@ E74 HudChecks 编译、引用现有 E67 SDK 独立 Rebuild 均 0 警告/0 错误
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户安装并显式退出重启 0.3.3，确认明暗桌面、DPI/缩放下胶囊文字/圆角/进度条及预览一致性；继续确认窄窗编辑、原生拖动、重启/拔屏恢复及保存失败。A26/A27 业务专项按台账验证。需要框架修改时先停下说明，等架构侧分析。宿主 M5 的远程发布、长期内存、迁移故障、跨会话及无 SDK 机器缺口见 [验收台账](DEVELOPMENT.md#acceptance)。
+下一步由用户安装并显式退出重启 0.3.4，确认横向摘要/进度环、点击与拖动互斥、详情滚动、展开计时以及底部/DPI 收起恢复；继续确认窄窗编辑、跨屏/重启/拔屏恢复及保存失败。A26/A27 业务专项按台账验证。需要框架修改时先停下说明，等架构侧分析。宿主 M5 的远程发布、长期内存、迁移故障、跨会话及无 SDK 机器缺口见 [验收台账](DEVELOPMENT.md#acceptance)。

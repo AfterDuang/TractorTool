@@ -2,19 +2,51 @@
              xmlns:local="using:TractorTool.Plugins.SystemHud"
              x:Class="TractorTool.Plugins.SystemHud.HudCard" x:DataType="local:HudDisplay"
              FontFamily="Segoe UI, Microsoft YaHei UI">
-  <Border Width="{x:Static local:HudSettings.CardWidth}" Height="{x:Static local:HudSettings.CardHeight}"
-          Padding="32,14" CornerRadius="52" Background="#000000" BorderBrush="#28FFFFFF" BorderThickness="1">
-    <Grid RowDefinitions="16,32,16,4" RowSpacing="2" VerticalAlignment="Center">
-      <TextBlock Text="{Binding Title}" Foreground="#A1A1AA" FontSize="12" LineHeight="16"
-                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
-      <TextBlock Grid.Row="1" Text="{Binding Value}" Foreground="{Binding Accent}"
-                 FontSize="26" FontWeight="SemiBold" LineHeight="32" TextWrapping="NoWrap"
-                 TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Value}" />
-      <TextBlock Grid.Row="2" Text="{Binding Detail}" Foreground="#A1A1AA" FontSize="12" LineHeight="16"
-                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
-      <ProgressBar Grid.Row="3" Height="2" VerticalAlignment="Center" Minimum="0" Maximum="100"
-                   Value="{Binding Progress}" IsVisible="{Binding HasPercent}"
-                   Foreground="{Binding Accent}" Background="#2C2C2E" />
-    </Grid>
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.hudSummary:pointerover /template/ Border#Surface">
+      <Setter Property="Background" Value="#262628" />
+    </Style>
+    <Style Selector="ToggleButton.hudSummary:pressed /template/ Border#Surface">
+      <Setter Property="Background" Value="#303033" />
+    </Style>
+    <Style Selector="ToggleButton.hudSummary:focus-visible /template/ Border#Surface">
+      <Setter Property="BorderBrush" Value="#FFFFFF" />
+    </Style>
+  </UserControl.Styles>
+  <Border Width="{x:Static local:HudSettings.CardWidth}" CornerRadius="30" Background="#171719"
+          BorderBrush="#28FFFFFF" BorderThickness="1" ClipToBounds="True">
+    <StackPanel>
+      <ToggleButton x:Name="SummaryButton" Classes="hudSummary" Height="58" HorizontalAlignment="Stretch"
+                    Cursor="Hand" AutomationProperties.Name="展开或收起 HUD 详情"
+                    AutomationProperties.HelpText="{Binding Summary}" ToolTip.Tip="{Binding Summary}">
+        <ToggleButton.Template>
+          <ControlTemplate>
+            <Border x:Name="Surface" Background="Transparent" CornerRadius="29" BorderThickness="1" BorderBrush="Transparent" Padding="18,0,12,0">
+              <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center" />
+            </Border>
+          </ControlTemplate>
+        </ToggleButton.Template>
+        <Grid ColumnDefinitions="24,*,38" ColumnSpacing="14" IsHitTestVisible="False">
+          <Path Data="{Binding Icon}" Width="24" Height="24" Stretch="Uniform" Stroke="{Binding Accent}" StrokeThickness="1.8" VerticalAlignment="Center" />
+          <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{Binding Accent}" FontSize="22" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+          <Grid Grid.Column="2" Width="38" Height="38">
+            <Ellipse Width="34" Height="34" Stroke="#3A3A3D" StrokeThickness="3" IsVisible="{Binding HasPercent}" />
+            <Arc Width="34" Height="34" StartAngle="-90" SweepAngle="{Binding SweepAngle}" Stroke="{Binding Accent}"
+                 StrokeThickness="3" IsVisible="{Binding HasPercent}" />
+            <Path x:Name="Chevron" Data="M0,0 L4,4 8,0" Width="8" Height="4" Stroke="#BDBDC5" StrokeThickness="1.5"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="50%,50%" />
+          </Grid>
+        </Grid>
+      </ToggleButton>
+      <ScrollViewer Height="164" Padding="20,4,20,20" IsVisible="{Binding IsChecked, ElementName=SummaryButton}"
+                    HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="8">
+          <TextBlock Text="{Binding Title}" Foreground="#BDBDC5" FontSize="13" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Value}" Foreground="{Binding Accent}" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Detail}" Foreground="#BDBDC5" FontSize="13" TextWrapping="Wrap" />
+        </StackPanel>
+      </ScrollViewer>
+    </StackPanel>
   </Border>
 </UserControl>
