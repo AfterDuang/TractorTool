@@ -1,0 +1,37 @@
+# SystemHud 源码导航
+
+从根目录的 [HudPlugin.cs](HudPlugin.cs) 开始：它连接宿主生命周期、页面和托盘入口。
+
+```text
+TractorTool.Plugins.SystemHud/
+├─ HudPlugin.cs          插件入口与宿主接入
+├─ Configuration/       方案、设置、凭据保存格式与校验
+│  ├─ HudProfile.cs     方案及轮播配置
+│  ├─ HudSettings.cs    共用设置、读数模型与计数计算
+│  └─ HudSecrets.cs     Windows 凭据加解密
+├─ Sampling/            单次读取与数据来源
+│  ├─ HudSampler.cs     采集协调与请求缓存
+│  ├─ WindowsMetrics.cs  基础 Windows 指标
+│  ├─ HardwareMetrics.cs CPU / GPU 传感器
+│  └─ NetworkMetrics.cs  ICMP / TCP / HTTP / JSON / 余额
+├─ ViewModels/          运行状态、命令和编辑交互
+│  ├─ HudModel.cs       显示、暂停、采样与停止
+│  ├─ HudModel.Profiles.cs  方案编辑、轮播与预览
+│  └─ HudModel.Sources.cs   传感器选择与凭据操作
+├─ Views/               界面与显示转换
+│  ├─ HudView.axaml            主页面
+│  ├─ HudSettingsView.axaml    插件设置页
+│  ├─ HudWindow.axaml          桌面悬浮窗口
+│  ├─ HudCard.axaml            共用读数卡片
+│  └─ HudPresentation.cs       模板、颜色与显示模型
+├─ Licenses/            第三方许可原文
+├─ NOTICE.md            依赖及源码来源
+├─ plugin.json          插件清单
+└─ TractorTool.Plugins.SystemHud.csproj
+```
+
+每份 AXAML 与同名 `.axaml.cs` 放在同一目录。`bin/`、`obj/` 是生成目录，不属于源码分层。
+
+修改布局先看 `Views`，修改操作流程先看 `ViewModels`，修改采集或接口先看 `Sampling`，修改持久化数据先看 `Configuration`。这些目录用于源码导航；类型命名空间保持 `TractorTool.Plugins.SystemHud`，插件入口和配置身份不随目录变化。
+
+完整职责、数据流和行为约束见 [插件设计文档](../../Docs/Plugins/SystemHud.md)，当前实现与验收状态见 [开发台账](../../Docs/DEVELOPMENT.md#current-status)。

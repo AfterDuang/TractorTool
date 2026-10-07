@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| HUD 源码组织 | [E70 · 按内部职责整理源码目录（2026-10-07）](#evidence-hud-folders) |
 | HUD 第一版 | [E69 · 首版高级数据源与插件内部职责设计（2026-10-07）](#evidence-hud-v1) |
 | HUD 第二步 | [E68 · 多方案、轮播、模板、颜色规则与编辑预览（2026-10-07）](#evidence-hud-profiles) |
 | 修正（插件框架依赖） | [E67 · SDK 平台清单与私有依赖边界（2026-10-07）](#evidence-framework-assembly-inventory) |
@@ -2106,3 +2107,13 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 最终复核补正：取消后的缓存占位没有成功读取时间，不能产生“读取已恢复”日志；退出时即使第三方资源释放抛错，也在 finally 清空内存密钥。两处修正后重新编译检查和独立打包均 0 警告/0 错误，重新完成 ZIP/依赖路径/宿主哈希校验，上述哈希和路径对应 plugin-final。旧 plugin 目录为本轮中间产物，不交付。
 
 最终文档静态核对：README 与四份本轮文档的 109 个本地文件链接存在，4 个插件 AXAML XML 可解析；真实 UI 未打开。全工作区空白检查仍显示用户原有 launch.json 空白行，不替用户清理；本轮代码/文档检查单独排除原始第三方许可原文。
+
+<a id="evidence-hud-folders"></a>
+
+## E70：HUD 源码目录整理（2026-10-07）
+
+用户要求按照刚确认的插件内部设计分目录，方便人工阅读。只做物理文件组织：Configuration 放方案/设置/凭据，Sampling 放协调器和三个采集器，ViewModels 放 HudModel 三个分部，Views 放四组 AXAML/后台文件及 HudPresentation。根目录保留 HudPlugin.cs、工程、清单、许可与说明，新增 README 源码导航。类型命名空间不变，入口和持久化身份不变；无新服务或接口，未修改框架。
+
+19 个文件移动前后逐一 SHA256 相同，沿用 SDK 默认递归编译/AXAML 包含规则，无需显式维护文件清单。同步插件文档、交接和历史中的源码链接，不重写历史验证结论。
+
+`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e70-hud-folders/build`：0 警告/0 错误，涵盖插件 AXAML 编译绑定及现有检查引用。没有新增测试、运行检查程序、启动应用/硬件或接管 UI。版本保持 0.3.0，没有重打包/重新安装；E69 包证据属于此前交付，不描述为本轮包验证。用户原有 .gitignore / .vscode/launch.json 修改保留，不提交、不推送。

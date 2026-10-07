@@ -24,13 +24,15 @@
 
 第一版按上述三步的核心能力交付，后续优先允许修改界面和交互，不承诺复制参考程序的全部变量、脚本表达式、桌面嵌入或品牌动画。
 
+源码物理目录按职责分为 `Configuration`、`Sampling`、`ViewModels`、`Views`；入口、工程及清单保留根目录，AXAML 与对应后台文件成对存放。完整目录树与阅读顺序见 [源码导航](../../Plugins/TractorTool.Plugins.SystemHud/README.md)。目录整理保留原命名空间，不改变清单入口、持久化格式或业务行为。
+
 | 部分 | 所有权与修改边界 |
 | --- | --- |
-| [HudProfile](../../Plugins/TractorTool.Plugins.SystemHud/HudProfile.cs) / [HudSettings](../../Plugins/TractorTool.Plugins.SystemHud/HudSettings.cs) | 配置、校验与稳定标识；不执行 I/O 或创建窗口。新字段带默认值，原指标编号 0–4 不重排 |
-| [HudSampler](../../Plugins/TractorTool.Plugins.SystemHud/HudSampler.cs) / WindowsMetrics / [NetworkMetrics](../../Plugins/TractorTool.Plugins.SystemHud/NetworkMetrics.cs) / [HardwareMetrics](../../Plugins/TractorTool.Plugins.SystemHud/HardwareMetrics.cs) | 单次读取返回 HudReading 和可展示失败原因；超时、请求缓存、资源释放。更换硬件库或增加具体来源主要改这里，不改变页面协议 |
-| [HudModel](../../Plugins/TractorTool.Plugins.SystemHud/HudModel.cs) 及 Profiles / Sources 分部 | 单一 VM 按职责拆文件：运行协调、方案编辑、传感器检测和凭据操作；取消/迟到隔离、电源优先和轮播。页面不直接访问采集器 |
-| [HudPresentation](../../Plugins/TractorTool.Plugins.SystemHud/HudPresentation.cs) / HudCard / HudView / HudSettingsView / HudWindow | 读数转显示、模板与颜色、页面和窗口布局；更改视觉主要改 AXAML，更改操作流改 VM，不改采集器 |
-| [HudSecrets](../../Plugins/TractorTool.Plugins.SystemHud/HudSecrets.cs) | 当前 Windows 用户 DPAPI 加解密；凭据与可编辑方案分开，网络层仅取得本次请求所需的内存密钥 |
+| [HudProfile](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudProfile.cs) / [HudSettings](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSettings.cs) | 配置、校验与稳定标识；不执行 I/O 或创建窗口。新字段带默认值，原指标编号 0–4 不重排 |
+| [HudSampler](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/HudSampler.cs) / WindowsMetrics / [NetworkMetrics](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/NetworkMetrics.cs) / [HardwareMetrics](../../Plugins/TractorTool.Plugins.SystemHud/Sampling/HardwareMetrics.cs) | 单次读取返回 HudReading 和可展示失败原因；超时、请求缓存、资源释放。更换硬件库或增加具体来源主要改这里，不改变页面协议 |
+| [HudModel](../../Plugins/TractorTool.Plugins.SystemHud/ViewModels/HudModel.cs) 及 Profiles / Sources 分部 | 单一 VM 按职责拆文件：运行协调、方案编辑、传感器检测和凭据操作；取消/迟到隔离、电源优先和轮播。页面不直接访问采集器 |
+| [HudPresentation](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudPresentation.cs) / HudCard / HudView / HudSettingsView / HudWindow | 读数转显示、模板与颜色、页面和窗口布局；更改视觉主要改 AXAML，更改操作流改 VM，不改采集器 |
+| [HudSecrets](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSecrets.cs) | 当前 Windows 用户 DPAPI 加解密；凭据与可编辑方案分开，网络层仅取得本次请求所需的内存密钥 |
 
 数据流为 `保存的方案/草稿快照 → 单次采样 → HudReading → 模板呈现 → HudCard`。窗口和采集资源属于插件实例，页面只是编辑入口；没有另建服务容器、采集插件系统、通用表达式引擎或后台监控平台。隐藏 HUD 不销毁页面草稿；显示未读到数据时明确未知，失败不继续把旧读数当新数据。
 
