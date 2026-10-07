@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正（HUD 分栏） | [E72 · 左右工作区与窄窗口滚动（2026-10-07）](#evidence-hud-responsive-layout) |
 | 文档（框架源码导航） | [E71 · 软件框架目录职责与开发入口（2026-10-07）](#evidence-framework-source-guide) |
 | HUD 源码组织 | [E70 · 按内部职责整理源码目录（2026-10-07）](#evidence-hud-folders) |
 | HUD 第一版 | [E69 · 首版高级数据源与插件内部职责设计（2026-10-07）](#evidence-hud-v1) |
@@ -2135,5 +2136,17 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 修正后静态核对：177 个本地文件链接与结构图中的 37 个实际目录/文件路径存在，更新锚点可定位，日常文档无旧插件示例锚点引用，本轮差异无空白错误。
 
 后续按用户要求进一步精简框架 README：删除剪贴板、视频、HUD 的业务介绍、参数和专属操作，改为框架公共能力概览；去掉具体业务输出路径、测试插件与业务后续计划，压缩重复构建说明。保留框架源码职责图和阅读入口、安装/数据边界、开发与 Release 草稿入口；插件内容通过文档目录查阅。仅改文档，未构建、运行或改变产品实现与验收状态。
+
+<a id="evidence-hud-responsive-layout"></a>
+
+## E72：HUD 左右工作区与窄窗口滚动（2026-10-07）
+
+用户提供展开最近读数后编辑表单被挤压、窄窗口编辑区几乎消失的截图，并要求常规窗口改左右结构。根因是旧页面 Auto 预览行加星号编辑行，预览与编辑操作栏优先占高度，内部表单滚动区可能接近零。参考 [Apple HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout) 的窗口尺寸适配及 [Scroll views](https://developer.apple.com/design/human-interface-guidelines/scroll-views) 避免同方向嵌套滚动的建议，在插件 HudView 内修正：900 DIP 起左 400 DIP 状态/预览，右侧方案和位置编辑，两栏分别滚动；更窄时同控件上下排布，由整页滚动，栏内滚动关闭。方案操作与表单同属一个滚动区，避免低高度时操作栏再次挤没表单；预览卡片允许向下缩放防止裁边。不新建布局服务，不修改宿主或公共 UI。
+
+版本升至 0.3.1；采集、配置、命令、持久化均未改变。原有 72 个绑定逐项比对一致。宽窄切换仅设置行列和滚动策略，不重建 VM/视图、不切方案或清草稿。
+
+验证：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e72-hud-layout/plugin` 独立 Rebuild **0 警告/0 错误**，包括 AXAML 编译绑定。脚本拒绝共享 DLL 副本，67 个 ZIP 条目与输出文件逐一 SHA256 相同，清单与 ProductVersion 都为 0.3.1；234 个现有宿主文件哈希不变。静态摘要保存在 `artifacts/e72-hud-layout/static-checks.json`。
+
+交付 ZIP：`artifacts/e72-hud-layout/plugin/TractorTool.SystemHud-0.3.1.zip`，5,471,024 字节，SHA256 `A8917CCE3E7A31EF367892085A783E2A90CC5294088617A4329FBABBBBFA1364`。未替用户安装/重启，未运行应用、检查程序、硬件或 UI 自动化；宽窄/低高度、不同 DPI、页签/草稿保留的真实运行效果待用户确认，不能用构建通过替代。保留用户 .gitignore / .vscode/launch.json 修改，不纳入提交、不推送。
 
 精简后检查：本轮五份文档的 136 个本地文件链接及 README 内部锚点有效，未残留具体插件介绍或已删除标题的日常文档链接，差异无空白错误。并行出现的 HUD 代码/清单改动不纳入本次文档提交。
