@@ -5,7 +5,7 @@ namespace TractorTool.Plugins.SystemHud;
 
 public sealed record HudSettings : IVersionedSettings
 {
-    // Shared by the card, native window and screen-bound positioning (DIPs).
+    // Shared by the card, native window and screen-bound positioning (DIPs). Strip width/detail height are limits.
     public const double CardWidth = 248;
     public const double CardHeight = 44;
     public static Size SizeFor(HudMode mode) => mode switch

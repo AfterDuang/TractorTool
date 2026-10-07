@@ -44,13 +44,14 @@ internal static class HudVisualChecks
                 var profile = new HudProfile { Metric = metric, SensorId = "/gpu-nvidia/0/temperature/2" };
                 var reading = metric switch
                 {
+                    1 => new HudReading("时钟", "00:41:55", "2026/10/08 星期四"),
                     2 => new HudReading("CPU", "8%", "处理器使用率 · 每秒采样", 8),
                     3 => new HudReading("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存"),
                     4 => new HudReading("网速", "↓ 551.1 KiB/s", "↑ 48.2 KiB/s · 活动接口合计", SecondaryValue: "↑ 48.2 KiB/s",
                         Context: "2 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。"),
                     _ => new HudReading("指标", "43.5 °C", "硬件设备与采样说明")
                 };
-                reading = reading with { ObservedAt = new DateTimeOffset(2026, 10, 7, 23, 7, 1, TimeSpan.FromHours(8)) };
+                if (metric != 1) reading = reading with { ObservedAt = new DateTimeOffset(2026, 10, 7, 23, 7, 1, TimeSpan.FromHours(8)) };
                 var display = profile.Render(reading);
                 card.DataContext = display;
                 card.Mode = mode;
@@ -61,7 +62,18 @@ internal static class HudVisualChecks
                 if (!Equals(card.FindControl<HudSlotView>("Second")!.Foreground, display.Accent))
                     failures.Add($"{metric}/{mode}: primary accent binding did not update");
                 var bounds = slots.Select(s => new Rect(s.TranslatePoint(default, card)!.Value, s.Bounds.Size)).ToArray();
-                layouts.Add($"{metric}/{mode}: " + string.Join("; ", slots.Zip(bounds, (s, b) => $"{s.Name}={b}")));
+                if (mode == HudMode.Strip)
+                {
+                    if (Math.Abs(bounds[0].Center.X - card.Bounds.Height / 2) > 1 || card.Bounds.Width > 360 || card.Bounds.Width < 280)
+                        failures.Add($"{metric}: strip icon must nest concentrically inside the capsule end and width must remain bounded.");
+                    if (slots[^1].Item is { IsRing: true } or { IsIcon: true }
+                        && Math.Abs(card.Bounds.Width - bounds[^1].Center.X - card.Bounds.Height / 2) > 1)
+                        failures.Add($"{metric}: trailing ring/icon must be concentric with the capsule end, not use text padding.");
+                    foreach (var slot in slots.Where(s => s.Item!.IsText))
+                        if (slot.GetVisualDescendants().OfType<TextBlock>().Any(t => t.TextLayout.TextLines.Any(line => line.HasCollapsed)))
+                            failures.Add($"{metric}: normal strip content must remain readable, not be truncated to save space.");
+                }
+                layouts.Add($"{metric}/{mode} ({card.Bounds.Size}): " + string.Join("; ", slots.Zip(bounds, (s, b) => $"{s.Name}={b}")));
                 for (var i = 0; i < bounds.Length; i++)
                 {
                     if (bounds[i].Width <= 0 || bounds[i].Height <= 0 || !new Rect(card.Bounds.Size).Contains(bounds[i]))
@@ -69,6 +81,11 @@ internal static class HudVisualChecks
                     for (var j = i + 1; j < bounds.Length; j++)
                         if (bounds[i].Intersects(bounds[j])) failures.Add($"{metric}/{mode}: {slots[i].Name} overlaps {slots[j].Name}");
                 }
+                // Skia arc bounds have subpixel approximation error; allow .05 DIP, not a clipped pixel.
+                foreach (var shape in card.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Shape>().Where(s => s.IsEffectivelyVisible))
+                    if (shape.RenderedGeometry is { } geometry
+                        && !new Rect(shape.Bounds.Size).Inflate(.05).Contains(geometry.GetRenderBounds(new Pen(shape.Stroke, shape.StrokeThickness))))
+                        failures.Add($"{metric}/{mode}: {shape.GetType().Name} stroke extends outside its canvas: {geometry.GetRenderBounds(new Pen(shape.Stroke, shape.StrokeThickness))} vs {shape.Bounds.Size}.");
                 if (mode == HudMode.Detail)
                 {
                     Rect Region(string name)
@@ -79,21 +96,31 @@ internal static class HudVisualChecks
                     var first = Region("First"); var second = Region("Second");
                     var third = Region("Third"); var fourth = Region("Fourth");
                     if (first.Right > third.Left || Math.Abs(first.Center.Y - third.Center.Y) > 1
-                        || Math.Abs(second.Right - fourth.Right) > 1 || fourth.Bottom > second.Top
+                        || (card.FindControl<HudSlotView>("Fourth")!.IsVisible
+                            ? Math.Abs(second.Right - fourth.Right) > 1 || fourth.Bottom > second.Top
+                            : Math.Abs(first.Center.Y - second.Center.Y) > 1)
                         || third.Right > second.Left)
                         failures.Add($"{metric}: details must place the icon left of the name with aligned centers, separate from trailing readings.");
                     var body = card.FindControl<ScrollViewer>("BodyScroll")!;
                     var updated = card.FindControl<TextBlock>("Updated")!;
                     var bodyBounds = new Rect(body.TranslatePoint(default, card)!.Value, body.Bounds.Size);
                     var updatedBounds = new Rect(updated.TranslatePoint(default, card)!.Value, updated.Bounds.Size);
-                    if (bounds.Any(b => b.Intersects(bodyBounds)) || bodyBounds.Intersects(updatedBounds)
-                        || !new Rect(card.Bounds.Size).Contains(updatedBounds))
+                    if (body.IsVisible && updated.IsVisible
+                        && (Math.Abs(bodyBounds.Bottom - updatedBounds.Bottom) > 1 || bodyBounds.Right > updatedBounds.Left))
+                        failures.Add("Explanation must stay in its left column; the reserved time column must align to its bottom without overlap.");
+                    if (body.IsVisible && bounds.Any(b => b.Intersects(bodyBounds))
+                        || updated.IsVisible && (body.IsVisible && bodyBounds.Intersects(updatedBounds)
+                            || !new Rect(card.Bounds.Size).Contains(updatedBounds)))
                         failures.Add($"{metric}: expanded header, explanation and timestamp must have separate space.");
-                    if (!updated.Text!.Contains("23:07:01") || display.Layout.Detail.Text.Contains("23:07:01"))
+                    if (reading.ObservedAt.HasValue != updated.IsVisible
+                        || updated.IsVisible && (!updated.Text!.Contains("23:07:01") || display.Layout.Detail.Text.Contains("23:07:01")))
                         failures.Add($"{metric}: observation time must appear once in the footer.");
+                    var lastBottom = updated.IsVisible ? updatedBounds.Bottom : bodyBounds.Bottom;
+                    if (card.Bounds.Height - lastBottom > 14 || body.IsVisible && updated.IsVisible && updatedBounds.Top - bodyBounds.Bottom > 8)
+                        failures.Add($"{metric}: unused footer/body space must not stretch the details: bottom={card.Bounds.Height - lastBottom}, gap={updatedBounds.Top - bodyBounds.Bottom}.");
                     if (display.Layout.Detail.Text.Contains('\n')) failures.Add($"{metric}: built-in explanation must wrap naturally, not force a line break.");
                 }
-                if (metric is 2 or 3 or 4)
+                if (metric is 1 or 2 or 3 or 4)
                 {
                     if (display.Layout.Detail.Text.Contains(reading.Value)
                         || reading.SecondaryValue is { } secondary && display.Layout.Detail.Text.Contains(secondary))
@@ -113,6 +140,24 @@ internal static class HudVisualChecks
                 window.Content = null; window.Content = card;
                 Pump();
             }
+            // Optional regions must collapse during reading replacement, without requiring a mode change.
+            card.Mode = HudMode.Detail;
+            var clock = new HudProfile { Metric = 1 }.Render(new("时钟", "00:41:55", "2026/10/08 星期四"));
+            card.DataContext = clock; Pump();
+            var clockHeight = card.Bounds.Height;
+            card.DataContext = clock with { Layout = clock.Layout with { Detail = clock.Layout.Detail with { Text = "" } } }; Pump();
+            if (card.Bounds.Height >= clockHeight || card.FindControl<Border>("DetailDivider")!.IsVisible)
+                failures.Add("Empty detail content must remove the divider and reduce the height.");
+            card.DataContext = clock; Pump();
+            if (Math.Abs(card.Bounds.Height - clockHeight) > 1 || clockHeight >= 130)
+                failures.Add($"Clock details must restore to a compact content height without empty auxiliary/time rows ({clockHeight} -> {card.Bounds.Height}).");
+            card.DataContext = clock with { Updated = "更新于 00:41:55" }; Pump();
+            if (Math.Abs(card.Bounds.Height - clockHeight) > 1 || !card.FindControl<TextBlock>("Updated")!.IsVisible)
+                failures.Add("A fitting observation time must appear beside the short explanation without adding an empty row.");
+            card.DataContext = clock with { Layout = clock.Layout with { Detail = clock.Layout.Detail with { Text = new string('长', 400) } } }; Pump();
+            var longBody = card.FindControl<ScrollViewer>("BodyScroll")!;
+            if (card.Bounds.Height > HudSettings.SizeFor(HudMode.Detail).Height || longBody.Extent.Height <= longBody.Viewport.Height)
+                failures.Add("Long explanations must scroll within the maximum detail height.");
             foreach (var metric in new[] { 0, 3 })
             {
                 const string explanation = "自定义说明必须完整保留在可滚动的详情区域。\n用户模板的主动换行仍然保留。";
@@ -193,11 +238,11 @@ internal static class HudVisualChecks
             if (card.Mode != HudMode.Strip) failures.Add("Single click must change state on release, without waiting for the double-click timeout.");
             Click(center);
             if (card.Mode != HudMode.Detail) failures.Add("Second click must continue into details.");
-            foreach (var edge in new[] { 20d, HudSettings.SizeFor(HudMode.Strip).Width - 20 })
+            foreach (var atRight in new[] { false, true })
             {
                 card.Mode = HudMode.Strip; Pump();
                 Click(new Point(1, 1)); // Reset the platform click sequence outside the island.
-                var end = header.TranslatePoint(new Point(edge, 20), window)!.Value;
+                var end = header.TranslatePoint(new Point(atRight ? header.Bounds.Width - 20 : 20, 20), window)!.Value;
                 Click(end);
                 if (card.Mode != HudMode.Compact) failures.Add("Clicking either strip end must collapse on release without a timer.");
             }

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 自适应） | [E84 · 图标描边、内容收紧与长条/时间对齐（2026-10-08）](#evidence-hud-content-sizing) |
 | 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
 | 修正与离屏验证（HUD 结构） | [E82 · 左右分组、整体比例与字形居中（2026-10-08）](#evidence-hud-grouped-structure) |
 | 修正与离屏验证（HUD 详情） | [E81 · 即时收起与详细态层级（2026-10-07）](#evidence-hud-detail-refinement) |
@@ -2430,3 +2431,24 @@ SystemHud 0.3.5：
 - 独立构建：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e83-hud-inline-identity/plugin`，`plugin-build.txt` 为 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
 
 交付 `artifacts/e83-hud-inline-identity/plugin/TractorTool.SystemHud-0.4.6.zip`，5,488,570 字节，SHA256 `137FB5AAD6797E972A179A2B83D674F16FA256D56B405C3F5545B56A1B08A7C9`。ProductVersion 的 acebad5 是构建基底。未安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；原生 UI/DPI 仍待用户安装并显式退出重启后验证。保留 .gitignore/.vscode/launch.json 的用户修改，仅保存本地提交。
+
+<a id="evidence-hud-content-sizing"></a>
+
+## E84：HUD 图标描边、内容收紧与长条/时间对齐（2026-10-08）
+
+用户在同一轮补充四项反馈：图标切边、空区域撑高且身份组太轻；长条位置需参考 Apple；内存容量省略和右侧环不同心；更新时间应与短说明对齐。最终 SystemHud 0.4.7 统一处理这些问题，没有新增宿主接口、配置、采样或依赖。
+
+- 图标采用含描边余量的 24 单位画布，详情图标 32、名称 26；修正温度路径超过画布的问题。长条两端分别按图标/环尺寸同心定位，文字使用圆角内侧边距。
+- 长条宽 280–360、高 48，按较宽读数为两个等宽列预留空间，常规内存容量/网速样例不省略。详情宽 400、高不超过 160，空辅助时主值居中、空正文/时间行折叠，绑定传播后合并一次测量，长说明仍可滚动。
+- 用户最后明确左侧文字不能延伸到时间上方：说明与时间固定两列，按时间实际宽度加 16 DIP 留白保留右栏，说明只在左栏换行。两边底部对齐，一行时同基线。最终样例时钟 400×106、内存 400×126、网速 400×142；长条分别宽 280、308、312。具体尺寸为插件设计。
+- 本轮阅读 [Apple WWDC23 Design dynamic Live Activities](https://developer.apple.com/videos/play/wwdc2023/10194/)：依据按信息量调整高度、紧凑内容、同心留白与保持相对位置的说明。HIG 页面只返回 JavaScript 壳，未将其未读内容当成证据。
+
+证据根目录 `artifacts/e84-hud-content-sizing`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e84-hud-content-sizing/build --force` 初次还原，最终用 `--no-restore`；`checks-build-final.txt` 0 警告/0 错误。
+2. 沿用授权执行 `dotnet artifacts/e84-hud-content-sizing/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e84-hud-content-sizing/final`。`checks-run-final.txt` 通过，`final/bindings.txt` 和 `failures.txt` 为空。12 指标三态覆盖描边、两端同心、常规读数不省略、动态清空/恢复/时间、长文滚动、短说明/时间同行，旧输入、字形、动画反转和单一编辑预览回归通过。
+3. 初次 `first-run.txt` 捕获温度路径和旧文字测量问题；`boundaries-*` / `diagnostic-*` 捕获旧 ScrollViewer 尺寸多留空白，并确认 Arc 边界仅有约 0.019 DIP 几何近似误差，断言容差为 0.05 DIP。`strip-sizing/` 曾显示容量截断，改为按较宽列预留空间并新增省略断言。`footer-run.txt` 的“加入时间必然增高”旧断言与新同行需求冲突，改为同排且无额外高度。失败记录不记为通过。
+4. 查看最终时钟/内存/网速长条和详情、CPU 详情 PNG；时间同行已单独核对。无真实 Windows 窗口、原生输入、显示器 DPI、硬件、网络、真实配置/DPAPI 或默认逻辑套件运行证据。
+5. 独立打包命令：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e84-hud-content-sizing/release`。`release-build.txt` 0 警告/0 错误；`static-checks-release.json` 记录 67 个 ZIP 文件逐项一致、无共享 SDK 副本、234 个原宿主文件未变、5 个 AXAML 可解析。较早 `plugin/` 与 `plugin-final/` 是此前布局候选，不交付。
+
+最终包 `artifacts/e84-hud-content-sizing/release/TractorTool.SystemHud-0.4.7.zip`，5,489,814 字节，SHA256 `83A0562212B1CCCE011E5D27A2E6489EFD0F26388900D55C9957FF1A85D6C888`。ProductVersion 中 338fb35 为构建基底。未自动安装；安装后需显式退出重启，A26/A27 原生专项继续保留。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
