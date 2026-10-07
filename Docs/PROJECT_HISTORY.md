@@ -2024,3 +2024,12 @@ Core 只扩充显式框架名称 Microsoft.Win32.Primitives / Microsoft.Win32.Re
 同步架构、插件接入规范、当前台账与交接快照；A03 新边界运行检查和 A25 修复复测仍待用户确认。未启动应用、检查程序、FFmpeg 或 UI，未修改真实安装/数据，未推送远程；.gitignore 与 .vscode/launch.json 用户修改保留在提交外。
 
 最终文档静态核对：本轮涉及文档的 171 个本地文件链接存在，Core 工程 XML 可解析。
+
+### E67 后续代码质量 Review（2026-10-07）
+
+用户要求再次 Review。主代理核对调用链、SDK 元数据和 .NET 10 解析规则，子代理 gpt-6.1-sol / high 独立只读审查提交 7016c23；本轮未改实现、未构建或运行测试。确认：
+
+- **新增 P2**：IntegrationChecks 的 DefineDynamicAssembly 仅证明对象关联 Default，不证明默认绑定器能按名找到它；即使恢复旧 System.* 返回 null，夹具也可能因绑定器找不到动态程序集而得到预期 Failed。应换成真实 System.* 私有 DLL，Default.LoadFromAssemblyPath 后先断言 LoadFromAssemblyName 同名成功，再验证插件漏带时拒绝。依据：[动态程序集创建](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/assembly.cpp#L340)、[动态 PEAssembly](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/peassembly.cpp#L787)、[默认绑定器](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/binder/defaultassemblybinder.cpp#L36)。
+- **继承 P2**：PluginLoadContext 的 FileNotFoundException 不能作为完全终止解析的拒绝信号。若其他可信插件/依赖注册全局 AppDomain.AssemblyResolve 并返回相应程序集，缺失私有依赖仍可被解析；当前仓库未发现该订阅，不声称默认配置已出现串用。建议改为 FileLoadException 并加全局回调不得被调用的检查。官方 [Load 文档](https://learn.microsoft.com/en-us/dotnet/api/system.runtime.loader.assemblyloadcontext.load?view=net-10.0) 指出 FileNotFoundException 的特殊回退；[.NET 10 AppDomain 实现](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/appdomain.cpp#L2876) 进一步确认全局事件路径，不能扩写为该异常后一定继续 Default 缓存查找。
+
+两项均待修，非运行复现结论。清单解析、MSBuild 嵌入、私有路径边界未发现其他确定缺陷；未新增库、服务或重复抽象。原构建/静态产物证据保留，但“缺失依赖拒绝”的行为不能据此记为已验收。同步台账与交接，不把待修项只留在历史中。

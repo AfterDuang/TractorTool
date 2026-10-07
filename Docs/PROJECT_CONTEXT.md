@@ -8,7 +8,7 @@
 
 SystemHud 0.1.1 使用既有 AddNavigationPage：主页面放运行/失败状态、显示/隐藏、暂停/恢复、预览、最近内容和布局；设置保留启用、默认常驻、提醒、穿透、动画。两处保存各自字段，不隐式提交另一页草稿；托盘临时指标与持久指标分开。启动失败禁用所有控制，错误进入统一日志；采样策略未增加主页面轮询。
 
-E67 的 15 工程隔离 Release 构建 0 警告/0 错误，自包含发布通过。PE 元数据核对两种产物的清单与 SDK 一致，176 个平台名称覆盖发布包全部 172 个 .NET 程序集，并排除宿主私有名称。回归夹具覆盖 Win32/Visual Basic/XML 实现、大小写和宿主已有同名 System.* 私有 DLL 时的拒绝，仅编译未运行；本轮自审，未使用子代理。
+E67 的 15 工程隔离 Release 构建 0 警告/0 错误，自包含发布通过。PE 元数据核对两种产物的清单与 SDK 一致，176 个平台名称覆盖发布包全部 172 个 .NET 程序集，并排除宿主私有名称。回归夹具只编译未运行。后续 gpt-6.1-sol / high 子代理复审确认两项待修：动态程序集不能作为 Default 按名解析宿主 DLL 的有效前提；继承的 FileNotFoundException 分支仍允许全局 AssemblyResolve 回调继续解析。只审查及记录，尚未改实现；不是运行验收通过。
 
 产物路径只见 [本地产物](DEVELOPMENT.md#local-artifacts)。E67 更新宿主，HUD 沿用 E66 的 0.1.1 ZIP，不重打插件。F5 用户显式退出后重新构建宿主；HUD 尚为 0.1.0 时才需安装 0.1.1 并显式退出重启。E66 的独立打包证据为历史，A25 实际修复效果仍待复测。不覆盖已安装 DLL/数据，不启动程序。三步计划仍为基础 HUD → 多方案/轮播/模板/颜色规则/编辑 → 高级传感器/数据源，后两步未实施。
 
@@ -42,4 +42,4 @@ E67 的 15 工程隔离 Release 构建 0 警告/0 错误，自包含发布通过
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户确认 E67 加载器与 HUD 0.1.1 的启动和页面分工，再接续 HUD 第二步；A03 的新加载边界、A25/A24 未关闭。宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)，不因新增插件而视为已关闭。
+下一步先修正 E67 的真实 DLL 回归夹具及拒绝分支，补全局回调检查，再由用户确认加载器与 HUD 0.1.1 的运行行为；A03/A25/A24 未关闭。HUD 第二步及宿主 M5 的远程发布、媒体/硬件细项、长期内存、迁移故障、跨会话和无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)。
