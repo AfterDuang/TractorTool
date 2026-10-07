@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 样式（HUD 胶囊） | [E74 · Apple 灵动岛风格卡片（2026-10-07）](#evidence-hud-island-style) |
 | 修正（HUD 拖动与对齐） | [E73 · 原生拖动定位、边缘滚动与双栏标题（2026-10-07）](#evidence-hud-drag-layout) |
 | 修正（HUD 分栏） | [E72 · 左右工作区与窄窗口滚动（2026-10-07）](#evidence-hud-responsive-layout) |
 | 文档（框架结构与精简） | [E71 · 软件框架导航、架构边界与文档分工（2026-10-07）](#evidence-framework-source-guide) |
@@ -2209,3 +2210,22 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 4. ZIP `artifacts/e73-hud-drag/plugin-final/TractorTool.SystemHud-0.3.2.zip`：5,470,072 字节，SHA256 `5E0D6862C576721DBC647E26D9C99C85CE3D5EEC6C644D7DCA22D490893188ED`。本轮文档本地文件链接静态核对通过，代码差异无空白错误。
 
 没有启动应用、检查程序、硬件/网络或 UI 自动化，没有替用户安装或修改真实配置。标题/滚动、拖动/预览到期、跨屏/DPI/拔屏/重启恢复、写入失败、穿透行为待用户运行验证。用户配置和另一轮框架文档整理改动保留，不纳入本轮提交；不配置远程或推送。
+
+<a id="evidence-hud-island-style"></a>
+
+## E74：Apple 灵动岛风格 HUD（2026-10-07）
+
+用户要求将截图中的黄色描边/闪电卡片改为 Apple 灵动岛的感觉。查阅 [Apple HIG Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 和 [WWDC23 Design dynamic Live Activities](https://developer.apple.com/videos/play/wwdc2023/10194/)，采用黑色不透明背景、紧凑信息层级与圆角同心留白的视觉原则。没有复制 Apple 字体/素材、相机占位或手机专属交互。
+
+SystemHud 0.3.3 的共用 HudCard 改为 320 × 104 DIP、52 DIP 圆角胶囊，删除通用闪电图形和彩色描边，保留低对比度中性细边界；标题/说明为灰色，数值与 2 DIP 进度条使用方案/规则强调色。使用 Windows 的 Segoe UI / Microsoft YaHei UI 字体，三行单行省略并支持悬停全文。原淡入、动画开关、拖动、穿透、模板、轮播及采集不变；不新增悬停展开模式。桌面和两处预览沿用同一个控件。
+
+原来散落在卡片、窗口和位置计算中的尺寸统一为 HudSettings.CardWidth/CardHeight，避免只改视觉后保留旧屏幕边界。配置 schema 不变、不改写已存相对位置；按新尺寸恢复并钳制。既有 HudChecks 的右下角/缩放定位断言随高度变化调整，没有新增测试工程。
+
+验证：
+
+- `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e74-hud-island/build` 最终 0 警告/0 错误；只编译、未执行检查。
+- `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e74-hud-island/plugin-final` 独立 Rebuild 0 警告/0 错误。`plugin` 是显式字体设置前的中间产物，交付只用 `plugin-final`。
+- 67 个 ZIP 文件与独立输出逐项 SHA256 相同，构建脚本拒绝共享 SDK 副本；清单/ProductVersion 均为 0.3.3，4 个 AXAML XML 可解析，234 个现有宿主文件哈希不变。摘要在 `artifacts/e74-hud-island/static-checks.json`。
+- ZIP `artifacts/e74-hud-island/plugin-final/TractorTool.SystemHud-0.3.3.zip`，5,469,995 字节，SHA256 `2A278490676997ACBBAA68510A0EAE4CCAB5FAB9138F2EBA3CBE40B69E9F0CE2`。ProductVersion 提交部分是构建时基底 63ae9d2，不代表本轮代码已在该提交中。
+
+没有启动应用、检查程序、硬件或 UI 自动化，未替用户安装。实际字体/圆角、明暗桌面对比、长文、各 DPI/缩放和位置恢复待用户确认；编译和静态校验不代表视觉验收通过。没有框架改动，保留用户 .gitignore/.vscode/launch.json，提交不包含这两项，不配置远程或推送。

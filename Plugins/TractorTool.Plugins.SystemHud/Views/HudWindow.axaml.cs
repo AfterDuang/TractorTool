@@ -77,7 +77,7 @@ public partial class HudWindow : Window
     {
         _settings = settings;
         Cursor = settings.ClickThrough ? Cursor.Default : new Cursor(StandardCursorType.SizeAll);
-        Width = 320 * settings.Scale; Height = 124 * settings.Scale;
+        Width = HudSettings.CardWidth * settings.Scale; Height = HudSettings.CardHeight * settings.Scale;
         Card.Transitions = settings.Animate ? new Transitions
         {
             new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(220) }

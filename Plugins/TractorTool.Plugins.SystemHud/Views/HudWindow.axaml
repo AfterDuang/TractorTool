@@ -1,10 +1,10 @@
 <Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="using:TractorTool.Plugins.SystemHud"
         x:Class="TractorTool.Plugins.SystemHud.HudWindow" x:DataType="local:HudModel"
-        Title="桌面状态 HUD" Width="320" Height="124" CanResize="False" ShowActivated="False"
+        Title="桌面状态 HUD" Width="{x:Static local:HudSettings.CardWidth}" Height="{x:Static local:HudSettings.CardHeight}" CanResize="False" ShowActivated="False"
         ShowInTaskbar="False" WindowDecorations="None" Topmost="True" Background="Transparent"
         TransparencyLevelHint="Transparent" WindowStartupLocation="Manual">
   <Viewbox Stretch="Uniform">
-    <local:HudCard x:Name="Card" DataContext="{Binding Display}" Width="320" Height="124" Opacity="0" />
+    <local:HudCard x:Name="Card" DataContext="{Binding Display}" Opacity="0" />
   </Viewbox>
 </Window>

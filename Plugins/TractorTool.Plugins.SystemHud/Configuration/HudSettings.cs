@@ -5,6 +5,10 @@ namespace TractorTool.Plugins.SystemHud;
 
 public sealed record HudSettings : IVersionedSettings
 {
+    // Shared by the card, native window and screen-bound positioning (DIPs).
+    public const double CardWidth = 320;
+    public const double CardHeight = 104;
+
     public int SchemaVersion { get; init; } = 1;
     public bool Enabled { get; init; } = true;
     public bool AlwaysVisible { get; init; }
@@ -41,8 +45,8 @@ public sealed record HudSettings : IVersionedSettings
     public PixelPoint Position(PixelRect area, double dpi)
     {
         var settings = Normalize();
-        var width = (int)Math.Ceiling(320 * settings.Scale * dpi);
-        var height = (int)Math.Ceiling(124 * settings.Scale * dpi);
+        var width = (int)Math.Ceiling(CardWidth * settings.Scale * dpi);
+        var height = (int)Math.Ceiling(CardHeight * settings.Scale * dpi);
         if (settings.HasPosition)
             return new(area.X + (int)Math.Round(Math.Max(0, area.Width - width) * settings.PositionX!.Value),
                 area.Y + (int)Math.Round(Math.Max(0, area.Height - height) * settings.PositionY!.Value));
@@ -57,8 +61,8 @@ public sealed record HudSettings : IVersionedSettings
     public HudSettings AtPosition(PixelPoint position, PixelRect area, double dpi, string? screenName, int monitor)
     {
         var settings = Normalize();
-        var travelX = Math.Max(0, area.Width - Math.Ceiling(320 * settings.Scale * dpi));
-        var travelY = Math.Max(0, area.Height - Math.Ceiling(124 * settings.Scale * dpi));
+        var travelX = Math.Max(0, area.Width - Math.Ceiling(CardWidth * settings.Scale * dpi));
+        var travelY = Math.Max(0, area.Height - Math.Ceiling(CardHeight * settings.Scale * dpi));
         return settings with
         {
             ScreenName = screenName, Monitor = monitor,

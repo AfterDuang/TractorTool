@@ -6,13 +6,13 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-本轮 E73 交付 SystemHud 0.3.2：左右“状态预览 / 显示方案”标题同规格对齐；复用 UsesCustomHeader 让窄窗口滚动条贴页面右边缘，内容保留 28 DIP 留白。沿用可用宽度 900 DIP 断点、左 400 DIP/右剩余宽度和单一滚动所有者，不重建控件或清草稿。
+本轮 E74 交付 SystemHud 0.3.3：参考 Apple HIG Live Activities 和 WWDC23，将桌面/两处预览共用卡片改为 320 × 104 DIP 黑色胶囊，删除闪电图标和彩色整圈描边，保留强调色数值、灰色辅助文字与细进度条。卡片、窗口和位置计算统一引用 HudSettings.CardWidth/CardHeight，修改尺寸不会遗留旧边界计算；位置断言按新尺寸调整，配置格式、拖动及采集不变。
 
 E70 的 HUD 源码职责见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。E71 整理框架文档及引用：需求/架构/接入/状态分工见[文档导航](README.md)，依赖归属见[分类表](PLUGIN_DEVELOPMENT.md#dependency-kinds)。已纠正宿主自有源的旧说明；Build-Plugin 仍有 MVVM 和许可收集限制，详见[脚本边界](../scripts/README.md#插件打包的现有适用范围)。仅改文档，未改实现或验收状态。
 
 按用户选择默认关闭点击穿透，桌面 HUD 直接原生拖动，结束时保存一次；删除“窗口位置”页及锚点/偏移/显示器编辑同步代码，缩放移到设置。新位置用屏幕显示名称和可移动工作区相对坐标恢复；旧锚点配置仅作首次拖动前兼容回退，已保存的穿透 true 保留并在页面提示关闭。拖动只合并位置、不提交草稿；保存失败回到原位置，拖动期间暂停预览到期和轮播。六项开关、缩放及独立 DeepSeek 凭据仍在设置。
 
-E73 HudChecks（含新增位置往返/越界/DPI/旧配置断言）编译、引用现有 E67 SDK 独立 Rebuild 均 0 警告/0 错误；ZIP 67 文件与输出哈希一致，无共享 SDK 副本，234 个宿主文件未变。没有启动应用、检查程序、硬件/网络/DPAPI 或接管 UI。包路径见 [本地产物](DEVELOPMENT.md#local-artifacts)，证据见 [E73](PROJECT_HISTORY.md#evidence-hud-drag-layout)；只交付 `plugin-final` 中的 0.3.2，`plugin` 是中间包。
+E74 HudChecks 编译、引用现有 E67 SDK 独立 Rebuild 均 0 警告/0 错误；ZIP 67 文件与输出哈希一致，无共享 SDK 副本，234 个宿主文件未变。没有启动应用、检查程序、硬件/网络/DPAPI 或接管 UI。交付 `artifacts/e74-hud-island/plugin-final/TractorTool.SystemHud-0.3.3.zip`，证据见 [E74](PROJECT_HISTORY.md#evidence-hud-island-style)，旧包转历史。
 
 本轮未改框架或重新发布宿主。硬件库 LibreHardwareMonitorLib 0.9.6 及运行依赖继续随插件分发，设置启用后按需检测。部分传感器需管理员/PawnIO，插件不装驱动或提权。首版不做任意 HTTP 头、混合指标、脚本、价格日程、桌面嵌入或全部参考变量，不声称完整复刻。
 
@@ -48,4 +48,4 @@ E73 HudChecks（含新增位置往返/越界/DPI/旧配置断言）编译、引�
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户安装并显式退出重启 0.3.2，确认标题对齐、窄窗口滚动条及低高度编辑；已开启穿透的先关闭并保存，再确认原生拖动、跨屏/DPI、重启/拔屏恢复、缩放、预览和保存失败。A26/A27 业务专项继续按台账验证。需要框架修改时先停下说明，等架构侧分析。A03/A25/A24 专项和宿主 M5 的远程发布、媒体/硬件、长期内存、迁移故障、跨会话及无 SDK 机器缺口继续看 [验收台账](DEVELOPMENT.md#acceptance)。
+下一步由用户安装并显式退出重启 0.3.3，确认明暗桌面、DPI/缩放下胶囊文字/圆角/进度条及预览一致性；继续确认窄窗编辑、原生拖动、重启/拔屏恢复及保存失败。A26/A27 业务专项按台账验证。需要框架修改时先停下说明，等架构侧分析。宿主 M5 的远程发布、长期内存、迁移故障、跨会话及无 SDK 机器缺口见 [验收台账](DEVELOPMENT.md#acceptance)。

@@ -15,7 +15,7 @@ Check(HudCounters.Rate(100, 1000, 1) is null && HudCounters.Rate(100, 10, 0) is 
 var invalid = new HudSettings { Metric = 99, Anchor = -1, Scale = double.NaN, OffsetX = double.PositiveInfinity };
 Check(invalid.Normalize() is { Metric: 4, Anchor: 0, Scale: 1, OffsetX: 0 }, "Stored settings must be bounded.");
 var area = new PixelRect(-1920, 0, 1920, 1080);
-Check(new HudSettings { Anchor = 8 }.Position(area, 1) == new PixelPoint(-340, 936), "Bottom-right respects secondary-monitor origin and inset.");
+Check(new HudSettings { Anchor = 8 }.Position(area, 1) == new PixelPoint(-340, 956), "Bottom-right respects secondary-monitor origin and inset.");
 Check(new HudSettings { Anchor = 0, OffsetX = -1000, OffsetY = -1000 }.Position(area, 1) == new PixelPoint(-1920, 0), "Offsets cannot lose the HUD off-screen.");
 Check(new HudSettings { Anchor = 8, Scale = 2 }.Position(new(0, 0, 400, 200), 2) == new PixelPoint(0, 0), "Oversized HUD clamps to the available origin.");
 var dragged = new HudSettings().AtPosition(new(-1300, 500), area, 1.5, "secondary", 2);
@@ -23,7 +23,7 @@ Check(dragged.Position(area, 1.5) == new PixelPoint(-1300, 500), "Dragging must 
 var restored = System.Text.Json.JsonSerializer.Deserialize<HudSettings>(System.Text.Json.JsonSerializer.Serialize(dragged))!;
 Check(restored == dragged && restored.Position(area, 1.5) == new PixelPoint(-1300, 500), "Saved drag position and monitor must survive restart.");
 var bottom = new HudSettings().AtPosition(new(5000, 5000), area, 1, "secondary", 2);
-Check(bottom.Position(area, 1) == new PixelPoint(-320, 956) && bottom.Position(new(0, 0, 1280, 720), 2) == new PixelPoint(640, 472),
+Check(bottom.Position(area, 1) == new PixelPoint(-320, 976) && bottom.Position(new(0, 0, 1280, 720), 2) == new PixelPoint(640, 512),
     "Dragging outside the work area and restoring on another DPI must keep the entire HUD visible.");
 Check(bottom.Position(new(0, 0, 100, 100), 2) == new PixelPoint(0, 0), "A work area smaller than the HUD must clamp safely.");
 Check(!new HudSettings().ClickThrough && !new HudSettings { PositionX = double.NaN, PositionY = .5 }.Normalize().HasPosition
