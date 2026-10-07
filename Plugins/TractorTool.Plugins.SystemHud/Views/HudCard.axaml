@@ -15,19 +15,21 @@
       </Setter>
     </Style>
     <Style Selector="Border#Island">
+      <Setter Property="Background" Value="#171719" />
       <Setter Property="BorderBrush" Value="#22FFFFFF" />
     </Style>
     <Style Selector="Border#Island:pointerover">
       <Setter Property="BorderBrush" Value="#48FFFFFF" />
     </Style>
-    <Style Selector="Button.islandAction:pressed /template/ Border#Surface">
-      <Setter Property="Background" Value="#16FFFFFF" />
+    <Style Selector="Border#Island.pressed">
+      <Setter Property="Background" Value="#242427" />
+      <Setter Property="BorderBrush" Value="#66FFFFFF" />
     </Style>
     <Style Selector="Button.islandAction:focus-visible /template/ Border#Surface">
       <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
   </UserControl.Styles>
-  <Border x:Name="Island" CornerRadius="22" Background="#171719" BorderThickness="1" ClipToBounds="True">
+  <Border x:Name="Island" Classes.pressed="{Binding #HeaderButton.IsPressed}" CornerRadius="22" BorderThickness="1" ClipToBounds="True">
     <Grid RowDefinitions="Auto,*">
       <!-- This hit target and its content stay present throughout every transition. -->
       <Button x:Name="HeaderButton" Classes="islandAction" Height="42" HorizontalAlignment="Stretch"

@@ -6,19 +6,17 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
 
-本轮 E79 交付 SystemHud 0.4.2。用户报告 0.4.1 大量 HudDisplay/HudSlotDisplay 绑定转换错误、左右预览重复和详细态内容重叠/重复。本轮明确授权仅 HUD 离屏绑定/布局检查，不启动主程序或采集。检查在修正前复现 39 条绑定错误、长条 Third/Fourth 重叠及状态切换的 Grid 索引异常；修正后对应回归通过。
+本轮 E80 交付 SystemHud 0.4.3。用户反馈 0.4.2 仍有顶部灰色分层、长条信息间距不佳，默认单击伸长比双击慢。复核确认此前只验证静态布局，没有模拟指针状态；顶部自定义 pressed 背景造成分层，完整双击时限导致伸长延迟。
 
-HudSlotView 改用 Item 属性接收区域数据，内部 Grid 才切换数据上下文；控件自身继续继承 HudDisplay。HudCard 固定四列两行定义，仅调整尺寸和位置。详细态为左图标、中央下主值、右上身份/环、右下次值，底部显示补充信息，不再拼接全部摘要。HudReading.Context 提供可用内存、接口范围等现有采样的补充内容，不持久化。左侧改为唯一“编辑预览”，使用 EditorDisplay 草稿示例；右侧重复卡片及“最近显示的内容”已删除。
+修正仅在插件：按下改为整岛轻微提亮；默认单击松手即伸长，第二击沿系统 ClickCount 接续详情。只有长条鼠标收起等待系统双击时限，防止缩小后两端的第二击丢失；键盘不等待。显式 Mode 改变统一取消待执行点击与候选状态，键盘在 Button 默认动作前清理鼠标状态。拖动/隐藏/分离继续清理计时器，不新增输入捕获或轮询。
 
-区域仍是开发者组织显示代码的约定，不提供区域编辑器。HudPresentation 填 Compact、Strip、Detail；HudCard 管理布局/手势/形变，HudWindow 管理原生窗口。旧 layout 字段继续自然忽略，其他配置保留。不新增混合指标、FPS、空动作接口或生产依赖；只在现有测试工程加 Avalonia.Headless。阅读入口见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)与[插件文档](Plugins/SystemHud.md)。
+三态为 248×44、360×48、400×184 DIP；长条两个读数平分剩余宽度，次值字号 16、与末格间距 20；详细主值获得更多宽度。形变从 420 缩短至 320ms，保留弹簧参数、180ms 出现、动画偏好和可反转。网络补充文案精简，不改采样算法/频率。透明边界 432×208、位置恢复/拖动保存、点击穿透及生命周期不变。
 
-三态尺寸仍是默认 248×44、长条 400×48、详细 400×184 DIP。单击默认与长条往返，双击两者进入详细，再双击回默认；详细单击不改变状态。手势按系统双击时限判定，6 DIP 移动取消点击并拖动。保留持续存在的顶部与 E77 空白回退修正，不恢复双场景透明度隐藏回调。
+E79 的 Slot.Item、固定行列和唯一左侧 EditorDisplay 预览继续保留；区域是开发者约定，不开放用户排布。没有修改宿主/Core/Contracts/公共 UI，未新增生产依赖。设计入口见[插件文档](Plugins/SystemHud.md)，职责入口见[插件导航](../Plugins/TractorTool.Plugins.SystemHud/README.md)。
 
-保留插件内 420ms 弹性宽高/圆角、180ms 出现动画和全局/已保存动画偏好；移除会相互隐藏的内容淡入逻辑。透明绘制边界 432×208，用 Win32 圆角区域与命中测试排除留白遮挡。四边避让不写配置，拖动结束保存中心一次；旧锚点、DPI/相对位置、保存失败恢复保持。长条/详细或拖动期间暂停预览到期与轮播，显式隐藏/关闭优先；点击穿透默认关闭，旧 true 保留。
+本轮沿用已获准的 HUD 专项离屏检查范围，未运行主程序/原生 HudWindow/真实配置/硬件/业务网络/DPAPI 或默认逻辑套件。专项检查加入实际共享样式、原始鼠标/键盘、浅深色悬停和按下；修正前 7 项失败，最终零绑定错误/检查失败。立即伸长、长条两端双击、键盘返回、拖动互斥、收起计时/取消及中途反转均通过，旧 12 指标/三态/草稿/宽窄切换保持通过。离屏计时需要 Dispatcher.MainLoop，单纯 RunJobs 不驱动定时器。
 
-E79 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0 错误。获准执行 --ui-only：12 类指标三态往返、读数/空上下文/长文、重新挂载、单一草稿预览及宽窄切换通过，零绑定错误/区域重叠；有 Skia 离屏截图。未执行默认逻辑/内存 HTTP 套件或真实 Windows UI/硬件/网络/DPAPI。ZIP 67 文件哈希一致，无共享 SDK 副本，5 个 AXAML 可解析，234 个宿主文件未变。交付 `artifacts/e79-hud-review/plugin/TractorTool.SystemHud-0.4.2.zip`，详见 [E79](PROJECT_HISTORY.md#evidence-hud-binding-review)。未替用户安装；原生手势、动画、DPI 和硬件不能由离屏结论替代。
-
-本轮未改框架或重新发布宿主。采样频率/算法、硬件库、凭据和宿主 M5 状态不变。部分温度传感器需要管理员/PawnIO，插件不装驱动或提权。E71 框架文档职责与打包脚本限制继续有效，见[文档导航](README.md)和[脚本边界](../scripts/README.md#插件打包的现有适用范围)。
+HudChecks 与 E67 已发布 SDK 独立 Rebuild 均 0 警告/0 错误；ZIP 67 文件哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。交付 `artifacts/e80-hud-interaction/plugin/TractorTool.SystemHud-0.4.3.zip`，证据见 [E80](PROJECT_HISTORY.md#evidence-hud-input-review)。未自动安装；原生窗口/DPI/硬件仍待确认。保留用户 .gitignore/.vscode/launch.json，仅本地提交。
 
 ## 2. 保留的产品决定
 
@@ -32,7 +30,7 @@ E79 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0
 
 ## 3. 工作约定
 
-- 用户接手运行测试，未经新指示不启动软件、检查程序、FFmpeg、UI 自动化，不接管真实配置/媒体/剪贴板/用户进程。E79 仅获准本轮 HUD 离屏绑定/布局检查，不外推为宿主、硬件或其他检查授权。构建、静态和 ZIP 校验不能冒充运行验收。
+- 用户接手运行测试，未经新指示不启动软件、检查程序、FFmpeg、UI 自动化，不接管真实配置/媒体/剪贴板/用户进程。用户已授权 HUD 专项离屏检查，E80 在同一问题修正中沿用，不外推为宿主、硬件或其他检查授权。构建、静态和 ZIP 校验不能冒充运行验收。
 - 保留 .vscode/launch.json 空白修改、.gitignore 的 Docs/ 规则，不纳入提交。已跟踪文档用 git add -u -- Docs；新文档指定文件 git add -f。使用子代理时显式 gpt-6.1-sol / high；本地提交不代表远程推送授权。
 - 框架精简，业务留插件，只依赖 Contracts/UI。VS Code、SDK 10.0.401，不更换 IDE 配置，不启用 AOT/未经验证裁剪。
 - 数据根与软件目录分开；迁移保持互斥及恢复记录，不迁移插件代码、不删除旧根。分发只写新目录，ZIP 不覆盖升级，安装器保留插件和用户数据。跨会话维护仍待验。
@@ -52,4 +50,4 @@ E79 HudChecks 编译与引用 E67 已发布 SDK 的独立 Rebuild 均 0 警告/0
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户安装并显式退出重启 0.4.2，重点确认离屏未覆盖的原生单/双击返回、拖动互斥、动效、透明区域和 DPI/跨屏恢复；单一草稿预览和区域绑定已离屏检查。真实保存/撤销/复制、计时与写入失败继续按 A26/A27 保留。需要框架改动时先停下说明并等架构侧分析。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
+下一步由用户安装并显式退出重启 0.4.3，核对真实桌面按下反馈、立即伸长、长条两端双击和动效/缩放；明确长条收起的双击判定取舍。离屏输入/绑定/布局已验证，原生透明区域、DPI/跨屏恢复及硬件/保存专项继续按 A26/A27 保留。需要框架支持先停止并说明。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。

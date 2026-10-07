@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 输入） | [E80 · 点击响应、整岛反馈与长条布局复核（2026-10-07）](#evidence-hud-input-review) |
 | 修正与离屏验证（HUD 绑定/布局） | [E79 · 修正绑定串型、状态重排并合并编辑预览（2026-10-07）](#evidence-hud-binding-review) |
 | 修正与精简（HUD 内部布局） | [E78 · 删除误加的区域编辑器并修正排版（2026-10-07）](#evidence-hud-built-in-layout) |
 | 修正与交互（HUD 三态） | [E77 · 空白回退修正与同指标区域布局（2026-10-07）](#evidence-hud-three-state-layout) |
@@ -2353,3 +2354,27 @@ SystemHud 0.3.5：
 4. `static-checks.json`：ZIP 67 文件逐项 SHA256 与构建输出相符，无共享 SDK DLL；5 个 AXAML XML 可解析，234 个原宿主文件数量/哈希未变。ZIP 5,487,557 字节，SHA256 `ADCA1E99D4297C7B5E04F14E905166E9FA75113C96406947D48942F3B9219DAD`。ProductVersion `0.4.2+cb271190972632e37cc9306165892d576f3b32b9` 的提交部分是构建时基底，不代表本轮修改已存在于旧提交。
 
 交付 `artifacts/e79-hud-review/plugin/TractorTool.SystemHud-0.4.2.zip`，附 SHA256。没有执行 HudChecks 默认逻辑/内存 HTTP 套件、原生 HudWindow、主程序、硬件/业务网络/DPAPI 或安装操作。离屏状态切换不等于真实鼠标双击、动画时序、DPI、透明命中、位置持久化和硬件验收；这些继续由 A26/A27 保留。用户安装 ZIP 后需显式退出重启。保留用户 .gitignore/.vscode/launch.json，仅本地提交，不推送。
+
+<a id="evidence-hud-input-review"></a>
+
+## E80：HUD 点击响应、整岛反馈与长条布局复核（2026-10-07）
+
+用户反馈 0.4.2 的顶部灰色分层、长条视觉间距及单击伸长慢，要求复核代码质量并参考 Apple HIG。本轮继续使用用户已授权的 HUD 专项离屏检查，没有接管真实 UI 或扩大到硬件/网络/默认逻辑套件。
+
+复核与改动：
+
+- 原单击需等待系统双击时限后才开始 420ms 动画。改为默认态松手即伸长，第二击按系统 ClickCount 接续详情。仅保留长条鼠标收起的等待：若第一击立即缩小，两端的第二击会落在岛外，关闭动画时同样存在；因此不通过强制缩短系统双击时限、保留透明输入阻挡或跨窗口鼠标捕获掩盖冲突。键盘切换立即执行。
+- 原插件 pressed 样式给顶部 Surface 单独填色，形成截图中的上下分层。改为 HeaderButton.IsPressed 驱动整个 Island 的背景/轮廓，顶部保持透明。此前检查没有模拟按下，只证明静态不重叠，不能据此宣称交互外观无问题。
+- 长条 400×48 缩为 360×48，两个读数平分剩余宽度，次值字号由 14 改为 16，与末格间距由 10 改为 20；详细态主值获得更多宽度。形变缩短为 320ms，保留原弹簧参数、动画偏好和反向切换；默认/详细尺寸不变。网络说明精简，不改变采样次数或算法。
+- 显式 Mode 变化统一取消待执行收起与候选点击，避免已收起后旧计时器又将其展开；键盘处理改到隧道路由，在 Button 默认动作前清除鼠标取消状态。拖动后的下一次点击作为单击，不继承旧双击候选。
+- 依据 [Apple Gestures](https://developer.apple.com/design/human-interface-guidelines/gestures) 的及时反馈、[Motion](https://developer.apple.com/design/human-interface-guidelines/motion) 的简短/可打断过渡及 [Live Activities 设计说明](https://developer.apple.com/videos/play/wwdc2023/10194/) 的紧凑布局。具体 DIP、320ms 和鼠标单双击规则是插件自己的设计，不冒称 Apple 标准。生产改动只在插件内，未改框架、依赖或配置模型。
+
+验证与证据根目录：`artifacts/e80-hud-interaction`。
+
+1. 专项检查在既有 Avalonia.Headless/Skia 上加入真实共享资源/样式，使用原始鼠标/键盘事件。修正前复现 7 项失败（浅深色三个状态的顶部按下填色、单击未立即伸长），零绑定错误；`before-run.txt`、`before/failures.txt` 和 `before/Dark-Detail-pressed.png` 保留。没有把故意捕获的回归失败记为通过。
+2. 编译命令：`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e80-hud-interaction/build --force`，后续用 `--no-restore`。初次新增代码有两个 CS8602，补齐 Application.Current 非空说明后消除；最终 `checks-build-final.txt` 为 0 警告/0 错误。
+3. 检查命令：`dotnet artifacts/e80-hud-interaction/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e80-hud-interaction/final`。`checks-run-final.txt` 通过：浅深色悬停/按下、整岛反馈、松手即伸长、第二击详情、长条两端双击、Escape/Enter、拖动互斥和拖后单击、收起计时、显式取消，以及动画中途 Strip→Detail→Compact 返回。原 12 指标三态/上下文/长文/重新挂载/单一预览/宽窄切换仍通过，零绑定错误/检查失败。中间 `input-run.txt` 的单击收起失败来自检查仅用 RunJobs 而未调度平台计时器；改用有界 Dispatcher.MainLoop 后真实计时路径通过，没有删掉断言。
+4. 查看 `final/Dark-Detail-pressed.png`、`final/Dark-Strip-hover.png`、`final/metric-3-Strip.png` 以及三个 `motion-*.png` 的实际离屏渲染，确认没有上半部底板，长条关键内容可读，反转后内容仍在。检查不代表原生 Win32 窗口、真实鼠标手感、系统合成/DPI 或硬件验证；没有运行默认逻辑/HTTP 套件。
+5. 独立打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e80-hud-interaction/plugin`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json` 记录 ZIP 67 文件逐项 SHA256 一致、无共享 SDK 副本、5 个 AXAML 可解析、234 个原宿主文件不变。
+
+交付 `artifacts/e80-hud-interaction/plugin/TractorTool.SystemHud-0.4.3.zip`，5,487,783 字节，SHA256 `E4713925964A92B93004FAE837CFD04CFF7E40500D44D0DEA39F355B76E7B9DE`，附哈希文件。ProductVersion 的 31ee8e7 是构建时基底，不表示本轮修正已在旧提交。未替用户安装或启动；用户安装后需显式退出重启。本轮为主代理自审与离屏回归，不冒称子代理复审。保留 .gitignore/.vscode/launch.json 的用户修改，只保存本地提交，不推送。

@@ -42,17 +42,17 @@
 
 ## 交互
 
-桌面和左侧唯一的编辑预览共用 HudCard、HudSlotView，统一采用同一指标的三种布局。参考 [Apple Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 的信息层级与一致性、[Motion](https://developer.apple.com/design/human-interface-guidelines/motion) 的短促可打断过渡。以下尺寸和鼠标规则是本插件按用户要求设计，不是 Apple 的规定。
+桌面和左侧唯一的编辑预览共用 HudCard、HudSlotView，统一采用同一指标的三种布局。参考 [Apple Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 的信息层级与一致性、[Motion](https://developer.apple.com/design/human-interface-guidelines/motion) 的短促可打断过渡。另参考 [Gestures](https://developer.apple.com/design/human-interface-guidelines/gestures) 的及时反馈原则；以下尺寸和鼠标规则是本插件按用户要求设计，不是 Apple 的规定。
 
 | 状态 | 尺寸（DIP）与区域 | 鼠标操作 |
 | --- | --- | --- |
-| 默认 | 248 × 44；左、中、右三格 | 单击进入长条；双击进入详细 |
-| 长条 | 400 × 48；四格横排 | 单击回默认；双击进入详细 |
+| 默认 | 248 × 44；左、中、右三格 | 单击松手即伸长；第二击接续进入详细 |
+| 长条 | 360 × 48；四格横排，主次值平分剩余宽度，次值与末格间距 20 DIP | 单击等双击判定后回默认；双击进入详细 |
 | 详细 | 400 × 184；沿用长条四项：左侧图标、中央下方主值、右下次值、右上身份或进度环；底部只放补充信息 | 双击回默认；单击保留详细 |
 
-顶部使用一个持续存在、明确水平撑满的原生 Button，提供当前读数、操作说明、按下与焦点反馈；悬停反馈作用于整岛轮廓，不画嵌套胶囊，也不弹出遮挡读数的重复提示框。无障碍名称保留完整摘要。固定四列两行定义，仅调整行列尺寸与控件位置，避免替换定义集合造成布局缓存异常；区域控件以 Item 接收 HudSlotDisplay，内部 Grid 才切换数据上下文，控件自身继续继承 HudDisplay。不再因透明度为零隐藏内容或收起入口。按系统双击时限延迟单击；第二次点击取消待执行单击。移动任一轴达到 6 DIP 时取消点击并请求原生拖动，拖动开始结束形变；详情区域可滚动、双击收起。页面预览支持 Enter/Space 切换默认与长条、向下键进入详细、Escape 回默认；桌面不抢焦点。详情区不预建空动作接口。
+顶部使用一个持续存在、明确水平撑满的原生 Button，提供当前读数、操作说明、按下与焦点反馈；悬停反馈作用于整岛轮廓，按下轻微提亮整岛，不给顶部单独填色或画嵌套胶囊，也不弹出遮挡读数的重复提示框。无障碍名称保留完整摘要。固定四列两行定义，仅调整行列尺寸与控件位置，避免替换定义集合造成布局缓存异常；区域控件以 Item 接收 HudSlotDisplay，内部 Grid 才切换数据上下文，控件自身继续继承 HudDisplay。不再因透明度为零隐藏内容或收起入口。默认态单击松手即伸长，第二击按系统 ClickCount 接续进入详细；仅长条的鼠标收起等待系统双击时限，保证两端仍能接收第二击，关闭动画时也如此。键盘切换不等待。显式改状态、隐藏、分离或拖动会取消待执行收起；取消后的下一次点击不沿用旧双击候选。移动任一轴达到 6 DIP 时取消点击并请求原生拖动，拖动开始结束形变；详情区域可滚动、双击收起。页面预览支持 Enter/Space 切换默认与长条、向下键进入详细、Escape 回默认；桌面不抢焦点。详情区不预建空动作接口。
 
-形变在插件 Views 内用 Avalonia 原生有限 Transitions 实现：宽、高、圆角共用 420ms SpringEasing（质量 1、刚度 360、阻尼 27），出现用 180ms 淡入。尺寸可以从当前动画值反向切换，文字固定字号、不随轮廓拉伸；区域按状态重排，删除旧的两个场景交叉隐藏回调。读取既有 FAUISettings/Motion 动画偏好，关闭动画直接呈现目标；隐藏、分离和退出清理过渡及待执行单击，不添加动画轮询或覆盖全局时钟。页面预览使用已保存的动画偏好。
+形变在插件 Views 内用 Avalonia 原生有限 Transitions 实现：宽、高、圆角共用 320ms SpringEasing（质量 1、刚度 360、阻尼 27），出现用 180ms 淡入。尺寸可以从当前动画值反向切换，文字固定字号、不随轮廓拉伸；区域按状态重排，删除旧的两个场景交叉隐藏回调。读取既有 FAUISettings/Motion 动画偏好，关闭动画直接呈现目标；隐藏、分离和退出清理过渡及待执行单击，不添加动画轮询或覆盖全局时钟。页面预览使用已保存的动画偏好。
 
 桌面原生窗口使用 432 × 208 DIP 透明绘制边界，允许轻微弹性超调；实际可见面积以小岛尺寸为准。Win32 区域随形变裁到圆角轮廓，命中测试排除透明留白。区域更新失败会隐藏并提示，可重试显示；系统接管成功设置的 region，失败则释放。形变围绕默认态中心，四边不足时避让，不写配置；未拖动时收起恢复原锚点，展开后拖动保存新中心。没有修改宿主、Core、Contracts 或公共 UI。
 
@@ -125,7 +125,7 @@ CPU 采用 `GetSystemTimes` 时间差，内核时间包括空闲时间；内存�
 - 拖动到高低 DPI/负坐标副屏、移出边界、重启、拔掉目标屏幕和改变缩放；核对位置恢复与可见性。拖动 6 秒预览时不能中途隐藏；写入失败恢复旧位置，且不提交未保存偏好或方案。
 - 点击穿透、无焦点抢占、隐藏/预览到期、动画开/关、托盘快捷项、重复应用、退出恰逢采样。
 - 检查默认/长条/详细三态：连续单击往返、两种状态双击进详情、再双击回默认，动画期间仍显示内容且可回退；按下抖动、拖动、拖后立即点击不误判。网速上传/下载分列、内存容量/占用率/环、GPU 身份、长文字省略和底部补充信息不与顶部整段重复；无区域编辑入口，旧方案正常复制/保存/撤销。检查明暗桌面、100%/150%/200% DPI、0.6–2 倍缩放、快速反向、四边避让、关闭动画即时到位、透明留白不挡下层窗口。长条/详细期间暂停预览到期与轮播，显式隐藏/穿透优先。页面预览验证 Tab/Space/向下键/Escape；纯逻辑断言不代表原生交互验收。
-- [HudVisualChecks](../../tests/TractorTool.HudChecks/HudVisualChecks.cs) 是 HUD 专项离屏检查，使用 Avalonia.Headless/Skia 和内存配置；不启动宿主、原生 HUD 或采样，不读真实配置、硬件或网络。获准后可执行 `dotnet run --project tests/TractorTool.HudChecks -c Release -- --ui-only artifacts/hud-ui-checks`，记录绑定错误、区域边界、状态往返、重新挂载及单一编辑预览的宽窄切换，并保存截图；不能代替原生鼠标、动画时序、DPI 或硬件验证。
+- [HudVisualChecks](../../tests/TractorTool.HudChecks/HudVisualChecks.cs) 是 HUD 专项离屏检查，使用 Avalonia.Headless/Skia 和内存配置；不启动宿主、原生 HUD 或采样，不读真实配置、硬件或网络。获准后可执行 `dotnet run --project tests/TractorTool.HudChecks -c Release -- --ui-only artifacts/hud-ui-checks`，载入 FluentAvalonia 和实际共享样式，记录绑定错误、区域边界、三态往返、重新挂载及单一编辑预览的宽窄切换；模拟鼠标/键盘检查浅深色悬停与按下、立即伸长、长条两端双击、拖动互斥、收起计时与显式取消，并保存动效中途反转截图。事件计时使用真正的离屏 Dispatcher 循环，不能仅靠 RunJobs 冒充计时器已调度；仍不能代替原生窗口、跨屏/DPI 或硬件验证。
 - [HudChecks](../../tests/TractorTool.HudChecks/Program.cs) 的默认入口仍为逻辑及内存 HTTP 检查，覆盖计数/位置、方案/模板/规则、配置往返、JSON Pointer/百分比/边界、余额、凭据路由、缓存及取消。不创建窗口、不读硬件或真实网络。命令 `dotnet run --project tests/TractorTool.HudChecks -c Release` 供单独获准时执行；编译或仅执行 `--ui-only` 不等于默认检查运行通过。
 
 API 依据：[Windows 电源通知](https://learn.microsoft.com/en-us/windows/win32/power/registering-for-power-events)、[电源 GUID](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes)、[GlobalMemoryStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex)、[NetworkChange](https://learn.microsoft.com/en-us/dotnet/api/system.net.networkinformation.networkchange)。上游调研和固定提交记录见 [E65](../PROJECT_HISTORY.md#evidence-system-hud)。

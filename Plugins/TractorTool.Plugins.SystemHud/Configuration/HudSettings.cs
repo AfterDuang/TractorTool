@@ -10,7 +10,7 @@ public sealed record HudSettings : IVersionedSettings
     public const double CardHeight = 44;
     public static Size SizeFor(HudMode mode) => mode switch
     {
-        HudMode.Strip => new(400, 48), HudMode.Detail => new(400, 184), _ => new(CardWidth, CardHeight)
+        HudMode.Strip => new(360, 48), HudMode.Detail => new(400, 184), _ => new(CardWidth, CardHeight)
     };
 
     public int SchemaVersion { get; init; } = 1;

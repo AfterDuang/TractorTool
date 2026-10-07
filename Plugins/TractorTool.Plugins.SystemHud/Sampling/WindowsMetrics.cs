@@ -62,7 +62,7 @@ internal sealed class WindowsMetrics
         return new("网速", comparable ? $"↓ {HudCounters.Speed(received)}" : "—",
             current.Count == 0 ? "没有已连接的网络接口" : comparable ? $"↑ {HudCounters.Speed(sent)} · 活动接口合计" : "正在建立采样基线…",
             SecondaryValue: comparable ? $"↑ {HudCounters.Speed(sent)}" : "↑ —",
-            Context: comparable ? $"{current.Count} 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。" : null);
+            Context: comparable ? $"{current.Count} 个活动接口 · 含虚拟网卡\n转发流量可能重复计入。" : null);
     }
 
     public static (byte Ac, HudReading Reading) Power()

@@ -125,7 +125,7 @@ public partial class HudModel
             2 => new("CPU", "36%", "示例：处理器使用率", 36),
             3 => new("内存", "64%", "10.2 / 16.0 GiB", 64, Context: "可用 5.8 GiB · 物理内存"),
             4 => new("网速", "↓ 1.2 MiB/s", "↑ 128 KiB/s · 活动接口合计", SecondaryValue: "↑ 128 KiB/s",
-                Context: "2 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。"),
+                Context: "2 个活动接口 · 含虚拟网卡\n转发流量可能重复计入。"),
             5 => new("网络延迟", "24 ms", "示例：ICMP 往返"),
             6 => new("HTTP 服务", "85 ms", "示例：HTTP 200 · 响应头耗时"),
             7 => new("JSON 指标", JsonPercentage ? "72" : "就绪", "示例：选定字段的值", JsonPercentage ? 72 : null),
