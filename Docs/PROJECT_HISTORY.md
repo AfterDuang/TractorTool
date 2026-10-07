@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 稳定宽度） | [E85 · 稳定长条与完整余额标题（2026-10-08）](#evidence-hud-stable-strip) |
 | 修正与离屏验证（HUD 自适应） | [E84 · 图标描边、内容收紧与长条/时间对齐（2026-10-08）](#evidence-hud-content-sizing) |
 | 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
 | 修正与离屏验证（HUD 结构） | [E82 · 左右分组、整体比例与字形居中（2026-10-08）](#evidence-hud-grouped-structure) |
@@ -2452,3 +2453,18 @@ SystemHud 0.3.5：
 5. 独立打包命令：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e84-hud-content-sizing/release`。`release-build.txt` 0 警告/0 错误；`static-checks-release.json` 记录 67 个 ZIP 文件逐项一致、无共享 SDK 副本、234 个原宿主文件未变、5 个 AXAML 可解析。较早 `plugin/` 与 `plugin-final/` 是此前布局候选，不交付。
 
 最终包 `artifacts/e84-hud-content-sizing/release/TractorTool.SystemHud-0.4.7.zip`，5,489,814 字节，SHA256 `83A0562212B1CCCE011E5D27A2E6489EFD0F26388900D55C9957FF1A85D6C888`。ProductVersion 中 338fb35 为构建基底。未自动安装；安装后需显式退出重启，A26/A27 原生专项继续保留。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
+
+<a id="evidence-hud-stable-strip"></a>
+
+## E85：HUD 稳定长条与完整余额标题（2026-10-08）
+
+用户指出 E84 的长条随读数伸缩且有省略，详情“DeepSeek 余额”挤成“DeepS...”，随后明确只要信息完整也接受自适应。根因分别是每次读数刷新重算外宽，以及详情用固定比例切分名称/数值列。SystemHud 0.4.8 删除长条逐次量宽，恢复固定 360×48；详情右组用 Auto（上限 210）按内容取宽，名称使用剩余空间。保留 E84 的详情高度收紧、底部说明/时间独立两列、图标描边/同心留白和原输入/动画；未改框架、配置、采样或依赖。
+
+证据根目录 `artifacts/e85-hud-stable-strip`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e85-hud-stable-strip/build --force` 初次还原，最终用 `--no-restore`；`checks-build.txt` 0 警告/0 错误。
+2. 沿用授权执行 `dotnet artifacts/e85-hud-stable-strip/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e85-hud-stable-strip/final`。`checks-run.txt` 通过，`final/bindings.txt`、`final/failures.txt` 为空。新增同一长条状态连续更新位数、KiB/s/MiB/s、未知读数，验证始终 360×48 且主次读数不省略；真实余额样例“DeepSeek 余额 / 14.20 CNY”和常规详情名称/数值无省略。原 12 指标三态、边界/同心、动态高度、说明/时间、长文/重新附加、输入/字形/动画反转/单一编辑预览回归通过。
+3. 新余额样例最初触发旧检查“时间必须在 footer”的假设：源读数已经在正文提供更新时间，生产逻辑正确去重。`first-run.txt`、`first-failures.txt` 保留这次失败；检查修正为正文或时间栏合计出现一次，未改生产行为掩盖失败。实际查看最终 `metric-9-Detail.png` 与 `network-strip-live.png`，标题、金额及网速完整显示。任意超长自定义模板仍遵循有界布局，此处不宣称所有任意文本都能单行完整显示。
+4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e85-hud-stable-strip/plugin`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
+
+交付 `artifacts/e85-hud-stable-strip/plugin/TractorTool.SystemHud-0.4.8.zip`，5,489,650 字节，SHA256 `9D9217EEA11FEC87138B84186640DEEE4288B0AA5F64830551BB70C487C3ED3E`。ProductVersion 中 74769d1 为构建基底。未自动安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；实际原生 UI/DPI 仍待用户安装并显式退出重启后确认。保留用户 .gitignore/.vscode/launch.json 修改，仅保存本地提交。

@@ -77,18 +77,18 @@ public partial class HudCard : UserControl
     {
         UpdateMotion();
         var size = HudSettings.SizeFor(Mode);
-        if (Mode != HudMode.Strip) Width = size.Width;
+        Width = size.Width;
         Island.CornerRadius = new CornerRadius(Mode == HudMode.Detail ? 28 : size.Height / 2);
         var detailed = Mode == HudMode.Detail;
         if (detailed) HeaderGrid.Margin = new Thickness(20, 12);
         // Keep the same definitions: replacing the collections can leave Grid's cell cache stale.
         HeaderGrid.ColumnDefinitions[0].Width = new GridLength(detailed ? 44 : 34);
-        HeaderGrid.ColumnDefinitions[1].Width = new GridLength(detailed ? 0.72 : 1, GridUnitType.Star);
+        HeaderGrid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
         HeaderGrid.ColumnDefinitions[2].Width = Mode switch
         {
-            HudMode.Detail => new GridLength(1.35, GridUnitType.Star),
             HudMode.Strip => new GridLength(1, GridUnitType.Star), _ => GridLength.Auto
         };
+        HeaderGrid.ColumnDefinitions[2].MaxWidth = detailed ? 210 : double.PositiveInfinity;
         HeaderGrid.ColumnDefinitions[3].Width = Mode == HudMode.Strip ? GridLength.Auto : new GridLength(0);
         HeaderGrid.RowDefinitions[0].Height = detailed ? new GridLength(28) : new GridLength(1, GridUnitType.Star);
         HeaderGrid.RowDefinitions[1].Height = detailed ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
@@ -173,13 +173,6 @@ public partial class HudCard : UserControl
             var trailing = Mode == HudMode.Strip && hasAuxiliary ? Fourth.Item : Third.Item;
             var trailingHalfWidth = trailing is { IsRing: true } ? 14 : trailing is { IsIcon: true } ? 12 : 0;
             HeaderGrid.Margin = new Thickness(size.Height / 2 - 14, 0, size.Height / 2 - trailingHalfWidth - 2, 0);
-            if (Mode == HudMode.Strip)
-            {
-                foreach (var slot in new[] { First, Second, Third, Fourth }) slot.Measure(Size.Infinity);
-                // The two text columns share equal space; reserve enough for the wider one.
-                Width = Math.Clamp(First.DesiredSize.Width + 2 * Math.Max(Second.DesiredSize.Width, Third.DesiredSize.Width)
-                    + Fourth.DesiredSize.Width + HeaderGrid.Margin.Left + HeaderGrid.Margin.Right + 4, 280, size.Width);
-            }
             return;
         }
 

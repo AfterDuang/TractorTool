@@ -49,6 +49,7 @@ internal static class HudVisualChecks
                     3 => new HudReading("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存"),
                     4 => new HudReading("网速", "↓ 551.1 KiB/s", "↑ 48.2 KiB/s · 活动接口合计", SecondaryValue: "↑ 48.2 KiB/s",
                         Context: "2 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。"),
+                    9 => new HudReading("DeepSeek 余额", "14.20 CNY", "更新于 23:07:01"),
                     _ => new HudReading("指标", "43.5 °C", "硬件设备与采样说明")
                 };
                 if (metric != 1) reading = reading with { ObservedAt = new DateTimeOffset(2026, 10, 7, 23, 7, 1, TimeSpan.FromHours(8)) };
@@ -64,8 +65,8 @@ internal static class HudVisualChecks
                 var bounds = slots.Select(s => new Rect(s.TranslatePoint(default, card)!.Value, s.Bounds.Size)).ToArray();
                 if (mode == HudMode.Strip)
                 {
-                    if (Math.Abs(bounds[0].Center.X - card.Bounds.Height / 2) > 1 || card.Bounds.Width > 360 || card.Bounds.Width < 280)
-                        failures.Add($"{metric}: strip icon must nest concentrically inside the capsule end and width must remain bounded.");
+                    if (Math.Abs(bounds[0].Center.X - card.Bounds.Height / 2) > 1 || card.Bounds.Width != HudSettings.SizeFor(HudMode.Strip).Width)
+                        failures.Add($"{metric}: strip icon must nest concentrically inside the capsule end and width must remain fixed.");
                     if (slots[^1].Item is { IsRing: true } or { IsIcon: true }
                         && Math.Abs(card.Bounds.Width - bounds[^1].Center.X - card.Bounds.Height / 2) > 1)
                         failures.Add($"{metric}: trailing ring/icon must be concentric with the capsule end, not use text padding.");
@@ -88,6 +89,9 @@ internal static class HudVisualChecks
                         failures.Add($"{metric}/{mode}: {shape.GetType().Name} stroke extends outside its canvas: {geometry.GetRenderBounds(new Pen(shape.Stroke, shape.StrokeThickness))} vs {shape.Bounds.Size}.");
                 if (mode == HudMode.Detail)
                 {
+                    foreach (var slot in slots.Where(s => s.Item!.IsText))
+                        if (slot.GetVisualDescendants().OfType<TextBlock>().Any(t => t.TextLayout.TextLines.Any(line => line.HasCollapsed)))
+                            failures.Add($"{metric}: normal detail content must be shown in full, including the metric name.");
                     Rect Region(string name)
                     {
                         var slot = card.FindControl<HudSlotView>(name)!;
@@ -112,15 +116,16 @@ internal static class HudVisualChecks
                         || updated.IsVisible && (body.IsVisible && bodyBounds.Intersects(updatedBounds)
                             || !new Rect(card.Bounds.Size).Contains(updatedBounds)))
                         failures.Add($"{metric}: expanded header, explanation and timestamp must have separate space.");
-                    if (reading.ObservedAt.HasValue != updated.IsVisible
-                        || updated.IsVisible && (!updated.Text!.Contains("23:07:01") || display.Layout.Detail.Text.Contains("23:07:01")))
-                        failures.Add($"{metric}: observation time must appear once in the footer.");
+                    var timeCopies = (updated.IsVisible && updated.Text!.Contains("23:07:01") ? 1 : 0)
+                        + (body.IsVisible && display.Layout.Detail.Text.Contains("23:07:01") ? 1 : 0);
+                    if (reading.ObservedAt.HasValue ? timeCopies != 1 : updated.IsVisible)
+                        failures.Add($"{metric}: observation time must appear once, including a source-provided update message.");
                     var lastBottom = updated.IsVisible ? updatedBounds.Bottom : bodyBounds.Bottom;
                     if (card.Bounds.Height - lastBottom > 14 || body.IsVisible && updated.IsVisible && updatedBounds.Top - bodyBounds.Bottom > 8)
                         failures.Add($"{metric}: unused footer/body space must not stretch the details: bottom={card.Bounds.Height - lastBottom}, gap={updatedBounds.Top - bodyBounds.Bottom}.");
                     if (display.Layout.Detail.Text.Contains('\n')) failures.Add($"{metric}: built-in explanation must wrap naturally, not force a line break.");
                 }
-                if (metric is 1 or 2 or 3 or 4)
+                if (metric is 1 or 2 or 3 or 4 or 9)
                 {
                     if (display.Layout.Detail.Text.Contains(reading.Value)
                         || reading.SecondaryValue is { } secondary && display.Layout.Detail.Text.Contains(secondary))
@@ -139,6 +144,23 @@ internal static class HudVisualChecks
                 if (slots.Any(s => !s.ClipToBounds)) failures.Add($"{metric}/{mode}: long content can escape its region");
                 window.Content = null; window.Content = card;
                 Pump();
+            }
+            // Live readings must never resize a strip, including digit/unit changes and unknown values.
+            card.Mode = HudMode.Strip;
+            foreach (var (download, upload) in new[] { ("↓ 73.7 KiB/s", "↑ 1.8 KiB/s"), ("↓ 999.9 MiB/s", "↑ 999.9 MiB/s"), ("↓ 1.2 MiB/s", "↑ 43.0 KiB/s"), ("↓ —", "↑ —") })
+            {
+                card.DataContext = new HudProfile { Metric = 4 }.Render(new("网速", download, "接口说明", SecondaryValue: upload)); Pump();
+                if (card.Bounds.Size != HudSettings.SizeFor(HudMode.Strip))
+                    failures.Add("Live strip readings must not change the width or height.");
+                foreach (var name in new[] { "Second", "Third" })
+                    if (card.FindControl<HudSlotView>(name)!.GetVisualDescendants().OfType<TextBlock>().Any(t => t.TextLayout.TextLines.Any(line => line.HasCollapsed)))
+                        failures.Add($"Live strip reading {download}/{upload} must remain readable without truncation.");
+                if (download == "↓ 73.7 KiB/s")
+                {
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    using var frame = window.CaptureRenderedFrame();
+                    frame?.Save(Path.Combine(output, "network-strip-live.png"), PngBitmapEncoderOptions.Default);
+                }
             }
             // Optional regions must collapse during reading replacement, without requiring a mode change.
             card.Mode = HudMode.Detail;
