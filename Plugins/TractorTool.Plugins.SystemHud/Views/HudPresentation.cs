@@ -33,13 +33,13 @@ public static class HudPresentation
             strip = strip with { Primary = Text(detail), Secondary = Text(value) };
         if (profile.Metric == 4) // Never parse a localized explanation to recover the upload reading.
             strip = strip with { Secondary = Text(reading.SecondaryValue ?? "↑ —"), Right = Text(title) };
-        // The expanded header groups icon/name above a primary reading and one supporting item.
+        // Expanded: icon/name form the leading group; supporting/primary readings form the trailing group.
         // Reuse the four regions, but do not carry strip-only ordering or duplicate icons into details.
         var expanded = new HudStripLayout(icon, Text(value), Text(title), trailing with { Icon = "" });
         if ((profile.Metric is 0 or 3) && hasPercent && profile.Detail == "{detail}")
             expanded = expanded with { Right = Text(detail) };
         if (profile.Metric == 4) expanded = expanded with { Right = strip.Secondary };
-        var body = profile.Detail == "{detail}" ? reading.Context ?? detail : detail;
+        var body = profile.Detail == "{detail}" ? reading.Context?.ReplaceLineEndings("；") ?? detail : detail;
         var headerText = new[] { expanded.Primary.Text, expanded.Secondary.Text, expanded.Right.Text };
         if (headerText.Contains(body)) body = "";
         var updated = reading.ObservedAt?.ToString("HH:mm:ss", CultureInfo.CurrentCulture);

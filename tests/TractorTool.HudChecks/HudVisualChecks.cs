@@ -71,6 +71,17 @@ internal static class HudVisualChecks
                 }
                 if (mode == HudMode.Detail)
                 {
+                    Rect Region(string name)
+                    {
+                        var slot = card.FindControl<HudSlotView>(name)!;
+                        return new Rect(slot.TranslatePoint(default, card)!.Value, slot.Bounds.Size);
+                    }
+                    var first = Region("First"); var second = Region("Second");
+                    var third = Region("Third"); var fourth = Region("Fourth");
+                    if (Math.Abs(first.Left - third.Left) > 1 || first.Bottom > third.Top
+                        || Math.Abs(second.Right - fourth.Right) > 1 || fourth.Bottom > second.Top
+                        || third.Right > second.Left)
+                        failures.Add($"{metric}: details must form leading identity and trailing readings, not one mixed header row.");
                     var body = card.FindControl<ScrollViewer>("BodyScroll")!;
                     var updated = card.FindControl<TextBlock>("Updated")!;
                     var bodyBounds = new Rect(body.TranslatePoint(default, card)!.Value, body.Bounds.Size);
@@ -80,6 +91,7 @@ internal static class HudVisualChecks
                         failures.Add($"{metric}: expanded header, explanation and timestamp must have separate space.");
                     if (!updated.Text!.Contains("23:07:01") || display.Layout.Detail.Text.Contains("23:07:01"))
                         failures.Add($"{metric}: observation time must appear once in the footer.");
+                    if (display.Layout.Detail.Text.Contains('\n')) failures.Add($"{metric}: built-in explanation must wrap naturally, not force a line break.");
                 }
                 if (metric is 2 or 3 or 4)
                 {
@@ -103,7 +115,7 @@ internal static class HudVisualChecks
             }
             foreach (var metric in new[] { 0, 3 })
             {
-                const string explanation = "自定义说明必须完整保留在可滚动的详情区域，而不是缩进一个小读数槽位。";
+                const string explanation = "自定义说明必须完整保留在可滚动的详情区域。\n用户模板的主动换行仍然保留。";
                 card.DataContext = new HudProfile { Metric = metric, Detail = explanation }.Render(new("指标", "41%", "读数说明", 41));
                 card.Mode = HudMode.Detail; Pump();
                 if (card.FindControl<HudSlotView>("Body")!.Item?.Text != explanation)
@@ -162,6 +174,7 @@ internal static class HudVisualChecks
                 var point = header.TranslatePoint(new Point(header.Bounds.Width / 2, header.Bounds.Height / 2), window)!.Value;
                 window.MouseMove(point); Pump();
                 CheckSurface("hover");
+                if (mode == HudMode.Strip) CheckInkCenter();
                 Capture($"{theme}-{mode}-hover");
                 var island = card.FindControl<Border>("Island")!;
                 var normalBackground = island.Background;
@@ -264,6 +277,36 @@ internal static class HudVisualChecks
                     var background = child switch { Border b => b.Background, ContentPresenter p => p.Background, _ => null };
                     if (background is ISolidColorBrush brush && brush.Color.A != 0)
                         failures.Add($"{card.Mode}/{state}: nested button surface is opaque ({child.GetType().Name}).");
+                }
+            }
+            void CheckInkCenter()
+            {
+                foreach (var scale in new[] { 1d, 1.5, 2 })
+                {
+                    using var frame = new RenderTargetBitmap(new PixelSize((int)(card.Bounds.Width * scale), (int)(card.Bounds.Height * scale)), new Vector(96 * scale, 96 * scale));
+                    frame.Render(card);
+                    frame.Save(Path.Combine(output, $"strip-{Application.Current!.RequestedThemeVariant}-{scale:0.0}x.png"), PngBitmapEncoderOptions.Default);
+                    using var stream = new MemoryStream();
+                    frame.Save(stream, PngBitmapEncoderOptions.Default); stream.Position = 0;
+                    using var bitmap = SkiaSharp.SKBitmap.Decode(stream);
+                    var center = card.Bounds.Height / 2 * scale;
+                    foreach (var name in new[] { "Second", "Third", "Fourth" })
+                    {
+                        var slot = card.FindControl<HudSlotView>(name)!;
+                        var bounds = new Rect(slot.TranslatePoint(default, card)!.Value, slot.Bounds.Size) * scale;
+                        var top = bitmap.Height; var bottom = -1;
+                        for (var y = (int)Math.Ceiling(bounds.Top); y < bounds.Bottom; y++)
+                        for (var x = (int)Math.Ceiling(bounds.Left); x < bounds.Right; x++)
+                        {
+                            var pixel = bitmap.GetPixel(x, y);
+                            if (Math.Max(pixel.Red, Math.Max(pixel.Green, pixel.Blue)) < 140) continue;
+                            top = Math.Min(top, y); bottom = Math.Max(bottom, y);
+                        }
+                        var offset = ((top + bottom + 1) / 2d - center) / scale;
+                        layouts.Add($"Strip/{scale}x/{name}: visible ink offset from island centre = {offset:0.##} DIP");
+                        if (bottom < top || Math.Abs(offset) > .75)
+                            failures.Add($"Strip/{scale}x/{name}: text is not optically centered ({offset:0.##} DIP).");
+                    }
                 }
             }
         }

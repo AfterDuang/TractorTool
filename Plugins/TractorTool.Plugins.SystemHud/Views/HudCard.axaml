@@ -4,6 +4,12 @@
              Width="{x:Static local:HudSettings.CardWidth}" Height="{x:Static local:HudSettings.CardHeight}"
              FontFamily="Segoe UI, Microsoft YaHei UI" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
   <UserControl.Styles>
+    <!-- Centre the visible glyphs, not Segoe UI's asymmetric ascent/descent box. -->
+    <Style Selector="local|HudSlotView.headerSlot TextBlock">
+      <Setter Property="RenderTransform">
+        <TranslateTransform Y="-1" />
+      </Setter>
+    </Style>
     <Style Selector="Button.islandAction">
       <Setter Property="Cursor" Value="Hand" />
       <Setter Property="Template">
@@ -30,25 +36,26 @@
     </Style>
   </UserControl.Styles>
   <Border x:Name="Island" Classes.pressed="{Binding #HeaderButton.IsPressed}" CornerRadius="22" BorderThickness="1" ClipToBounds="True">
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
       <!-- This hit target and its content stay present throughout every transition. -->
       <Button x:Name="HeaderButton" Classes="islandAction" Height="42" HorizontalAlignment="Stretch"
               HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" RenderTransform="none"
               AutomationProperties.Name="{Binding Summary}"
               AutomationProperties.HelpText="单击切换默认和长条；双击切换详细和默认。Enter 或空格切换长条，向下键进入详细，Escape 返回默认。">
         <Grid x:Name="HeaderGrid" Margin="14,0" ColumnDefinitions="38,*,Auto,0" RowDefinitions="*,0" IsHitTestVisible="False">
-          <local:HudSlotView x:Name="First" FontSize="14" Foreground="#F5F5F7" />
-          <local:HudSlotView x:Name="Second" Grid.Column="1" FontSize="18" FontWeight="SemiBold" Foreground="{Binding Accent}" />
-          <local:HudSlotView x:Name="Third" Grid.Column="2" FontSize="14" Foreground="#BDBDC5" TextAlignment="Right" />
-          <local:HudSlotView x:Name="Fourth" IsVisible="False" FontSize="12" Foreground="#BDBDC5" TextAlignment="Right" HorizontalAlignment="Right" />
+          <local:HudSlotView x:Name="First" Classes="headerSlot" FontSize="14" Foreground="#F5F5F7" />
+          <local:HudSlotView x:Name="Second" Classes="headerSlot" Grid.Column="1" FontSize="18" FontWeight="SemiBold" Foreground="{Binding Accent}" />
+          <local:HudSlotView x:Name="Third" Classes="headerSlot" Grid.Column="2" FontSize="14" Foreground="#BDBDC5" TextAlignment="Right" />
+          <local:HudSlotView x:Name="Fourth" Classes="headerSlot" IsVisible="False" FontSize="12" Foreground="#BDBDC5" TextAlignment="Right" HorizontalAlignment="Right" />
         </Grid>
       </Button>
-      <ScrollViewer x:Name="BodyScroll" Grid.Row="1" Margin="20,2,20,0" IsVisible="False"
+      <Border x:Name="DetailDivider" Grid.Row="1" Height="1" Margin="20,0" Background="#24FFFFFF" IsVisible="False" />
+      <ScrollViewer x:Name="BodyScroll" Grid.Row="2" Margin="20,8,20,0" IsVisible="False"
                     HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <local:HudSlotView x:Name="Body" FontSize="12" Foreground="#A2A2AC" TextWrapping="Wrap" VerticalAlignment="Top" />
       </ScrollViewer>
-      <TextBlock x:Name="Updated" Grid.Row="2" Text="{Binding Updated}" Margin="20,6,20,14" IsVisible="False" Background="Transparent"
-                 FontSize="11" Foreground="#8C8C96" />
+      <TextBlock x:Name="Updated" Grid.Row="3" Text="{Binding Updated}" Margin="20,4,20,12" IsVisible="False" Background="Transparent"
+                 FontSize="11" Foreground="#8C8C96" TextAlignment="Right" />
     </Grid>
   </Border>
 </UserControl>

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 结构） | [E82 · 左右分组、整体比例与字形居中（2026-10-08）](#evidence-hud-grouped-structure) |
 | 修正与离屏验证（HUD 详情） | [E81 · 即时收起与详细态层级（2026-10-07）](#evidence-hud-detail-refinement) |
 | 修正与离屏验证（HUD 输入） | [E80 · 点击响应、整岛反馈与长条布局复核（2026-10-07）](#evidence-hud-input-review) |
 | 修正与离屏验证（HUD 绑定/布局） | [E79 · 修正绑定串型、状态重排并合并编辑预览（2026-10-07）](#evidence-hud-binding-review) |
@@ -2397,3 +2398,20 @@ SystemHud 0.3.5：
 5. 独立打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e81-hud-detail/plugin-final`，`plugin-build-final.txt` 为 0 警告/0 错误。`static-checks-final.json`：ZIP 67 个文件逐项哈希一致，无共享 SDK 副本，234 个原宿主文件未变，5 个 AXAML 可解析。早期 `plugin/` 仅为候选产物，不是交付包。
 
 交付 `artifacts/e81-hud-detail/plugin-final/TractorTool.SystemHud-0.4.4.zip`，5,488,150 字节，SHA256 `43C8830F1F60A0C2B39DB57277F4406C45ACC56A8A59AB3DFFF75915DCBA110A`。ProductVersion `0.4.4+7464bc370503b4b0d7d86c70482467b999babb60` 中提交为构建基底，不代表本轮代码在旧提交中。未安装、未启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；原生手感、DPI/透明区域/位置恢复仍由 A26/A27 保留。源码和检查由主代理复核，没有声称子代理 Review。保留 .gitignore/.vscode/launch.json 的用户修改，仅保存本地提交。
+
+<a id="evidence-hud-grouped-structure"></a>
+
+## E82：HUD 左右分组、整体比例与字形居中（2026-10-08）
+
+用户提供新的红框、中心线和航班示意，澄清详情应强调左右组及完整底部信息区。E81 的普通卡片层级未满足该结构。本轮详情改为 400×160（约 2.5:1），左组为上图标/下大名称，右组为上辅助/下主值；下方细线连接整段说明与右对齐时间。网速左侧只保留身份，右上上传、右下下载；CPU、内存等沿用同一具名区域。内置 Context 的主动换行合为分号，按实际宽度自然折行；用户模板换行不改。参考用户图和 [Apple Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities)、[WWDC23 设计说明](https://developer.apple.com/videos/play/wwdc2023/10194/) 的分组、连续位置与圆角留白，具体桌面尺寸不是 Apple 规定。
+
+长条原先只按行框居中，字形像素测量显示 100% 下主/次文字偏低 1 px，名称偏低 0.5 px。插件局部 headerSlot 样式以 TranslateTransform 将文字上移 1 DIP，不移动图标/环或正文；无需框架支持。原立即单击、中央双击、拖动互斥、320ms 形变、透明边界、配置和采样均保留。
+
+证据目录 `artifacts/e82-hud-structure`：
+
+- 初始专项检查及像素基线：`before-build.txt`、`before-run.txt`、`before/layout.txt` 和 PNG。初始断言允许 1 px 偏差，因此检查通过，但日志记录了偏低，不声称旧版已经光学对齐。中间 XAML 字符串变换解析失败见 `transform-parse-failure.txt`，改为显式 TranslateTransform 对象后闭合；截图 Save 改用 BitmapEncoderOptions 消除弃用警告。
+- 最终构建：`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e82-hud-structure/build --no-restore`，`checks-build-final.txt` 为 0 警告/0 错误。最初还原使用同命令的 `--force`。
+- 授权专项运行：`dotnet artifacts/e82-hud-structure/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e82-hud-structure/final`，`checks-run-final.txt` 通过。浅深色 100%/150%/200% 离屏栅格化的文字中心偏差最多 0.75 DIP；12 指标三态、左右组实际边界、说明/时间隔离、内置自然折行与自定义换行均通过，旧原始输入、标题/正文/时间双击返回、键盘、拖动、动画反转、单一编辑预览/宽窄切换保持通过。`final/bindings.txt`、`final/failures.txt` 为空。实际查看 `metric-2-Detail.png`、`metric-3-Detail.png`、`metric-4-Detail.png`、`metric-4-Strip.png` 与 `strip-Dark-1.5x.png`。像素检查使用已有 SkiaSharp 依赖，没有增加测试或生产 NuGet 包。
+- 独立构建：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e82-hud-structure/plugin`，`plugin-build.txt` 为 0 警告/0 错误。`static-checks.json`：ZIP 67 文件哈希逐项一致，无共享 SDK DLL，234 个宿主文件未变，5 个 AXAML 可解析。
+
+交付 `artifacts/e82-hud-structure/plugin/TractorTool.SystemHud-0.4.5.zip`，5,488,554 字节，SHA256 `136F7030103154091CB2B151FED06FEAFCCA0BEE784E4F88109557B9DC6E4DFE`。ProductVersion 中 f350820 是构建基底，不表示本轮修改在旧提交中。未自动安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；离屏倍率不替代真实显示器 DPI/原生手感验收，A26/A27 缺口继续保留。主代理自审，未称子代理 Review；保留用户 .gitignore/.vscode/launch.json 修改，仅本地提交。
