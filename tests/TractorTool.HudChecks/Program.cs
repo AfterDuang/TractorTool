@@ -1,7 +1,9 @@
 using Avalonia;
+using System.Net;
+using System.Text;
 using TractorTool.Plugins.SystemHud;
 
-// Pure arithmetic checks only: no windows, native counters, user settings or network requests.
+// Pure logic and in-memory HTTP checks: no windows, native counters, user settings or real network.
 static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
 Check(HudCounters.Cpu(150, 250, 150, 100, 150, 100) is { } cpu && Math.Abs(cpu - 66.6666667) < .001,
     "Kernel time includes idle; CPU must subtract it from the kernel+user delta.");
@@ -41,3 +43,89 @@ try { (profiles with { Profiles = [second, second] }).Normalize(0); }
 catch (InvalidDataException) { rejected = true; }
 Check(rejected, "Duplicate identities in stored profiles must be rejected, not silently dropped.");
 Console.WriteLine("PASS HUD profiles, templates, color rule and carousel order");
+
+Check(NetworkMetrics.ValidAddress("localhost", true) && NetworkMetrics.ValidAddress("::1", true)
+    && !NetworkMetrics.ValidAddress("localhost:443", true) && !NetworkMetrics.ValidAddress("https://example.com/path", true), "Probe accepts a host, not a URL or port.");
+Check(NetworkMetrics.ValidAddress("http://localhost/status", false)
+    && !NetworkMetrics.ValidAddress("file:///C:/private", false)
+    && !NetworkMetrics.ValidAddress("https://user:secret@example.com", false)
+    && !NetworkMetrics.ValidAddress("https://example.com/#secret", false), "HTTP accepts only explicit web endpoints without embedded credentials or fragments.");
+Check(NetworkMetrics.ValidPointer("") && NetworkMetrics.ValidPointer("/a~1b/~0key/0")
+    && !NetworkMetrics.ValidPointer("/bad~2") && !NetworkMetrics.ValidPointer("field"), "Validate JSON Pointer escaping before reading.");
+var jsonProfile = new HudProfile { Metric = 7, Address = "https://example.invalid/status", JsonPointer = "/a~1b/~0key/0", JsonPercentage = true };
+var jsonBytes = Encoding.UTF8.GetBytes("{\"a/b\":{\"~key\":[72,null]}}");
+Check(NetworkMetrics.ExtractJson(jsonBytes, jsonProfile) is { Error: null, Reading.Percent: 72 }, "JSON Pointer supports escaped keys and array indices.");
+foreach (var pointer in new[] { "/a~1b/~0key/01", "/a~1b/~0key/-1", "/a~1b/~0key/2", "/a~1b/~0key/1", "/a~1b", "/missing" })
+    Check(NetworkMetrics.ExtractJson(jsonBytes, jsonProfile with { JsonPointer = pointer, JsonPercentage = false }).Error is not null, "Invalid/non-scalar JSON selection must be unknown: " + pointer);
+foreach (var json in new[] { "\"72\"", "101", "-1", "1e999", "not-json", new string('[', 33) + "0" + new string(']', 33) })
+    Check(NetworkMetrics.ExtractJson(Encoding.UTF8.GetBytes(json), jsonProfile with { JsonPointer = "" }).Error is not null, "Invalid percentage or JSON must not become a value.");
+Check(NetworkMetrics.ExtractJson(new byte[NetworkMetrics.MaxBytes + 1], jsonProfile).Error is not null, "Parser keeps the response size bound.");
+Check(NetworkMetrics.ExtractJson(Encoding.UTF8.GetBytes("\"a\\nb\""), jsonProfile with { JsonPointer = "", JsonPercentage = false }).Reading.Value == "a b", "Remote text cannot inject a new display line.");
+var balance = Encoding.UTF8.GetBytes("{\"balance_infos\":[{\"currency\":\"USD\",\"total_balance\":\"12.34\"}]}");
+Check(NetworkMetrics.DeepSeekBalance(balance, "USD") is { Error: null, Reading.Unit: "USD" }
+    && NetworkMetrics.DeepSeekBalance(balance, "CNY").Error is not null
+    && NetworkMetrics.DeepSeekBalance("[]"u8.ToArray(), "USD").Error is not null, "Balance selects the exact currency and rejects malformed responses.");
+Check(HudSecrets.ValidKey("test-key") && !HudSecrets.ValidKey("key\nsecret") && !HudSecrets.ValidKey(new string('a', 1025)), "Credential header rejects whitespace and unbounded input.");
+Check((jsonProfile with { RefreshSeconds = 4 }).Error.Length > 0
+    && new HudProfile { Metric = 9, RefreshSeconds = 59 }.Error.Length > 0
+    && new HudProfile { Metric = 10, Drive = "\\\\server\\share" }.Error.Length > 0, "Refresh and local-drive limits apply to saved profiles too.");
+Check(HardwareMetrics.Unit(LibreHardwareMonitor.Hardware.SensorType.Temperature) == "°C", "Hardware temperature units must not be percentages.");
+var newProfiles = new HudProfiles { Profiles = [jsonProfile], ActiveId = jsonProfile.Id };
+var newRoundtrip = System.Text.Json.JsonSerializer.Deserialize<HudProfiles>(System.Text.Json.JsonSerializer.Serialize(newProfiles))!.Normalize(0);
+Check(newRoundtrip.Active == jsonProfile && newRoundtrip.Active.Render(new("JSON", "72", "OK", 72, "%")).Detail == "OK", "New source fields round-trip without embedding secrets.");
+Check(HudProfile.ValidTemplate("{unit} {updated}", 80), "Extended template variables are accepted.");
+
+var requests = 0;
+using (var sampler = new HudSampler(new NetworkMetrics(new MemoryHandler((request, _) =>
+{
+    requests++;
+    Check(request.Headers.Authorization is null, "Generic HTTP must never inherit a DeepSeek token.");
+    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(jsonBytes) });
+}))))
+{
+    Check((await sampler.ReadAsync(jsonProfile, false, false, "secret", default))?.Error is null, "JSON request uses in-memory handler.");
+    await sampler.ReadAsync(jsonProfile, false, false, "secret", default);
+    Check(requests == 1, "Carousel re-entry must honor the profile request interval.");
+    sampler.ResetNetworkCache();
+    await sampler.ReadAsync(jsonProfile, false, false, "new-secret", default);
+    Check(requests == 2, "Changed credentials/settings invalidate cached results.");
+}
+using (var network = new NetworkMetrics(new MemoryHandler((request, _) =>
+{
+    Check(request.RequestUri!.AbsoluteUri == "https://api.deepseek.com/user/balance"
+        && request.Headers.Authorization?.ToString() == "Bearer test-key", "Credential is sent only to the fixed DeepSeek HTTPS endpoint.");
+    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(balance) });
+})))
+    Check((await network.ReadAsync(new HudProfile { Metric = 9, Currency = "USD", RefreshSeconds = 60 }, default, "test-key"))?.Error is null, "DeepSeek reads real response fields.");
+using (var network = new NetworkMetrics(new MemoryHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Redirect)))))
+    Check((await network.ReadAsync(jsonProfile, default))?.Error?.Contains("302") == true, "Redirects are shown as failures, not followed.");
+using (var network = new NetworkMetrics(new MemoryHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+    { Content = new UnknownLengthContent(new byte[NetworkMetrics.MaxBytes + 1]) }))))
+    Check((await network.ReadAsync(jsonProfile, default))?.Error?.Contains("64 KiB") == true, "Streaming responses without Content-Length are bounded too.");
+var cancelledRequests = 0;
+using (var sampler = new HudSampler(new NetworkMetrics(new MemoryHandler(async (_, token) =>
+{
+    cancelledRequests++;
+    await Task.Delay(Timeout.Infinite, token);
+    return new HttpResponseMessage(HttpStatusCode.OK);
+}))))
+using (var cancellation = new CancellationTokenSource())
+{
+    var pending = sampler.ReadAsync(jsonProfile, false, false, "", cancellation.Token);
+    cancellation.Cancel();
+    Check(await pending is null, "Normal cancellation has no failure reading.");
+    var next = await sampler.ReadAsync(jsonProfile, false, false, "", default);
+    Check(cancelledRequests == 1 && next?.Reading.Value == "—" && next?.Reading.ObservedAt is null,
+        "Cancelled carousel requests cannot bypass the refresh limit or be treated as a fresh recovered reading.");
+}
+Console.WriteLine("PASS HUD source validation, JSON, credentials routing, response bounds, caching and cancellation");
+
+sealed class MemoryHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => respond(request, token);
+}
+sealed class UnknownLengthContent(byte[] bytes) : HttpContent
+{
+    protected override bool TryComputeLength(out long length) { length = 0; return false; }
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => stream.WriteAsync(bytes).AsTask();
+}

@@ -1,8 +1,5 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
-using Avalonia.Media;
-using Avalonia.Media.Immutable;
 using TractorTool.Contracts;
 
 namespace TractorTool.Plugins.SystemHud;
@@ -20,8 +17,18 @@ public sealed record HudProfile
     public int Comparison { get; init; }
     public double Threshold { get; init; } = 20;
     public string RuleColor { get; init; } = "#FF8A90";
+    public string Address { get; init; } = "";
+    public string JsonPointer { get; init; } = "";
+    public int RefreshSeconds { get; init; } = 30;
+    public bool JsonPercentage { get; init; }
+    public int ProbeProtocol { get; init; }
+    public int Port { get; init; } = 443;
+    public string SensorId { get; init; } = "";
+    public string Currency { get; init; } = "CNY";
+    public string Drive { get; init; } = "C:\\";
+    [JsonIgnore] public bool IsNetwork => Metric is 5 or 6 or 7 or 9;
 
-    private static readonly Regex Token = new(@"\{(label|value|detail|percent|name)\}", RegexOptions.CultureInvariant);
+    internal static readonly Regex Token = new(@"\{(label|value|detail|percent|name|unit|updated)\}", RegexOptions.CultureInvariant);
     public static bool ValidColor(string? text) => text is { Length: 7 } && text[0] == '#'
         && text.Skip(1).All(Uri.IsHexDigit);
     public static bool ValidTemplate(string? text, int limit)
@@ -32,31 +39,21 @@ public sealed record HudProfile
     }
     [JsonIgnore] public string Error => Id == Guid.Empty ? "方案标识无效。"
         : string.IsNullOrWhiteSpace(Name) || Name.Length > 40 ? "方案名称需要 1–40 个字符。"
-        : Metric is < 0 or > 4 ? "请选择支持的指标。"
+        : Metric is < 0 or > 11 ? "请选择支持的指标。"
+        : Metric is >= 5 and <= 7 && !NetworkMetrics.ValidAddress(Address, Metric == 5)
+            ? Metric == 5 ? "请填写主机名或 IP，不包含协议、端口或路径。" : "请填写完整 HTTP/HTTPS 地址，不包含账号、密码或片段。"
+        : IsNetwork && RefreshSeconds is < 5 or > 3600 ? "网络刷新间隔为 5–3600 秒。"
+        : Metric == 7 && !NetworkMetrics.ValidPointer(JsonPointer) ? "JSON 字段路径应留空或以 / 开头；使用 ~0 表示 ~，~1 表示 /。"
+        : Metric == 5 && (ProbeProtocol is < 0 or > 1 || Port is < 1 or > 65535) ? "请选择 ICMP/TCP 协议及有效端口（1–65535）。"
+        : Metric == 8 && (string.IsNullOrWhiteSpace(SensorId) || SensorId.Length > 512) ? "请检测并选择硬件传感器。"
+        : Metric == 9 && (Currency is not ("CNY" or "USD") || RefreshSeconds < 60) ? "请选择 CNY/USD，余额刷新至少间隔 60 秒。"
+        : Metric == 10 && (Drive is not { Length: 3 } || !char.IsAsciiLetter(Drive[0]) || Drive[1] != ':' || Drive[2] != '\\') ? "请填写本地盘符，例如 C:\\。"
         : !ValidTemplate(Title, 60) || !ValidTemplate(Value, 80) || !ValidTemplate(Detail, 160)
             ? "模板仅支持列出的变量；标题/数值/说明上限为 60/80/160 个字符，不支持换行。"
         : !ValidColor(Color) || !ValidColor(RuleColor) ? "颜色请填写 #RRGGBB，例如 #FFE66B。"
         : Comparison is < 0 or > 1 || !double.IsFinite(Threshold) || Threshold is < 0 or > 100
             ? "百分比阈值必须在 0–100 之间。" : "";
 
-    public HudDisplay Render(HudReading reading)
-    {
-        string Expand(string template) => Token.Replace(template, m => m.Groups[1].Value switch
-        {
-            "label" => reading.Label, "value" => reading.Value, "detail" => reading.Detail,
-            "name" => Name, "percent" => reading.Percent?.ToString("0.#", CultureInfo.CurrentCulture) ?? "—", _ => ""
-        });
-        // ponytail: one percentage rule per profile; add a rule list only when real layouts need it.
-        var match = RuleEnabled && reading.Percent is { } p && (Comparison == 0 ? p <= Threshold : p >= Threshold);
-        return new(Expand(Title), Expand(Value), Expand(Detail), reading.Percent,
-            new ImmutableSolidColorBrush(Avalonia.Media.Color.Parse(match ? RuleColor : Color)));
-    }
-}
-
-public sealed record HudDisplay(string Title, string Value, string Detail, double? Percent, IBrush Accent)
-{
-    public bool HasPercent => Percent.HasValue;
-    public double Progress => Percent ?? 0;
 }
 
 public sealed record HudProfiles : IVersionedSettings

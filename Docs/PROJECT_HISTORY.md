@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| HUD 第一版 | [E69 · 首版高级数据源与插件内部职责设计（2026-10-07）](#evidence-hud-v1) |
 | HUD 第二步 | [E68 · 多方案、轮播、模板、颜色规则与编辑预览（2026-10-07）](#evidence-hud-profiles) |
 | 修正（插件框架依赖） | [E67 · SDK 平台清单与私有依赖边界（2026-10-07）](#evidence-framework-assembly-inventory) |
 | 修正（HUD 启动与页面） | [E66 · Win32 框架程序集解析与主页面/设置分工（2026-10-07）](#evidence-hud-startup-page) |
@@ -2074,3 +2075,34 @@ SystemHud 升至 0.2.0，落实第二步的基本功能：最多 32 个单指标
 未启动软件、检查程序、硬件读取或 UI 自动化，未安装新 ZIP、改真实配置或替换运行文件。已有修正加载器的宿主仅需用户安装新版插件并显式退出重启；本轮不要求再次升级宿主。用户“看着没问题”作为 A25 基本反馈，未扩写成专项硬件验收；新增 A26 保留待用户验证。文档和本地提交不包含用户原有 .gitignore / .vscode/launch.json 修改，不配置远程或推送。
 
 最终静态核对：本轮文档的 108 个本地文件链接存在，4 个 AXAML XML 可解析；框架源码无 diff。
+
+<a id="evidence-hud-v1"></a>
+
+## E69：HUD 第一版高级数据源与内部职责设计（2026-10-07）
+
+用户先允许继续，随后明确要求先做插件内部架构设计并直接交付第一版，预留后续 UI/交互迭代；参考 Apple 人机交互原则。原有框架修改须先停下说明的约定不变。本轮只改 SystemHud、专属回归检查和文档；没有更改宿主/Core/Contracts/UI 或分发脚本，没有使用子代理。
+
+实现范围：
+
+- SystemHud 0.3.0 沿用 .NET 10 / Avalonia 12.1.2，加入 CPU/GPU 硬件传感器、ICMP/TCP、HTTP 状态及响应头耗时、JSON Pointer 单字段、DeepSeek 官方余额、本地磁盘占用和系统时长；原五项指标编号保留。模板新增 unit/updated，颜色规则仍只作用于明确百分比。
+- 将原方案文件里的显示转换抽到 HudPresentation；HudSampler 协调 WindowsMetrics / NetworkMetrics / HardwareMetrics，HudModel 的 Sources 分部处理检测/凭据。没有一实现一接口、通用采集注册器或脚本平台；后续改视觉主要落在 AXAML/HudCard，改操作流落 VM，改数据源落采集器。设计写入插件文档，不改公共架构文档。
+- Apple [HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout) 与 [Settings interface](https://developer.apple.com/documentation/foundation/adding-a-settings-interface-to-your-app) 用作层级、对齐、分组和使用频率分工的依据；主页面分显示方案/窗口位置，重要动作保持可见，来源字段按类型出现，文字颜色/轮播折叠，长期偏好与账号放设置。保持宿主标准控件/主题，不引入 macOS 窗口控件或设计系统。
+- 网络只在当前方案显示且未暂停时请求；4 秒截止覆盖连接到响应体，不重定向、不存 Cookie；JSON 限 64 KiB/32 层/160 显示字符，拒绝对象/null/错误百分比。HTTP/JSON 首版针对公开/本地服务，不做通用请求头认证。ICMP 失败不等于服务离线，TCP 成功只代表连接成功。
+- 按方案记录请求尝试时间及结果，取消请求也不能通过轮播绕过间隔；缓存带版本，保存来源/凭据使旧数据失效。隐藏、暂停、切换取消在途网络请求并用修订号丢弃迟到结果；Stop 等待采样/检测后释放资源。原生硬件读取不可强制取消，退出需等其返回。性能/网络轮询各警告一次，同一原因不反复写日志，恢复记一次 INFO。
+- DeepSeek key 单独 DPAPI 当前用户加密保存，密文文件与方案分开；请求级 Bearer 仅发固定 HTTPS 官方端点，不调用模型。保存/清除成功才改内存与缓存；失败保留原凭据，不记录响应体/查询参数/密钥。DPAPI 不作为可信插件间的安全隔离。
+- 硬件采用官方 NuGet LibreHardwareMonitorLib 0.9.6，固定源码提交 `3d331e3370efb858411f19511373eff65a218701`。只打开 CPU/GPU 组，按显式检测或活动方案需要初始化；串行检测与读取，关闭时释放。部分数据需管理员及已安装 PawnIO，明确提示，未增加驱动安装/自动提权。依赖与原始许可、第三方声明、对应源码链接随 ZIP，未修改上游代码或二进制。
+
+资料依据：除上述 HIG 外，参考 [DeepSeek balance](https://api-docs.deepseek.com/api/get-user-balance/)、[DPAPI CryptProtectData](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata)、[HttpCompletionOption](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption)、[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)。参考程序的全部变量、跨指标模板、脚本表达式、HTTP 任意头、价格时段、桌面嵌入未纳入首版；未复制其代码/美术。
+
+验证与失败记录：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e69-hud-v1/build`。首次沙箱 NuGet 代理连接权限失败 NU1301，获准使用网络构建后恢复；中间出现缓存 NU1900/旧 Watermark API 警告，改用 Avalonia 12 PlaceholderText 并强制还原后消失。新增检查一次括号笔误导致 CS1525/CS1002/CS1022，修正后最终 **0 警告/0 错误**。最终构建包括本轮所有插件代码和检查。
+2. `scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e69-hud-v1/plugin-final`：独立 Rebuild **0 警告/0 错误**，只引用既有已发布 SDK；未重新发布宿主。
+3. ZIP 67 文件与独立输出逐项 SHA256 一致；deps.json 中 49 项运行资产路径存在，无宿主/Avalonia 共享 DLL 副本；清单和 ProductVersion 均为 0.3.0，234 个既有宿主文件 SHA256 不变。ZIP 5,470,412 字节，SHA256 `B3A84CA4DA43E9E308442757B82FB1089461EE89A3C4A9FBE81285DED1AF5504`。ProductVersion 提交部分为构建时基底 fbee73e，不能将它当作新代码已提交的标识。
+4. HudChecks 新增地址/JSON Pointer、字段边界/超限/深度/百分比、余额币种、密钥字符、配置往返，以及内存 HttpMessageHandler 的凭据路由、重定向、未知体积响应、缓存、取消断言；**仅编译，未执行**。没有运行应用、检查程序、真实网络探测、余额请求、DPAPI、硬件或 UI 自动化；没有操作真实配置或替用户安装。
+
+第一版以独立 ZIP 交给用户，A26/A27 仍待运行，不能凭编译和包路径校验宣称硬件兼容/交互通过。既有 E67 加载器宿主仅需装插件后显式退出重启。新增文档保留后续 UI/操作流的修改落点和边界；用户原有 .gitignore/.vscode/launch.json 修改不纳入本地提交，不配置远程或推送。
+
+最终复核补正：取消后的缓存占位没有成功读取时间，不能产生“读取已恢复”日志；退出时即使第三方资源释放抛错，也在 finally 清空内存密钥。两处修正后重新编译检查和独立打包均 0 警告/0 错误，重新完成 ZIP/依赖路径/宿主哈希校验，上述哈希和路径对应 plugin-final。旧 plugin 目录为本轮中间产物，不交付。
+
+最终文档静态核对：README 与四份本轮文档的 109 个本地文件链接存在，4 个插件 AXAML XML 可解析；真实 UI 未打开。全工作区空白检查仍显示用户原有 launch.json 空白行，不替用户清理；本轮代码/文档检查单独排除原始第三方许可原文。

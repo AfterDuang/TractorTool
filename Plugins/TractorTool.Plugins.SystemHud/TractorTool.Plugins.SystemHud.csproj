@@ -13,8 +13,10 @@
     <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="TractorTool.HudChecks" />
     <PackageReference Include="Avalonia" Version="12.1.2" IncludeAssets="compile;build;buildTransitive" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

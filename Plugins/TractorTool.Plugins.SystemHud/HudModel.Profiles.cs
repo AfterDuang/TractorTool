@@ -27,6 +27,15 @@ public partial class HudModel
     [ObservableProperty] private int _comparison;
     [ObservableProperty] private double _threshold = 20;
     [ObservableProperty] private string _ruleColor = "#FF8A90";
+    [ObservableProperty] private string _address = "";
+    [ObservableProperty] private string _jsonPointer = "";
+    [ObservableProperty] private int _refreshSeconds = 30;
+    [ObservableProperty] private bool _jsonPercentage;
+    [ObservableProperty] private int _probeProtocol;
+    [ObservableProperty] private int _port = 443;
+    [ObservableProperty] private string _sensorId = "";
+    [ObservableProperty] private string _currency = "CNY";
+    [ObservableProperty] private string _drive = "C:\\";
     [ObservableProperty] private bool _rotateProfiles;
     [ObservableProperty] private int _rotationSeconds = 10;
     [ObservableProperty] private string _profileError = "";
@@ -40,12 +49,23 @@ public partial class HudModel
     public bool CanDeleteProfile => CanSwitchProfile && Profiles.Count > 1;
     public bool CanSaveProfile => SelectedProfile is not null && ProfileError.Length == 0;
     public bool CanPreviewProfile => CanSaveProfile && CanControl && !_paused;
+    public bool IsNetworkMetric => Metric is 5 or 6 or 7 or 9;
+    public bool HasRequestAddress => Metric is >= 5 and <= 7;
+    public bool IsProbeMetric => Metric == 5;
+    public bool IsTcpProbe => Metric == 5 && ProbeProtocol == 1;
+    public bool IsHardwareMetric => Metric == 8;
+    public bool IsDeepSeekMetric => Metric == 9;
+    public bool IsDiskMetric => Metric == 10;
+    public bool IsJsonMetric => Metric == 7;
+    public string AddressHint => Metric == 5 ? "主机名或 IP，例如 192.168.1.1" : "HTTP/HTTPS 地址，例如 http://localhost:8080/status";
     private HudProfile EffectiveProfile => _powerPreview ? PowerProfile : _draftPreview ?? _activeProfile;
     private HudProfile Draft => new()
     {
         Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
         Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = AccentColor,
-        RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = RuleColor
+        RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = RuleColor,
+        Address = (Address ?? "").Trim(), JsonPointer = JsonPointer, RefreshSeconds = RefreshSeconds, JsonPercentage = JsonPercentage,
+        ProbeProtocol = ProbeProtocol, Port = Port, SensorId = SensorId, Currency = Currency, Drive = Drive
     };
 
     private void InitializeProfiles()
@@ -64,6 +84,10 @@ public partial class HudModel
     }
 
     partial void OnSelectedProfileChanged(HudProfile? value) { if (value is not null) LoadProfile(value); }
+    partial void OnMetricChanged(int value)
+    {
+        if (!_loadingEditor && value == 9 && RefreshSeconds < 60) RefreshSeconds = 60;
+    }
     private void LoadProfile(HudProfile profile)
     {
         _loadingEditor = true;
@@ -71,6 +95,9 @@ public partial class HudModel
         TitleTemplate = profile.Title; ValueTemplate = profile.Value; DetailTemplate = profile.Detail;
         AccentColor = profile.Color; RuleEnabled = profile.RuleEnabled; Comparison = profile.Comparison;
         Threshold = profile.Threshold; RuleColor = profile.RuleColor;
+        Address = profile.Address; JsonPointer = profile.JsonPointer; RefreshSeconds = profile.RefreshSeconds; JsonPercentage = profile.JsonPercentage;
+        ProbeProtocol = profile.ProbeProtocol; Port = profile.Port; SensorId = profile.SensorId; Currency = profile.Currency; Drive = profile.Drive;
+        SelectSavedSensor();
         RotateProfiles = _profiles.Rotate; RotationSeconds = _profiles.Seconds;
         _loadingEditor = false;
         UpdateEditor();
@@ -81,7 +108,9 @@ public partial class HudModel
         base.OnPropertyChanged(e);
         if (!_loadingEditor && e.PropertyName is nameof(ProfileName) or nameof(Metric) or nameof(TitleTemplate)
             or nameof(ValueTemplate) or nameof(DetailTemplate) or nameof(AccentColor) or nameof(RuleEnabled)
-            or nameof(Comparison) or nameof(Threshold) or nameof(RuleColor) or nameof(RotateProfiles) or nameof(RotationSeconds)) UpdateEditor();
+            or nameof(Comparison) or nameof(Threshold) or nameof(RuleColor) or nameof(RotateProfiles) or nameof(RotationSeconds)
+            or nameof(Address) or nameof(JsonPointer) or nameof(RefreshSeconds) or nameof(JsonPercentage)
+            or nameof(ProbeProtocol) or nameof(Port) or nameof(SensorId) or nameof(Currency) or nameof(Drive)) UpdateEditor();
     }
 
     private void UpdateEditor()
@@ -95,8 +124,18 @@ public partial class HudModel
             1 => new("时钟", "12:34:56", "示例：2026/10/07 星期三"),
             2 => new("CPU", "36%", "示例：处理器使用率", 36),
             3 => new("内存", "64%", "示例：10.2 / 16.0 GiB", 64),
-            _ => new("网速", "↓ 1.2 MiB/s", "示例：↑ 128 KiB/s · 活动接口合计")
+            4 => new("网速", "↓ 1.2 MiB/s", "示例：↑ 128 KiB/s · 活动接口合计"),
+            5 => new("网络延迟", "24 ms", "示例：ICMP 往返"),
+            6 => new("HTTP 服务", "85 ms", "示例：HTTP 200 · 响应头耗时"),
+            7 => new("JSON 指标", JsonPercentage ? "72" : "就绪", "示例：选定字段的值", JsonPercentage ? 72 : null),
+            8 => new("硬件传感器", "48 °C", "示例：CPU 温度", Unit: "°C"),
+            9 => new("DeepSeek 余额", "10.00 " + Currency, "示例：账户余额", Unit: Currency),
+            10 => new("磁盘空间", "256.0 GiB", "示例：共 512.0 GiB", 50, "GiB"),
+            _ => new("系统运行时间", "1 天 02:30:00", "示例：系统会话运行时长")
         });
+        OnPropertyChanged(nameof(IsNetworkMetric)); OnPropertyChanged(nameof(IsJsonMetric)); OnPropertyChanged(nameof(AddressHint));
+        OnPropertyChanged(nameof(HasRequestAddress)); OnPropertyChanged(nameof(IsProbeMetric)); OnPropertyChanged(nameof(IsTcpProbe));
+        OnPropertyChanged(nameof(IsHardwareMetric)); OnPropertyChanged(nameof(IsDeepSeekMetric)); OnPropertyChanged(nameof(IsDiskMetric));
         OnPropertyChanged(nameof(CanSwitchProfile));
         AddProfileCommand.NotifyCanExecuteChanged(); CopyProfileCommand.NotifyCanExecuteChanged(); DeleteProfileCommand.NotifyCanExecuteChanged();
         SaveProfileCommand.NotifyCanExecuteChanged(); PreviewProfileCommand.NotifyCanExecuteChanged();
@@ -136,6 +175,8 @@ public partial class HudModel
         try { _context.Settings.Save("profiles", settings); }
         catch (Exception ex) { ReportFailure("方案保存失败，尚未应用。", ex); return; }
         _profiles = settings;
+        _sampler.ResetNetworkCache();
+        foreach (var id in _samplingErrors.Keys.Where(id => !settings.Profiles.Any(p => p.Id == id)).ToArray()) _samplingErrors.Remove(id);
         // Retain unchanged list entries; replace only edited entries to preserve selection/focus.
         for (var i = Profiles.Count - 1; i >= 0; i--) if (!settings.Profiles.Any(p => p.Id == Profiles[i].Id)) Profiles.RemoveAt(i);
         for (var i = 0; i < settings.Profiles.Length; i++)

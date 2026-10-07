@@ -11,6 +11,7 @@ public sealed record HudSettings : IVersionedSettings
     public bool PowerReminder { get; init; } = true;
     public bool ClickThrough { get; init; } = true;
     public bool Animate { get; init; } = true;
+    public bool HardwareEnabled { get; init; }
     public int Metric { get; init; }
     public int Anchor { get; init; } = 2;
     public int Monitor { get; init; }
@@ -42,7 +43,7 @@ public sealed record HudSettings : IVersionedSettings
     }
 }
 
-public sealed record HudReading(string Label, string Value, string Detail, double? Percent = null);
+public sealed record HudReading(string Label, string Value, string Detail, double? Percent = null, string Unit = "", DateTimeOffset? ObservedAt = null);
 
 public static class HudCounters
 {

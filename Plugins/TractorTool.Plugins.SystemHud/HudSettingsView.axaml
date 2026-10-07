@@ -20,10 +20,25 @@
       <ui:SettingRow Header="显示动画" Description="出现时淡入，同时遵循软件的界面动画开关。" Icon="Motion">
         <ToggleSwitch IsChecked="{Binding Animate}" AutomationProperties.Name="显示动画" />
       </ui:SettingRow>
+      <ui:SettingRow Header="启用硬件传感器" Description="保存后在主页面检测并选择 CPU / GPU 传感器。" Icon="Info">
+        <ToggleSwitch IsChecked="{Binding HardwareEnabled}" AutomationProperties.Name="启用硬件传感器" />
+      </ui:SettingRow>
+      <TextBlock Text="按需读取 CPU / GPU 温度、负载等数据。部分读数需要管理员权限及已安装的 PawnIO；插件不会自动提权或安装驱动。保存后在主页面检测并选择传感器。" Classes="caption" TextWrapping="Wrap" />
       <StackPanel Orientation="Horizontal" Spacing="10">
         <Button Content="保存偏好" Classes="accent" Command="{Binding ApplyPreferencesCommand}" />
       </StackPanel>
       <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Classes="caption" />
+      <Expander Header="DeepSeek 账号" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <StackPanel Spacing="10" Margin="0,12,0,0">
+          <TextBlock Text="只查询官方余额。密钥使用 Windows 当前用户加密保存；换电脑或 Windows 账号后需要重新输入，不会写入方案或日志。" Classes="caption" TextWrapping="Wrap" />
+          <TextBox Text="{Binding KeyInput}" PasswordChar="●" PlaceholderText="输入新的 API Key" MaxLength="1024" AutomationProperties.Name="DeepSeek API Key" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="保存密钥" Command="{Binding SaveKeyCommand}" />
+            <Button Content="清除密钥" Command="{Binding ClearKeyCommand}" />
+          </StackPanel>
+          <TextBlock Text="{Binding KeyStatus}" Classes="caption" TextWrapping="Wrap" />
+        </StackPanel>
+      </Expander>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

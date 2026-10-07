@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,20 +10,23 @@ namespace TractorTool.Plugins.SystemHud;
 public partial class HudModel : ObservableObject
 {
     private readonly PluginContext _context;
-    private readonly WindowsMetrics _metrics = new();
+    private readonly HudSampler _sampler = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _preview = new() { Interval = TimeSpan.FromSeconds(6) };
     private HudSettings _settings = new();
     private HudWindow? _window;
     private Task _sampling = Task.CompletedTask;
-    private bool _stopped, _ready, _pinned, _paused, _powerPreview, _pollWarning;
+    private Task? _stopTask;
+    private CancellationTokenSource? _sampleCancellation;
+    private bool _stopped, _ready, _pinned, _paused, _powerPreview, _pollWarning, _networkWarning;
     private int _revision;
     private byte? _ac;
     private HudReading _power = new("电量", "—", "正在读取电源状态…");
-    private string _samplingError = "", _powerError = "";
+    private string _powerError = "";
+    private readonly Dictionary<Guid, string> _samplingErrors = [];
     private IPluginTrayItem? _visibilityItem, _pauseItem, _previewItem, _nextItem;
 
-    public string[] Metrics { get; } = ["电量", "时钟", "CPU 使用率", "内存占用", "网络速度"];
+    public string[] Metrics { get; } = ["电量", "时钟", "CPU 使用率", "内存占用", "网络速度", "网络延迟（ICMP/TCP）", "HTTP 服务", "HTTP/JSON 指标", "硬件传感器（GPU / 温度等）", "DeepSeek 余额", "磁盘空间", "系统运行时间"];
     public string[] Anchors { get; } = ["左上", "上方居中", "右上", "左侧居中", "屏幕居中", "右侧居中", "左下", "下方居中", "右下"];
     public ObservableCollection<string> Monitors { get; } = ["主显示器"];
     [ObservableProperty] private bool _enabled = true;
@@ -60,6 +62,7 @@ public partial class HudModel : ObservableObject
             context.Log.Write(AppLogLevel.Error, context.PluginId, Status, ex);
         }
         LoadPreferences(); LoadLayout();
+        LoadSecrets();
         InitializeProfiles();
         _timer.Tick += (_, _) => RefreshReading();
         _preview.Tick += (_, _) => { EndPreview(); UpdateVisibility(); };
@@ -69,7 +72,7 @@ public partial class HudModel : ObservableObject
     {
         Enabled = _settings.Enabled; AlwaysVisible = _settings.AlwaysVisible;
         PowerReminder = _settings.PowerReminder; ClickThrough = _settings.ClickThrough;
-        Animate = _settings.Animate;
+        Animate = _settings.Animate; HardwareEnabled = _settings.HardwareEnabled;
     }
 
     private void LoadLayout()
@@ -146,10 +149,10 @@ public partial class HudModel : ObservableObject
         if (Save(_settings with
         {
             Enabled = Enabled, AlwaysVisible = AlwaysVisible, PowerReminder = PowerReminder,
-            ClickThrough = ClickThrough, Animate = Animate
+            ClickThrough = ClickThrough, Animate = Animate, HardwareEnabled = HardwareEnabled
         }))
         {
-            LoadPreferences(); _pinned = _settings.AlwaysVisible;
+            LoadPreferences(); _pinned = _settings.AlwaysVisible; OnPropertyChanged(nameof(CanScanSensors)); ScanSensorsCommand.NotifyCanExecuteChanged();
             EndPreview(); ApplySavedSettings();
         }
     }
@@ -210,7 +213,7 @@ public partial class HudModel : ObservableObject
         {
             var power = WindowsMetrics.Power();
             var changed = _ac is { } old && old != power.Ac && old != 255 && power.Ac != 255;
-            _ac = power.Ac; _power = power.Reading; _powerError = "";
+            _ac = power.Ac; _power = power.Reading with { ObservedAt = DateTimeOffset.Now, Unit = "%" }; _powerError = "";
             if (changed && _settings.Enabled && _settings.PowerReminder)
             {
                 _powerPreview = true; _draftPreview = null; _preview.Stop(); _preview.Start();
@@ -221,7 +224,7 @@ public partial class HudModel : ObservableObject
         }
         catch (Exception ex)
         {
-            _power = new("电量", "—", FailureText(ex));
+            _power = new("电量", "—", HudSampler.FailureText(ex));
             if (_window?.IsVisible == true && EffectiveProfile.Metric == 0) SetReading(_power);
             if (_powerError != ex.Message) { _powerError = ex.Message; ReportFailure("电源状态读取失败。", ex); }
         }
@@ -237,6 +240,7 @@ public partial class HudModel : ObservableObject
         UpdateControls();
         if (!_paused)
         {
+            _timer.Interval = TimeSpan.FromSeconds(EffectiveProfile.IsNetwork ? EffectiveProfile.RefreshSeconds : 1);
             RefreshReading();
             if (EffectiveProfile.Metric != 0) _timer.Start();
             if (_profiles.Rotate && _profiles.Profiles.Length > 1 && !_powerPreview && _draftPreview is null)
@@ -250,6 +254,7 @@ public partial class HudModel : ObservableObject
         OnPropertyChanged(nameof(VisibilityAction)); OnPropertyChanged(nameof(PauseAction));
         ToggleVisibilityCommand.NotifyCanExecuteChanged(); TogglePauseCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged();
         PreviewProfileCommand.NotifyCanExecuteChanged();
+        ScanSensorsCommand.NotifyCanExecuteChanged();
         _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: _window?.IsVisible == true));
         _pauseItem?.Update(new("暂停更新", IsEnabled: CanControl, IsChecked: _paused));
         _previewItem?.Update(new("预览 6 秒", IsEnabled: CanControl));
@@ -258,54 +263,90 @@ public partial class HudModel : ObservableObject
 
     // Never mutate the counters while the worker is reading them. Reset at the next sample instead.
     private bool _resetCounters = true;
-    private void InvalidateSample() { _revision++; _resetCounters = true; }
+    private void InvalidateSample() { _revision++; _resetCounters = true; _sampleCancellation?.Cancel(); }
 
     private void RefreshReading()
     {
         if (_stopped || _paused || _window?.IsVisible != true) return;
-        var metric = EffectiveProfile.Metric;
+        var profile = EffectiveProfile;
+        var metric = profile.Metric;
         if (metric == 0) { SetReading(_power); return; }
         if (metric == 1)
         {
             var now = DateTimeOffset.Now;
-            SetReading(new("时钟", now.ToString("HH:mm:ss"), now.ToString("yyyy/MM/dd dddd"))); return;
+            SetReading(new("时钟", now.ToString("HH:mm:ss"), now.ToString("yyyy/MM/dd dddd"), ObservedAt: now)); return;
+        }
+        if (metric == 11)
+        {
+            var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
+            SetReading(new("系统运行时间", $"{uptime.Days} 天 {uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}", "当前系统会话运行时长", ObservedAt: DateTimeOffset.Now)); return;
         }
         if (!_sampling.IsCompleted) return;
-        if (!_pollWarning)
+        if (profile.IsNetwork && !_networkWarning)
+        {
+            _networkWarning = true;
+            _context.Log.Write(AppLogLevel.Warning, _context.PluginId,
+                "开发优化：网络探测和 HTTP/JSON 采用方案指定间隔请求，来源未提供推送通知；仅显示当前方案时启用，隐藏/暂停/切换即取消。后续优先接入来源提供的事件通知。");
+        }
+        else if (!profile.IsNetwork && !_pollWarning)
         {
             _pollWarning = true;
             _context.Log.Write(AppLogLevel.Warning, _context.PluginId,
-                "开发优化：CPU/内存/网速没有可直接替代连续数值采样的变化通知，暂用 1 秒采样；仅显示当前指标，隐藏/暂停即停止。后续按性能证据评估优化，勿提高轮询频率。");
+                "开发优化：性能、传感器和磁盘数值暂用 1 秒采样；仅显示当前指标，隐藏/暂停即停止。当前数据源没有直接可用的数值变化通知，后续按性能证据评估优化，勿提高轮询频率。");
         }
         var reset = _resetCounters; _resetCounters = false;
-        _sampling = SampleAsync(metric, _revision, reset);
+        _sampleCancellation = new();
+        _sampling = SampleAsync(profile, _revision, reset, _sampleCancellation);
     }
 
-    private async Task SampleAsync(int metric, int revision, bool reset)
+    private async Task SampleAsync(HudProfile profile, int revision, bool reset, CancellationTokenSource cancellation)
     {
-        HudReading reading;
-        Exception? error = null;
-        try { reading = await Task.Run(() => { if (reset) _metrics.Reset(); return _metrics.Read(metric); }); }
-        catch (Exception ex) { error = ex; reading = new(Metrics[metric], "—", FailureText(ex)); }
-        if (_stopped || revision != _revision || _window?.IsVisible != true) return;
-        SetReading(reading);
-        if (error is not null && _samplingError != error.Message) ReportFailure("性能采样失败。", error);
-        else if (error is null && _samplingError.Length != 0) _context.Log.Write(_context.PluginId, "性能采样已恢复。");
-        _samplingError = error?.Message ?? "";
+        try
+        {
+            HudReading reading;
+            string? error = null;
+            try
+            {
+                var result = await _sampler.ReadAsync(profile, reset, _settings.HardwareEnabled, _deepSeekKey, cancellation.Token);
+                if (result is null) return;
+                (reading, error) = result.Value;
+            }
+            catch (Exception ex)
+            {
+                error = profile.IsNetwork ? "网络指标读取失败，请检查配置或重试。" : HudSampler.FailureText(ex);
+                reading = new(Metrics[profile.Metric], "—", error);
+            }
+            if (_stopped || revision != _revision || _window?.IsVisible != true) return;
+            SetReading(reading);
+            _samplingErrors.TryGetValue(profile.Id, out var previous);
+            if (error is not null)
+            {
+                if (previous != error)
+                    _context.Log.Write(AppLogLevel.Warning, _context.PluginId, $"方案“{profile.Name}”读取失败：{error}");
+                _samplingErrors[profile.Id] = error;
+            }
+            else if (reading.ObservedAt is not null && _samplingErrors.Remove(profile.Id))
+                _context.Log.Write(_context.PluginId, $"方案“{profile.Name}”读取已恢复。");
+        }
+        finally
+        {
+            if (ReferenceEquals(_sampleCancellation, cancellation)) _sampleCancellation = null;
+            cancellation.Dispose();
+            // A new profile can become visible while the cancelled request is still completing.
+            if (!_stopped && revision != _revision) Dispatcher.UIThread.Post(RefreshReading);
+        }
     }
 
-    private static string FailureText(Exception ex) => ex is UnauthorizedAccessException or Win32Exception { NativeErrorCode: 5 }
-        ? "需要管理员权限，请退出后以管理员身份运行 TractorTool。" : ex.Message;
     private void ReportFailure(string message, Exception ex)
     {
-        Status = message + " " + FailureText(ex);
+        Status = message + " " + HudSampler.FailureText(ex);
         _context.Log.Write(AppLogLevel.Warning, _context.PluginId, Status, ex);
     }
 
     public Task Stop()
     {
-        if (_stopped) return _sampling;
-        _stopped = true; _ready = false; _revision++;
+        if (_stopTask is not null) return _stopTask;
+        _stopped = true; _ready = false; InvalidateSample();
         UpdateControls();
         _timer.Stop(); _preview.Stop(); _rotation.Stop();
         if (_window is { } window)
@@ -313,6 +354,16 @@ public partial class HudModel : ObservableObject
             window.PowerChanged -= ReadPower; window.Dismissed -= Hide; window.MonitorsChanged -= UpdateMonitors;
             window.Shutdown(); _window = null;
         }
-        return _sampling;
+        return _stopTask = FinishStopAsync();
+    }
+
+    private async Task FinishStopAsync()
+    {
+        try { await Task.WhenAll(_sampling, _sensorScan); }
+        finally
+        {
+            try { await Task.Run(_sampler.Dispose); }
+            finally { _deepSeekKey = ""; KeyInput = ""; }
+        }
     }
 }

@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "id": "TractorTool.SystemHud",
   "name": "桌面状态 HUD",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "entryAssembly": "TractorTool.Plugins.SystemHud.dll",
   "entryType": "TractorTool.Plugins.SystemHud.HudPlugin",
   "apiVersion": "1.7",
   "uiApiVersion": "1.5",
   "avaloniaVersion": "12.1.2",
   "supportedPlatforms": ["windows"],
-  "description": "电源变化提醒与桌面状态显示：电量、时钟、CPU、内存和网速。",
+  "description": "电源提醒与多方案桌面状态：硬件指标、网络探测、HTTP/JSON 和 DeepSeek 余额。",
   "author": "TractorTool"
 }
