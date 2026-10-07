@@ -8,7 +8,9 @@
 
 ## 1. 当前状态
 
-**本轮新增：[E70 HUD 源码目录整理](PROJECT_HISTORY.md#evidence-hud-folders)。** 按插件内部职责将 19 个文件移到 Configuration / Sampling / ViewModels / Views，根目录新增源码导航，入口和清单保留原位。迁移文件内容哈希不变，命名空间和业务行为不变；插件及现有 HudChecks 隔离编译 0 警告/0 错误。未运行应用或检查，未改框架、未重新打包，当前可安装包仍为下方 E69 的 0.3.0。
+**本轮文档：[E71 插件源码组织说明](PROJECT_HISTORY.md#evidence-plugin-source-guide)。** 根 README 补充源码目录与职责示例，插件规范说明按需拆分、身份/资源路径和框架修改边界，链接真实 HUD 源码导航。仅修改文档并核对链接，没有新构建或运行证据，既有验收状态不变。
+
+**源码整理：[E70 HUD 源码目录整理](PROJECT_HISTORY.md#evidence-hud-folders)。** 按插件内部职责将 19 个文件移到 Configuration / Sampling / ViewModels / Views，根目录新增源码导航，入口和清单保留原位。迁移文件内容哈希不变，命名空间和业务行为不变；插件及现有 HudChecks 隔离编译 0 警告/0 错误。未运行应用或检查，未改框架、未重新打包，当前可安装包仍为下方 E69 的 0.3.0。
 
 **首版能力：[E69 HUD 首版能力与内部设计](PROJECT_HISTORY.md#evidence-hud-v1)。** 用户要求先明确插件职责边界并直接完成第一版，后续再改 UI/交互。SystemHud 0.3.0 补齐 CPU/GPU 传感器、ICMP/TCP、HTTP/JSON、DeepSeek 余额、磁盘和运行时长；配置、采集、运行协调、显示分开。页面参考 Apple HIG 的分组/层级与频率分工，主页面分“显示方案 / 窗口位置”，设置放长期偏好与加密凭据。插件/HudChecks 编译及 E67 SDK 独立打包均 0 警告/0 错误，67 文件包静态校验通过；运行检查、UI/硬件和真实网络未执行。没有修改框架或重新发布宿主。
 
@@ -225,4 +227,4 @@ E60 历史产物（E62 核对以下宿主目录及两个 ZIP 已不存在，不�
 
 <a id="evidence"></a>
 
-历史入口：[E01–E70 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。
+历史入口：[E01–E71 索引](PROJECT_HISTORY.md#记录索引)。按模块或 E 编号查阅，不要求默认通读。

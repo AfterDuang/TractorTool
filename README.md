@@ -7,7 +7,7 @@
 <p align="center">插件驱动的桌面工具箱，让工具各司其职。</p>
 <p align="center">Windows 优先 · .NET 10 · Avalonia · MVVM</p>
 
-[主要功能](#主要功能) · [开始使用](#开始使用) · [从源码开发](#从源码开发) · [插件开发](Docs/PLUGIN_DEVELOPMENT.md) · [项目文档](Docs/README.md)
+[主要功能](#主要功能) · [开始使用](#开始使用) · [从源码开发](#从源码开发) · [插件开发](#插件源码组织) · [项目文档](Docs/README.md)
 
 TractorTool 将工具业务放在独立插件中，由精干的宿主统一提供导航、主题、设置、日志、后台任务和外部依赖管理。新增符合现有协议的工具，可以独立编译和安装，无需改动宿主。
 
@@ -147,6 +147,29 @@ $compiler = ./scripts/Get-InnoCompiler.ps1 -Output ./artifacts/local-inno
 | `scripts/`、`packaging/` | 构建、打包、校验和安装器资源 |
 
 宿主不静态引用具体插件，插件通过 Contracts / UI 接入。页面、有限任务和常驻服务的生命周期分别管理，切换页面不代表取消任务。
+
+### 插件源码组织
+
+插件内部按实际职责组织。下面是**源码布局示例**，并非必须创建的模板；小插件可以从入口、页面和模型几个文件开始，业务增长后再拆目录。
+
+```text
+TractorTool.Plugins.Example/
+├─ ExamplePlugin.cs              入口：初始化、页面/托盘注册和停止清理
+├─ Configuration/               配置模型、保存格式与校验
+├─ Processing/                  业务处理与外部接口适配，按业务命名
+├─ ViewModels/                  页面状态、命令和操作协调
+├─ Views/                       AXAML、同名后台代码及显示转换
+├─ Assets/                      图标等静态资源（需要时）
+├─ Licenses/                    第三方许可原文（使用第三方依赖时）
+├─ NOTICE.md                    依赖及素材来源说明
+├─ README.md                    职责目录、阅读顺序和开发入口
+├─ plugin.json                  插件身份、入口、兼容性与外部依赖声明
+└─ TractorTool.Plugins.Example.csproj
+```
+
+业务目录使用具体名称，例如 HUD 的 `Sampling/`；不要求所有插件都有采集、凭据或常驻服务。源码目录与安装目录、用户数据目录分别管理，`bin/`、`obj/` 是构建输出，不能直接作为正式插件包。
+
+从 `plugin.json` 和入口类读起，再跟到模型、业务实现和页面。最小接入参考 [IndependentPlugin](tests/IndependentPlugin/ProbePlugin.cs)，较完整的职责划分参考 [SystemHud 源码导航](Plugins/TractorTool.Plugins.SystemHud/README.md)。拆分原则见 [插件源码组织规范](Docs/PLUGIN_DEVELOPMENT.md#source-organization)，实际交付使用 [独立构建与打包流程](Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。
 
 ## 项目文档
 
