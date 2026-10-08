@@ -192,6 +192,7 @@ internal static class HudVisualChecks
             var model = new HudModel(new("HUD.UI.Checks", null!, memory, memory, default));
             try
             {
+                if (model.HasDraftChanges) failures.Add("Loading lowercase saved colors must not create unsaved edits.");
                 var view = new HudView { DataContext = model };
                 window.Content = view; window.Height = 800;
                 foreach (var width in new[] { 1200, 800, 1200, 800 })
@@ -204,6 +205,99 @@ internal static class HudVisualChecks
                     Pump();
                     if (!ReferenceEquals(previews[0].DataContext, model.EditorDisplay))
                         failures.Add("The left preview does not follow the editor draft.");
+                    var rotation = view.FindControl<Border>("RotationPanel")!;
+                    if (!rotation.GetVisualAncestors().Contains(view.FindControl<ScrollViewer>("PreviewScroll")))
+                        failures.Add("Rotation controls must remain in the left preview pane at both widths.");
+                }
+                model.RevertProfileCommand.Execute(null);
+                model.Metric = 3; model.RuleEnabled = true; model.Comparison = 1; model.Threshold = 80;
+                view.FindControl<Expander>("AppearanceExpander")!.IsExpanded = true;
+                var normalPicker = view.FindControl<ColorPicker>("AccentPicker")!;
+                var rulePicker = view.FindControl<ColorPicker>("RulePicker")!;
+                normalPicker.SetCurrentValue(ColorView.ColorProperty, Color.Parse("#30D5C8"));
+                rulePicker.SetCurrentValue(ColorView.ColorProperty, Color.Parse("#FF7891")); Pump();
+                if (model.AccentColor != Color.Parse("#30D5C8") || model.RuleColor != Color.Parse("#FF7891")
+                    || ((ISolidColorBrush)model.EditorDisplay.Accent).Color != model.AccentColor)
+                    failures.Add("Visual color selection must update the draft and its preview.");
+                model.Threshold = 64; Pump();
+                if (((ISolidColorBrush)model.EditorDisplay.Accent).Color != model.RuleColor
+                    || !model.ColorRuleHint.Contains("内存占用高于或等于 64%"))
+                    failures.Add("The inclusive threshold and its plain-language description must agree.");
+                model.Metric = 4; Pump();
+                if (model.SupportsColorRule || ((ISolidColorBrush)model.EditorDisplay.Accent).Color != model.AccentColor)
+                    failures.Add("Network speed must not show or apply a percentage color rule.");
+                model.Metric = 3; model.SaveProfileCommand.Execute(null); Pump();
+                if (memory.Saved.Active.Color != "#30D5C8" || memory.Saved.Active.RuleColor != "#FF7891" || model.HasDraftChanges)
+                    failures.Add("Picked colors must persist as compatible RGB strings and reload without dirtying the editor.");
+
+                var savedProfile = memory.Saved.Active;
+                model.TitleTemplate = "尚未保存的名称";
+                var selected = model.SelectedProfile;
+                var editor = model.EditorDisplay;
+                view.FindControl<ToggleSwitch>("RotationToggle")!.SetCurrentValue(ToggleSwitch.IsCheckedProperty, true);
+                model.RotationSeconds = 3; Pump();
+                if (!memory.Saved.Rotate || memory.Saved.Seconds != 3 || memory.Saved.Active != savedProfile || !model.HasDraftChanges)
+                    failures.Add("Rotation settings must save immediately without saving or discarding profile edits.");
+                var writes = memory.Writes;
+                model.UpdateRotation(true, HudMode.Strip, false);
+                WaitForProfile("CPU");
+                WaitForProfile("Net");
+                if (memory.Writes != writes || model.SelectedProfile != selected || !ReferenceEquals(model.EditorDisplay, editor))
+                    failures.Add("Rotation must wrap through saved profiles without writing configuration or moving the draft selection.");
+                model.UpdateRotation(true, HudMode.Detail, false);
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3.2))) Dispatcher.UIThread.MainLoop(timeout.Token);
+                Pump();
+                if (model.ActiveProfileName != "Net") failures.Add("Opening details must pause automatic rotation.");
+                model.UpdateRotation(true, HudMode.Strip, false);
+                WaitForProfile("CPU");
+                model.UpdateRotation(false, HudMode.Strip, false);
+                if (model.RotationStatus.StartsWith("正在轮播")) failures.Add("Hiding the HUD must stop rotation.");
+
+                memory.FailSave = true;
+                model.RotateProfiles = false; Pump();
+                if (!model.RotateProfiles || !memory.Saved.Rotate || model.SelectedProfile != selected || !model.HasDraftChanges
+                    || !model.Status.Contains("已恢复原设置") || memory.Errors.Count != 1)
+                    failures.Add("A failed rotation save must restore its toggle and preserve the running profile and draft.");
+                memory.FailSave = false;
+                model.RotateProfiles = false;
+                model.RevertProfileCommand.Execute(null);
+                model.RuleEnabled = true; model.Comparison = 1; model.Threshold = 80;
+                window.Height = 960;
+                foreach (var width in new[] { 1200, 800 })
+                {
+                    window.Width = width; Pump();
+                    view.FindControl<ScrollViewer>("ProfileScroll")!.Offset = new Vector(0, 450); Pump();
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                    using var frame = window.CaptureRenderedFrame();
+                    frame?.Save(Path.Combine(output, $"editor-color-rotation-{width}.png"), PngBitmapEncoderOptions.Default);
+                    if (width == 1200)
+                    {
+                        var button = normalPicker.GetVisualDescendants().OfType<Button>().First();
+                        var point = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window)!.Value;
+                        window.MouseDown(point, MouseButton.Left); window.MouseUp(point, MouseButton.Left); Pump();
+                        if (button.Flyout is not Flyout { IsOpen: true, Content: Control popup })
+                            failures.Add("Clicking the color swatch must open the visual picker.");
+                        else
+                        {
+                            using var bitmap = new RenderTargetBitmap(PixelSize.FromSize(popup.Bounds.Size, 1), new Vector(96, 96));
+                            bitmap.Render(popup);
+                            bitmap.Save(Path.Combine(output, "color-picker-popup.png"));
+                            button.Flyout.Hide(); Pump();
+                        }
+                    }
+                }
+                if (failures.Count == 0) Console.WriteLine("PASS HUD editor: visual colors, inclusive rule, independent rotation saves/rollback, timed Net -> CPU -> Net, detail pause/strip resume and draft isolation.");
+
+                void WaitForProfile(string name)
+                {
+                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(4.5));
+                    void Changed(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+                    { if (e.PropertyName == nameof(HudModel.ActiveProfileName) && model.ActiveProfileName == name) timeout.Cancel(); }
+                    model.PropertyChanged += Changed;
+                    try { if (model.ActiveProfileName != name) Dispatcher.UIThread.MainLoop(timeout.Token); }
+                    finally { model.PropertyChanged -= Changed; }
+                    Pump();
+                    if (model.ActiveProfileName != name) failures.Add($"Rotation timer did not advance to {name}.");
                 }
             }
             finally
@@ -381,10 +475,25 @@ internal static class HudVisualChecks
 
     private sealed class MemorySettings : IPluginSettingsStore, IAppLog
     {
+        public HudProfiles Saved { get; private set; }
+        public bool FailSave { get; set; }
+        public int Writes { get; private set; }
+        public List<string> Errors { get; } = [];
+        public MemorySettings()
+        {
+            var first = new HudProfile { Name = "Net", Metric = 4, Color = "#ffe66b", RuleColor = "#ff8a90" };
+            Saved = new() { Profiles = [first, new() { Name = "CPU", Metric = 2 }], ActiveId = first.Id };
+        }
         public T Load<T>(string name) where T : IVersionedSettings, new()
-            => typeof(T) == typeof(HudSettings) ? (T)(IVersionedSettings)new HudSettings { Animate = false } : new T();
-        public void Save<T>(string name, T value) where T : IVersionedSettings, new() => throw new InvalidOperationException("UI preview must not save settings.");
-        public void Write(string source, string message, Exception? error = null) => throw new InvalidOperationException(message, error);
+            => typeof(T) == typeof(HudSettings) ? (T)(IVersionedSettings)new HudSettings { Animate = false }
+                : typeof(T) == typeof(HudProfiles) ? (T)(IVersionedSettings)Saved : new T();
+        public void Save<T>(string name, T value) where T : IVersionedSettings, new()
+        {
+            if (FailSave) throw new IOException("Simulated save failure.");
+            if (value is not HudProfiles profiles) throw new InvalidOperationException("This check may only save in-memory profiles.");
+            Saved = profiles; Writes++;
+        }
+        public void Write(string source, string message, Exception? error = null) => Errors.Add(message);
     }
 
     private sealed class BindingLog : ILogSink

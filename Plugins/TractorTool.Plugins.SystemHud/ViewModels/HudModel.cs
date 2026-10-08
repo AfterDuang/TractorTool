@@ -130,7 +130,7 @@ public partial class HudModel : ObservableObject
         _nextItem = menu.Add("next", new("下一个方案", IsEnabled: false), _ =>
         {
             if (!CanControl) return Task.CompletedTask;
-            AdvanceProfile(preview: true);
+            NextProfile();
             return Task.CompletedTask;
         });
         UpdateControls();
@@ -230,9 +230,10 @@ public partial class HudModel : ObservableObject
     {
         if (_stopped || _window is null) return;
         UpdateInteraction();
+        UpdateRotation(false, _window.Mode, _window.IsDragging);
         if (_window.IsDragging) return;
         var visible = _settings.Enabled && (_pinned || _preview.IsEnabled || _resumePreviewAfterInteraction);
-        _timer.Stop(); _rotation.Stop();
+        _timer.Stop();
         if (!visible) { _window.Hide(); _window.Collapse(); InvalidateSample(); UpdateControls(); return; }
         _window.Reveal();
         UpdateControls();
@@ -241,8 +242,7 @@ public partial class HudModel : ObservableObject
             _timer.Interval = TimeSpan.FromSeconds(EffectiveProfile.IsNetwork ? EffectiveProfile.RefreshSeconds : 1);
             RefreshReading();
             if (EffectiveProfile.Metric != 0) _timer.Start();
-            if (_profiles.Rotate && _profiles.Profiles.Length > 1 && !_powerPreview && _draftPreview is null && !_window.IsExpanded)
-            { _rotation.Interval = TimeSpan.FromSeconds(_profiles.Seconds); _rotation.Start(); }
+            UpdateRotation(true, _window.Mode, _window.IsDragging);
         }
     }
 
@@ -253,6 +253,7 @@ public partial class HudModel : ObservableObject
         ToggleVisibilityCommand.NotifyCanExecuteChanged(); TogglePauseCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged();
         PreviewProfileCommand.NotifyCanExecuteChanged();
         ScanSensorsCommand.NotifyCanExecuteChanged();
+        NextProfileCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(RotationStatus));
         _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: _window?.IsVisible == true));
         _pauseItem?.Update(new("暂停更新", IsEnabled: CanControl, IsChecked: _paused));
         _previewItem?.Update(new("预览 6 秒", IsEnabled: CanControl));

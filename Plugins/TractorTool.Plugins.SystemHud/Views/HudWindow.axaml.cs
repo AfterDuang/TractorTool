@@ -23,6 +23,7 @@ public partial class HudWindow : Window
     public event Action? StateChanged;
     public event Action<Exception>? PresentationFailed;
     public bool IsDragging { get; private set; }
+    public HudMode Mode => Card.Mode;
     public bool IsExpanded => Card.Mode != HudMode.Compact;
 
     public HudWindow()

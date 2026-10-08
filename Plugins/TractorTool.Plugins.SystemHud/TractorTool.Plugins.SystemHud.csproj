@@ -8,6 +8,7 @@
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="FluentAvalonia"><HintPath>$(HostSdkDir)/FluentAvalonia.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Avalonia.Controls.ColorPicker"><HintPath>$(HostSdkDir)/Avalonia.Controls.ColorPicker.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup Condition="'$(HostSdkDir)' == ''">
     <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />

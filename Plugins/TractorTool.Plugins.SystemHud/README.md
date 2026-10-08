@@ -40,6 +40,8 @@ TractorTool.Plugins.SystemHud/
 
 `HudCard` 管理三态布局、单/双击与拖动识别、有限形变；保留固定行列定义，仅调整尺寸和控件位置。长短条松手即切换，没有单击等待计时器；中央双击沿系统 ClickCount 接续，收窄后消失的两端不保留隐形命中区。显式状态变化统一取消候选点击，键盘路径先于 Button 默认动作清理鼠标状态。按下反馈绑定到整个 Island，顶部模板保持透明。`HudSlotView.Item` 接收区域内容，内部 Grid 绑定 Item；控件自身仍继承父级 HudDisplay，避免编译绑定在两种类型间误转换。`HudWindow` 执行原生移动、DPI/边缘定位与窗口区域裁剪，位置换算集中在 `HudSettings`。左侧唯一的编辑预览和桌面共用卡片，编辑预览用草稿与示例数据，不启动采样；采集器不参与布局或动画，不为每个指标复制视图。
 
+`HudModel.Profiles` 同时承接可视化选色与方案轮播：编辑色值使用 Avalonia Color，保存时转换为原 RGB 字符串；轮播开关/间隔独立保存，不调用方案保存或重载草稿。`UpdateRotation` 统一管理计时条件，长条正常切换、详情和拖动暂停；定时切换仅影响运行方案。`HudView` 左侧为预览及轮播，右侧为方案编辑。ColorPicker 复用宿主已有共享程序集和主题，不随插件复制。
+
 修改布局先看 `Views`，修改操作流程先看 `ViewModels`，修改采集或接口先看 `Sampling`，修改持久化数据先看 `Configuration`。这些目录用于源码导航；类型命名空间保持 `TractorTool.Plugins.SystemHud`，插件入口和配置身份不随目录变化。
 
 完整职责、数据流和行为约束见 [插件设计文档](../../Docs/Plugins/SystemHud.md)，当前实现与验收状态见 [开发台账](../../Docs/DEVELOPMENT.md#current-status)。

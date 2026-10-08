@@ -9,6 +9,7 @@
         <Grid RowDefinitions="Auto,*" RowSpacing="12">
           <TextBlock VerticalAlignment="Center" FontSize="22" Text="编辑预览" Height="40" Classes="sectionTitle" />
           <ScrollViewer x:Name="PreviewScroll" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Grid.Row="1">
+            <StackPanel Spacing="12" Margin="0,0,0,12">
             <Border Classes="card" VerticalAlignment="Top">
               <StackPanel Spacing="8">
                 <StackPanel Spacing="4">
@@ -30,6 +31,22 @@
                 <TextBlock Text="{Binding PlacementHint}" Classes="caption" TextWrapping="Wrap" />
               </StackPanel>
             </Border>
+            <Border x:Name="RotationPanel" Classes="card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="自动轮播" Classes="sectionTitle" />
+                <ToggleSwitch x:Name="RotationToggle" Content="依次切换已保存的方案" IsChecked="{Binding RotateProfiles}" OnContent="已开启" OffContent="已关闭" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <TextBlock Text="每个方案停留" VerticalAlignment="Center" />
+                  <NumericUpDown x:Name="RotationInterval" Grid.Column="1" Width="140" Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0' 秒'" AutomationProperties.Name="每个方案停留秒数" />
+                </Grid>
+                <TextBlock Text="{Binding RotationStatus}" TextWrapping="Wrap" />
+                <TextBlock Text="轮播顺序" Classes="caption" />
+                <TextBlock Text="{Binding RotationOrder}" TextWrapping="Wrap" />
+                <Button Content="下一个方案" Command="{Binding NextProfileCommand}" HorizontalAlignment="Left" />
+                <TextBlock Text="开关和间隔修改后立即保存。轮播作用于桌面 HUD；上方编辑预览继续显示正在编辑的方案。" Classes="caption" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            </StackPanel>
           </ScrollViewer>
         </Grid>
         <Grid RowDefinitions="Auto,*" Grid.Column="1" RowSpacing="12" x:Name="EditorPanel">
@@ -106,7 +123,7 @@
                   </StackPanel>
                 </StackPanel>
               </Border>
-              <Expander Header="文字与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+              <Expander x:Name="AppearanceExpander" Header="文字与颜色" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                 <StackPanel Spacing="10" Margin="0,12,0,0">
                   <TextBlock Text="变量：{label} 指标名、{value} 显示值、{detail} 说明、{percent} 百分比数字、{name} 方案名、{unit} 单位、{updated} 读取时间。一个方案显示一种指标。" Classes="caption" TextWrapping="Wrap" />
                   <TextBlock Text="标题" />
@@ -115,25 +132,25 @@
                   <TextBox Text="{Binding ValueTemplate}" MaxLength="80" AutomationProperties.Name="数值模板" />
                   <TextBlock Text="说明" />
                   <TextBox Text="{Binding DetailTemplate}" MaxLength="160" AutomationProperties.Name="说明模板" />
-                  <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="8">
-                    <TextBlock Text="基础颜色" />
-                    <TextBlock Grid.Column="1" Text="规则颜色" />
-                    <TextBox Grid.Row="1" Text="{Binding AccentColor}" MaxLength="7" AutomationProperties.Name="基础颜色" />
-                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding RuleColor}" MaxLength="7" AutomationProperties.Name="规则颜色" />
-                  </Grid>
-                  <CheckBox Content="按百分比改变颜色" IsChecked="{Binding RuleEnabled}" />
-                  <Grid ColumnDefinitions="*,*" ColumnSpacing="16" IsEnabled="{Binding RuleEnabled}">
-                    <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="阈值比较方式" />
-                    <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="百分比阈值" />
-                  </Grid>
-                  <TextBlock Text="仅百分比指标参与规则；温度、余额和网络延迟不会当作百分比。" Classes="caption" TextWrapping="Wrap" />
-                </StackPanel>
-              </Expander>
-              <Expander Header="自动轮播" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                <StackPanel Spacing="10" Margin="0,12,0,0">
-                  <CheckBox Content="按列表顺序轮播已保存方案" IsChecked="{Binding RotateProfiles}" />
-                  <NumericUpDown Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0' 秒'" AutomationProperties.Name="轮播间隔秒数" />
-                  <TextBlock Text="隐藏、暂停、电源提醒和草稿预览期间停止轮播；这些选项随方案一同保存。" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="显示颜色" Classes="sectionTitle" Margin="0,8,0,0" />
+                  <TextBlock Text="点击色块选颜色，左侧预览会同步更新。" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="常规颜色" />
+                  <ColorPicker x:Name="AccentPicker" Color="{Binding AccentColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False"
+                               IsColorModelVisible="False" IsColorComponentsVisible="False" Width="180" HorizontalAlignment="Left" AutomationProperties.Name="选择常规颜色" />
+                  <StackPanel Spacing="10" IsVisible="{Binding SupportsColorRule}">
+                    <ToggleSwitch Content="达到条件时变色" IsChecked="{Binding RuleEnabled}" OnContent="已开启" OffContent="已关闭" />
+                    <StackPanel Spacing="10" IsVisible="{Binding RuleEnabled}">
+                      <TextBlock Text="变色条件" />
+                      <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                        <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="何时变色" />
+                        <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="变色界限百分比" />
+                      </Grid>
+                      <TextBlock Text="提醒颜色" />
+                      <ColorPicker x:Name="RulePicker" Color="{Binding RuleColor, Mode=TwoWay}" IsAlphaEnabled="False" IsAlphaVisible="False"
+                                   IsColorModelVisible="False" IsColorComponentsVisible="False" Width="180" HorizontalAlignment="Left" AutomationProperties.Name="选择提醒颜色" />
+                    </StackPanel>
+                  </StackPanel>
+                  <TextBlock Text="{Binding ColorRuleHint}" Classes="caption" TextWrapping="Wrap" />
                 </StackPanel>
               </Expander>
             </StackPanel>

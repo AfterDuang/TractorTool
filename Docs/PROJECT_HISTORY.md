@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
 | 修正与离屏验证（HUD 稳定宽度） | [E85 · 稳定长条与完整余额标题（2026-10-08）](#evidence-hud-stable-strip) |
 | 修正与离屏验证（HUD 自适应） | [E84 · 图标描边、内容收紧与长条/时间对齐（2026-10-08）](#evidence-hud-content-sizing) |
 | 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
@@ -2468,3 +2469,22 @@ SystemHud 0.3.5：
 4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e85-hud-stable-strip/plugin`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
 
 交付 `artifacts/e85-hud-stable-strip/plugin/TractorTool.SystemHud-0.4.8.zip`，5,489,650 字节，SHA256 `9D9217EEA11FEC87138B84186640DEEE4288B0AA5F64830551BB70C487C3ED3E`。ProductVersion 中 74769d1 为构建基底。未自动安装或启动宿主/原生 HUD，未运行默认逻辑/HTTP、硬件、真实配置或 DPAPI；实际原生 UI/DPI 仍待用户安装并显式退出重启后确认。保留用户 .gitignore/.vscode/launch.json 修改，仅保存本地提交。
+
+<a id="evidence-hud-color-rotation"></a>
+
+## E86：HUD 可视化选色与左侧独立轮播（2026-10-08）
+
+用户认为颜色代码和“按百分比改变颜色”不直观，要求可视化调整；反馈轮播似乎不生效，希望安排到左侧并切换已保存方案。核对原代码发现：轮播设置与右侧方案草稿一起保存，勾选未立即应用；`IsExpanded` 同时覆盖长条和详情，长条也会停止轮播。
+
+- 使用已安装的 Avalonia ColorPicker 和 FluentAvalonia 主题；没有新增库、转换器或宿主改动。色块打开色谱/调色板，编辑模型使用 Color，保存回兼容的六位 RGB，禁用透明度；小写旧颜色不产生虚假脏状态。依据 [Avalonia ColorPicker 文档](https://docs.avaloniaui.net/controls/input/selectors/colorpicker) 及本机 12.1.2 API XML 核对主题和属性。
+- “常规颜色 / 提醒颜色”“达到条件时变色”及完整条件句替代开发式标签；无百分比的指标隐藏无效规则，传感器明确仅适用 % 读数。仍是一条原有百分比规则，不新增规则系统。
+- 轮播放到左侧预览下方，开关/间隔独立即时保存，展示顺序和运行/等待/暂停原因，下一方案复用托盘动作。保存仅更新 Rotate/Seconds，不重载或保存右侧草稿，不改变默认方案，失败恢复原设置。默认/长条轮播，详情/拖动暂停；电源/草稿预览、隐藏/暂停/退出限制保持。原预览到期计时仍在长条/详情暂停。
+
+证据根目录 `artifacts/e86-hud-color-rotation`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e86-hud-color-rotation/build --force` 初次还原，后续 `--no-restore`。`checks-build.txt` 构建成功、0 错误，3 个 NU1900 警告来自受限网络无法读取 NuGet 审计源；没有禁用审计或隐藏警告。
+2. 沿用用户 HUD 离屏授权执行 `dotnet artifacts/e86-hud-color-rotation/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e86-hud-color-rotation/final`。只使用内存方案/保存失败夹具和 Headless UI，不调用 Start、不创建原生 HudWindow、不采样、不读真实配置、凭据或网络。真实 DispatcherTimer 验证 Net → CPU → Net、详情暂停/长条恢复、隐藏停止，定时切换不写配置、不改变草稿；选色绑定、保存兼容、阈值边界、无百分比规则提示和轮播保存失败回退通过。原三态/字形/图形/动态高度/输入/动画/宽窄预览检查继续通过。
+3. 初次轮播检查仅调用 RunJobs，未驱动平台计时事件，出现两次“未切到 CPU”；`first-run.txt`、`first-failures.txt` 保留失败。检查改用既有动效检查同样的有界 Dispatcher.MainLoop，未改生产计时器迁就测试。最终 `checks-run.txt` 通过，`final/bindings.txt`、`final/failures.txt` 为空。实际查看 `editor-color-rotation-1200.png`、`editor-color-rotation-800.png` 和真实色块点击打开后渲染的 `color-picker-popup.png`。
+4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e86-hud-color-rotation/plugin` 允许还原联网后独立构建：`plugin-build.txt` 0 警告/0 错误。只增加对宿主既有 ColorPicker DLL 的不复制引用；`static-checks.json` 记录 67 个 ZIP 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML XML 可解析。
+
+交付 `artifacts/e86-hud-color-rotation/plugin/TractorTool.SystemHud-0.4.9.zip`，5,493,137 字节，SHA256 `29FF580FC66BF29C996F063D3713E7235784D3BB9F4161035EABA9A036D759A6`。ProductVersion 的 d04c6e3 是构建基底。未自动安装/重启，未运行主程序、默认逻辑/HTTP 或真实硬件/磁盘保存/原生窗口检查；这些证据继续保留在 A26/A27。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
