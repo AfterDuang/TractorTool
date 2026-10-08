@@ -195,7 +195,8 @@ internal static class HudVisualChecks
                 if (model.HasDraftChanges) failures.Add("Loading lowercase saved colors must not create unsaved edits.");
                 var view = new HudView { DataContext = model };
                 window.Content = view; window.Height = 800;
-                foreach (var width in new[] { 1200, 800, 1200, 800 })
+                view.FindControl<Expander>("AppearanceExpander")!.IsExpanded = true;
+                foreach (var width in new[] { 1600, 1200, 800, 600, 1200 })
                 {
                     window.Width = width; Pump();
                     var previews = view.GetVisualDescendants().OfType<HudCard>().ToArray();
@@ -205,9 +206,19 @@ internal static class HudVisualChecks
                     Pump();
                     if (!ReferenceEquals(previews[0].DataContext, model.EditorDisplay))
                         failures.Add("The left preview does not follow the editor draft.");
-                    var rotation = view.FindControl<Border>("RotationPanel")!;
+                    var rotation = view.FindControl<StackPanel>("RotationPanel")!;
                     if (!rotation.GetVisualAncestors().Contains(view.FindControl<ScrollViewer>("PreviewScroll")))
                         failures.Add("Rotation controls must remain in the left preview pane at both widths.");
+                    if (!ReferenceEquals(rotation.GetVisualAncestors().OfType<Border>().First(b => b.Classes.Contains("card")),
+                        previews[0].GetVisualAncestors().OfType<Border>().First(b => b.Classes.Contains("card"))))
+                        failures.Add("Preview and shared rotation controls must use the same card.");
+                    var appearance = view.FindControl<Grid>("AppearanceGrid")!;
+                    var textSettings = view.FindControl<StackPanel>("TextSettings")!;
+                    var colorSettings = view.FindControl<StackPanel>("ColorSettings")!;
+                    if (appearance.Bounds.Width >= 640
+                        ? colorSettings.Bounds.Left < textSettings.Bounds.Right || Math.Abs(colorSettings.Bounds.Top - textSettings.Bounds.Top) > 1
+                        : colorSettings.Bounds.Top < textSettings.Bounds.Bottom)
+                        failures.Add("Text and color groups must align side by side when wide and stack without overlap when narrow.");
                 }
                 model.RevertProfileCommand.Execute(null);
                 model.Metric = 3; model.RuleEnabled = true; model.Comparison = 1; model.Threshold = 80;
@@ -263,10 +274,11 @@ internal static class HudVisualChecks
                 model.RevertProfileCommand.Execute(null);
                 model.RuleEnabled = true; model.Comparison = 1; model.Threshold = 80;
                 window.Height = 960;
-                foreach (var width in new[] { 1200, 800 })
+                foreach (var width in new[] { 1600, 1200, 800, 600 })
                 {
                     window.Width = width; Pump();
                     view.FindControl<ScrollViewer>("ProfileScroll")!.Offset = new Vector(0, 450); Pump();
+                    if (width < 956) { view.FindControl<Grid>("AppearanceGrid")!.BringIntoView(); Pump(); }
                     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                     using var frame = window.CaptureRenderedFrame();
                     frame?.Save(Path.Combine(output, $"editor-color-rotation-{width}.png"), PngBitmapEncoderOptions.Default);
@@ -281,7 +293,7 @@ internal static class HudVisualChecks
                         {
                             using var bitmap = new RenderTargetBitmap(PixelSize.FromSize(popup.Bounds.Size, 1), new Vector(96, 96));
                             bitmap.Render(popup);
-                            bitmap.Save(Path.Combine(output, "color-picker-popup.png"));
+                            bitmap.Save(Path.Combine(output, "color-picker-popup.png"), PngBitmapEncoderOptions.Default);
                             button.Flyout.Hide(); Pump();
                         }
                     }

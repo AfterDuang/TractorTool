@@ -5,10 +5,21 @@ namespace TractorTool.Plugins.SystemHud;
 public partial class HudView : UserControl
 {
     private bool? _compact;
+    private bool? _stackAppearance;
 
     public HudView()
     {
         InitializeComponent();
+        AppearanceGrid.SizeChanged += (_, e) =>
+        {
+            var stack = e.NewSize.Width < 640;
+            if (_stackAppearance == stack) return;
+            _stackAppearance = stack;
+            AppearanceGrid.ColumnDefinitions = new(stack ? "*" : "*,*");
+            AppearanceGrid.RowDefinitions = new(stack ? "Auto,Auto" : "Auto");
+            Grid.SetColumn(ColorSettings, stack ? 0 : 1);
+            Grid.SetRow(ColorSettings, stack ? 1 : 0);
+        };
         SizeChanged += (_, e) =>
         {
             var compact = e.NewSize.Width - 56 < 900;

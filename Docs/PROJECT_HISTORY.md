@@ -15,6 +15,7 @@
 | 阶段 | 记录 |
 | --- | --- |
 | 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
+| 页面与离屏验证（HUD 编辑分组） | [E87 · 编辑预览合并与紧凑表单（2026-10-08）](#evidence-hud-preview-panel) |
 | 修正与离屏验证（HUD 稳定宽度） | [E85 · 稳定长条与完整余额标题（2026-10-08）](#evidence-hud-stable-strip) |
 | 修正与离屏验证（HUD 自适应） | [E84 · 图标描边、内容收紧与长条/时间对齐（2026-10-08）](#evidence-hud-content-sizing) |
 | 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
@@ -2488,3 +2489,17 @@ SystemHud 0.3.5：
 4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e86-hud-color-rotation/plugin` 允许还原联网后独立构建：`plugin-build.txt` 0 警告/0 错误。只增加对宿主既有 ColorPicker DLL 的不复制引用；`static-checks.json` 记录 67 个 ZIP 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML XML 可解析。
 
 交付 `artifacts/e86-hud-color-rotation/plugin/TractorTool.SystemHud-0.4.9.zip`，5,493,137 字节，SHA256 `29FF580FC66BF29C996F063D3713E7235784D3BB9F4161035EABA9A036D759A6`。ProductVersion 的 d04c6e3 是构建基底。未自动安装/重启，未运行主程序、默认逻辑/HTTP 或真实硬件/磁盘保存/原生窗口检查；这些证据继续保留在 A26/A27。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
+
+<a id="evidence-hud-preview-panel"></a>
+
+## E87：HUD 编辑预览合并与紧凑表单（2026-10-08）
+
+用户要求左侧预览和轮播合并，明确两者都属于“编辑预览”；随后要求右侧“文字与颜色”紧凑排列。核对 `HudProfiles.Rotate/Seconds` 确认轮播原本就是公共配置，无需迁移数据或修改模型。SystemHud 0.4.10 用一张左侧卡片和内部分隔线，标注“所有方案共用，修改后立即保存”。文字/颜色内容宽度至少 640 DIP 时左右分组，不足时上下排列；文字标签同行、常规/提醒色块并排、条件比较与阈值同行。沿用原滚动、草稿、绑定、轮播及桌面 HUD 布局，只修改插件视图和已有离屏检查。
+
+证据根目录 `artifacts/e87-hud-preview-panel`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e87-hud-preview-panel/build --force` 首次还原，最终 `--no-restore` 构建，`checks-build.txt` 0 警告/0 错误。初次发现既有截图 `Bitmap.Save` 重载过时，改用项目已有的 `PngBitmapEncoderOptions.Default`。
+2. 沿用已授权离屏检查，执行 `dotnet artifacts/e87-hud-preview-panel/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e87-hud-preview-panel/final`。1600/1200/800/600 宽度下验证同一左卡片、文字/颜色分组无重叠及草稿保留；E86 颜色/轮播/失败回退和原三态/输入/动画回归通过。`checks-run.txt` 通过，`final/bindings.txt`、`final/failures.txt` 为空。实际查看 `editor-color-rotation-1600.png` 和 `editor-color-rotation-600.png`，宽屏并排、窄屏分组与同行控件正常；图中启动/控制禁用来自未启动真实模型的离屏夹具。
+3. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e87-hud-preview-panel/plugin` 独立构建，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析。
+
+交付 `artifacts/e87-hud-preview-panel/plugin/TractorTool.SystemHud-0.4.10.zip`，5,493,776 字节，SHA256 `0D3E3B330C379563B66E2AC426ED2090EC4A2F23564F126E4447647839883E36`。未自动安装或运行主程序/原生 HUD，未读真实配置、采样、硬件、凭据或网络；真实 UI/DPI、磁盘保存与重启仍待用户确认。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
