@@ -77,8 +77,10 @@ public partial class HudModel
             Sensors.Clear();
             foreach (var choice in choices) Sensors.Add(choice);
             SensorId = selected; SelectSavedSensor();
+            var issue = choices.Select(c => c.Issue).FirstOrDefault(i => i.Length != 0);
             SensorStatus = choices.Length == 0 ? "没有可用传感器。请以管理员身份运行，并检查设备驱动及 PawnIO。"
-                : $"找到 {choices.Length} 项。温度等项目可能需要管理员权限和 PawnIO；未读到值会明确提示。";
+                : $"找到 {choices.Length} 项。" + (issue ?? "请选择需要显示的项目：°C 为温度，W 为功率，% 为占用率。");
+            _sampler.ResetCache(); InvalidateSample(); UpdateVisibility();
         }
         catch (Exception ex) { if (!_stopped) SensorStatus = "检测失败：" + HudSampler.FailureText(ex); }
     }

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 硬件显示与诊断（HUD） | [E96 · 传感器类型图标与 CPU 访问条件（2026-10-09）](#evidence-hud-hardware-types) |
 | 界面精简（HUD 草稿预览） | [E95 · 删除桌面草稿预览入口与逻辑（2026-10-09）](#evidence-hud-remove-draft-preview) |
 | 全量代码审查（HUD 插件） | [E94 · 三名子代理全量 Review，2 项 P2 待修复（2026-10-09）](#evidence-hud-full-review) |
 | 实现与离屏验证（HUD 独立采样间隔） | [E93 · 按方案设置 0.2–600 秒与到期缓存（2026-10-09）](#evidence-hud-sampling-interval) |
@@ -2642,3 +2643,21 @@ UI 审查没有其他可确认发现，预览计时在长条/详情/拖动时暂
 验证：`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e95-hud-remove-draft-preview/build` 通过，0 错误/0 警告。沿用已授权运行生成的 HudChecks.dll `--ui-only artifacts/e95-hud-remove-draft-preview/final`，全部既有离屏与内存数据回归通过，零绑定错误/检查失败；没有为按钮删除新增重复测试。已查看 sampling-0.2-1200.png，操作区只有“保存并使用”“撤销修改”，左侧编辑预览保留；生产源码无 PreviewProfile/CanPreviewProfile/_draftPreview 残留。日志 build.log/ui-check.log；未运行默认完整检查、原生窗口或真实硬件/HTTP。
 
 使用 Build-Plugin.ps1 引用 artifacts/e67-review-fix/host 独立构建，0 错误/0 警告。产物 `artifacts/e95-hud-remove-draft-preview/plugin/TractorTool.SystemHud-0.4.16.zip`，5,509,593 字节，SHA256 `40B64F435656271E1CE356DC2671744DD33358EC02CB3D39DA7704BA703179C2`。69 文件 ZIP 与输出逐项哈希一致、无共享 SDK 副本、234 个宿主文件哈希及数量未变，5 个 AXAML 可解析；证据在 static-checks.json/package.log。未自动安装、退出重启或操作用户软件/配置；保留 .gitignore/.vscode/launch.json，仅本地提交。
+
+<a id="evidence-hud-hardware-types"></a>
+
+## E96：传感器类型图标与 CPU 访问条件（2026-10-09）
+
+用户报告 CPU 温度能选中但显示横线，功率/占用率仍用温度计。确认 HudPresentation 对全部 Metric=8 使用温度计，UpdateEditor 同样固定 48 °C；现按 LibreHardwareMonitor 稳定 ID 中的类型映射图标和示例，覆盖温度/功率/占用率/频率/转速/电压/容量，错误读数与重启后未检测也保留类型。无新配置字段、依赖或宿主代码。
+
+只读检查本机 HKLM 的 PawnIO 安装记录和同名服务：沙箱最初无法打开服务管理器，随后获准的只读检查成功，安装记录不存在、未找到同名服务；没有读取真实传感器或操作用户软件。对照固定 0.9.6 的 [IntelCpu](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/3d331e3370efb858411f19511373eff65a218701/LibreHardwareMonitorLib/Hardware/Cpu/IntelCpu.cs) 和 [PawnIo](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/3d331e3370efb858411f19511373eff65a218701/LibreHardwareMonitorLib/PawnIo/PawnIo.cs)，温度通过驱动读取，失败为 null；模块未装载时可返回零数组，功率 0 W 不能独立证明读取成功。缺少驱动与症状相符，未声称实际温度已恢复。[PawnIO 官方仓库](https://github.com/namazso/PawnIO) 指向 pawnio.eu 下载。
+
+HardwareMetrics 打开时记录驱动安装/管理员条件，CPU 温度/功率/电压缺少前置条件时明确未知与原因，不拦截 GPU 或 CPU 负载；有访问条件的合法零值保留。检测列表标注暂不可读，页面汇总原因，成功重新检测后清旧读数缓存。安装/修复驱动后需要显式退出重启；未安装驱动或自动提权，不承诺条件齐备就保证设备支持。E94 两项 P2 未在本轮修复。
+
+证据目录 artifacts/e96-hud-hardware：
+
+1. 专项构建 `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e96-hud-hardware/build` 初次有 6 条 NU1900，允许正常联网还原后最终 0 错误/0 警告，见 build.log。
+2. 沿用 --ui-only 授权，执行生成的 HudChecks.dll `--ui-only artifacts/e96-hud-hardware/verified`。加入纯数据诊断、真实编辑选择、八种单位/三态图标及错误保持检查；修正新闪电图标尖角切边。额外形状检查曾触发既有 36% Arc 的保守边界估算，新增图标专项限定为 Path，原通用形状回归未改；不据此声称修复或实测所有比例进度弧。最终全部既有及新增检查通过，bindings.txt/failures.txt 为空，日志 ui-check-verified.log；查看 sensor-power.png、sensor-load.png。未运行默认完整检查、原生窗口、硬件或网络。
+3. 旧 artifacts/e67-review-fix/host 已被外部清理，现有 Release DLL 与旧 SDK 哈希不同，不冒称相同快照。本轮 `Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir TractorTool/bin/Release/net10.0/win-x64 -Output artifacts/e96-hud-hardware/plugin` 独立构建成功，0 错误/0 警告；未重编宿主。引用目录 234 个文件哈希/数量不变，ZIP 69 文件逐项一致、无共享 SDK 副本、5 个 AXAML 可解析，见 host-before.json、package.log、static-checks.json。
+
+交付 TractorTool.SystemHud-0.4.17.zip，5,511,433 字节，SHA256 `34D0C2CA9E950DC23A5DB0C453B85EEA66204D51073061715F493CBBAF97314B`。未自动安装插件或驱动，未验证真实 CPU 温度恢复；保留用户 .gitignore/.vscode/launch.json，仅本地提交。

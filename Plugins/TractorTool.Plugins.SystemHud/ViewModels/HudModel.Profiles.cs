@@ -154,7 +154,7 @@ public partial class HudModel
             5 => new("网络延迟", "24 ms", "示例：ICMP 往返"),
             6 => new("HTTP 服务", "85 ms", "示例：HTTP 200 · 响应头耗时"),
             7 => new("JSON 指标", JsonPercentage ? "72" : "就绪", "示例：选定字段的值", JsonPercentage ? 72 : null),
-            8 => new("硬件传感器", "48 °C", "示例：CPU 温度", Unit: "°C"),
+            8 => HudPresentation.HardwareExample(SensorId),
             9 => new("DeepSeek 余额", "10.00 " + Currency, "示例：账户余额", Unit: Currency),
             10 => new("磁盘空间", "256.0 GiB", "示例：共 512.0 GiB", 50, "GiB"),
             _ => new("系统运行时间", "1 天 02:30:00", "示例：系统会话运行时长")

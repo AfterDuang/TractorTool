@@ -11,6 +11,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FluentAvalonia.Styling;
+using LibreHardwareMonitor.Hardware;
 using TractorTool.Contracts;
 using TractorTool.Plugins.SystemHud;
 using TractorTool.UI;
@@ -38,6 +39,7 @@ internal static class HudVisualChecks
         var layouts = new List<string>();
         try
         {
+            CheckHardwareReadings();
             CheckInput();
             foreach (var metric in Enumerable.Range(0, 12))
             foreach (var mode in new[] { HudMode.Compact, HudMode.Strip, HudMode.Detail, HudMode.Strip, HudMode.Compact })
@@ -194,6 +196,14 @@ internal static class HudVisualChecks
             try
             {
                 if (model.HasDraftChanges) failures.Add("Loading lowercase saved colors must not create unsaved edits.");
+                model.Metric = 8;
+                model.SensorId = "/intelcpu/0/power/1";
+                if (model.EditorDisplay.Value != "65 W" || model.EditorDisplay.Layout.Compact.Left.Icon == HudDisplay.IconFor(8))
+                    failures.Add("Selecting power must update the actual editor example and icon without a hardware scan.");
+                model.SensorId = "/intelcpu/0/load/0";
+                if (model.EditorDisplay.Value != "36%" || !model.EditorDisplay.Layout.Strip.Right.IsRing)
+                    failures.Add("Selecting load must show a percentage example and load ring, not temperature.");
+                model.RevertProfileCommand.Execute(null);
                 var view = new HudView { DataContext = model };
                 window.Content = view; window.Height = 800;
                 var tray = new TrayCapture();
@@ -534,6 +544,56 @@ internal static class HudVisualChecks
         Console.WriteLine("PASS HUD headless: light/dark hover and press, immediate expansion/collapse including strip ends, central double clicks, keyboard and drag cancellation; 12 metrics/three states, context/long text/reattachment and single responsive editor preview; zero binding errors or layout failures.");
 
         void Pump() { Dispatcher.UIThread.RunJobs(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs(); }
+
+        void CheckHardwareReadings()
+        {
+            var noDriver = HardwareMetrics.CpuAccessIssue(false, true);
+            var noAdmin = HardwareMetrics.CpuAccessIssue(true, false);
+            if (!noDriver.Contains("PawnIO") || !noAdmin.Contains("管理员") || HardwareMetrics.CpuAccessIssue(true, true) != "")
+                failures.Add("Hardware prerequisites must distinguish missing driver, missing elevation and ready access.");
+            foreach (var type in new[] { SensorType.Temperature, SensorType.Power, SensorType.Voltage })
+            {
+                var blocked = HardwareMetrics.AccessIssue(HardwareType.Cpu, type, noDriver);
+                var reading = HardwareMetrics.FormatReading("CPU", "test", type, 0, blocked);
+                if (reading.Value != "—" || reading.Detail != noDriver || reading.Unit != HardwareMetrics.Unit(type))
+                    failures.Add("Missing CPU access must not publish a fabricated zero; preserve the type and cause.");
+            }
+            if (HardwareMetrics.AccessIssue(HardwareType.Cpu, SensorType.Load, noDriver) != ""
+                || HardwareMetrics.AccessIssue(HardwareType.GpuNvidia, SensorType.Temperature, noDriver) != ""
+                || HardwareMetrics.FormatReading("power", "test", SensorType.Power, 0, "").Value != "0 W"
+                || HardwareMetrics.FormatReading("temp", "test", SensorType.Temperature, null, "").Value != "—")
+                failures.Add("CPU access diagnostics must preserve independent GPU/load readings, valid zero and absent values.");
+            var cases = new[] { ("temperature", "°C", 8), ("power", "W", 13), ("load", "%", 14),
+                ("clock", "MHz", 1), ("fan", "RPM", 15), ("voltage", "V", 16), ("data", "GiB", 3), ("smalldata", "MiB", 3) };
+            foreach (var (kind, unit, icon) in cases)
+            {
+                var id = $"/intelcpu/0/{kind}/1";
+                var profile = new HudProfile { Metric = 8, SensorId = id };
+                var sample = HudPresentation.HardwareExample(id);
+                var display = profile.Render(sample);
+                var unavailable = profile.Render(new("CPU", "—", "无读数"));
+                if (sample.Unit != unit || display.Layout.Compact.Left.Icon != HudDisplay.IconFor(icon)
+                    || unavailable.Layout.Compact.Left.Icon != display.Layout.Compact.Left.Icon)
+                    failures.Add($"{kind}: saved sensor type must survive samples, errors and missing live metadata.");
+                foreach (var mode in Enum.GetValues<HudMode>())
+                {
+                    card.DataContext = display; card.Mode = mode; Pump();
+                    if (card.FindControl<HudSlotView>("First")!.Item?.Icon != HudDisplay.IconFor(icon))
+                        failures.Add($"{kind}/{mode}: sensor type did not reach the visible icon.");
+                    foreach (var shape in card.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Where(s => s.IsEffectivelyVisible))
+                        if (shape.RenderedGeometry is { } geometry && !new Rect(shape.Bounds.Size).Inflate(.05)
+                            .Contains(geometry.GetRenderBounds(new Pen(shape.Stroke, shape.StrokeThickness))))
+                            failures.Add($"{kind}/{mode}: sensor icon stroke is clipped: {geometry.GetRenderBounds(new Pen(shape.Stroke, shape.StrokeThickness))} vs {shape.Bounds.Size}.");
+                }
+                card.Mode = HudMode.Strip; Pump();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                using var frame = window.CaptureRenderedFrame();
+                frame?.Save(Path.Combine(output, $"sensor-{kind}.png"), PngBitmapEncoderOptions.Default);
+            }
+            if (HudPresentation.HardwareExample("/future/unknown/0").Value != "—"
+                || HardwareMetrics.UnitFor(null) != "") failures.Add("Unknown sensor types must not pretend to be temperature.");
+            Console.WriteLine("CHECK hardware: per-type icons and editor samples, error identity, prerequisite messages, zero preservation; no real hardware or registry reads.");
+        }
 
         void CheckInput()
         {

@@ -20,7 +20,9 @@ public static class HudPresentation
         var accent = new ImmutableSolidColorBrush(Color.Parse(match ? profile.RuleColor : profile.Color));
         HudSlotDisplay Text(string text) => new(HudContent.Text, text, "", null, accent);
         HudSlotDisplay Icon(int metric) => new(HudContent.Icon, "", HudDisplay.IconFor(metric), null, accent);
-        var icon = Icon(profile.Metric);
+        var icon = profile.Metric == 8
+            ? new HudSlotDisplay(HudContent.Icon, "", HudDisplay.HardwareIconFor(HardwareMetrics.UnitFor(profile.SensorId)), null, accent)
+            : Icon(profile.Metric);
         var identity = profile.Metric == 8 && profile.SensorId.StartsWith("/gpu-", StringComparison.OrdinalIgnoreCase)
             ? Icon(12) : Text(title);
         var hasPercent = reading.Percent is { } percent && double.IsFinite(percent);
@@ -47,6 +49,19 @@ public static class HudPresentation
         var layout = new HudLayout(new(icon, Text(value), identity), strip, expanded, Text(body));
         return new(title, value, detail, accent, layout, footer) { ProfileId = profile.Id, Metric = profile.Metric };
     }
+
+    internal static HudReading HardwareExample(string? id) => HardwareMetrics.UnitFor(id) switch
+    {
+        "°C" => new("温度", "48 °C", "示例：温度传感器", Unit: "°C"),
+        "W" => new("功率", "65 W", "示例：功率传感器", Unit: "W"),
+        "%" => new("占用率", "36%", "示例：负载传感器", 36, "%"),
+        "MHz" => new("频率", "4200 MHz", "示例：时钟频率", Unit: "MHz"),
+        "RPM" => new("风扇", "1200 RPM", "示例：风扇转速", Unit: "RPM"),
+        "V" => new("电压", "1.2 V", "示例：电压传感器", Unit: "V"),
+        "GiB" => new("容量", "8 GiB", "示例：容量传感器", Unit: "GiB"),
+        "MiB" => new("容量", "512 MiB", "示例：容量传感器", Unit: "MiB"),
+        _ => new("硬件传感器", "—", "示例：请选择传感器")
+    };
 }
 
 public sealed record HudDisplay(string Title, string Value, string Detail, IBrush Accent, HudLayout Layout, string Updated)
@@ -55,6 +70,10 @@ public sealed record HudDisplay(string Title, string Value, string Detail, IBrus
     public int Metric { get; init; }
     public string Summary => $"{Title} · {Value}\n{Detail}";
     internal static string IconFor(int icon) => Icons[Math.Clamp(icon, 0, Icons.Length - 1)];
+    internal static string HardwareIconFor(string unit) => IconFor(unit switch
+    {
+        "°C" => 8, "W" => 13, "%" => 14, "MHz" => 1, "RPM" => 15, "V" => 16, "GiB" or "MiB" => 3, _ => 2
+    });
 
     // Small original line icons; no font glyph dependency or downloaded artwork.
     private static readonly string[] Icons =
@@ -71,7 +90,11 @@ public sealed record HudDisplay(string Title, string Value, string Detail, IBrus
         "M3,5 L21,5 21,20 3,20 Z M3,5 L17,2 17,5 M16,10 L21,10 M16,15 L21,15 M16,10 L16,15", // balance
         "M5,3 L19,3 22,18 22,21 2,21 2,18 Z M2,16 L22,16 M16,19 L19,19", // disk
         "M12,3 A9,9 0 1 1 3,12 M3,3 L3,9 9,9 M12,6 L12,12 16,12", // uptime
-        "M2,5 L22,5 22,18 2,18 Z M7,8 A3.5,3.5 0 1 1 7,15 A3.5,3.5 0 1 1 7,8 M17,8 A3.5,3.5 0 1 1 17,15 A3.5,3.5 0 1 1 17,8 M6,18 L6,21 M10,18 L10,21 M14,18 L14,21" // GPU
+        "M2,5 L22,5 22,18 2,18 Z M7,8 A3.5,3.5 0 1 1 7,15 A3.5,3.5 0 1 1 7,8 M17,8 A3.5,3.5 0 1 1 17,15 A3.5,3.5 0 1 1 17,8 M6,18 L6,21 M10,18 L10,21 M14,18 L14,21", // GPU
+        "M14,5 L6,13 11,13 10,19 18,11 13,11 Z", // power
+        "M5,18 A9,9 0 1 1 19,18 M6,17 L18,17 M12,13 L16,7 M6,10 L8,11 M12,4 L12,6 M18,10 L16,11", // load
+        "M12,10 C4,1 3,12 10,12 M14,12 C23,4 12,3 12,10 M12,14 C20,23 21,12 14,12 M10,12 C1,20 12,21 12,14 M12,10 A2,2 0 1 1 12,14 A2,2 0 1 1 12,10", // fan
+        "M12,2 A10,10 0 1 1 12,22 A10,10 0 1 1 12,2 M7,7 L12,17 17,7" // voltage
     };
 }
 

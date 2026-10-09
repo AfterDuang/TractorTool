@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.SystemHud",
   "name": "系统数据HUD",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "entryAssembly": "TractorTool.Plugins.SystemHud.dll",
   "entryType": "TractorTool.Plugins.SystemHud.HudPlugin",
   "apiVersion": "1.7",
