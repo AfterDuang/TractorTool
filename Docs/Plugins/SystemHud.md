@@ -10,7 +10,7 @@
 2. 多方案、轮播、变量模板、颜色规则、编辑和预览。
 3. GPU/温度/硬件传感器、网络探测、HTTP/JSON、DeepSeek 和更多变量。
 
-通过现有页面注册接口提供“系统数据HUD”主页面，以及“设置 → 插件设置 → 系统数据HUD”；不新增导航 API。插件 ID 仍为 `TractorTool.SystemHud`，更名不改变安装和数据目录。导航/设置使用与独立插件同系列的 Microsoft Fluent Emoji 彩色柱状图，固定原始 PNG 与许可随插件发布，见 [NOTICE](../../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)。打开软件仍复用现有托盘“显示 TractorTool”。两个页面使用宿主共享样式；桌面 HUD 使用插件内的黑色胶囊与方案强调色，不覆盖其他页面样式。没有复制参考仓库的代码、美术、字体或动画资源。
+通过现有页面注册接口提供“系统数据HUD”主页面，以及“设置 → 插件设置 → 系统数据HUD”；不新增导航 API。插件 ID 仍为 `TractorTool.SystemHud`，更名不改变安装和数据目录。导航/设置使用 Microsoft Fluent System Icons 的 Gauge 彩色仪表盘，原始 SVG 仅转换为 PNG，许可随插件发布，见 [NOTICE](../../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)。打开软件仍复用现有托盘“显示 TractorTool”。两个页面使用宿主共享样式；桌面 HUD 使用插件内的黑色胶囊与方案强调色，不覆盖其他页面样式。没有复制参考仓库的代码、美术、字体或动画资源。
 
 | 入口 | 职责 |
 | --- | --- |

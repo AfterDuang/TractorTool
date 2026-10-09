@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 素材替换（HUD Fluent 功能图标） | [E89 · Gauge 彩色仪表盘（2026-10-09）](#evidence-hud-fluent-icon) |
 | 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
 | 页面与离屏验证（HUD 编辑分组） | [E87 · 编辑预览合并与紧凑表单（2026-10-08）](#evidence-hud-preview-panel) |
 | 插件调整与接口交接（HUD 开关/图标） | [E88 · 系统数据HUD 名称、现成图标与双开关（2026-10-09）](#evidence-hud-controls) |
@@ -2522,3 +2523,19 @@ SystemHud 0.3.5：
 3. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e88-hud-controls/release`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：69 个 ZIP 文件逐项哈希一致，图标/许可和更名清单齐全，无共享 SDK 副本；234 个宿主文件未变、5 个 AXAML 可解析。早期 `plugin/` 目录为最终措辞调整前的包，交付只用 `release/`。
 
 阶段产物 `artifacts/e88-hud-controls/release/TractorTool.SystemHud-0.4.11.zip`，5,531,747 字节，SHA256 `71E743BEBC32BC0C9862823C1BAC2D2E190E0B62B8BAE124F399EEF6D12C75CD`。未自动安装、运行主程序/原生 HUD/托盘或读取真实配置/硬件/凭据，默认逻辑/网络检查未执行。真实开关点击/拖动、托盘显示同步、侧栏图标/DPI 需安装后显式退出重启确认；动态方案菜单仍未实现。保留用户 .gitignore/.vscode/launch.json，只本地提交。
+
+<a id="evidence-hud-fluent-icon"></a>
+
+## E89：Fluent System Icons Gauge 彩色仪表盘（2026-10-09）
+
+用户更正图标可以直接使用 Fluent 功能图标库，不限定 Emoji。SystemHud 0.4.12 将导航/设置共用的 Assets/icon.png 替换为官方 Gauge 彩色仪表盘；保留现有 IconPath 注册，无运行逻辑、布局、公共接口或配置变更。旧 Emoji 许可替换为对应 MIT 许可；Artwork 保留原始 SVG，NOTICE 记录固定来源。E88 历史素材说明保留为当时事实。
+
+来源为 microsoft/fluentui-system-icons 提交 `883bef1e12d37343d0b2a64a1af43d0209de1128` 的 `assets/Gauge/SVG/ic_fluent_gauge_32_color.svg`。原图 SHA256 `9CEAD7CF604F99C61DF754AE9A79BA7BE62CA5ECE728E4BF2B4E7F1F0F3545B5`；使用已有 Sharp，density 576、resize(256,256)、png() 栅格化，无改色或重绘。输出 14,513 字节，SHA256 `C7FC62570664A3A28743BE861A7D6502E55C5B5D5107BBB33EA34D87928CF62B`。未增加项目依赖或生成脚本。
+
+证据根目录 `artifacts/e89-hud-fluent-icon`：
+
+1. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e89-hud-fluent-icon/plugin` 成功，`plugin-build.txt` 0 错误，2 条 NU1900 警告：沙箱网络限制使 NuGet 漏洞数据查询失败；未关闭审计或将其记为通过。
+2. `static-checks.json` 记录 ZIP 69 文件逐项 SHA256 与输出目录一致，清单名称/0.4.12 正确，附新 MIT 许可且无旧 Emoji 许可，无共享 SDK 副本，234 个宿主文件数和哈希不变。
+3. PNG 为 256×256 RGBA，非透明内容边界 (16,16)-(240,240)，四周透明。已查看完整图标和 `icon-small-preview.png` 的浅深背景 24/32 像素缩略图，未发现边缘截断。本次纯素材修改未重跑 HUD 离屏/逻辑测试，E88 结果不冒充 E89 新执行证据。
+
+产物 `artifacts/e89-hud-fluent-icon/plugin/TractorTool.SystemHud-0.4.12.zip`，5,507,539 字节，SHA256 `F64F77B0CD3137955290962ED109B184E83F1E1E5030D76F0193E988FE5C09CA`。未自动安装、启动应用或读取真实配置/硬件；实际侧栏/设置与 DPI 效果待用户安装后显式退出重启验证。托盘分隔线/动态方案菜单仍等待架构接口支持，本轮未解决。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。

@@ -21,9 +21,10 @@
 | `TractorTool/Assets/Icons/tools.png` | `assets/Toolbox/3D/toolbox_3d.png` |
 | `TractorTool/Assets/Icons/settings.png` | `assets/Gear/3D/gear_3d.png` |
 | `tests/IndependentPlugin/Assets/icon.png` | `assets/Puzzle piece/3D/puzzle_piece_3d.png` |
-| `Plugins/TractorTool.Plugins.SystemHud/Assets/icon.png` | `assets/Bar chart/3D/bar_chart_3d.png` |
 
-这些素材使用 MIT 许可，完整声明随宿主 [第三方通知](../THIRD-PARTY-NOTICES.md) 发布；示例插件及系统数据HUD 各携带 `Assets/LICENSE-FluentEmoji.txt`。原始下载地址与 SHA256 记录在 `artifacts/reference-emoji/assets.json`；后加的系统数据HUD 柱状图见[插件声明](../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)，SHA256 为 `0D83833E992B128AA00B85220FC2F777516BBDEB92E9E1E019A7B715ECC6EF97`。它们不是参考软件的品牌素材，也不替换 TractorTool 应用/托盘图标。常规设置操作继续复用 FluentAvalonia 的单色符号。
+这些素材使用 MIT 许可，完整声明随宿主 [第三方通知](../THIRD-PARTY-NOTICES.md) 发布；示例插件携带 `Assets/LICENSE-FluentEmoji.txt`。原始下载地址与 SHA256 记录在 `artifacts/reference-emoji/assets.json`。它们不是参考软件的品牌素材，也不替换 TractorTool 应用/托盘图标。常规设置操作继续复用 FluentAvalonia 的单色符号。
+
+系统数据HUD 使用 Microsoft [Fluent System Icons 的 Gauge 彩色仪表盘](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Gauge/SVG/ic_fluent_gauge_32_color.svg)，不是 Emoji。原始 [SVG](fluent-gauge-32-color.svg) 固定到提交 `883bef1e12d37343d0b2a64a1af43d0209de1128`；用已有 Sharp 将 32 DIP 图形按 8 倍栅格化为透明 256×256 PNG，未修改轮廓或配色。PNG 存放于 `Plugins/TractorTool.Plugins.SystemHud/Assets/icon.png`，MIT 许可随包附于 `Assets/LICENSE-FluentSystemIcons.txt`，见[插件声明](../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)。SVG SHA256：`9CEAD7CF604F99C61DF754AE9A79BA7BE62CA5ECE728E4BF2B4E7F1F0F3545B5`；PNG SHA256：`C7FC62570664A3A28743BE861A7D6502E55C5B5D5107BBB33EA34D87928CF62B`。不需要运行时联网或额外图标依赖。
 
 ## 应用图标生成记录
 

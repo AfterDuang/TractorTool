@@ -5,7 +5,7 @@
 私有运行依赖及许可原文见 Licenses 和下面的来源表。MPL 覆盖的库未修改，其对应源代码可从固定提交链接取得；TractorTool 自己的实现未复制这些库的源码。
 Avalonia 和 TractorTool SDK 由宿主共享，不随插件分发。
 
-导航及设置图标复用 Microsoft Fluent Emoji 的 Bar chart 3D PNG，与宿主/独立插件采用同一素材库；非 AI 生成。固定来源：[1ffb34c 的原始图标](https://github.com/microsoft/fluentui-emoji/blob/1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/Bar%20chart/3D/bar_chart_3d.png)。未修改原图，MIT 许可随包附于 `Assets/LICENSE-FluentEmoji.txt`。
+导航及设置图标复用 Microsoft Fluent System Icons 的 Gauge 彩色仪表盘；非 Emoji 或 AI 生成。固定来源：[883bef1 的原始 SVG](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Gauge/SVG/ic_fluent_gauge_32_color.svg)。仅栅格化为透明 256×256 PNG，保留原始图形和配色；MIT 许可随包附于 `Assets/LICENSE-FluentSystemIcons.txt`。
 
 | 组件 | 版本 | 许可 / 源码 |
 | --- | --- | --- |
