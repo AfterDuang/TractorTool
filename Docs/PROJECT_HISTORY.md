@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 拖动采样） | [E90 · 位置保存不重置采样，托盘方案暂缓（2026-10-09）](#evidence-hud-drag-sampling) |
 | 素材替换（HUD Fluent 功能图标） | [E89 · Gauge 彩色仪表盘（2026-10-09）](#evidence-hud-fluent-icon) |
 | 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
 | 页面与离屏验证（HUD 编辑分组） | [E87 · 编辑预览合并与紧凑表单（2026-10-08）](#evidence-hud-preview-panel) |
@@ -2539,3 +2540,22 @@ SystemHud 0.3.5：
 3. PNG 为 256×256 RGBA，非透明内容边界 (16,16)-(240,240)，四周透明。已查看完整图标和 `icon-small-preview.png` 的浅深背景 24/32 像素缩略图，未发现边缘截断。本次纯素材修改未重跑 HUD 离屏/逻辑测试，E88 结果不冒充 E89 新执行证据。
 
 产物 `artifacts/e89-hud-fluent-icon/plugin/TractorTool.SystemHud-0.4.12.zip`，5,507,539 字节，SHA256 `F64F77B0CD3137955290962ED109B184E83F1E1E5030D76F0193E988FE5C09CA`。未自动安装、启动应用或读取真实配置/硬件；实际侧栏/设置与 DPI 效果待用户安装后显式退出重启验证。托盘分隔线/动态方案菜单仍等待架构接口支持，本轮未解决。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
+
+<a id="evidence-hud-drag-sampling"></a>
+
+## E90：位置保存不重置采样，托盘方案暂缓（2026-10-09）
+
+用户再次要求在“系统数据HUD”托盘子菜单列出保存方案并点击切换，随后明确：如果缺少宿主支持导致无法实时更新，则先不做此功能。已复核 UI 1.5 注册入口及宿主 Commit 限制：方案业务归插件，分隔线和运行期增删能力未开放。本轮不改菜单或宿主/Core/Contracts/UI；当前台账与上下文更新为暂缓，不再把架构改造列为本轮下一步。
+
+用户反馈拖动后网速显示“—”。源码链为 HudWindow.CompleteDrag → HudModel.SavePosition → Save → InvalidateSample：保存位置成功错误取消在途采样、标记重置并增加结果版本；下一次 HudSampler 读取先 WindowsMetrics.Reset，CPU/网速需建立计数基线。网速按累计字节差除实际秒数，CPU 按两次累计空闲/内核/用户时间差计算；位置变化不影响这些数据。
+
+SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences 已通过 EndPreview 使采样失效，其他切换/隐藏/暂停路径保留。保存位置不清基线、取消读取或清屏；失败回退和只合并位置保持原行为。没有增加生产抽象、依赖或配置字段。
+
+证据目录 `artifacts/e90-hud-drag-sampling`：
+
+1. 新增 HUD 离屏回归，调用实际 SavePosition 回调，使用内存设置和模拟在途 CancellationTokenSource；验证成功/不变/失败保存、未提交缩放/方案草稿、基线/结果版本/取消状态/当前显示不变，以及保存偏好仍使采样失效。未创建原生 HudWindow、启动模型或读取真实硬件。旧代码运行 `--ui-only .../before` 时准确产生 1 项失败：`Dragging must not cancel in-flight sampling, invalidate counter baselines or clear the current reading.`，零绑定错误。
+2. 修复后 `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e90-hud-drag-sampling/build --no-restore` 为 0 错误/3 条 NU1900；初次 --force 还原为 0 错误/6 条 NU1900。均是沙箱网络限制导致漏洞查询不可用，未禁用审计。
+3. 沿用已授权 HUD 离屏检查：`dotnet artifacts/e90-hud-drag-sampling/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e90-hud-drag-sampling/after` 全部通过。原 12 指标/三态/输入/布局/颜色/轮播回归通过，`after/bindings.txt` 和 `after/failures.txt` 均为空。日志 `checks-before.txt` / `checks-after.txt` 保留先失败后通过证据；默认逻辑/网络套件未运行。
+4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e90-hud-drag-sampling/plugin` 成功，0 错误/2 条 NU1900。`static-checks.json`：ZIP 69 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
+
+交付 `artifacts/e90-hud-drag-sampling/plugin/TractorTool.SystemHud-0.4.13.zip`，5,507,522 字节，SHA256 `6373765A77B3038A9998C8753A4618934978C53B54941E5C4383E2DE68573BE6`。未自动安装或启动宿主/原生 HUD/真实采样，未读用户配置/硬件/凭据；原生拖动、跨屏及真实位置保存仍待用户复测。保留用户 .gitignore/.vscode/launch.json 改动，仅本地提交。

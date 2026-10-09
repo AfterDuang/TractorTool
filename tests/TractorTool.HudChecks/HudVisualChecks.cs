@@ -311,7 +311,51 @@ internal static class HudVisualChecks
                         }
                     }
                 }
+                CheckPositionSave();
                 if (failures.Count == 0) Console.WriteLine("PASS HUD editor: visual colors, inclusive rule, independent rotation saves/rollback, timed Net -> CPU -> Net, detail pause/strip resume and draft isolation.");
+
+                void CheckPositionSave()
+                {
+                    // Exercise the drag callback without starting a native window or real sampler.
+                    const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                    var save = typeof(HudModel).GetMethod("SavePosition", flags)!;
+                    var reset = typeof(HudModel).GetField("_resetCounters", flags)!;
+                    var revision = typeof(HudModel).GetField("_revision", flags)!;
+                    var pending = typeof(HudModel).GetField("_sampleCancellation", flags)!;
+                    using var request = new CancellationTokenSource();
+                    pending.SetValue(model, request); reset.SetValue(model, false);
+                    var beforeRevision = revision.GetValue(model);
+                    var beforeDisplay = model.Display;
+                    var beforeProfile = memory.Saved;
+                    var beforeSettings = memory.Hud;
+                    model.Scale = 1.5; model.TitleTemplate = "未保存的拖动草稿";
+                    var draftDisplay = model.EditorDisplay;
+                    try
+                    {
+                        save.Invoke(model, [new HudSettings { ScreenName = "test-screen", Monitor = 2, PositionX = .3, PositionY = .4, Scale = 2 }]);
+                        var placed = beforeSettings with { ScreenName = "test-screen", Monitor = 2, PositionX = .3, PositionY = .4 };
+                        if (memory.Hud != placed || memory.Saved != beforeProfile || model.Scale != 1.5
+                            || !model.HasDraftChanges || !ReferenceEquals(draftDisplay, model.EditorDisplay))
+                            failures.Add("Dragging must save only position and preserve unsaved preferences/profile edits.");
+                        var count = memory.Writes;
+                        save.Invoke(model, [placed]);
+                        if (memory.Writes != count) failures.Add("An unchanged drag position must not be saved again.");
+                        memory.FailSave = true;
+                        save.Invoke(model, [placed with { PositionX = .8 }]);
+                        memory.FailSave = false;
+                        var current = (HudSettings)typeof(HudModel).GetField("_settings", flags)!.GetValue(model)!;
+                        if (memory.Hud != placed || current != placed || !model.Status.Contains("设置保存失败"))
+                            failures.Add("Failed position saves must retain the last persisted position and report the failure.");
+                        if (request.IsCancellationRequested || (bool)reset.GetValue(model)! || !Equals(beforeRevision, revision.GetValue(model))
+                            || !ReferenceEquals(beforeDisplay, model.Display))
+                            failures.Add("Dragging must not cancel in-flight sampling, invalidate counter baselines or clear the current reading.");
+                        model.ApplyPreferencesCommand.Execute(null);
+                        if (!request.IsCancellationRequested || !(bool)reset.GetValue(model)!)
+                            failures.Add("Applying preferences must still invalidate sampling when settings change.");
+                        Console.WriteLine("CHECK HUD position: saved/unchanged/failed placement, draft isolation and sampling continuity.");
+                    }
+                    finally { memory.FailSave = false; pending.SetValue(model, null); }
+                }
 
                 void WaitForProfile(string name)
                 {
@@ -513,6 +557,7 @@ internal static class HudVisualChecks
     private sealed class MemorySettings : IPluginSettingsStore, IAppLog
     {
         public HudProfiles Saved { get; private set; }
+        public HudSettings Hud { get; private set; } = new() { Animate = false };
         public bool FailSave { get; set; }
         public int Writes { get; private set; }
         public List<string> Errors { get; } = [];
@@ -522,13 +567,15 @@ internal static class HudVisualChecks
             Saved = new() { Profiles = [first, new() { Name = "CPU", Metric = 2 }], ActiveId = first.Id };
         }
         public T Load<T>(string name) where T : IVersionedSettings, new()
-            => typeof(T) == typeof(HudSettings) ? (T)(IVersionedSettings)new HudSettings { Animate = false }
+            => typeof(T) == typeof(HudSettings) ? (T)(IVersionedSettings)Hud
                 : typeof(T) == typeof(HudProfiles) ? (T)(IVersionedSettings)Saved : new T();
         public void Save<T>(string name, T value) where T : IVersionedSettings, new()
         {
             if (FailSave) throw new IOException("Simulated save failure.");
-            if (value is not HudProfiles profiles) throw new InvalidOperationException("This check may only save in-memory profiles.");
-            Saved = profiles; Writes++;
+            if (value is HudProfiles profiles) Saved = profiles;
+            else if (value is HudSettings hud) Hud = hud;
+            else throw new InvalidOperationException("This check may only save in-memory HUD settings/profiles.");
+            Writes++;
         }
         public void Write(string source, string message, Exception? error = null) => Errors.Add(message);
     }

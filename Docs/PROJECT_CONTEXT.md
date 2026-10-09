@@ -4,17 +4,17 @@
 
 ## 1. 当前工作
 
-宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。最新约定：凡需修改宿主、Core、Contracts、公共 UI 等软件框架代码，先停下说明原因和影响，交由用户安排架构侧分析；不要凭后续“继续”自行更改框架。约定已进入根 AGENTS.md。
+宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。涉及宿主、Core、Contracts、公共 UI 的插件需求，仍遵守 AGENTS.md 的框架边界约定。
 
-本轮 E89 为 SystemHud 0.4.12。用户最新更正图标应从 Fluent 功能图标库选取，不限定 Emoji。导航/设置改用 Microsoft Fluent System Icons 的 Gauge 彩色仪表盘；固定提交 SVG 仅转换为透明 256×256 PNG，原始 SVG、MIT 许可及来源齐全。未新增依赖或修改框架。保留 E88 更名“系统数据HUD”、左侧两个双向状态开关、删除左侧预览和旧托盘暂停/预览/下一方案；插件 ID/设置 schema 不变。
+本轮 E90 为 SystemHud 0.4.13，修复拖动保存位置错误重置采样：SavePosition 原来复用 Save 时触发 InvalidateSample，取消在途读取并清空 CPU/网速基线；下一次读取只能建立基线，因此短暂显示“—”。现移除通用保存路径中的失效动作；保存位置保留在途采样、计数基线和显示，保存偏好仍通过原 EndPreview 路径使采样失效。失败回退、只合并位置及草稿隔离保留。
 
-**尚未完成：托盘分隔线与动态方案菜单。** 公开 UI 1.5 只有注册期 Add/状态 Update，宿主在 Commit 后禁止增加项目，无分隔线/删除接口。按 AGENTS 先交架构侧，需求及源码入口见[托盘接口交接](Plugins/SystemHud.md#tray-menu-pending)。当前包托盘仅有“显示 HUD”，不得说整项已完成；不使用反射、文字横线或固定占位项目绕过边界。
+**用户最新决定：托盘方案列表先不做。** 用户确认目标仍是“系统数据HUD”子菜单中的已保存方案；当前公开 UI 1.5 仅注册期 Add 和项目状态 Update，无法提供分隔线及运行期增删。用户明确如缺少宿主实时更新支持则先不实现。本轮不改菜单、框架或注册接口，也不自动推进架构改造；需求及接口事实留在[暂缓记录](Plugins/SystemHud.md#tray-menu-pending)。
 
-保留 E87 单预览卡片、文字/颜色按 640 DIP 内容宽度分组，E86 可视化选色/条件说明/轮播独立保存与失败回退，及 E85 固定长条/详情布局和原交互。右侧“预览草稿”及左侧轮播“下一个方案”保留；删除的是左侧当前方案预览与托盘快捷项。显示/暂停是临时运行状态，不自动保存偏好或编辑草稿。
+保留 E89 Fluent System Icons Gauge 彩色图标、E88 更名/双滑块、E87 合并预览/紧凑表单及原布局、轮播和颜色规则。仅调整采样失效触发，稳定 ID/设置 schema 不变。
 
-E88 已授权 HUD --ui-only 的双滑块初始绑定/禁用保护、内存托盘注册及原布局/颜色/轮播回归通过；E89 仅替换素材，不重复执行应用检查。本轮查看 256 像素图标及浅深背景 24/32 像素预览，透明留白完整。未启动宿主/原生 HUD/托盘，运行后滑块点击/拖动仍未验证，不读真实配置/硬件/凭据。
+沿用用户已授权 HUD --ui-only：新增位置保存成功/无变化/失败、草稿隔离、采样基线/在途取消与保存偏好失效检查。旧代码准确复现 1 项失败，修复后全部通过，零绑定错误/检查失败；没有启动宿主、原生 HUD 或真实采样。专项构建 0 错误/3 条 NU1900，独立插件构建 0 错误/2 条 NU1900，均因网络限制无法查询 NuGet 漏洞数据；审计未记为通过。
 
-E89 引用 E67 SDK 独立构建成功，0 错误，网络限制导致 2 条 NU1900 漏洞查询警告；没有隐藏警告。ZIP 69 文件一致，含新图标及对应许可，无旧 Emoji 许可/共享 SDK 副本，234 个宿主文件未变。产物 artifacts/e89-hud-fluent-icon/plugin/TractorTool.SystemHud-0.4.12.zip，证据见 [E89](PROJECT_HISTORY.md#evidence-hud-fluent-icon)。未自动安装；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
+产物 artifacts/e90-hud-drag-sampling/plugin/TractorTool.SystemHud-0.4.13.zip。69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析；证据见 [E90](PROJECT_HISTORY.md#evidence-hud-drag-sampling)。未安装、未读真实配置/硬件；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
 
 ## 2. 保留的产品决定
 
@@ -48,4 +48,4 @@ E89 引用 E67 SDK 独立构建成功，0 错误，网络限制导致 2 条 NU19
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步由用户安排架构侧分析托盘分隔符/动态列表，再回到插件侧接方案切换和同步。0.4.12 可先安装并显式退出重启，核对新名称/Fluent 图标、显示与暂停滑块、托盘旧项删除；不把此包当作完整托盘方案菜单交付。原生动画/透明区域、DPI/跨屏、硬件/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
+下一步可安装 0.4.13 并显式退出重启，确认 CPU/网速在拖动后不再因位置保存变成“—”，同时保留读数更新和位置恢复。托盘方案列表按用户最新决定暂缓；不再安排架构侧改造作为本轮下一步。原生动画/透明区域、DPI/跨屏、硬件/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。

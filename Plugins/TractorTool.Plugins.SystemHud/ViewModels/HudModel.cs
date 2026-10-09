@@ -156,7 +156,8 @@ public partial class HudModel : ObservableObject
         settings = settings.Normalize();
         try { _context.Settings.Save("hud", settings); }
         catch (Exception ex) { ReportFailure("设置保存失败，尚未应用。请重试。", ex); return false; }
-        _settings = settings; InvalidateSample(); OnPropertyChanged(nameof(MotionEnabled));
+        // Position saves share this path; only applying preferences may invalidate sampling.
+        _settings = settings; OnPropertyChanged(nameof(MotionEnabled));
         Status = "已保存。";
         return true;
     }
