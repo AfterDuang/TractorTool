@@ -161,8 +161,8 @@ Check(NetworkMetrics.DeepSeekBalance(balance, "USD") is { Error: null, Reading.U
     && NetworkMetrics.DeepSeekBalance(balance, "CNY").Error is not null
     && NetworkMetrics.DeepSeekBalance("[]"u8.ToArray(), "USD").Error is not null, "Balance selects the exact currency and rejects malformed responses.");
 Check(HudSecrets.ValidKey("test-key") && !HudSecrets.ValidKey("key\nsecret") && !HudSecrets.ValidKey(new string('a', 1025)), "Credential header rejects whitespace and unbounded input.");
-Check((jsonProfile with { RefreshSeconds = 4 }).Error.Length > 0
-    && new HudProfile { Metric = 9, RefreshSeconds = 59 }.Error.Length > 0
+Check((jsonProfile with { SamplingSeconds = .19 }).Error.Length > 0
+    && new HudProfile { Metric = 9, SamplingSeconds = 601 }.Error.Length > 0
     && new HudProfile { Metric = 10, Drive = "\\\\server\\share" }.Error.Length > 0, "Refresh and local-drive limits apply to saved profiles too.");
 Check(HardwareMetrics.Unit(LibreHardwareMonitor.Hardware.SensorType.Temperature) == "°C", "Hardware temperature units must not be percentages.");
 var newProfiles = new HudProfiles { Profiles = [jsonProfile], ActiveId = jsonProfile.Id };
@@ -181,7 +181,7 @@ using (var sampler = new HudSampler(new NetworkMetrics(new MemoryHandler((reques
     Check((await sampler.ReadAsync(jsonProfile, false, false, "secret", default))?.Error is null, "JSON request uses in-memory handler.");
     await sampler.ReadAsync(jsonProfile, false, false, "secret", default);
     Check(requests == 1, "Carousel re-entry must honor the profile request interval.");
-    sampler.ResetNetworkCache();
+    sampler.ResetCache();
     await sampler.ReadAsync(jsonProfile, false, false, "new-secret", default);
     Check(requests == 2, "Changed credentials/settings invalidate cached results.");
 }
@@ -191,7 +191,7 @@ using (var network = new NetworkMetrics(new MemoryHandler((request, _) =>
         && request.Headers.Authorization?.ToString() == "Bearer test-key", "Credential is sent only to the fixed DeepSeek HTTPS endpoint.");
     return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(balance) });
 })))
-    Check((await network.ReadAsync(new HudProfile { Metric = 9, Currency = "USD", RefreshSeconds = 60 }, default, "test-key"))?.Error is null, "DeepSeek reads real response fields.");
+    Check((await network.ReadAsync(new HudProfile { Metric = 9, Currency = "USD", SamplingSeconds = 60 }, default, "test-key"))?.Error is null, "DeepSeek reads real response fields.");
 using (var network = new NetworkMetrics(new MemoryHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Redirect)))))
     Check((await network.ReadAsync(jsonProfile, default))?.Error?.Contains("302") == true, "Redirects are shown as failures, not followed.");
 using (var network = new NetworkMetrics(new MemoryHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)

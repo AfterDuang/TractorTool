@@ -30,7 +30,7 @@ public partial class HudModel
     [ObservableProperty] private Color _ruleColor = Color.Parse("#FF8A90");
     [ObservableProperty] private string _address = "";
     [ObservableProperty] private string _jsonPointer = "";
-    [ObservableProperty] private int _refreshSeconds = 30;
+    [ObservableProperty] private double _refreshSeconds = 1;
     [ObservableProperty] private bool _jsonPercentage;
     [ObservableProperty] private int _probeProtocol;
     [ObservableProperty] private int _port = 443;
@@ -67,6 +67,13 @@ public partial class HudModel
     public bool CanSaveProfile => SelectedProfile is not null && ProfileError.Length == 0;
     public bool CanPreviewProfile => CanSaveProfile && CanControl && !_paused;
     public bool IsNetworkMetric => Metric is 5 or 6 or 7 or 9;
+    public bool IsPollingMetric => Metric != 0;
+    public string SamplingHint => Metric == 0 ? "电量由系统事件即时更新，无需定时采样。"
+        : !double.IsFinite(RefreshSeconds) || RefreshSeconds is < .2 or > 600 ? "请输入 0.2–600 秒。"
+        : (RefreshSeconds < 1 ? $"每秒约 {1 / RefreshSeconds:0.##} 次"
+            : RefreshSeconds >= 60 ? $"每 {RefreshSeconds / 60:0.##} 分钟一次" : $"每 {RefreshSeconds:0.##} 秒一次")
+          + " · 随方案保存，轮播沿用上次读数直到到期。"
+          + (IsNetworkMetric ? " 网络接口可能限流；请求未结束时不会叠加。" : "");
     public bool HasRequestAddress => Metric is >= 5 and <= 7;
     public bool IsProbeMetric => Metric == 5;
     public bool IsTcpProbe => Metric == 5 && ProbeProtocol == 1;
@@ -81,7 +88,7 @@ public partial class HudModel
         Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
         Title = TitleTemplate, Value = ValueTemplate, Detail = DetailTemplate, Color = $"#{AccentColor.R:X2}{AccentColor.G:X2}{AccentColor.B:X2}",
         RuleEnabled = RuleEnabled, Comparison = Comparison, Threshold = Threshold, RuleColor = $"#{RuleColor.R:X2}{RuleColor.G:X2}{RuleColor.B:X2}",
-        Address = (Address ?? "").Trim(), JsonPointer = JsonPointer, RefreshSeconds = RefreshSeconds, JsonPercentage = JsonPercentage,
+        Address = (Address ?? "").Trim(), JsonPointer = JsonPointer, SamplingSeconds = RefreshSeconds, JsonPercentage = JsonPercentage,
         ProbeProtocol = ProbeProtocol, Port = Port, SensorId = SensorId, Currency = Currency, Drive = Drive
     };
 
@@ -104,9 +111,10 @@ public partial class HudModel
     }
 
     partial void OnSelectedProfileChanged(HudProfile? value) { if (value is not null) LoadProfile(value); }
-    partial void OnMetricChanged(int value)
+    partial void OnMetricChanged(int oldValue, int newValue)
     {
-        if (!_loadingEditor && value == 9 && RefreshSeconds < 60) RefreshSeconds = 60;
+        if (!_loadingEditor && RefreshSeconds == HudProfile.DefaultRefreshSeconds(oldValue))
+            RefreshSeconds = HudProfile.DefaultRefreshSeconds(newValue);
     }
     private void LoadProfile(HudProfile profile)
     {
@@ -115,7 +123,7 @@ public partial class HudModel
         TitleTemplate = profile.Title; ValueTemplate = profile.Value; DetailTemplate = profile.Detail;
         AccentColor = Color.Parse(profile.Color); RuleEnabled = profile.RuleEnabled; Comparison = profile.Comparison;
         Threshold = profile.Threshold; RuleColor = Color.Parse(profile.RuleColor);
-        Address = profile.Address; JsonPointer = profile.JsonPointer; RefreshSeconds = profile.RefreshSeconds; JsonPercentage = profile.JsonPercentage;
+        Address = profile.Address; JsonPointer = profile.JsonPointer; RefreshSeconds = profile.SamplingSeconds; JsonPercentage = profile.JsonPercentage;
         ProbeProtocol = profile.ProbeProtocol; Port = profile.Port; SensorId = profile.SensorId; Currency = profile.Currency; Drive = profile.Drive;
         SelectSavedSensor();
         _loadingEditor = false;
@@ -155,6 +163,7 @@ public partial class HudModel
             _ => new("系统运行时间", "1 天 02:30:00", "示例：系统会话运行时长")
         });
         OnPropertyChanged(nameof(IsNetworkMetric)); OnPropertyChanged(nameof(IsJsonMetric)); OnPropertyChanged(nameof(AddressHint));
+        OnPropertyChanged(nameof(IsPollingMetric)); OnPropertyChanged(nameof(SamplingHint));
         OnPropertyChanged(nameof(HasRequestAddress)); OnPropertyChanged(nameof(IsProbeMetric)); OnPropertyChanged(nameof(IsTcpProbe));
         OnPropertyChanged(nameof(IsHardwareMetric)); OnPropertyChanged(nameof(IsDeepSeekMetric)); OnPropertyChanged(nameof(IsDiskMetric));
         OnPropertyChanged(nameof(CanSwitchProfile));
@@ -197,7 +206,7 @@ public partial class HudModel
         try { _context.Settings.Save("profiles", settings); }
         catch (Exception ex) { ReportFailure("方案保存失败，尚未应用。", ex); return; }
         _profiles = settings;
-        _sampler.ResetNetworkCache();
+        _sampler.ResetCache();
         foreach (var id in _samplingErrors.Keys.Where(id => !settings.Profiles.Any(p => p.Id == id)).ToArray()) _samplingErrors.Remove(id);
         // Retain unchanged list entries; replace only edited entries to preserve selection/focus.
         for (var i = Profiles.Count - 1; i >= 0; i--) if (!settings.Profiles.Any(p => p.Id == Profiles[i].Id)) Profiles.RemoveAt(i);

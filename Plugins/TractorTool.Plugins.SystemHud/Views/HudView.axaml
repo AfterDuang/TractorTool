@@ -81,6 +81,15 @@
                   <TextBox Text="{Binding ProfileName}" MaxLength="40" AutomationProperties.Name="方案名称" />
                   <TextBlock Text="数据指标" />
                   <ComboBox ItemsSource="{Binding Metrics}" SelectedIndex="{Binding Metric}" HorizontalAlignment="Stretch" AutomationProperties.Name="方案指标" />
+                  <Grid ColumnDefinitions="Auto,152,*" ColumnSpacing="12" IsVisible="{Binding IsPollingMetric}">
+                    <TextBlock Text="采样间隔" VerticalAlignment="Center" />
+                    <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <NumericUpDown x:Name="SamplingInterval" Value="{Binding RefreshSeconds}" Minimum="0.2" Maximum="600" Increment="0.2" FormatString="0.##" AutomationProperties.Name="当前方案采样间隔秒数" />
+                      <TextBlock Grid.Column="1" Text="秒" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Grid.Column="2" Text="0.2–600 秒" Classes="caption" VerticalAlignment="Center" />
+                  </Grid>
+                  <TextBlock Text="{Binding SamplingHint}" Classes="caption" TextWrapping="Wrap" />
                   <StackPanel Spacing="8" IsVisible="{Binding HasRequestAddress}">
                     <TextBlock Text="请求地址" />
                     <TextBox Text="{Binding Address}" PlaceholderText="{Binding AddressHint}" MaxLength="2048" AutomationProperties.Name="请求地址" />
@@ -89,11 +98,6 @@
                     <ComboBox ItemsSource="{Binding ProbeProtocols}" SelectedIndex="{Binding ProbeProtocol}" HorizontalAlignment="Stretch" AutomationProperties.Name="网络探测协议" />
                     <NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" IsVisible="{Binding IsTcpProbe}" AutomationProperties.Name="TCP 端口" />
                     <TextBlock Text="ICMP 无回应不代表服务离线；TCP 只验证端口连接，不代表业务正常。" Classes="caption" TextWrapping="Wrap" />
-                  </StackPanel>
-                  <StackPanel Spacing="8" IsVisible="{Binding IsNetworkMetric}">
-                    <TextBlock Text="刷新间隔 · 秒（余额至少 60 秒）" />
-                    <NumericUpDown Value="{Binding RefreshSeconds}" Minimum="5" Maximum="3600" Increment="5" AutomationProperties.Name="网络刷新间隔秒数" />
-                    <TextBlock Text="只在当前方案显示且未暂停时请求，等待最多 4 秒；轮播不会绕过刷新间隔。" Classes="caption" TextWrapping="Wrap" />
                   </StackPanel>
                   <StackPanel Spacing="8" IsVisible="{Binding IsJsonMetric}">
                     <TextBlock Text="JSON 字段路径" />

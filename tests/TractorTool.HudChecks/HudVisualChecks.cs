@@ -46,7 +46,7 @@ internal static class HudVisualChecks
                 var reading = metric switch
                 {
                     1 => new HudReading("时钟", "00:41:55", "2026/10/08 星期四"),
-                    2 => new HudReading("CPU", "8%", "处理器使用率 · 每秒采样", 8),
+                    2 => new HudReading("CPU", "8%", "处理器使用率", 8),
                     3 => new HudReading("内存", "41%", "13.2 / 32 GiB", 41, Context: "可用 18.8 GiB · 物理内存"),
                     4 => new HudReading("网速", "↓ 551.1 KiB/s", "↑ 48.2 KiB/s · 活动接口合计", SecondaryValue: "↑ 48.2 KiB/s",
                         Context: "2 个活动接口的合计流量\n包含虚拟网卡，转发流量可能重复计入。"),
@@ -315,7 +315,50 @@ internal static class HudVisualChecks
                 CheckPositionSave();
                 CheckProfileReadings();
                 Task.Run(CheckInitialReadings).GetAwaiter().GetResult();
+                Task.Run(HudSamplingChecks.Run).GetAwaiter().GetResult();
+                CheckSamplingSettings();
                 if (failures.Count == 0) Console.WriteLine("PASS HUD editor: visual colors, inclusive rule, independent rotation saves/rollback, timed Net -> CPU -> Net, detail pause/strip resume and draft isolation.");
+
+                void CheckSamplingSettings()
+                {
+                    model.RevertProfileCommand.Execute(null);
+                    var input = view.FindControl<NumericUpDown>("SamplingInterval")!;
+                    var writes = memory.Writes;
+                    foreach (var seconds in new[] { .2, 600d })
+                    {
+                        foreach (var width in new[] { 1200, 600 })
+                        {
+                            window.Width = width; Pump(); input.BringIntoView(); Pump();
+                            var editor = input.GetVisualDescendants().OfType<TextBox>().Single();
+                            editor.Focus(); editor.SelectAll();
+                            window.KeyTextInput(seconds.ToString(System.Globalization.CultureInfo.CurrentCulture));
+                            window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                            window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None); Pump();
+                            if (model.RefreshSeconds != seconds || memory.Writes != writes || !model.HasDraftChanges)
+                                failures.Add("Typed sampling intervals must update only the current draft until saved.");
+                            if (!model.SamplingHint.Contains(seconds == .2 ? "每秒约 5 次" : "每 10 分钟一次"))
+                                failures.Add("Sampling guidance must translate seconds into an understandable frequency.");
+                            using var frame = window.CaptureRenderedFrame();
+                            frame?.Save(Path.Combine(output, $"sampling-{seconds}-{width}.png"), PngBitmapEncoderOptions.Default);
+                        }
+                    }
+                    model.SaveProfileCommand.Execute(null); Pump();
+                    if (memory.Saved.Active.SamplingSeconds != 600 || model.HasDraftChanges)
+                        failures.Add("Saving a profile must persist its own sampling interval.");
+                    model.CopyProfileCommand.Execute(null); Pump();
+                    if (model.RefreshSeconds != 600 || memory.Saved.Active.SamplingSeconds != 600)
+                        failures.Add("Copying must preserve the saved interval.");
+                    model.RefreshSeconds = .2;
+                    model.RevertProfileCommand.Execute(null);
+                    if (model.RefreshSeconds != 600 || model.HasDraftChanges)
+                        failures.Add("Reverting must restore the saved interval.");
+                    model.SelectedProfile = model.Profiles.Single(p => p.Name == "CPU");
+                    if (model.RefreshSeconds != 1) failures.Add("A different profile must retain its independent interval.");
+                    model.Metric = 0; Pump();
+                    if (input.IsEffectivelyVisible || !model.SamplingHint.Contains("系统事件"))
+                        failures.Add("Battery must explain its event-driven updates instead of offering unused polling settings.");
+                    Console.WriteLine("CHECK sampling editor: actual keyboard input at 0.2/600 seconds, 1200/600px, draft/save/copy/revert isolation and battery events.");
+                }
 
                 void CheckTypedNumbers()
                 {

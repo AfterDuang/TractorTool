@@ -25,7 +25,7 @@ internal sealed class WindowsMetrics
         var percent = _cpu is { } old ? HudCounters.Cpu(idle, kernel, user, old.Idle, old.Kernel, old.User) : null;
         _cpu = (idle, kernel, user);
         // ponytail: GetSystemTimes covers one processor group; use PDH if >64-CPU aggregate is required.
-        var scope = GetActiveProcessorGroupCount() > 1 ? "当前处理器组 · 每秒采样" : "处理器使用率 · 每秒采样";
+        var scope = GetActiveProcessorGroupCount() > 1 ? "当前处理器组" : "处理器使用率";
         return new("CPU", percent is { } p ? $"{p:0}%" : "—", percent is null ? "正在建立采样基线…" : scope, percent)
             { IsInitializing = percent is null };
     }

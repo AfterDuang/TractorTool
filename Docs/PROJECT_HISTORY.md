@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 实现与离屏验证（HUD 独立采样间隔） | [E93 · 按方案设置 0.2–600 秒与到期缓存（2026-10-09）](#evidence-hud-sampling-interval) |
 | 只读运行观察（HUD 当前进程） | [E92 · 已运行软件的一分钟性能观察（2026-10-09）](#evidence-hud-live-performance) |
 | 修正与离屏验证（HUD 输入/切换） | [E91 · 数字输入、完整读数替换及切换动效（2026-10-09）](#evidence-hud-switching) |
 | 修正与离屏验证（HUD 拖动采样） | [E90 · 位置保存不重置采样，托盘方案暂缓（2026-10-09）](#evidence-hud-drag-sampling) |
@@ -2596,3 +2597,21 @@ SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences
 - 线程 86–88，首尾均 88；句柄 944–955，首尾 949→952。
 
 原始证据 `artifacts/e92-hud-live-performance/samples.csv`、`summary.json` 和 `context.json`。当前一分钟未显示明显全机 CPU 压力或线程持续堆积；并未读取/控制活动 HUD 方案、暂停或可见状态，结果为整个 Debug 宿主进程，不能分离采样、界面、其他插件或用户交互的开销。没有测 GPU/功耗/游戏帧时间、单次硬件调用耗时、暂停对照或长期内存，不将 A26/A27 整体标为通过。本轮无生产代码/包变更、无新构建；仅保存证据及文档，本地提交，保留用户编辑器配置改动。
+
+<a id="evidence-hud-sampling-interval"></a>
+
+## E93：按方案设置 0.2–600 秒与到期缓存（2026-10-09）
+
+用户要求各参数按需设置采样频率，最多每秒 5 次、最少每 10 分钟一次。SystemHud 0.4.15 将每个方案的采样间隔放在数据指标下方，支持小数手输/增减，单位在外侧，提示换算次数/分钟；与全局轮播间隔分开保存。电量沿用系统事件；新选本地指标默认 1 秒、网络 30 秒、余额 60 秒，允许按需改到完整范围。
+
+全部非电量指标复用既有按方案缓存：保留实际读数时间及尝试起点，轮播回来尚未到期时不再次采集；完成后只安排剩余间隔的一次唤醒。网络仍有 4 秒整次上限，慢读取不叠加或补跑；隐藏/暂停取消并停计时器，仅当前指标采集，原生硬件调用仍只能等待返回。首次基线取消后保留最多 250ms 的冷却，首个可用读数后恢复设定间隔；不会因 600 秒配置而等待十分钟才重试第一笔读数。网络异常仍使用脱敏提示。
+
+宿主 JsonFileStore 要求配置 SchemaVersion 与新实例一致，因此保持 schema 1，不扩展框架：新增 SamplingSeconds 小数字段，旧网络专用 RefreshSeconds 只在插件内导入，旧本地恢复原有 1 秒、旧网络最长收敛为 600 秒；非有限数被拒绝。加载不写原文件，后续保存移除旧字段。没有新依赖，没有变更托盘暂缓决定。
+
+验证及证据：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e93-hud-sampling-interval/build`，初次还原和最终 `--no-restore` 构建均 0 错误/0 警告；日志 build.log / build-final.log。
+2. 沿用授权运行该构建的 `TractorTool.HudChecks.dll --ui-only artifacts/e93-hud-sampling-interval/final`。新增 HudSamplingChecks 仅注入内存读取委托，覆盖 0.2/600 与无效值、旧字段导入、小数回存、独立到期/轮播缓存、编辑及清缓存失效、首次基线取消与恢复、补读仍无基线时遵守慢间隔。实际键盘输入两个端点、1200/600px、保存/复制/撤销/不同方案隔离和电量事件说明通过；原布局/交互/动画/拖动/颜色/轮播回归全部通过，零绑定错误/检查失败。查看 sampling-0.2-1200.png / sampling-600-600.png，无单位/箭头挤压。日志 ui-check.log；未运行默认完整检查、原生窗口、真实采集、HTTP/硬件或用户配置。
+3. 最终 `Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e93-hud-sampling-interval/plugin-final`，0 错误/0 警告。ZIP 69 文件逐项哈希一致，无共享 SDK 副本；234 个宿主文件哈希/数量未变，5 个 AXAML 可解析，结果在 static-checks.json。
+
+最终产物 `artifacts/e93-hud-sampling-interval/plugin-final/TractorTool.SystemHud-0.4.15.zip`，5,510,464 字节，SHA256 `596C65D29C556C1F0AE114D308AB281E3ED7044810FE89ACFF14E168DB9F39C2`。未自动安装、重启或修改正在运行的软件；E92 一分钟旧版进程观察不外推为新版本 5Hz 性能证明。真实各指标耗用、慢硬件/网络行为及重启配置仍由用户验证；保留 .gitignore/.vscode/launch.json，按约定仅本地提交。

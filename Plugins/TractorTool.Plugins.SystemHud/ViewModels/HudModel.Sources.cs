@@ -39,7 +39,7 @@ public partial class HudModel
         try { _context.Settings.Save("credentials", new HudSecrets { DeepSeekKey = HudSecrets.Protect(key) }); }
         catch { KeyStatus = "密钥保存失败，原密钥未改变，请重试。"; return; }
         _deepSeekKey = key; KeyInput = ""; KeyStatus = "已保存 API Key（当前 Windows 用户加密）。";
-        _sampler.ResetNetworkCache(); InvalidateSample(); UpdateVisibility();
+        _sampler.ResetCache(); InvalidateSample(); UpdateVisibility();
     }
 
     [RelayCommand]
@@ -48,7 +48,7 @@ public partial class HudModel
         try { _context.Settings.Save("credentials", new HudSecrets()); }
         catch { KeyStatus = "密钥清除失败，请重试。"; return; }
         _deepSeekKey = ""; KeyInput = ""; KeyStatus = "已清除 API Key。";
-        _sampler.ResetNetworkCache(); InvalidateSample(); UpdateVisibility();
+        _sampler.ResetCache(); InvalidateSample(); UpdateVisibility();
     }
 
     partial void OnSelectedSensorChanged(SensorChoice? value)

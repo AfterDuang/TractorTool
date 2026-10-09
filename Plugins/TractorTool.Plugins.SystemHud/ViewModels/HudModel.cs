@@ -68,7 +68,7 @@ public partial class HudModel : ObservableObject
         LoadPreferences();
         LoadSecrets();
         InitializeProfiles();
-        _timer.Tick += (_, _) => RefreshReading();
+        _timer.Tick += (_, _) => { _timer.Stop(); RefreshReading(); };
         _preview.Tick += (_, _) => { EndPreview(); UpdateVisibility(); };
     }
 
@@ -230,9 +230,7 @@ public partial class HudModel : ObservableObject
         UpdateControls();
         if (!_paused)
         {
-            _timer.Interval = TimeSpan.FromSeconds(EffectiveProfile.IsNetwork ? EffectiveProfile.RefreshSeconds : 1);
             RefreshReading();
-            if (EffectiveProfile.Metric != 0) _timer.Start();
             UpdateRotation(true, _window.Mode, _window.IsDragging);
         }
     }
@@ -257,28 +255,19 @@ public partial class HudModel : ObservableObject
         var profile = EffectiveProfile;
         var metric = profile.Metric;
         if (metric == 0) { SetReading(_power); return; }
-        if (metric == 1)
-        {
-            var now = DateTimeOffset.Now;
-            SetReading(new("时钟", now.ToString("HH:mm:ss"), now.ToString("yyyy/MM/dd dddd"), ObservedAt: now)); return;
-        }
-        if (metric == 11)
-        {
-            var uptime = TimeSpan.FromMilliseconds(Environment.TickCount64);
-            SetReading(new("系统运行时间", $"{uptime.Days} 天 {uptime.Hours:00}:{uptime.Minutes:00}:{uptime.Seconds:00}", "当前系统会话运行时长", ObservedAt: DateTimeOffset.Now)); return;
-        }
         if (!_sampling.IsCompleted) return;
+        _timer.Stop();
         if (profile.IsNetwork && !_networkWarning)
         {
             _networkWarning = true;
             _context.Log.Write(AppLogLevel.Warning, _context.PluginId,
                 "开发优化：网络探测和 HTTP/JSON 采用方案指定间隔请求，来源未提供推送通知；仅显示当前方案时启用，隐藏/暂停/切换即取消。后续优先接入来源提供的事件通知。");
         }
-        else if (!profile.IsNetwork && !_pollWarning)
+        else if (!profile.IsNetwork && metric is not (1 or 11) && !_pollWarning)
         {
             _pollWarning = true;
             _context.Log.Write(AppLogLevel.Warning, _context.PluginId,
-                "开发优化：性能、传感器和磁盘数值暂用 1 秒采样；仅显示当前指标，隐藏/暂停即停止。当前数据源没有直接可用的数值变化通知，后续按性能证据评估优化，勿提高轮询频率。");
+                "开发优化：性能、传感器和磁盘按方案设置的间隔采样（0.2–600 秒）；只采集当前指标，隐藏/暂停停止，不重叠读取。来源暂无数值变化通知，后续按性能证据评估优化。");
         }
         var reset = _resetCounters; _resetCounters = false;
         _sampleCancellation = new();
@@ -320,6 +309,11 @@ public partial class HudModel : ObservableObject
             cancellation.Dispose();
             // A new profile can become visible while the cancelled request is still completing.
             if (!_stopped && revision != _revision) Dispatcher.UIThread.Post(RefreshReading);
+            else if (!_stopped && !_paused && _window?.IsVisible == true)
+            {
+                _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, _sampler.GetRefreshDelay(profile).TotalMilliseconds));
+                _timer.Start();
+            }
         }
     }
 
