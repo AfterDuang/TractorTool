@@ -7,7 +7,7 @@
       <ui:SettingRow Header="启用 HUD" Description="关闭主窗口到托盘后，HUD 仍可运行。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding Enabled}" AutomationProperties.Name="启用 HUD" />
       </ui:SettingRow>
-      <ui:SettingRow Header="默认常驻显示" Description="保存后立即生效，也作为下次启动时的显示方式。关闭时仅提醒或预览 6 秒。" Icon="Info">
+      <ui:SettingRow Header="默认常驻显示" Description="保存后立即生效，也作为下次启动时的显示方式。关闭时仅在电源提醒或草稿预览时显示。" Icon="Info">
         <ToggleSwitch IsChecked="{Binding AlwaysVisible}" AutomationProperties.Name="常驻显示" />
       </ui:SettingRow>
       <ui:SettingRow Header="电源变化提醒" Description="插入或拔出电源时显示电量；无电池设备会明确提示。" Icon="Info">

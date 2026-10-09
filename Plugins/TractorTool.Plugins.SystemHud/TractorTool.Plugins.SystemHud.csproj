@@ -21,6 +21,7 @@
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
     <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')" Text="HostSdkDir 必须包含已发布的 Contracts/UI DLL；无效路径不会回退到源码引用。" />

@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="using:TractorTool.Plugins.SystemHud" x:Class="TractorTool.Plugins.SystemHud.HudView" x:DataType="local:HudModel">
   <Grid RowDefinitions="Auto,*,Auto">
     <StackPanel Margin="28,26,28,20" Spacing="6">
-      <TextBlock Text="桌面状态 HUD" Classes="pageTitle" />
+      <TextBlock Text="系统数据HUD" Classes="pageTitle" />
       <TextBlock Text="选择指标，编辑桌面状态显示。" Classes="muted" />
     </StackPanel>
     <ScrollViewer x:Name="WorkspaceScroll" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled" Grid.Row="1">
@@ -15,11 +15,10 @@
                   <TextBlock Text="{Binding RuntimeState}" Classes="sectionTitle" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding ActiveProfileName, StringFormat='当前方案：{0}'}" Classes="caption" TextWrapping="Wrap" />
                 </StackPanel>
-                <WrapPanel>
-                  <Button Content="{Binding VisibilityAction}" Classes="accent" Command="{Binding ToggleVisibilityCommand}" Margin="0,0,8,8" />
-                  <Button Content="{Binding PauseAction}" Command="{Binding TogglePauseCommand}" Margin="0,0,8,8" />
-                  <Button Content="预览" Command="{Binding PreviewCommand}" ToolTip.Tip="显示当前方案 6 秒" Margin="0,0,0,8" />
-                </WrapPanel>
+                <Grid x:Name="RuntimeControls" ColumnDefinitions="*,*" ColumnSpacing="16">
+                  <ToggleSwitch x:Name="VisibilityToggle" Content="显示 HUD" IsChecked="{Binding IsHudVisible, Mode=TwoWay}" IsEnabled="{Binding CanControl}" OnContent="已显示" OffContent="已隐藏" />
+                  <ToggleSwitch x:Name="PauseToggle" Grid.Column="1" Content="暂停更新" IsChecked="{Binding IsPaused, Mode=TwoWay}" IsEnabled="{Binding CanControl}" OnContent="已暂停" OffContent="未暂停" />
+                </Grid>
                 <TextBlock Text="{Binding StartupError}" IsVisible="{Binding HasStartupError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
                 <StackPanel Spacing="8" Margin="0,12,0,0">
                   <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">

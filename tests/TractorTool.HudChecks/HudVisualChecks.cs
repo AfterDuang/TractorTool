@@ -13,6 +13,7 @@ using Avalonia.VisualTree;
 using FluentAvalonia.Styling;
 using TractorTool.Contracts;
 using TractorTool.Plugins.SystemHud;
+using TractorTool.UI;
 
 // No host lifetime, disk settings, native HUD window, sampling, credentials or network requests.
 internal static class HudVisualChecks
@@ -195,6 +196,18 @@ internal static class HudVisualChecks
                 if (model.HasDraftChanges) failures.Add("Loading lowercase saved colors must not create unsaved edits.");
                 var view = new HudView { DataContext = model };
                 window.Content = view; window.Height = 800;
+                var tray = new TrayCapture();
+                model.RegisterTray(tray);
+                Pump();
+                var visibilityToggle = view.FindControl<ToggleSwitch>("VisibilityToggle")!;
+                var pauseToggle = view.FindControl<ToggleSwitch>("PauseToggle")!;
+                model.IsHudVisible = true; model.IsPaused = true;
+                if (view.FindControl<Grid>("RuntimeControls")!.Children.Count != 2
+                    || model.IsHudVisible || model.IsPaused
+                    || visibilityToggle.IsChecked != model.IsHudVisible || pauseToggle.IsChecked != model.IsPaused
+                    || visibilityToggle.IsEffectivelyEnabled || pauseToggle.IsEffectivelyEnabled
+                    || tray.State is not { Text: "显示 HUD", IsEnabled: false, IsChecked: false })
+                    failures.Add("Runtime controls must bind actual state and stay disabled before startup; tray must retain only visibility.");
                 view.FindControl<Expander>("AppearanceExpander")!.IsExpanded = true;
                 foreach (var width in new[] { 1600, 1200, 800, 600, 1200 })
                 {
@@ -483,6 +496,18 @@ internal static class HudVisualChecks
                 }
             }
         }
+    }
+
+    private sealed class TrayCapture : IPluginTrayMenu, IPluginTrayItem
+    {
+        public PluginTrayItemState? State { get; private set; }
+        public IPluginTrayItem Add(string id, PluginTrayItemState state, Func<CancellationToken, Task> execute)
+        {
+            if (id != "visible" || State is not null) throw new InvalidOperationException("Retired tray commands must not be registered.");
+            State = state;
+            return this;
+        }
+        public void Update(PluginTrayItemState state) => State = state;
     }
 
     private sealed class MemorySettings : IPluginSettingsStore, IAppLog

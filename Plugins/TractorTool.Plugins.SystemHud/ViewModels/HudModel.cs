@@ -24,7 +24,7 @@ public partial class HudModel : ObservableObject
     private HudReading _power = new("电量", "—", "正在读取电源状态…");
     private string _powerError = "";
     private readonly Dictionary<Guid, string> _samplingErrors = [];
-    private IPluginTrayItem? _visibilityItem, _pauseItem, _previewItem, _nextItem;
+    private IPluginTrayItem? _visibilityItem;
 
     public string[] Metrics { get; } = ["电量", "时钟", "CPU 使用率", "内存占用", "网络速度", "网络延迟（ICMP/TCP）", "HTTP 服务", "HTTP/JSON 指标", "硬件传感器（GPU / 温度等）", "DeepSeek 余额", "磁盘空间", "系统运行时间"];
     [ObservableProperty] private bool _enabled = true;
@@ -34,7 +34,7 @@ public partial class HudModel : ObservableObject
     [ObservableProperty] private bool _animate = true;
     [ObservableProperty] private int _metric;
     [ObservableProperty] private double _scale = 1;
-    [ObservableProperty] private string _status = "拖动桌面 HUD 可自动保存位置；桌面预览持续 6 秒。";
+    [ObservableProperty] private string _status = "拖动桌面 HUD 可自动保存位置。";
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStartupError))]
     private string _startupError = "";
@@ -42,8 +42,16 @@ public partial class HudModel : ObservableObject
     public bool CanControl => _ready && !_stopped && _settings.Enabled;
     public bool MotionEnabled => _settings.Animate;
     public string PlacementHint => _settings.ClickThrough ? "点击穿透已开启；在插件设置中关闭后可点击或拖动桌面 HUD。" : "单击切换默认与长条；双击展开详情，再次双击回到默认。按住顶部拖动，松手保存位置。";
-    public string VisibilityAction => _window?.IsVisible == true ? "隐藏 HUD" : "常驻显示 HUD";
-    public string PauseAction => _paused ? "恢复更新" : "暂停更新";
+    public bool IsHudVisible
+    {
+        get => !_stopped && _window?.IsVisible == true;
+        set { if (value != IsHudVisible) ToggleVisibility(); }
+    }
+    public bool IsPaused
+    {
+        get => _paused;
+        set { if (value != IsPaused) TogglePause(); }
+    }
     public string RuntimeState => HasStartupError ? "启动失败" : _stopped ? "已停止" : !_ready ? "正在启动"
         : !_settings.Enabled ? "已关闭 · 可在插件设置中启用" : _paused ? "已暂停"
         : _window?.IsVisible == true ? "正在显示" : "待命 · 等待电源变化或手动显示";
@@ -125,14 +133,6 @@ public partial class HudModel : ObservableObject
     public void RegisterTray(IPluginTrayMenu menu)
     {
         _visibilityItem = menu.Add("visible", new("显示 HUD", IsEnabled: false, IsChecked: false), _ => { ToggleVisibility(); return Task.CompletedTask; });
-        _pauseItem = menu.Add("pause", new("暂停更新", IsEnabled: false, IsChecked: false), _ => { TogglePause(); return Task.CompletedTask; });
-        _previewItem = menu.Add("preview", new("预览 6 秒", IsEnabled: false), _ => { Preview(); return Task.CompletedTask; });
-        _nextItem = menu.Add("next", new("下一个方案", IsEnabled: false), _ =>
-        {
-            if (!CanControl) return Task.CompletedTask;
-            NextProfile();
-            return Task.CompletedTask;
-        });
         UpdateControls();
     }
 
@@ -174,15 +174,6 @@ public partial class HudModel : ObservableObject
 
     private void PresentationFailed(Exception ex) => ReportFailure("HUD 窗口轮廓更新失败，已隐藏；可重试显示。", ex);
 
-    [RelayCommand(CanExecute = nameof(CanControl))]
-    private void Preview()
-    {
-        if (!CanControl) return;
-        EndPreview(); _preview.Start();
-        UpdateVisibility();
-    }
-
-    [RelayCommand(CanExecute = nameof(CanControl))]
     private void ToggleVisibility()
     {
         if (!CanControl) return;
@@ -190,7 +181,6 @@ public partial class HudModel : ObservableObject
         EndPreview(); UpdateVisibility();
     }
 
-    [RelayCommand(CanExecute = nameof(CanControl))]
     private void TogglePause()
     {
         if (!CanControl) return;
@@ -249,15 +239,11 @@ public partial class HudModel : ObservableObject
     private void UpdateControls()
     {
         OnPropertyChanged(nameof(CanControl)); OnPropertyChanged(nameof(RuntimeState));
-        OnPropertyChanged(nameof(VisibilityAction)); OnPropertyChanged(nameof(PauseAction));
-        ToggleVisibilityCommand.NotifyCanExecuteChanged(); TogglePauseCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsHudVisible)); OnPropertyChanged(nameof(IsPaused));
         PreviewProfileCommand.NotifyCanExecuteChanged();
         ScanSensorsCommand.NotifyCanExecuteChanged();
         NextProfileCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(RotationStatus));
-        _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: _window?.IsVisible == true));
-        _pauseItem?.Update(new("暂停更新", IsEnabled: CanControl, IsChecked: _paused));
-        _previewItem?.Update(new("预览 6 秒", IsEnabled: CanControl));
-        _nextItem?.Update(new("下一个方案", IsEnabled: CanControl && _profiles.Profiles.Length > 1));
+        _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: IsHudVisible));
     }
 
     // Never mutate the counters while the worker is reading them. Reset at the next sample instead.

@@ -16,6 +16,7 @@
 | --- | --- |
 | 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
 | 页面与离屏验证（HUD 编辑分组） | [E87 · 编辑预览合并与紧凑表单（2026-10-08）](#evidence-hud-preview-panel) |
+| 插件调整与接口交接（HUD 开关/图标） | [E88 · 系统数据HUD 名称、现成图标与双开关（2026-10-09）](#evidence-hud-controls) |
 | 修正与离屏验证（HUD 稳定宽度） | [E85 · 稳定长条与完整余额标题（2026-10-08）](#evidence-hud-stable-strip) |
 | 修正与离屏验证（HUD 自适应） | [E84 · 图标描边、内容收紧与长条/时间对齐（2026-10-08）](#evidence-hud-content-sizing) |
 | 修正与离屏验证（HUD 身份组） | [E83 · 所有指标统一图标与名称横排（2026-10-08）](#evidence-hud-inline-identity) |
@@ -2503,3 +2504,21 @@ SystemHud 0.3.5：
 3. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e87-hud-preview-panel/plugin` 独立构建，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：ZIP 67 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析。
 
 交付 `artifacts/e87-hud-preview-panel/plugin/TractorTool.SystemHud-0.4.10.zip`，5,493,776 字节，SHA256 `0D3E3B330C379563B66E2AC426ED2090EC4A2F23564F126E4447647839883E36`。未自动安装或运行主程序/原生 HUD，未读真实配置、采样、硬件、凭据或网络；真实 UI/DPI、磁盘保存与重启仍待用户确认。保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
+
+<a id="evidence-hud-controls"></a>
+
+## E88：系统数据HUD 名称、现成图标与双开关（2026-10-09）
+
+用户要求托盘保留“显示 HUD”、分隔线下直接选保存方案，删除暂停/预览/下一个方案；左侧删预览、显示和暂停改滑块，并更名换图标。核对 UI 1.5 与宿主实现发现仅注册时允许 Add，没有分隔线/删除或运行期集合更新。遵循 AGENTS 框架边界停止该项，未改宿主/Core/Contracts/UI；完整方案菜单仍待架构侧，[交接](Plugins/SystemHud.md#tray-menu-pending)保留在当前文档。0.4.11 只移除旧三项，托盘保留显示项。
+
+插件名、导航、设置及窗口标题统一为“系统数据HUD”，稳定 ID/schema 不变。主页面复用原显示/暂停逻辑，改用双向 IsChecked 状态绑定并绑定 CanControl 禁用，删除无消费者的当前方案预览方法/命令；右侧“预览草稿”与电源提醒的到期计时保留。核对 [Avalonia 12.1.2 ToggleSwitch 源码](https://raw.githubusercontent.com/AvaloniaUI/Avalonia/12.1.2/src/Avalonia.Controls/ToggleSwitch.cs)：拖动旋钮直接写 IsChecked，并不走按钮命令，因此使用双向状态绑定覆盖点击及拖动路径。
+
+用户在生成调用期间更正应复用独立插件图标方式，生成调用已中止，未采用生成图片。实际追查到独立插件的拼图来自 Microsoft Fluent Emoji，HUD 使用同一固定提交 `1ffb34c752ecf5d402f04cfb4b392c77f57c54bc` 的 `assets/Bar chart/3D/bar_chart_3d.png` 原图；256×256、38,652 字节，SHA256 `0D83833E992B128AA00B85220FC2F777516BBDEB92E9E1E019A7B715ECC6EF97`。Assets 路径通过已有 IconPath 注册，MIT 许可随包，未新增库或修改公共图标枚举。
+
+证据根目录 `artifacts/e88-hud-controls`：
+
+1. `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e88-hud-controls/build --force` 首次还原，最终 `--no-restore`。`checks-build.txt` 0 警告/0 错误。
+2. 沿用 HUD 离屏授权执行 `dotnet artifacts/e88-hud-controls/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e88-hud-controls/final`。新增双滑块初始状态/禁用和不可控时 setter 保护、内存托盘只保留显示项断言；原四档宽度/颜色/轮播/输入等回归通过，`final/bindings.txt`、`final/failures.txt` 为空。实际查看 1600 宽页面 PNG 及原始图标；禁用外观来自未启动真实模型的夹具，不能证明真实托盘或运行后滑块已验收。
+3. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e88-hud-controls/release`，`plugin-build.txt` 0 警告/0 错误。`static-checks.json`：69 个 ZIP 文件逐项哈希一致，图标/许可和更名清单齐全，无共享 SDK 副本；234 个宿主文件未变、5 个 AXAML 可解析。早期 `plugin/` 目录为最终措辞调整前的包，交付只用 `release/`。
+
+阶段产物 `artifacts/e88-hud-controls/release/TractorTool.SystemHud-0.4.11.zip`，5,531,747 字节，SHA256 `71E743BEBC32BC0C9862823C1BAC2D2E190E0B62B8BAE124F399EEF6D12C75CD`。未自动安装、运行主程序/原生 HUD/托盘或读取真实配置/硬件/凭据，默认逻辑/网络检查未执行。真实开关点击/拖动、托盘显示同步、侧栏图标/DPI 需安装后显式退出重启确认；动态方案菜单仍未实现。保留用户 .gitignore/.vscode/launch.json，只本地提交。

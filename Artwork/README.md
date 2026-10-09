@@ -21,8 +21,9 @@
 | `TractorTool/Assets/Icons/tools.png` | `assets/Toolbox/3D/toolbox_3d.png` |
 | `TractorTool/Assets/Icons/settings.png` | `assets/Gear/3D/gear_3d.png` |
 | `tests/IndependentPlugin/Assets/icon.png` | `assets/Puzzle piece/3D/puzzle_piece_3d.png` |
+| `Plugins/TractorTool.Plugins.SystemHud/Assets/icon.png` | `assets/Bar chart/3D/bar_chart_3d.png` |
 
-这些素材使用 MIT 许可，完整声明随宿主 [第三方通知](../THIRD-PARTY-NOTICES.md) 发布；示例插件另携带 `Assets/LICENSE-FluentEmoji.txt`。原始下载地址与 SHA256 记录在 `artifacts/reference-emoji/assets.json`。它们不是参考软件的品牌素材，也不替换 TractorTool 应用/托盘图标。常规设置操作继续复用 FluentAvalonia 的单色符号。
+这些素材使用 MIT 许可，完整声明随宿主 [第三方通知](../THIRD-PARTY-NOTICES.md) 发布；示例插件及系统数据HUD 各携带 `Assets/LICENSE-FluentEmoji.txt`。原始下载地址与 SHA256 记录在 `artifacts/reference-emoji/assets.json`；后加的系统数据HUD 柱状图见[插件声明](../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)，SHA256 为 `0D83833E992B128AA00B85220FC2F777516BBDEB92E9E1E019A7B715ECC6EF97`。它们不是参考软件的品牌素材，也不替换 TractorTool 应用/托盘图标。常规设置操作继续复用 FluentAvalonia 的单色符号。
 
 ## 应用图标生成记录
 
