@@ -203,7 +203,7 @@ public partial class HudModel : ObservableObject
             _ac = power.Ac; _power = power.Reading with { ObservedAt = DateTimeOffset.Now, Unit = "%" }; _powerError = "";
             if (changed && _settings.Enabled && _settings.PowerReminder)
             {
-                _powerPreview = true; _draftPreview = null; _preview.Stop(); _preview.Start();
+                _powerPreview = true; _preview.Stop(); _preview.Start();
                 _context.Log.Write(_context.PluginId, "电源状态变化：" + _power.Detail);
                 InvalidateSample(); UpdateVisibility();
             }
@@ -239,7 +239,6 @@ public partial class HudModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanControl)); OnPropertyChanged(nameof(RuntimeState));
         OnPropertyChanged(nameof(IsHudVisible)); OnPropertyChanged(nameof(IsPaused));
-        PreviewProfileCommand.NotifyCanExecuteChanged();
         ScanSensorsCommand.NotifyCanExecuteChanged();
         NextProfileCommand.NotifyCanExecuteChanged(); OnPropertyChanged(nameof(RotationStatus));
         _visibilityItem?.Update(new("显示 HUD", IsEnabled: CanControl, IsChecked: IsHudVisible));

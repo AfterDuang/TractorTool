@@ -68,7 +68,6 @@
                 </WrapPanel>
                 <WrapPanel>
                   <Button Content="保存并使用" Classes="accent" Command="{Binding SaveProfileCommand}" Margin="0,0,8,8" />
-                  <Button Content="预览草稿" Command="{Binding PreviewProfileCommand}" Margin="0,0,8,8" />
                   <Button Content="撤销修改" Command="{Binding RevertProfileCommand}" Margin="0,0,8,8" />
                 </WrapPanel>
                 <TextBlock Text="有未保存的修改，保存或撤销后可以切换方案。" Classes="caption" IsVisible="{Binding HasDraftChanges}" TextWrapping="Wrap" />

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 界面精简（HUD 草稿预览） | [E95 · 删除桌面草稿预览入口与逻辑（2026-10-09）](#evidence-hud-remove-draft-preview) |
 | 全量代码审查（HUD 插件） | [E94 · 三名子代理全量 Review，2 项 P2 待修复（2026-10-09）](#evidence-hud-full-review) |
 | 实现与离屏验证（HUD 独立采样间隔） | [E93 · 按方案设置 0.2–600 秒与到期缓存（2026-10-09）](#evidence-hud-sampling-interval) |
 | 只读运行观察（HUD 当前进程） | [E92 · 已运行软件的一分钟性能观察（2026-10-09）](#evidence-hud-live-performance) |
@@ -2631,3 +2632,13 @@ SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences
 UI 审查没有其他可确认发现，预览计时在长条/详情/拖动时暂停、收起/拖完恢复，显式隐藏清标记的路径闭合。网络限时/响应体上限/取消/脱敏、固定 DeepSeek 地址及独立 Bearer、原子保存失败保持内存旧值、草稿与轮播隔离、DPAPI 当前用户加密未发现新的确定缺陷；这不替代运行验收。另有密钥保存/清除失败及坏密文恢复测试缺口，不另计为确定故障。
 
 本轮没有新构建、检查程序、原生 UI、真实硬件/网络/DPAPI 或用户配置访问；E93 测试仍只是原快照的既有证据。生产代码/版本/安装包未修改，仅维护当前台账、交接与本记录；保留用户 .gitignore/.vscode/launch.json，按约定本地提交。建议先修复以上两项并补回归，再推进原生跨屏/DPI/退出竞争与高频采样性能验证。
+
+<a id="evidence-hud-remove-draft-preview"></a>
+
+## E95：删除桌面草稿预览入口与逻辑（2026-10-09）
+
+用户截图指定删除右侧“预览草稿”。SystemHud 0.4.16 移除按钮、PreviewProfileCommand/CanPreviewProfile、_draftPreview 快照、对应状态文案及轮播暂停条件；EffectiveProfile 仅在电源提醒和已保存活动方案之间选择。保留左侧随编辑更新的示例预览、保存并使用/撤销、共享轮播，以及电源提醒/手动下一方案所需的六秒临时显示；同步插件设置说明。只改插件，未扩展框架或配置格式；E94 的两项 P2 未在本次请求中修复，仍列为待办。
+
+验证：`dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e95-hud-remove-draft-preview/build` 通过，0 错误/0 警告。沿用已授权运行生成的 HudChecks.dll `--ui-only artifacts/e95-hud-remove-draft-preview/final`，全部既有离屏与内存数据回归通过，零绑定错误/检查失败；没有为按钮删除新增重复测试。已查看 sampling-0.2-1200.png，操作区只有“保存并使用”“撤销修改”，左侧编辑预览保留；生产源码无 PreviewProfile/CanPreviewProfile/_draftPreview 残留。日志 build.log/ui-check.log；未运行默认完整检查、原生窗口或真实硬件/HTTP。
+
+使用 Build-Plugin.ps1 引用 artifacts/e67-review-fix/host 独立构建，0 错误/0 警告。产物 `artifacts/e95-hud-remove-draft-preview/plugin/TractorTool.SystemHud-0.4.16.zip`，5,509,593 字节，SHA256 `40B64F435656271E1CE356DC2671744DD33358EC02CB3D39DA7704BA703179C2`。69 文件 ZIP 与输出逐项哈希一致、无共享 SDK 副本、234 个宿主文件哈希及数量未变，5 个 AXAML 可解析；证据在 static-checks.json/package.log。未自动安装、退出重启或操作用户软件/配置；保留 .gitignore/.vscode/launch.json，仅本地提交。

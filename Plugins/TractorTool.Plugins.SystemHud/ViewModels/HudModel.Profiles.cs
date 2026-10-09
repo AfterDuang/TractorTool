@@ -12,7 +12,6 @@ public partial class HudModel
 {
     private HudProfiles _profiles = new();
     private HudProfile _activeProfile = new();
-    private HudProfile? _draftPreview;
     private static readonly HudProfile PowerProfile = new();
     private readonly DispatcherTimer _rotation = new();
     private bool _loadingEditor;
@@ -52,7 +51,6 @@ public partial class HudModel
         : !CanControl ? "已开启轮播 · HUD 当前不可用，请先启用或检查启动状态。"
         : _paused ? "轮播已暂停 · 恢复更新后继续。"
         : _powerPreview ? "电源提醒中 · 提醒结束后继续轮播。"
-        : _draftPreview is not null ? "正在预览草稿 · 预览结束后继续轮播。"
         : _window is { IsDragging: true } ? "拖动期间暂停轮播。"
         : _window?.Mode == HudMode.Detail ? "查看详情时暂停轮播 · 收起后继续。"
         : "已开启轮播 · 常驻显示 HUD 后开始。";
@@ -65,7 +63,6 @@ public partial class HudModel
     public bool CanAddProfile => CanSwitchProfile && Profiles.Count < 32;
     public bool CanDeleteProfile => CanSwitchProfile && Profiles.Count > 1;
     public bool CanSaveProfile => SelectedProfile is not null && ProfileError.Length == 0;
-    public bool CanPreviewProfile => CanSaveProfile && CanControl && !_paused;
     public bool IsNetworkMetric => Metric is 5 or 6 or 7 or 9;
     public bool IsPollingMetric => Metric != 0;
     public string SamplingHint => Metric == 0 ? "电量由系统事件即时更新，无需定时采样。"
@@ -82,7 +79,7 @@ public partial class HudModel
     public bool IsDiskMetric => Metric == 10;
     public bool IsJsonMetric => Metric == 7;
     public string AddressHint => Metric == 5 ? "主机名或 IP，例如 192.168.1.1" : "HTTP/HTTPS 地址，例如 http://localhost:8080/status";
-    private HudProfile EffectiveProfile => _powerPreview ? PowerProfile : _draftPreview ?? _activeProfile;
+    private HudProfile EffectiveProfile => _powerPreview ? PowerProfile : _activeProfile;
     private HudProfile Draft => new()
     {
         Id = SelectedProfile?.Id ?? Guid.Empty, Name = (ProfileName ?? "").Trim(), Metric = Metric,
@@ -169,7 +166,7 @@ public partial class HudModel
         OnPropertyChanged(nameof(CanSwitchProfile));
         OnPropertyChanged(nameof(SupportsColorRule)); OnPropertyChanged(nameof(ColorRuleHint));
         AddProfileCommand.NotifyCanExecuteChanged(); CopyProfileCommand.NotifyCanExecuteChanged(); DeleteProfileCommand.NotifyCanExecuteChanged();
-        SaveProfileCommand.NotifyCanExecuteChanged(); PreviewProfileCommand.NotifyCanExecuteChanged();
+        SaveProfileCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanAddProfile))]
@@ -246,7 +243,7 @@ public partial class HudModel
     internal void UpdateRotation(bool visible, HudMode mode, bool dragging)
     {
         var run = !_stopped && visible && !_paused && _profiles.Rotate && _profiles.Profiles.Length > 1
-            && !_powerPreview && _draftPreview is null && !dragging && mode != HudMode.Detail;
+            && !_powerPreview && !dragging && mode != HudMode.Detail;
         var interval = TimeSpan.FromSeconds(_profiles.Seconds);
         if (!run || _rotation.Interval != interval) _rotation.Stop();
         _rotation.Interval = interval;
@@ -257,13 +254,6 @@ public partial class HudModel
     [RelayCommand(CanExecute = nameof(CanNextProfile))]
     private void NextProfile() => AdvanceProfile(preview: true);
 
-    [RelayCommand(CanExecute = nameof(CanPreviewProfile))]
-    private void PreviewProfile()
-    {
-        if (!CanPreviewProfile) return;
-        _draftPreview = Draft; _powerPreview = false; InvalidateSample();
-        _preview.Stop(); _preview.Start(); UpdateVisibility();
-    }
     private void AdvanceProfile(bool preview = false)
     {
         if (preview) { EndPreview(); _preview.Start(); }
@@ -279,11 +269,11 @@ public partial class HudModel
     {
         if (reading.IsInitializing) return;
         Display = EffectiveProfile.Render(reading);
-        if (!_powerPreview && _draftPreview is null) _activeDisplay = Display;
+        if (!_powerPreview) _activeDisplay = Display;
     }
     private void EndPreview()
     {
-        _preview.Stop(); _resumePreviewAfterInteraction = false; _powerPreview = false; _draftPreview = null;
+        _preview.Stop(); _resumePreviewAfterInteraction = false; _powerPreview = false;
         Display = _activeDisplay; InvalidateSample();
     }
 }
