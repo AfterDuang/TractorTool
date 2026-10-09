@@ -45,12 +45,14 @@ public static class HudPresentation
         var updated = reading.ObservedAt?.ToString("HH:mm:ss", CultureInfo.CurrentCulture);
         var footer = updated is not null && !headerText.Append(body).Any(t => t.Contains(updated)) ? $"更新于 {updated}" : "";
         var layout = new HudLayout(new(icon, Text(value), identity), strip, expanded, Text(body));
-        return new(title, value, detail, accent, layout, footer);
+        return new(title, value, detail, accent, layout, footer) { ProfileId = profile.Id, Metric = profile.Metric };
     }
 }
 
 public sealed record HudDisplay(string Title, string Value, string Detail, IBrush Accent, HudLayout Layout, string Updated)
 {
+    public Guid ProfileId { get; init; }
+    public int Metric { get; init; }
     public string Summary => $"{Title} · {Value}\n{Detail}";
     internal static string IconFor(int icon) => Icons[Math.Clamp(icon, 0, Icons.Length - 1)];
 

@@ -263,12 +263,12 @@ public partial class HudModel
     private void ActivateProfile(HudProfile profile)
     {
         _activeProfile = profile;
-        _activeDisplay = profile.Render(new(Metrics[profile.Metric], "—", "等待新读数"));
-        Display = _activeDisplay;
+        // Keep the complete previous display until the new profile has a reading.
         InvalidateSample(); OnPropertyChanged(nameof(ActiveProfileName));
     }
     private void SetReading(HudReading reading)
     {
+        if (reading.IsInitializing) return;
         Display = EffectiveProfile.Render(reading);
         if (!_powerPreview && _draftPreview is null) _activeDisplay = Display;
     }

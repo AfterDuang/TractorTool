@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 修正与离屏验证（HUD 输入/切换） | [E91 · 数字输入、完整读数替换及切换动效（2026-10-09）](#evidence-hud-switching) |
 | 修正与离屏验证（HUD 拖动采样） | [E90 · 位置保存不重置采样，托盘方案暂缓（2026-10-09）](#evidence-hud-drag-sampling) |
 | 素材替换（HUD Fluent 功能图标） | [E89 · Gauge 彩色仪表盘（2026-10-09）](#evidence-hud-fluent-icon) |
 | 修正与离屏验证（HUD 颜色/轮播） | [E86 · 可视化选色与左侧独立轮播（2026-10-08）](#evidence-hud-color-rotation) |
@@ -2559,3 +2560,23 @@ SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences
 4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e90-hud-drag-sampling/plugin` 成功，0 错误/2 条 NU1900。`static-checks.json`：ZIP 69 文件逐项哈希一致，无共享 SDK 副本，234 个宿主文件未变，5 个 AXAML 可解析。
 
 交付 `artifacts/e90-hud-drag-sampling/plugin/TractorTool.SystemHud-0.4.13.zip`，5,507,522 字节，SHA256 `6373765A77B3038A9998C8753A4618934978C53B54941E5C4383E2DE68573BE6`。未自动安装或启动宿主/原生 HUD/真实采样，未读用户配置/硬件/凭据；原生拖动、跨屏及真实位置保存仍待用户复测。保留用户 .gitignore/.vscode/launch.json 改动，仅本地提交。
+
+<a id="evidence-hud-switching"></a>
+
+## E91：数字输入、完整读数替换及切换动效（2026-10-09）
+
+用户要求轮播间隔能手输、切换不短暂显示横线、不同指标有参考 Apple 的动画；过程中再次指出单位“秒”覆盖减小箭头。SystemHud 0.4.14 只改插件和既有 HUD 离屏检查，不改框架；托盘方案列表仍按 E90 用户决定暂缓。
+
+- 秒数改纯整数编辑，秒/% 单位放在输入框外独立列，保留原验证及即时保存；百分比仍可输入小数。初稿采用 NumericUpDown.InnerRightContent，与 Fluent 的减小箭头重叠，已按渲染及用户截图撤掉。检查了 Avalonia 12.1.2 NumericUpDown 的文本/提交/格式解析源码；旧格式对照仅复现小数误存，未复现全部合法手输失败，不能将格式问题声称为唯一已证实原因。
+- ActivateProfile 不再发布占位读数；基线用 IsInitializing 标记，与真实错误/没有网卡分开。CPU/网速首次后台读后等待 250ms 最多补一次读取，正常单次读取和每秒频率不变，取消中止等待。新读数前保留旧图标/标题/数值/时间，整个结果就绪后替换，不伪造零、不为所有方案后台采集；原版本隔离和取消保护保留。
+- HudDisplay 携带方案/指标身份；只有身份切换启动 200ms CubicEaseOut 的 65%→100% 透明度及 4 DIP→0 位移。同方案每秒刷新不重播，外框保持原尺寸规则。原生有限 Transitions 不叠放旧内容；快速切换的旧回调失效，关闭动效、分离及 FinishMotion 清理归位。
+- 参考 [Apple Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 的信息变化、保持布局及避免交叠建议，以及[减少动态效果](https://developer.apple.com/help/app-store-connect/manage-app-accessibility/reduced-motion-evaluation-criteria)；参数是本插件选择，不是 Apple 指定值。官方页面的检索内容用于设计，直接 Motion 页面仅返回 JS 壳，未将未取到的全文当作已读。未增加第三方依赖或改设置 schema。
+
+证据目录 `artifacts/e91-hud-switching`：
+
+1. 专项构建使用 `dotnet build tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj -c Release -m:1 -nr:false --artifacts-path artifacts/e91-hud-switching/build --force` 首次还原，最终 `--no-restore`；`checks-build.txt` 0 错误/3 条 NU1900。旧格式对照 `legacy-input/failures.txt` 有 2 条小数/非法间隔未保持有效值的断言失败；`input-edge` 曾因测试用方向键代替按钮出现 1 项失败，修正为实际点击 PART_IncreaseButton。
+2. 沿用已授权离屏检查，执行 `dotnet artifacts/e91-hud-switching/build/bin/TractorTool.HudChecks/release/TractorTool.HudChecks.dll --ui-only artifacts/e91-hud-switching/final`。实际键盘输入有效数值立即保存（在 Enter/失焦前）、清空后逐字输入、粘贴式输入、Enter/失焦、越界/非法/小数、实际增减按钮及百分比输入通过。完整旧读数等待/新读数整体提交/真实错误显示、内存源最多两次读取/普通单次/取消、动画中间帧/快速切换/普通更新不重播/关闭动效/减少动效/重新挂载，以及原布局/颜色/轮播/拖动回归通过。`checks-run.txt` 为通过日志，`final/bindings.txt`、`final/failures.txt` 为空。没有启动模型或原生窗口、真实硬件、网络、凭据或磁盘配置；默认逻辑/HTTP 套件未执行。
+3. 查看宽窄编辑页与 profile-entry-midpoint/final PNG，单位在输入框外、增减箭头独立，内容入场时可读，最终归位。离屏效果不等于 Windows 原生 HUD 的动画/DPI/硬件性能验收。
+4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e91-hud-switching/plugin` 独立构建成功，`plugin-build.txt` 0 错误/2 条 NU1900。NU1900 来自沙箱联网受限导致漏洞查询不可用，未关闭或宣称审计通过。`static-checks.json`：ZIP 69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析。
+
+产物 `artifacts/e91-hud-switching/plugin/TractorTool.SystemHud-0.4.14.zip`，5,508,911 字节，SHA256 `A905429C3833AAC0B20AC9330E4A88DF38963C5E5E2A2140935AEFEB0310048E`。未安装或启动宿主，真实输入/桌面切换/硬件耗用仍待用户安装后显式退出重启确认；保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。

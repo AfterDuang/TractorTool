@@ -36,9 +36,9 @@ internal sealed class HudSampler : IDisposable
         }
         try
         {
-            var reading = await Task.Run(() =>
+            var reading = await ReadReadyAsync(() =>
             {
-                if (reset) _windows.Reset();
+                if (reset) { _windows.Reset(); reset = false; }
                 return profile.Metric switch
                 {
                     8 => hardwareEnabled ? _hardware.Read(profile.SensorId)
@@ -56,6 +56,15 @@ internal sealed class HudSampler : IDisposable
             var error = FailureText(ex);
             return (new("读取失败", "—", error), error);
         }
+    }
+
+    internal static async Task<HudReading> ReadReadyAsync(Func<HudReading> read, CancellationToken token)
+    {
+        var reading = await Task.Run(read, token).ConfigureAwait(false);
+        if (!reading.IsInitializing) return reading;
+        // One extra read establishes a rate; normal updates keep their existing interval.
+        await Task.Delay(250, token).ConfigureAwait(false);
+        return await Task.Run(read, token).ConfigureAwait(false);
     }
 
     private static HudReading ReadDisk(string path)

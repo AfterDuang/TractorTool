@@ -4,6 +4,7 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FluentAvalonia.Core;
@@ -19,6 +20,8 @@ public partial class HudCard : UserControl
     private PixelPoint _pressPosition;
     private int? _clickCount;
     private bool _suppressClick, _motionEnabled, _canDoubleClick, _sizeUpdateQueued;
+    private int _contentRevision;
+    private static readonly TransformOperations ContentOffset = TransformOperations.Parse("translate(0px, 4px)");
     public bool Animate { get => GetValue(AnimateProperty); set => SetValue(AnimateProperty, value); }
     public HudMode Mode { get => GetValue(ModeProperty); set => SetValue(ModeProperty, value); }
     public event Action? StateChanged;
@@ -201,6 +204,7 @@ public partial class HudCard : UserControl
             && this.IsAttachedToVisualTree() && IsEffectivelyVisible;
         if (enabled == _motionEnabled) return;
         _motionEnabled = enabled;
+        if (!enabled) FinishContentMotion();
         var duration = TimeSpan.FromMilliseconds(320);
         Transitions = enabled ? new Transitions
         {
@@ -214,13 +218,50 @@ public partial class HudCard : UserControl
         } : null;
     }
 
+    private void AnimateContent()
+    {
+        FinishContentMotion();
+        UpdateMotion();
+        if (!_motionEnabled) return;
+        var revision = _contentRevision;
+        ContentGrid.Opacity = .65;
+        ContentGrid.RenderTransform = ContentOffset;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (revision != _contentRevision) return;
+            UpdateMotion();
+            if (!_motionEnabled) return;
+            var duration = TimeSpan.FromMilliseconds(200);
+            ContentGrid.Transitions = new Transitions
+            {
+                new DoubleTransition { Property = OpacityProperty, Duration = duration, Easing = new CubicEaseOut() },
+                new TransformOperationsTransition { Property = RenderTransformProperty, Duration = duration, Easing = new CubicEaseOut() }
+            };
+            ContentGrid.Opacity = 1;
+            ContentGrid.RenderTransform = TransformOperations.Identity;
+        }, DispatcherPriority.Render);
+    }
+
+    private void FinishContentMotion()
+    {
+        _contentRevision++;
+        ContentGrid.Transitions = null;
+        ContentGrid.Opacity = 1;
+        ContentGrid.RenderTransform = TransformOperations.Identity;
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
         if (Island is null) return;
         if (change.Property == ModeProperty) { CancelClick(); UpdateState(); }
-        else if (change.Property == DataContextProperty) UpdateContent();
-        else if (change.Property == AnimateProperty || change.Property == Motion.IsEnabledProperty) UpdateMotion();
+        else if (change.Property == DataContextProperty)
+        {
+            UpdateContent();
+            if (change.OldValue is HudDisplay previous && change.NewValue is HudDisplay current
+                && (previous.ProfileId != current.ProfileId || previous.Metric != current.Metric)) AnimateContent();
+        }
+        else if (change.Property == AnimateProperty || change.Property == Motion.IsEnabledProperty || change.Property == IsVisibleProperty) UpdateMotion();
     }
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); UpdateState(); }
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) { base.OnDetachedFromVisualTree(e); FinishMotion(); }
@@ -228,6 +269,7 @@ public partial class HudCard : UserControl
     {
         CancelClick();
         Transitions = Island.Transitions = null;
+        FinishContentMotion();
         _motionEnabled = false;
     }
     internal void PrepareReveal() { FinishMotion(); Island.Opacity = 0; UpdateMotion(); }

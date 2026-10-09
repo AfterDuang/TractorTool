@@ -34,7 +34,10 @@
                   <ToggleSwitch x:Name="RotationToggle" Content="依次切换已保存的方案" IsChecked="{Binding RotateProfiles}" OnContent="已开启" OffContent="已关闭" />
                   <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
                     <TextBlock Text="每个方案停留" VerticalAlignment="Center" />
-                    <NumericUpDown x:Name="RotationInterval" Grid.Column="1" Width="140" Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0' 秒'" AutomationProperties.Name="每个方案停留秒数" />
+                    <Grid Grid.Column="1" Width="152" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <NumericUpDown x:Name="RotationInterval" Value="{Binding RotationSeconds}" Minimum="3" Maximum="300" Increment="1" FormatString="0" ParsingNumberStyle="Integer" AutomationProperties.Name="每个方案停留秒数" />
+                      <TextBlock Grid.Column="1" Text="秒" VerticalAlignment="Center" />
+                    </Grid>
                   </Grid>
                   <TextBlock Text="{Binding RotationStatus}" TextWrapping="Wrap" />
                   <TextBlock Text="轮播顺序" Classes="caption" />
@@ -157,9 +160,12 @@
                         <TextBlock Text="达到条件时变色" VerticalAlignment="Center" />
                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding RuleEnabled}" OnContent="已开启" OffContent="已关闭" AutomationProperties.Name="达到条件时变色" />
                       </Grid>
-                      <Grid ColumnDefinitions="*,132" ColumnSpacing="10" IsVisible="{Binding RuleEnabled}">
+                      <Grid ColumnDefinitions="*,144" ColumnSpacing="10" IsVisible="{Binding RuleEnabled}">
                         <ComboBox ItemsSource="{Binding Comparisons}" SelectedIndex="{Binding Comparison}" HorizontalAlignment="Stretch" AutomationProperties.Name="何时变色" />
-                        <NumericUpDown Grid.Column="1" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#' %'" AutomationProperties.Name="变色界限百分比" />
+                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                          <NumericUpDown x:Name="ColorThreshold" Value="{Binding Threshold}" Minimum="0" Maximum="100" Increment="1" FormatString="0.#" AutomationProperties.Name="变色界限百分比" />
+                          <TextBlock Grid.Column="1" Text="%" VerticalAlignment="Center" />
+                        </Grid>
                       </Grid>
                     </StackPanel>
                     <TextBlock Text="{Binding ColorRuleHint}" Classes="caption" TextWrapping="Wrap" />

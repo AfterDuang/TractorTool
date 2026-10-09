@@ -15,7 +15,7 @@ using TractorTool.Contracts;
 using TractorTool.Plugins.SystemHud;
 using TractorTool.UI;
 
-// No host lifetime, disk settings, native HUD window, sampling, credentials or network requests.
+// No host lifetime, disk settings, native HUD window, real sampling, credentials or network requests.
 internal static class HudVisualChecks
 {
     public static void Run(string output)
@@ -253,6 +253,7 @@ internal static class HudVisualChecks
                 model.Metric = 3; model.SaveProfileCommand.Execute(null); Pump();
                 if (memory.Saved.Active.Color != "#30D5C8" || memory.Saved.Active.RuleColor != "#FF7891" || model.HasDraftChanges)
                     failures.Add("Picked colors must persist as compatible RGB strings and reload without dirtying the editor.");
+                CheckTypedNumbers();
 
                 var savedProfile = memory.Saved.Active;
                 model.TitleTemplate = "尚未保存的名称";
@@ -312,7 +313,108 @@ internal static class HudVisualChecks
                     }
                 }
                 CheckPositionSave();
+                CheckProfileReadings();
+                Task.Run(CheckInitialReadings).GetAwaiter().GetResult();
                 if (failures.Count == 0) Console.WriteLine("PASS HUD editor: visual colors, inclusive rule, independent rotation saves/rollback, timed Net -> CPU -> Net, detail pause/strip resume and draft isolation.");
+
+                void CheckTypedNumbers()
+                {
+                    var interval = view.FindControl<NumericUpDown>("RotationInterval")!;
+                    foreach (var text in new[] { "12", "300", "5" })
+                    {
+                        Type(interval, text);
+                        if (model.RotationSeconds != int.Parse(text) || memory.Saved.Seconds != int.Parse(text))
+                            failures.Add($"Typing {text} seconds must persist without pressing a spinner.");
+                    }
+                    foreach (var text in new[] { "2", "301", "12.5", "abc" })
+                    {
+                        Type(interval, text);
+                        if (model.RotationSeconds != 5 || memory.Saved.Seconds != 5)
+                            failures.Add("Invalid/fractional intervals must retain the last valid setting.");
+                    }
+                    interval.BringIntoView(); Pump();
+                    var secondsEditor = interval.GetVisualDescendants().OfType<TextBox>().Single();
+                    secondsEditor.Focus(); secondsEditor.SelectAll();
+                    var beforeWrites = memory.Writes;
+                    var beforeErrors = memory.Errors.Count;
+                    window.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
+                    window.KeyReleaseQwerty(PhysicalKey.Backspace, RawInputModifiers.None); Pump();
+                    if (secondsEditor.Text != "" || memory.Writes != beforeWrites || memory.Errors.Count != beforeErrors)
+                        failures.Add("Temporarily clearing the interval must not save zero, reset the editor or log an error.");
+                    window.KeyTextInput("1"); window.KeyTextInput("2");
+                    view.FindControl<ToggleSwitch>("RotationToggle")!.Focus(); Pump();
+                    if (model.RotationSeconds != 12 || memory.Saved.Seconds != 12)
+                        failures.Add("Deleting then typing seconds one digit at a time must save on blur.");
+                    var increase = interval.GetVisualDescendants().OfType<Button>().First(b => b.Name == "PART_IncreaseButton");
+                    var point = increase.TranslatePoint(new Point(increase.Bounds.Width / 2, increase.Bounds.Height / 2), window)!.Value;
+                    window.MouseDown(point, MouseButton.Left); window.MouseUp(point, MouseButton.Left); Pump();
+                    if (model.RotationSeconds != 13 || memory.Saved.Seconds != 13)
+                        failures.Add("Spinner increment must continue to save after manual typing.");
+                    Type(view.FindControl<NumericUpDown>("ColorThreshold")!, "72.5");
+                    if (model.Threshold != 72.5) failures.Add("Typing a percentage must not treat it as a fraction or require spinner buttons.");
+                    model.RevertProfileCommand.Execute(null);
+                    Console.WriteLine("CHECK typed numbers: seconds Enter/blur, bounds, fractions and percentage units.");
+
+                    void Type(NumericUpDown input, string text)
+                    {
+                        input.BringIntoView(); Pump();
+                        var editor = input.GetVisualDescendants().OfType<TextBox>().Single();
+                        editor.Focus(); editor.SelectAll();
+                        window.KeyTextInput(text); Pump();
+                        if (input == interval && int.TryParse(text, out var seconds) && seconds is >= 3 and <= 300
+                            && memory.Saved.Seconds != seconds)
+                            failures.Add("Valid typed seconds must save immediately, before Enter or focus loss.");
+                        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                        window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                        view.FindControl<ToggleSwitch>("RotationToggle")!.Focus(); Pump();
+                    }
+                }
+
+                void CheckProfileReadings()
+                {
+                    const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                    var activate = typeof(HudModel).GetMethod("ActivateProfile", flags)!;
+                    var publish = typeof(HudModel).GetMethod("SetReading", flags)!;
+                    var net = new HudProfile { Name = "Net", Metric = 4 };
+                    var cpu = new HudProfile { Name = "CPU", Metric = 2 };
+                    activate.Invoke(model, [net]);
+                    publish.Invoke(model, [new HudReading("网速", "↓ 12 KiB/s", "有效网速", SecondaryValue: "↑ 1 KiB/s")]);
+                    var previous = model.Display;
+                    activate.Invoke(model, [cpu]);
+                    publish.Invoke(model, [new HudReading("CPU", "—", "基线") { IsInitializing = true }]);
+                    if (!ReferenceEquals(previous, model.Display)) failures.Add("Switching and baseline reads must preserve the entire previous display.");
+                    publish.Invoke(model, [new HudReading("CPU", "8%", "有效读数", 8)]);
+                    if (model.Display.Title != "CPU" || model.Display.Value != "8%" || model.Display.ProfileId != cpu.Id)
+                        failures.Add("A ready reading must replace identity and content together.");
+                    publish.Invoke(model, [new HudReading("CPU", "—", "读取失败")]);
+                    if (model.Display.Value != "—" || model.Display.Detail != "读取失败") failures.Add("Real failures must remain visible instead of masquerading as pending sampling.");
+                    Console.WriteLine("CHECK profile replacement: preserve complete old content while initializing, publish ready/error results.");
+                }
+
+                async Task CheckInitialReadings()
+                {
+                    var pending = new HudReading("CPU", "—", "基线") { IsInitializing = true };
+                    var ready = new HudReading("CPU", "20%", "有效读数", 20);
+                    var calls = 0;
+                    var result = await HudSampler.ReadReadyAsync(() => ++calls == 1 ? pending : ready, default);
+                    if (calls != 2 || result != ready) failures.Add("Initial rates must get one follow-up read before publication.");
+                    calls = 0;
+                    await HudSampler.ReadReadyAsync(() => { calls++; return ready; }, default);
+                    if (calls != 1) failures.Add("Normal sampling must not perform extra reads.");
+                    calls = 0;
+                    result = await HudSampler.ReadReadyAsync(() => { calls++; return pending; }, default);
+                    if (calls != 2 || !result.IsInitializing) failures.Add("A still-pending source must be bounded to two reads, without a busy loop.");
+                    using var cancelled = new CancellationTokenSource();
+                    calls = 0;
+                    try
+                    {
+                        await HudSampler.ReadReadyAsync(() => { calls++; cancelled.Cancel(); return pending; }, cancelled.Token);
+                        failures.Add("Cancelling during warm-up must cancel the follow-up.");
+                    }
+                    catch (OperationCanceledException) { }
+                    if (calls != 1) failures.Add("Cancelled warm-up must not touch the source again.");
+                    Console.WriteLine("CHECK initial sampling: in-memory source, one bounded warm-up, ordinary single read and cancellation.");
+                }
 
                 void CheckPositionSave()
                 {
@@ -484,6 +586,37 @@ internal static class HudVisualChecks
                 if (Math.Abs(card.Bounds.Width - HudSettings.CardWidth) > 1 || card.FindControl<Border>("Island")!.Opacity != 1)
                     failures.Add("An interrupted morph must return to a visible compact island.");
                 Console.WriteLine("PASS HUD interrupted morph: strip -> detail -> compact, content remains visible at rest.");
+                var content = card.FindControl<Grid>("ContentGrid")!;
+                var cpu = new HudProfile { Metric = 2 };
+                var net = new HudProfile { Metric = 4 };
+                card.DataContext = cpu.Render(new("CPU", "8%", "有效 CPU 读数", 8));
+                if (content.Opacity >= 1 || content.Opacity <= 0) failures.Add("Profile entry must start visible, with a short fade.");
+                Wait(TimeSpan.FromMilliseconds(60)); Capture("profile-entry-midpoint");
+                if (content.Opacity is <= .65 or >= 1) failures.Add("Profile entry must have a rendered intermediate animation frame.");
+                Wait(TimeSpan.FromMilliseconds(220));
+                card.DataContext = cpu.Render(new("CPU", "9%", "普通每秒更新", 9)); Pump();
+                if (content.Opacity != 1 || content.RenderTransform?.Value != Matrix.Identity)
+                    failures.Add("Ordinary readings in the same profile must not restart entry motion.");
+                card.DataContext = net.Render(new("网速", "↓ 12 KiB/s", "切换网速"));
+                card.DataContext = cpu.Render(new("CPU", "10%", "快速切换最终读数", 10));
+                Wait(TimeSpan.FromMilliseconds(300)); Capture("profile-entry-final");
+                if (content.Opacity != 1 || content.RenderTransform?.Value != Matrix.Identity || ((HudDisplay)card.DataContext).Value != "10%")
+                    failures.Add("Rapid switches must settle on the latest complete reading.");
+                card.DataContext = net.Render(new("网速", "↓ 14 KiB/s", "关闭动效"));
+                card.Animate = false; Pump();
+                if (content.Opacity != 1 || content.RenderTransform?.Value != Matrix.Identity)
+                    failures.Add("Disabling motion must immediately restore full opacity and neutral position.");
+                card.Animate = true;
+                Motion.SetIsEnabled(card, false);
+                card.DataContext = cpu.Render(new("CPU", "11%", "减少动态效果", 11)); Pump();
+                if (content.Transitions is not null || content.Opacity != 1)
+                    failures.Add("Reduced motion must suppress profile transitions.");
+                Motion.SetIsEnabled(card, true);
+                card.DataContext = net.Render(new("网速", "↓ 15 KiB/s", "动画中离开"));
+                window.Content = null; Pump(); window.Content = card; Pump();
+                if (content.Transitions is not null || content.Opacity != 1 || content.RenderTransform?.Value != Matrix.Identity)
+                    failures.Add("Detaching and reattaching mid-transition must not leave faded or displaced content.");
+                Console.WriteLine("CHECK profile motion: intermediate frame, no per-tick replay, rapid switch, reduced motion and detach cleanup.");
             }
             else Console.WriteLine("SKIP HUD animated frames: the current animation preference disables transitions.");
             card.Animate = false;

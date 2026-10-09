@@ -42,7 +42,7 @@
 | [HudPresentation](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudPresentation.cs) / [HudLayout](../../Plugins/TractorTool.Plugins.SystemHud/Views/HudLayout.cs) / HudSlotView / HudCard / HudView / HudSettingsView / HudWindow | Presentation 将同一读数填入 Layout 的具名区域；SlotView 只画文字/图标/环，Card 管理布局、手势与形变，Window 管理原生窗口及拖动保存。各指标不另写三套界面 |
 | [HudSecrets](../../Plugins/TractorTool.Plugins.SystemHud/Configuration/HudSecrets.cs) | 当前 Windows 用户 DPAPI 加解密；凭据与可编辑方案分开，网络层仅取得本次请求所需的内存密钥 |
 
-数据流为 `保存的方案/草稿快照 → 单次采样 → HudReading → 模板呈现 → HudCard`。窗口和采集资源属于插件实例，页面只是编辑入口；没有另建服务容器、采集插件系统、通用表达式引擎或后台监控平台。隐藏 HUD 不销毁页面草稿；显示未读到数据时明确未知，失败不继续把旧读数当新数据。
+数据流为 `保存的方案/草稿快照 → 单次采样 → HudReading → 模板呈现 → HudCard`。窗口和采集资源属于插件实例，页面只是编辑入口；没有另建服务容器、采集插件系统、通用表达式引擎或后台监控平台。隐藏 HUD 不销毁页面草稿；首次无读数明确未知，切换等待期间保留上一项完整内容与时间，新读数就绪后整体替换，不把旧值放到新标题下；真实读取失败仍显示未知及原因。
 
 界面参考 [Apple HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout) 的视觉层级、对齐分组与逐步展开原则，以及 [Settings](https://developer.apple.com/documentation/foundation/adding-a-settings-interface-to-your-app) 的使用频率分工：主页面保留状态与常用动作，复杂模板/来源配置按当前选择展开；位置直接拖动桌面 HUD 调整。长期偏好、缩放、硬件启用与账号凭据放插件设置。保留宿主 Windows/Avalonia 控件与主题，不照搬 macOS 窗口外观。
 
@@ -65,6 +65,8 @@
 默认与长条都在单击松手时立即切换，已删除单击等待计时器。第二击按系统 ClickCount 接续进入详细；由于第一击立即收窄，双击需落在收起后仍可见的中央区域，长条两端消失后不保证接到第二击。不使用透明输入阻挡或跨窗口捕获保留旧区域。显式改状态、隐藏、分离或拖动会清除双击候选；取消后的下一次点击不沿用旧序列。移动任一轴达到 6 DIP 时取消点击并请求原生拖动，拖动开始结束形变；详情说明区域可滚动，说明与时间均可双击收起。页面预览支持 Enter/Space 切换默认与长条、向下键进入详细、Escape 回默认；桌面不抢焦点。详情区不预建空动作接口。
 
 形变在插件 Views 内用 Avalonia 原生有限 Transitions 实现：宽、高、圆角共用 320ms SpringEasing（质量 1、刚度 360、阻尼 27），出现用 180ms 淡入。尺寸可以从当前动画值反向切换，文字固定字号、不随轮廓拉伸；区域按状态重排，删除旧的两个场景交叉隐藏回调。读取既有 FAUISettings/Motion 动画偏好，关闭动画直接呈现目标；隐藏、分离和退出清理过渡及点击状态，不添加动画轮询或覆盖全局时钟。页面预览使用已保存的动画偏好。
+
+方案或指标身份改变时，内容整体由 65% 不透明度过渡至完全可见，并从下方 4 DIP 归位，200ms CubicEaseOut；同方案每秒读数更新不重播。保持既有外框尺寸规则，不叠放两套内容；快速切换使旧回调失效，关闭动效/分离时清理并归位。依据 [Apple Live Activities](https://developer.apple.com/design/human-interface-guidelines/live-activities) 关于用动效表达信息变化、避免内容交叠，以及[减少动态效果](https://developer.apple.com/help/app-store-connect/manage-app-accessibility/reduced-motion-evaluation-criteria)的原则；具体时间和位移为本插件的设计选择，并非 Apple 指定数值。
 
 桌面原生窗口使用 432 × 208 DIP 透明绘制边界，允许轻微弹性超调；实际可见面积以小岛尺寸为准。Win32 区域随形变裁到圆角轮廓，命中测试排除透明留白。区域更新失败会隐藏并提示，可重试显示；系统接管成功设置的 region，失败则释放。形变围绕默认态中心，四边不足时避让，不写配置；未拖动时收起恢复原锚点，展开后拖动保存新中心。没有修改宿主、Core、Contracts 或公共 UI。
 
@@ -92,6 +94,7 @@
 - 自动轮播与预览放在左侧同一张“编辑预览”卡片内，以分隔线分组；明确标注“所有方案共用，修改后立即保存”。轮播按列表顺序切换已保存方案，间隔 3–300 秒，显示顺序、运行/等待/暂停原因并提供“下一个方案”。开关和间隔保存到 `profiles.json` 的公共配置，不属于单个方案，不提交或丢弃右侧草稿，也不改变保存的默认方案；失败恢复原轮播设置并提示。至少两个方案且 HUD 可见时运行，短条和长条均可轮播；隐藏、暂停、关闭、退出、拖动、查看详情、电源提醒或草稿预览时停止，恢复后重新计时，不补跑隐藏期间的轮次。临时切换不写配置，电源提醒结束返回原方案，轮播不改编辑区选择与上方草稿示例预览。
 - “文字与颜色”按内容区实际宽度布局：至少 640 DIP 时左侧编辑文字、右侧设置颜色，不足时两组上下排列；标题/数值/说明的标签与输入框同行，常规/提醒色块并排，变色开关与条件各占一行。调整分组不重建控件或重置草稿，仍沿用两栏/窄屏整页滚动。
 - 窗口位置、缩放和六项开关由全部方案共用，避免轮播时在屏幕上跳动。轮播计时用于用户选择的显示切换，不增加后台性能采集或日志刷屏。
+- 轮播间隔只编辑整数，合法的 3–300 秒即时保存；清空或暂时输入越界内容不写入错误值，Enter/失焦交给原生数值控件确认。秒数与变色阈值的单位独立置于输入框右侧，不参与文本解析，也不遮挡增减按钮；阈值仍允许小数。
 
 ## 第一版数据源与限制
 
@@ -115,9 +118,9 @@
 
 电源采用 `RegisterPowerSettingNotification`，监听电源来源和电量百分比；初始化及通知时用 `GetSystemPowerStatus` 读取，无 150ms 电源轮询。注册失败明确提示自动提醒不可用，不悄悄启用后台轮询。
 
-CPU 采用 `GetSystemTimes` 时间差，内核时间包括空闲时间；内存采用 `GlobalMemoryStatusEx`；网速采用 .NET `NetworkInterface.GetIPStatistics` 的收发计数差，使用 Stopwatch 实际间隔。与参考项目的计数器差分思路一致，不移植其 WMI/驱动整套采集代码。首次采样/计数器重置显示未知，不能冒充 0；CPU 大于 64 逻辑处理器时仅覆盖调用线程所属处理器组，界面注明范围。网速为活动非 loopback/tunnel 接口合计，含虚拟网卡时可能重复计数，不宣称是纯互联网流量。
+CPU 采用 `GetSystemTimes` 时间差，内核时间包括空闲时间；内存采用 `GlobalMemoryStatusEx`；网速采用 .NET `NetworkInterface.GetIPStatistics` 的收发计数差，使用 Stopwatch 实际间隔。与参考项目的计数器差分思路一致，不移植其 WMI/驱动整套采集代码。首次/重置后的基线读数以 IsInitializing 区分，后台等待 250ms 后最多补读一次；基线不覆盖当前显示，不能冒充 0。仍无可比读数则等待正常下一轮，不忙循环；取消会终止等待，不预采集全部方案。没有连接接口等真实不可用结果仍正常显示。CPU 大于 64 逻辑处理器时仅覆盖调用线程所属处理器组，界面注明范围。网速为活动非 loopback/tunnel 接口合计，含虚拟网卡时可能重复计数，不宣称是纯互联网流量。
 
-精确的 CPU 使用率和网速需要区间，网络连接变化事件不能替代字节速率采样；内存阈值通知也不是实时占用率。当前本地指标可见且未暂停时，每秒后台读取一次，不重叠；基础指标没有另加 WMI/ETW 查询，硬件库内部实现由其负责。时钟在可见时每秒更新；电量页等待事件。性能与网络轮询分别实际启动时记录一次开发优化 Warning，不逐轮刷屏。硬件检测和单次更新由同一锁串行化，只有显式检测或当前硬件方案采样才打开监控库；隐藏/暂停停止读取，退出释放库资源。
+精确的 CPU 使用率和网速需要区间，网络连接变化事件不能替代字节速率采样；内存阈值通知也不是实时占用率。当前本地指标可见且未暂停时，每秒后台读取一次，不重叠；仅建立基线时有上述一次补读。基础指标没有另加 WMI/ETW 查询，硬件库内部实现由其负责。时钟在可见时每秒更新；电量页等待事件。性能与网络轮询分别实际启动时记录一次开发优化 Warning，不逐轮刷屏。硬件检测和单次更新由同一锁串行化，只有显式检测或当前硬件方案采样才打开监控库；隐藏/暂停停止读取，退出释放库资源。
 
 `IPluginBackgroundService` 拥有窗口与通知，切页或隐藏宿主不取消。隐藏 HUD/暂停/换指标使旧采样失效并取消网络请求，下次本地采样重新建立基线。退出先停计时器、注销电源和窗口事件、关 HUD，再等待在途采样/检测结束并释放 HttpClient 和硬件库；Stop 重复调用复用同一任务。正常请求取消被捕获，不记 Error；底层 .NET 仍可能在调试器显示已捕获取消异常。原生硬件调用无法强制取消，退出等待其返回，不虚称有强制退出时限。
 
@@ -139,7 +142,7 @@ CPU 采用 `GetSystemTimes` 时间差，内核时间包括空闲时间；内存�
 - 拖动到高低 DPI/负坐标副屏、移出边界、重启、拔掉目标屏幕和改变缩放；核对位置恢复与可见性。拖动 6 秒预览时不能中途隐藏；写入失败恢复旧位置，且不提交未保存偏好或方案。
 - 点击穿透、无焦点抢占、隐藏/预览到期、动画开/关、托盘快捷项、重复应用、退出恰逢采样。
 - 检查默认/长条/详细三态：连续单击往返、两种状态双击进详情、再双击回默认，动画期间仍显示内容且可回退；按下抖动、拖动、拖后立即点击不误判。网速上传/下载分列、内存容量/占用率/环、GPU 身份、长文字省略和底部补充信息不与顶部整段重复；无区域编辑入口，旧方案正常复制/保存/撤销。检查明暗桌面、100%/150%/200% DPI、0.6–2 倍缩放、快速反向、四边避让、关闭动画即时到位、透明留白不挡下层窗口。长条/详细期间暂停预览到期；轮播在长条继续、详情暂停，显式隐藏/穿透优先。页面预览验证 Tab/Space/向下键/Escape；纯逻辑断言不代表原生交互验收。
-- [HudVisualChecks](../../tests/TractorTool.HudChecks/HudVisualChecks.cs) 是 HUD 专项离屏检查，使用 Avalonia.Headless/Skia 和内存配置；不启动宿主、原生 HUD 或采样，不读真实配置、硬件或网络。获准后可执行 `dotnet run --project tests/TractorTool.HudChecks -c Release -- --ui-only artifacts/hud-ui-checks`，载入 FluentAvalonia 和实际共享样式，记录绑定错误、区域边界、三态往返、重新挂载及单一编辑预览的宽窄切换；模拟鼠标/键盘检查浅深色悬停与按下、立即伸长/收起（包括长条两端）、中央双击、拖动互斥与显式状态变化，并保存动效反转及 CPU/内存/网速截图。检查详情实际边界形成左右组，说明与时间不覆盖读数，内置说明自然折行且自定义换行保留；按 100%/150%/200% 离屏栅格化测量长条字形与中心线偏差。动效等待使用有界离屏 Dispatcher 循环；仍不能代替原生窗口、跨屏/DPI 或硬件验证。
+- [HudVisualChecks](../../tests/TractorTool.HudChecks/HudVisualChecks.cs) 是 HUD 专项离屏检查，使用 Avalonia.Headless/Skia 和内存配置；不启动宿主、原生 HUD 或真实采样，不读真实配置、硬件或网络。获准后可执行 `dotnet run --project tests/TractorTool.HudChecks -c Release -- --ui-only artifacts/hud-ui-checks`，载入 FluentAvalonia 和实际共享样式，记录绑定错误、区域边界、三态往返、重新挂载及单一编辑预览的宽窄切换；模拟鼠标/键盘检查浅深色悬停与按下、立即伸长/收起（包括长条两端）、中央双击、拖动互斥与显式状态变化，并保存动效反转及 CPU/内存/网速截图。检查详情实际边界形成左右组，说明与时间不覆盖读数，内置说明自然折行且自定义换行保留；按 100%/150%/200% 离屏栅格化测量长条字形与中心线偏差。动效等待使用有界离屏 Dispatcher 循环；仍不能代替原生窗口、跨屏/DPI 或硬件验证。
 - [HudChecks](../../tests/TractorTool.HudChecks/Program.cs) 的默认入口仍为逻辑及内存 HTTP 检查，覆盖计数/位置、方案/模板/规则、配置往返、JSON Pointer/百分比/边界、余额、凭据路由、缓存及取消。不创建窗口、不读硬件或真实网络。命令 `dotnet run --project tests/TractorTool.HudChecks -c Release` 供单独获准时执行；编译或仅执行 `--ui-only` 不等于默认检查运行通过。
 
 API 依据：[Windows 电源通知](https://learn.microsoft.com/en-us/windows/win32/power/registering-for-power-events)、[电源 GUID](https://learn.microsoft.com/en-us/windows/win32/power/power-setting-guids)、[GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes)、[GlobalMemoryStatusEx](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex)、[NetworkChange](https://learn.microsoft.com/en-us/dotnet/api/system.net.networkinformation.networkchange)。上游调研和固定提交记录见 [E65](../PROJECT_HISTORY.md#evidence-system-hud)。

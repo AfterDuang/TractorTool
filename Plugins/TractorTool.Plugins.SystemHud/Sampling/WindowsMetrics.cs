@@ -26,7 +26,8 @@ internal sealed class WindowsMetrics
         _cpu = (idle, kernel, user);
         // ponytail: GetSystemTimes covers one processor group; use PDH if >64-CPU aggregate is required.
         var scope = GetActiveProcessorGroupCount() > 1 ? "当前处理器组 · 每秒采样" : "处理器使用率 · 每秒采样";
-        return new("CPU", percent is { } p ? $"{p:0}%" : "—", percent is null ? "正在建立采样基线…" : scope, percent);
+        return new("CPU", percent is { } p ? $"{p:0}%" : "—", percent is null ? "正在建立采样基线…" : scope, percent)
+            { IsInitializing = percent is null };
     }
 
     private static HudReading Memory()
@@ -62,7 +63,8 @@ internal sealed class WindowsMetrics
         return new("网速", comparable ? $"↓ {HudCounters.Speed(received)}" : "—",
             current.Count == 0 ? "没有已连接的网络接口" : comparable ? $"↑ {HudCounters.Speed(sent)} · 活动接口合计" : "正在建立采样基线…",
             SecondaryValue: comparable ? $"↑ {HudCounters.Speed(sent)}" : "↑ —",
-            Context: comparable ? $"{current.Count} 个活动接口 · 含虚拟网卡\n转发流量可能重复计入。" : null);
+            Context: comparable ? $"{current.Count} 个活动接口 · 含虚拟网卡\n转发流量可能重复计入。" : null)
+            { IsInitializing = !comparable && current.Count > 0 };
     }
 
     public static (byte Ac, HudReading Reading) Power()

@@ -94,7 +94,10 @@ public sealed record HudSettings : IVersionedSettings
 }
 
 public sealed record HudReading(string Label, string Value, string Detail, double? Percent = null, string Unit = "", DateTimeOffset? ObservedAt = null,
-    string? SecondaryValue = null, string? Context = null);
+    string? SecondaryValue = null, string? Context = null)
+{
+    internal bool IsInitializing { get; init; }
+}
 
 public static class HudCounters
 {

@@ -6,15 +6,15 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。涉及宿主、Core、Contracts、公共 UI 的插件需求，仍遵守 AGENTS.md 的框架边界约定。
 
-本轮 E90 为 SystemHud 0.4.13，修复拖动保存位置错误重置采样：SavePosition 原来复用 Save 时触发 InvalidateSample，取消在途读取并清空 CPU/网速基线；下一次读取只能建立基线，因此短暂显示“—”。现移除通用保存路径中的失效动作；保存位置保留在途采样、计数基线和显示，保存偏好仍通过原 EndPreview 路径使采样失效。失败回退、只合并位置及草稿隔离保留。
+本轮 E91 为 SystemHud 0.4.14：轮播秒数与百分比采用纯数字编辑，单位独立放在右侧，避免覆盖增减箭头；合法秒数键入即保存。方案切换不再主动清屏，待新读数就绪后整体替换；CPU/网速建立基线后最多补一次 250ms 读取，正常每秒采集不增加读数次数。内容按方案/指标身份以 200ms 淡入和 4 DIP 位移呈现，同方案普通数值更新不重播，关闭动效/分离时归位。参考 Apple Live Activities 的信息变化、避免重叠及减少动态效果原则，具体参数由本插件选择。
 
 **用户最新决定：托盘方案列表先不做。** 用户确认目标仍是“系统数据HUD”子菜单中的已保存方案；当前公开 UI 1.5 仅注册期 Add 和项目状态 Update，无法提供分隔线及运行期增删。用户明确如缺少宿主实时更新支持则先不实现。本轮不改菜单、框架或注册接口，也不自动推进架构改造；需求及接口事实留在[暂缓记录](Plugins/SystemHud.md#tray-menu-pending)。
 
-保留 E89 Fluent System Icons Gauge 彩色图标、E88 更名/双滑块、E87 合并预览/紧凑表单及原布局、轮播和颜色规则。仅调整采样失效触发，稳定 ID/设置 schema 不变。
+保留 E90 拖动位置不重置采样、E89 Fluent Gauge 图标、双滑块及合并预览/紧凑表单。稳定 ID/设置 schema 不变；无新依赖、公共接口或全方案后台采集。
 
-沿用用户已授权 HUD --ui-only：新增位置保存成功/无变化/失败、草稿隔离、采样基线/在途取消与保存偏好失效检查。旧代码准确复现 1 项失败，修复后全部通过，零绑定错误/检查失败；没有启动宿主、原生 HUD 或真实采样。专项构建 0 错误/3 条 NU1900，独立插件构建 0 错误/2 条 NU1900，均因网络限制无法查询 NuGet 漏洞数据；审计未记为通过。
+沿用已授权 --ui-only：实际键盘输入/清空/逐字/Enter/失焦/增减、范围和小数校验、完整读数替换、内存源有界补读/取消、动画中间帧/中断/减少动效/分离清理及原回归全部通过，零绑定错误/检查失败。旧格式对照只复现小数误存，没有复现所有合法输入失败；初稿单位槽遮挡箭头已按截图修正为外侧单位并查看最终宽窄图。专项构建 0 错误/3 条 NU1900，独立构建 0 错误/2 条 NU1900；漏洞查询受网络限制，不能记为审计通过。
 
-产物 artifacts/e90-hud-drag-sampling/plugin/TractorTool.SystemHud-0.4.13.zip。69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析；证据见 [E90](PROJECT_HISTORY.md#evidence-hud-drag-sampling)。未安装、未读真实配置/硬件；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
+产物 artifacts/e91-hud-switching/plugin/TractorTool.SystemHud-0.4.14.zip。69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析；证据见 [E91](PROJECT_HISTORY.md#evidence-hud-switching)。未安装、未启动原生窗口或读真实配置/硬件；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
 
 ## 2. 保留的产品决定
 
@@ -48,4 +48,4 @@
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步可安装 0.4.13 并显式退出重启，确认 CPU/网速在拖动后不再因位置保存变成“—”，同时保留读数更新和位置恢复。托盘方案列表按用户最新决定暂缓；不再安排架构侧改造作为本轮下一步。原生动画/透明区域、DPI/跨屏、硬件/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
+下一步可安装 0.4.14 并显式退出重启，确认手输秒数、单位避让、Net/CPU/GPU 轮播读数与动画，关闭动效及拖动仍正常。托盘方案列表按用户决定暂缓，不安排框架改造；真实输入/硬件性能/原生动画/DPI/跨屏/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
