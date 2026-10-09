@@ -1,7 +1,7 @@
 TractorTool · Windows x64
 
 将整个目录解压到可写的位置，运行 TractorTool.exe；无需另装 .NET。
-此开发版本包含剪贴板历史、视频导出两个独立插件，尚待完整运行验收。
+此开发版本附带独立插件，具体插件及版本见 release.json 的 plugins 列表，尚待完整运行验收。
 
 插件代码位于软件目录的 Plugins/<PluginId>/<Version>，管理变更重启生效。
 应用数据默认位于 %LOCALAPPDATA%\TractorTool，可在设置中安排迁移。

@@ -1,6 +1,6 @@
 # TractorTool 软件架构
 
-更新日期：2026-10-07。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
+更新日期：2026-10-09。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
 
 ## 1. 当前代码与目标结构
 
@@ -245,6 +245,8 @@ UI 选型、参考源码与历史比较归[参考调研](PROJECT_HISTORY.md#ui-r
 ### 7.2 发布边界
 
 动态插件宿主采用 Windows x64 自包含目录，不启用 Native AOT、裁剪或单文件布局。本地与 [CI](../.github/workflows/distribution.yml) 共用 [Build-Distribution](../scripts/Build-Distribution.ps1)：发布宿主 → 引用发布 SDK 独立构建插件 → 核对宿主文件未变 → 按正常插件目录组包。附带插件沿用同一装载流程，分发不带用户数据、测试夹具或已下载外部工具。
+
+随包范围只由 [packaging/plugins.json](../packaging/plugins.json) 的工程路径列表决定，不按插件名称或数量写分支；预检后从各插件清单取得身份，构建结果写入 `release.json.plugins`。产物校验和安装器消费本次快照，不依赖后来修改的源码名单；维护规则见[脚本说明](../scripts/README.md#随包插件清单)。
 
 产物包含 ZIP、哈希、版本/源码和逐文件清单，第三方许可按实际依赖图收集，缺失即失败。[Verify-Distribution](../scripts/Verify-Distribution.ps1) 静态核对路径、内容、版本及各包一致性；安装器及元数据须成对匹配源 ZIP。哈希/静态检查不等于运行验收，ZIP 仅解压到新目录。
 

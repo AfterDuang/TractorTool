@@ -8,7 +8,8 @@
 
 | 脚本 | 用途与结果 | 什么时候使用 |
 | --- | --- | --- |
-| [Build-Distribution.ps1](Build-Distribution.ps1) | **完整分发总入口**：发布宿主、独立编译两个正式插件、收集许可、打 ZIP、生成版本与 SHA256 信息，最后校验；提供 CompilerPath 时同时生成安装包 | 日常发布；VS Code 菜单和 CI 都调用它 |
+| [Build-Distribution.ps1](Build-Distribution.ps1) | **完整分发总入口**：按随包清单发布宿主与独立插件、收集许可、打 ZIP、生成版本及 SHA256 信息并校验；提供 CompilerPath 时同时生成安装包 | 日常发布；VS Code 菜单和 CI 都调用它 |
+| [Get-DistributionPlugins.ps1](Get-DistributionPlugins.ps1) | 只读取随包工程与 plugin.json，检查路径、重复项和插件身份，不编译或加载 DLL | 完整分发的前置校验，在创建输出前完成 |
 | [Build-Installer.ps1](Build-Installer.ps1) | 把**已有且校验通过的分发 ZIP**编译成 setup.exe，附带 installer.json 来源信息及 SHA256SUMS；不运行生成的安装器 | 完整发布时自动调用；也可对已有 ZIP 单独生成安装包，无需重编宿主 |
 | [Build-Plugin.ps1](Build-Plugin.ps1) | 引用发布 SDK 独立构建插件，复制 MVVM 许可与插件自备 Licenses，输出 ZIP/.sha256 并拒绝共享 DLL 副本 | 单独更新插件；适用条件见下方，完整分发也调用 |
 | [Export-DependencyNotices.ps1](Export-DependencyNotices.ps1) | 根据实际还原/发布依赖，收集第三方许可原文、NuGet 元数据和 dependencies.json；材料缺失则失败 | 完整分发自动调用，平时不用单独运行 |
@@ -23,6 +24,12 @@
 完整分发由 Build-Distribution 串联 Publish-Host、Export-DependencyNotices、Build-Plugin 和 Verify-Distribution；选择安装包时，菜单/CI 先用 Get-InnoCompiler 准备工具，再由 Build-Distribution 调用 Build-Installer。无需手动依次执行所有脚本。
 
 Generate-AppIcon 和 Verify-PluginHost 是独立的维护、验证入口，不在这条打包流程里。
+
+## 随包插件清单
+
+[packaging/plugins.json](../packaging/plugins.json) 是唯一的随包选择入口：按顺序列出相对仓库根的 `.csproj` 路径。增删插件只改这个数组，工程须位于 `Plugins/` 且同目录有 `plugin.json`；名称不必遵循 `TractorTool.Plugins.*`。ID 与版本读取插件清单，不能在发布配置中重复填写。空数组生成仅含宿主的分发；不会扫描并自动纳入测试或未选择的插件。
+
+构建开始前拒绝缺文件、越界/链接路径、重复工程或 ID、无效身份；独立构建前后身份必须一致。`release.json.plugins` 保存本次实际组包名单，ZIP 校验和安装器使用该快照，不回读当前源码名单；校验同时拒绝重复记录与整包内未登记的插件文件。宿主哈希、共享 SDK 副本检查和安装器保留已有插件的规则不变。
 
 ## 输出文件在哪里
 
@@ -56,3 +63,5 @@ Build-Plugin 当前要求还原图中有且仅有一个 CommunityToolkit.Mvvm �
 [GitHub 工作流](../.github/workflows/distribution.yml) 的构建 job 只有读取权限；仅 `v*` 标签 push 才进入独立的 Release 写入 job，下载同一次构建产物并调用 Verify-Distribution 后，用 GitHub CLI 创建草稿。使用内置 GITHUB_TOKEN，无需额外发布脚本或 PAT；现有草稿/Release 不自动覆盖。操作及失败恢复见 [Release 草稿](../README.md#github-release-草稿)。
 
 [ReleaseMetadataChecks.ps1](../tests/ReleaseMetadataChecks.ps1) 是只读静态回归入口：对已完成的干净分发目录验证正常身份，并断言错误标签、错误/缺失提交被拒绝。它不启动软件或安装器，当前执行状态见开发台账。
+
+[DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) 使用临时工程元数据和 ZIP 夹具，覆盖 0/1/多个任意命名插件、非法清单、重复项和未登记文件；不编译、加载 DLL、联网或启动应用。执行状态同样以开发台账为准。

@@ -4,6 +4,8 @@
 
 ## 1. 当前工作
 
+发布层 E97 已移除固定两插件名单：增删随包工程只改 [packaging/plugins.json](../packaging/plugins.json)，默认包含现有三个正式插件；版本读取各插件清单。校验/安装器使用 release.json.plugins 快照，源码名单变化不影响旧产物自检。仅改发布脚本、配置和文档，未改宿主或插件运行代码；语法/配置静态核对通过，新回归与完整发布尚未执行，后续需补证。详见[当前台账](DEVELOPMENT.md#current-status)。
+
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。涉及宿主、Core、Contracts、公共 UI 的插件需求，仍遵守 AGENTS.md 的框架边界约定。
 
 最近的 E94 是用户要求的插件全量 Review：三个子代理显式使用 gpt-6.1-sol / high，主代理去重复核。对 5f33fff / 0.4.15 确认 2 项 P2 未修复：ApplyPreferences 改硬件开关后没有清缓存，600 秒方案可持续显示旧禁用提示/读数；非硬件方案 SensorId=null 绕过验证，在 SelectSavedSensor 的 .Length 处使初始化失败，页面无法注册。建议在硬件开关实际变化且保存成功时清缓存，并统一处理可选字段 null，补两条实际入口回归。UI 未发现其他确定缺陷。E94 仅做代码审查及文档记录，没有修改生产代码或运行测试；详见 [E94](PROJECT_HISTORY.md#evidence-hud-full-review)。

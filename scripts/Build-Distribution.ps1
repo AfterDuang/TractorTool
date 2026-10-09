@@ -13,6 +13,7 @@ if (!$Version) {
 if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') {
     throw '版本必须为三段数字，可附加预发布后缀。'
 }
+$selectedPlugins = @(& (Join-Path $PSScriptRoot 'Get-DistributionPlugins.ps1') -Repository $repo)
 $destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if (Test-Path -LiteralPath $destination) { throw '分发输出目录必须是尚不存在的新目录；不会清理或覆盖旧产物。' }
 for ($ancestor = Split-Path $destination; $ancestor; $ancestor = Split-Path $ancestor) {
@@ -45,12 +46,14 @@ Get-ChildItem -LiteralPath $bundle -File -Recurse | ForEach-Object {
     $hostHashes[[IO.Path]::GetRelativePath($bundle, $_.FullName)] = (Get-FileHash -LiteralPath $_.FullName).Hash
 }
 $plugins = @()
-foreach ($plugin in @('ClipboardHistory', 'VideoExport')) {
-    $pluginOutput = Join-Path $destination "work/$plugin"
-    $project = Join-Path $repo "Plugins/TractorTool.Plugins.$plugin/TractorTool.Plugins.$plugin.csproj"
-    & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project $project -HostSdkDir $bundle -Output $pluginOutput
+Write-Host "随包插件：$($selectedPlugins.Count) 个"
+foreach ($plugin in $selectedPlugins) {
+    Write-Host "构建插件：$($plugin.Id) $($plugin.Version)"
+    $pluginOutput = Join-Path $destination "work/$($plugin.Id)"
+    & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project $plugin.Project -HostSdkDir $bundle -Output $pluginOutput
     $files = Join-Path $pluginOutput 'files'
     $manifest = Get-Content -LiteralPath (Join-Path $files 'plugin.json') -Raw | ConvertFrom-Json
+    if ($manifest.id -cne $plugin.Id -or $manifest.version -cne $plugin.Version) { throw '插件构建前后身份不一致，请重新发布。' }
     $installPath = "Plugins/$($manifest.id)/$($manifest.version)"
     $install = Join-Path $bundle $installPath
     New-Item -ItemType Directory -Path $install | Out-Null

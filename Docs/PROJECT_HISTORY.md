@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
 | 硬件显示与诊断（HUD） | [E96 · 传感器类型图标与 CPU 访问条件（2026-10-09）](#evidence-hud-hardware-types) |
 | 界面精简（HUD 草稿预览） | [E95 · 删除桌面草稿预览入口与逻辑（2026-10-09）](#evidence-hud-remove-draft-preview) |
 | 全量代码审查（HUD 插件） | [E94 · 三名子代理全量 Review，2 项 P2 待修复（2026-10-09）](#evidence-hud-full-review) |
@@ -2661,3 +2662,13 @@ HardwareMetrics 打开时记录驱动安装/管理员条件，CPU 温度/功率/
 3. 旧 artifacts/e67-review-fix/host 已被外部清理，现有 Release DLL 与旧 SDK 哈希不同，不冒称相同快照。本轮 `Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir TractorTool/bin/Release/net10.0/win-x64 -Output artifacts/e96-hud-hardware/plugin` 独立构建成功，0 错误/0 警告；未重编宿主。引用目录 234 个文件哈希/数量不变，ZIP 69 文件逐项一致、无共享 SDK 副本、5 个 AXAML 可解析，见 host-before.json、package.log、static-checks.json。
 
 交付 TractorTool.SystemHud-0.4.17.zip，5,511,433 字节，SHA256 `34D0C2CA9E950DC23A5DB0C453B85EEA66204D51073061715F493CBBAF97314B`。未自动安装插件或驱动，未验证真实 CPU 温度恢复；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
+
+<a id="evidence-distribution-plugins"></a>
+
+## E97：随包插件清单与产物快照校验（2026-10-09）
+
+用户确认去除发布脚本的固定两插件名单并保证通用性。新增 packaging/plugins.json 作为唯一随包选择，列工程路径而不重复 ID/版本，默认选入当前剪贴板、视频和 HUD。Get-DistributionPlugins 只读取源码元数据，在创建输出/构建前拒绝非数组、缺文件、仓库 Plugins 外或链接路径、重复工程/ID及无效身份；工程命名不限，空数组可只分发宿主。Build-Distribution 按顺序引用发布 SDK 独立构建，核对构建前后身份，原宿主哈希检查保持。
+
+release.json.plugins 保存实际组包快照；Verify-Distribution 继续逐包哈希/文件校验，并拒绝重复插件记录、路径不一致及未登记的插件文件，不回读当前仓库名单。安装器仍消费经过校验的 ZIP，首次附带/升级保留行为不变。本地菜单和随包说明移除固定数量，README/脚本导航/架构/台账同步；GitHub Actions 沿用同一入口，无需新增流水线分支。Build-Plugin 既有 MVVM/私有许可收集限制未在此轮扩展。
+
+静态验证：4 个相关 PowerShell 文件通过 Parser.ParseFile 语法检查，任务配置及随包清单 JSON、3 个工程 XML 与同目录插件清单可解析；名单身份分别为 TractorTool.ClipboardHistory 1.1.2、TractorTool.VideoExport 0.5.5、TractorTool.SystemHud 0.4.17，版本仅为核对时源码快照。新增 tests/DistributionPluginsChecks.ps1，用临时元数据及 ZIP 覆盖 0/1/多个任意命名插件、坏清单、重复与漏登记；按用户接手测试约定未运行该检查，也未构建分发、启动应用/安装器或执行 CI。静态证据不证明本轮整包已能运行，E43 历史构建不套用于新名单；并行 HUD 实现及用户配置不纳入本轮提交。

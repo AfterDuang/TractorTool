@@ -18,6 +18,7 @@ foreach ($line in (Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS'))) {
 $actual = @(Get-ChildItem -LiteralPath $root -File | Where-Object Name -ne 'SHA256SUMS')
 if ($actual.Count -ne $checksums.Count) { throw '产物存在未登记文件。' }
 $release = Get-Content -LiteralPath (Join-Path $root 'release.json') -Raw | ConvertFrom-Json
+if ($release.plugins -isnot [array]) { throw '发布插件记录必须是数组。' }
 if ($ExpectedTag -or $ExpectedCommit) {
     if ($ExpectedTag -cnotmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' -or
         $ExpectedTag -cne "v$($release.version)" -or $ExpectedCommit -notmatch '^[a-fA-F0-9]{40}$' -or
@@ -85,7 +86,12 @@ try {
     }
     if ((Get-ZipHash $entries['release.json']) -ne $checksums['release.json']) { throw '内外发布元数据不一致。' }
     if (@($entries.Keys | Where-Object { $_ -match '(^|/)(ffmpeg|ffprobe)\.exe$|(^|/)bootstrap\.json$|(^|/)(Config|Data|Logs|Cache|\.management)/|(^|/)(Test\.Independent|IndependentPlugin)(/|\.)' }).Count) { throw '分发包混入外部工具、用户数据或测试插件。' }
+    $pluginIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $pluginFileCount = 0
     foreach ($plugin in $release.plugins) {
+        if ($plugin.id -isnot [string] -or $plugin.version -isnot [string] -or !$pluginIds.Add($plugin.id) -or
+            $plugin.path -cne "Plugins/$($plugin.id)/$($plugin.version)" -or
+            $plugin.archive -cne "$($plugin.id)-$($plugin.version).zip") { throw '发布插件记录重复或路径不一致。' }
         if (!$checksums.ContainsKey($plugin.archive)) { throw '插件 ZIP 未登记。' }
         $pluginZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root $plugin.archive))
         try {
@@ -94,11 +100,15 @@ try {
             if ($manifest.id -ne $plugin.id -or $manifest.version -ne $plugin.version) { throw '插件版本不一致。' }
             $prefix = "$($plugin.path)/"
             if (@($listed.Keys | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $pluginFiles.Count) { throw '整包与独立插件文件数量不一致。' }
+            $pluginFileCount += $pluginFiles.Count
             foreach ($path in $pluginFiles.Keys) {
                 if ((Get-ZipHash $pluginFiles[$path]) -ne $listed["$prefix$path"]) { throw "整包与独立插件不一致：$path" }
                 if ([IO.Path]::GetFileNameWithoutExtension($path) -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$' -and $path.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)) { throw "插件夹带共享程序集：$path" }
             }
         } finally { $pluginZip.Dispose() }
+    }
+    if (@($listed.Keys | Where-Object { $_.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) }).Count -ne $pluginFileCount) {
+        throw '整包含有未登记的插件文件。'
     }
     Write-Output "静态分发校验通过：$($listed.Count) 个文件，$($release.plugins.Count) 个插件；未运行应用。"
 } finally { $zip.Dispose() }

@@ -87,6 +87,8 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 `assets` 存放打包产物，`layout` 存放运行目录。本地与 [GitHub Actions](.github/workflows/distribution.yml) 共用脚本；参数和安装器说明见 [scripts 使用说明](scripts/README.md)。
 
+随附插件由 [packaging/plugins.json](packaging/plugins.json) 统一选择，增删只改工程路径列表；各插件 ID 与版本从自己的 `plugin.json` 读取，产物名单记录在 `release.json.plugins`。
+
 ### GitHub Release 草稿
 
 仓库上传 GitHub 后，推送与 `Directory.Build.props` 版本一致的标签（例如 `v0.1.0`），工作流会构建、校验并创建 **Release 草稿**。普通提交、PR 和手动构建只保留 Actions 产物。标签、产物版本与源码提交须一致，工作区须干净；预发布标签生成 prerelease 草稿。

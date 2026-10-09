@@ -37,7 +37,7 @@
             "type": "pickString",
             "description": "选择本地发布产物（不会上传 GitHub 或运行安装器）",
             "options": [
-                { "label": "ZIP 压缩包（宿主＋两个插件）", "value": "zip" },
+                { "label": "ZIP 压缩包（宿主＋随附插件）", "value": "zip" },
                 { "label": "ZIP＋Windows 安装包（需下载构建工具）", "value": "installer" }
             ],
             "default": "zip"
