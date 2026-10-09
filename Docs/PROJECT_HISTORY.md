@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 全量代码审查（HUD 插件） | [E94 · 三名子代理全量 Review，2 项 P2 待修复（2026-10-09）](#evidence-hud-full-review) |
 | 实现与离屏验证（HUD 独立采样间隔） | [E93 · 按方案设置 0.2–600 秒与到期缓存（2026-10-09）](#evidence-hud-sampling-interval) |
 | 只读运行观察（HUD 当前进程） | [E92 · 已运行软件的一分钟性能观察（2026-10-09）](#evidence-hud-live-performance) |
 | 修正与离屏验证（HUD 输入/切换） | [E91 · 数字输入、完整读数替换及切换动效（2026-10-09）](#evidence-hud-switching) |
@@ -2615,3 +2616,18 @@ SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences
 3. 最终 `Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e93-hud-sampling-interval/plugin-final`，0 错误/0 警告。ZIP 69 文件逐项哈希一致，无共享 SDK 副本；234 个宿主文件哈希/数量未变，5 个 AXAML 可解析，结果在 static-checks.json。
 
 最终产物 `artifacts/e93-hud-sampling-interval/plugin-final/TractorTool.SystemHud-0.4.15.zip`，5,510,464 字节，SHA256 `596C65D29C556C1F0AE114D308AB281E3ED7044810FE89ACFF14E168DB9F39C2`。未自动安装、重启或修改正在运行的软件；E92 一分钟旧版进程观察不外推为新版本 5Hz 性能证明。真实各指标耗用、慢硬件/网络行为及重启配置仍由用户验证；保留 .gitignore/.vscode/launch.json，按约定仅本地提交。
+
+<a id="evidence-hud-full-review"></a>
+
+## E94：三名子代理全量 Review，2 项 P2 待修复（2026-10-09）
+
+用户在 E93 完成后要求“让子代理全量 Review 这个插件的代码，还是之前的要求”。审查快照为 `5f33fff9441bc34301f541cffb1791c7a7311274`、SystemHud 0.4.15。三个子代理均显式指定 gpt-6.1-sol / high，分别审查采样/缓存/取消/轮播/生命周期、全部 Views/显示/输入/动画/Win32、配置/保存/网络/凭据/接入/依赖打包；关联检查源代码、宿主设置与注册调用只读核对。按单用户 Windows 桌面、最多 32 方案、仅当前指标采集、0.2–600 秒间隔评估。主代理重新读取实际调用链和行号，合并重复发现；没有把固定长条、64 核范围、虚拟网卡合计或托盘暂缓等已确认边界当作缺陷。
+
+确认问题（均为静态代码推导，未运行复现，未修复）：
+
+1. **P2：硬件启用偏好保存后缓存未失效。** `ViewModels/HudModel.cs:148–149` 成功保存后仅 LoadPreferences/EndPreview/ApplySavedSettings，后两者只使在途采样和基线失效。`Sampling/HudSampler.cs:40–41` 在 hardwareEnabled 判断前按 profile/version 返回缓存。已有硬件方案设 600 秒且关闭硬件时会缓存“请先启用”，随后启用并保存偏好仍可保留该提示近十分钟；反向关闭也会保留旧硬件值。最小修复在硬件开关实际改变且保存成功时清缓存，不能放进位置保存共用 Save。现有偏好回归只看取消/基线标记，缓存检查只显式调用 ResetCache，缺少实际 ApplyPreferences 入口的读数回归。
+2. **P2：非硬件方案隐藏字段 null 可使插件初始化失败。** `Configuration/HudProfile.cs:51` 仅对 Metric=8 验证 SensorId；合法 JSON 的 CPU 方案添加 `"sensorId": null` 后可通过 Normalize。InitializeProfiles 的加载异常捕获结束后设置 SelectedProfile，经过 LoadProfile 进入 `ViewModels/HudModel.Sources.cs:61` 的 SensorId.Length 抛空引用。HudPlugin.InitializeAsync 尚未完成，宿主不能注册页面，用户失去插件内修复入口，而非按约定保留坏配置并回退。最小修复在配置边界把可选 SensorId 的 null 归一为空或统一安全校验，补显式 null 的模型加载用例。
+
+UI 审查没有其他可确认发现，预览计时在长条/详情/拖动时暂停、收起/拖完恢复，显式隐藏清标记的路径闭合。网络限时/响应体上限/取消/脱敏、固定 DeepSeek 地址及独立 Bearer、原子保存失败保持内存旧值、草稿与轮播隔离、DPAPI 当前用户加密未发现新的确定缺陷；这不替代运行验收。另有密钥保存/清除失败及坏密文恢复测试缺口，不另计为确定故障。
+
+本轮没有新构建、检查程序、原生 UI、真实硬件/网络/DPAPI 或用户配置访问；E93 测试仍只是原快照的既有证据。生产代码/版本/安装包未修改，仅维护当前台账、交接与本记录；保留用户 .gitignore/.vscode/launch.json，按约定本地提交。建议先修复以上两项并补回归，再推进原生跨屏/DPI/退出竞争与高频采样性能验证。
