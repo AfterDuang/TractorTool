@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 只读运行观察（HUD 当前进程） | [E92 · 已运行软件的一分钟性能观察（2026-10-09）](#evidence-hud-live-performance) |
 | 修正与离屏验证（HUD 输入/切换） | [E91 · 数字输入、完整读数替换及切换动效（2026-10-09）](#evidence-hud-switching) |
 | 修正与离屏验证（HUD 拖动采样） | [E90 · 位置保存不重置采样，托盘方案暂缓（2026-10-09）](#evidence-hud-drag-sampling) |
 | 素材替换（HUD Fluent 功能图标） | [E89 · Gauge 彩色仪表盘（2026-10-09）](#evidence-hud-fluent-icon) |
@@ -2580,3 +2581,18 @@ SystemHud 0.4.13 仅删除通用 Save 内的 InvalidateSample；ApplyPreferences
 4. `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj -HostSdkDir artifacts/e67-review-fix/host -Output artifacts/e91-hud-switching/plugin` 独立构建成功，`plugin-build.txt` 0 错误/2 条 NU1900。NU1900 来自沙箱联网受限导致漏洞查询不可用，未关闭或宣称审计通过。`static-checks.json`：ZIP 69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析。
 
 产物 `artifacts/e91-hud-switching/plugin/TractorTool.SystemHud-0.4.14.zip`，5,508,911 字节，SHA256 `A905429C3833AAC0B20AC9330E4A88DF38963C5E5E2A2140935AEFEB0310048E`。未安装或启动宿主，真实输入/桌面切换/硬件耗用仍待用户安装后显式退出重启确认；保留 .gitignore/.vscode/launch.json 用户修改，仅本地提交。
+
+<a id="evidence-hud-live-performance"></a>
+
+## E92：已运行软件的一分钟性能观察（2026-10-09）
+
+用户明确要求“我软件运行着，你实时读取一分钟看看”。只读识别既有 TractorTool 进程 PID 40940，不启动/关闭软件、不切换方案或操作界面/配置，也不另行采集硬件。宿主路径为 TractorTool/bin/Debug/net10.0/TractorTool.exe；模块枚举确认实际加载 Plugins/TractorTool.SystemHud/0.4.14/TractorTool.Plugins.SystemHud.dll 及 LibreHardwareMonitor 0.9.6。HUD DLL SHA256 为 C9A8B384626E3466A4B766307ABE8065E05E3305117B01368E139DCB88E2889C，与 E91 独立包完全一致。
+
+2026-10-09 21:39:45–21:40:45（Asia/Hong_Kong，UTC+8）用 Process.Refresh 每秒读取累计进程 CPU 时间、工作集、私有提交、线程/句柄数，Stopwatch 实际间隔计算，60 个样本覆盖 60.0078 秒。CPU 全机百分比 = 进程 CPU 秒数差 / 实际间隔 / 24 逻辑处理器 × 100，并非单核占用或硬件频率归一化利用率。
+
+- 累计 CPU 时间 0.671875 秒；平均全机 0.0466519%，相当于单核 1.11965%；最高单秒全机 0.329069%，P95 0.130018%。
+- 工作集 325.1133→325.5742 MiB，范围 324.8633–326.9141 MiB。
+- 私有提交 270.0938→270.5508 MiB，范围 269.9492–285.4961 MiB；短时升高后回落，不能据此认定 GC 成因或长期无泄漏。
+- 线程 86–88，首尾均 88；句柄 944–955，首尾 949→952。
+
+原始证据 `artifacts/e92-hud-live-performance/samples.csv`、`summary.json` 和 `context.json`。当前一分钟未显示明显全机 CPU 压力或线程持续堆积；并未读取/控制活动 HUD 方案、暂停或可见状态，结果为整个 Debug 宿主进程，不能分离采样、界面、其他插件或用户交互的开销。没有测 GPU/功耗/游戏帧时间、单次硬件调用耗时、暂停对照或长期内存，不将 A26/A27 整体标为通过。本轮无生产代码/包变更、无新构建；仅保存证据及文档，本地提交，保留用户编辑器配置改动。

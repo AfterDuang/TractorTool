@@ -6,7 +6,7 @@
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。涉及宿主、Core、Contracts、公共 UI 的插件需求，仍遵守 AGENTS.md 的框架边界约定。
 
-本轮 E91 为 SystemHud 0.4.14：轮播秒数与百分比采用纯数字编辑，单位独立放在右侧，避免覆盖增减箭头；合法秒数键入即保存。方案切换不再主动清屏，待新读数就绪后整体替换；CPU/网速建立基线后最多补一次 250ms 读取，正常每秒采集不增加读数次数。内容按方案/指标身份以 200ms 淡入和 4 DIP 位移呈现，同方案普通数值更新不重播，关闭动效/分离时归位。参考 Apple Live Activities 的信息变化、避免重叠及减少动态效果原则，具体参数由本插件选择。
+当前代码来自 E91，SystemHud 0.4.14：轮播秒数与百分比采用纯数字编辑，单位独立放在右侧，避免覆盖增减箭头；合法秒数键入即保存。方案切换不再主动清屏，待新读数就绪后整体替换；CPU/网速建立基线后最多补一次 250ms 读取，正常每秒采集不增加读数次数。内容按方案/指标身份以 200ms 淡入和 4 DIP 位移呈现，同方案普通数值更新不重播，关闭动效/分离时归位。参考 Apple Live Activities 的信息变化、避免重叠及减少动态效果原则，具体参数由本插件选择。
 
 **用户最新决定：托盘方案列表先不做。** 用户确认目标仍是“系统数据HUD”子菜单中的已保存方案；当前公开 UI 1.5 仅注册期 Add 和项目状态 Update，无法提供分隔线及运行期增删。用户明确如缺少宿主实时更新支持则先不实现。本轮不改菜单、框架或注册接口，也不自动推进架构改造；需求及接口事实留在[暂缓记录](Plugins/SystemHud.md#tray-menu-pending)。
 
@@ -14,7 +14,9 @@
 
 沿用已授权 --ui-only：实际键盘输入/清空/逐字/Enter/失焦/增减、范围和小数校验、完整读数替换、内存源有界补读/取消、动画中间帧/中断/减少动效/分离清理及原回归全部通过，零绑定错误/检查失败。旧格式对照只复现小数误存，没有复现所有合法输入失败；初稿单位槽遮挡箭头已按截图修正为外侧单位并查看最终宽窄图。专项构建 0 错误/3 条 NU1900，独立构建 0 错误/2 条 NU1900；漏洞查询受网络限制，不能记为审计通过。
 
-产物 artifacts/e91-hud-switching/plugin/TractorTool.SystemHud-0.4.14.zip。69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析；证据见 [E91](PROJECT_HISTORY.md#evidence-hud-switching)。未安装、未启动原生窗口或读真实配置/硬件；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
+产物 artifacts/e91-hud-switching/plugin/TractorTool.SystemHud-0.4.14.zip。69 文件逐项哈希一致、无共享 SDK 副本、234 个宿主文件未变、5 个 AXAML 可解析；证据见 [E91](PROJECT_HISTORY.md#evidence-hud-switching)。E91 未自动安装或启动原生窗口，E92 已核对实际加载；未读真实配置/硬件；保留用户 .gitignore/.vscode/launch.json，仅本地提交。
+
+E92 用户明确授权观察正在运行的软件一分钟，已只读采集 PID 40940 的 60 个进程快照（2026-10-09 21:39:45–21:40:45，UTC+8）。24 逻辑处理器归一化平均 CPU 0.0467%、最高单秒 0.3291%；工作集 325.11→325.57 MiB，线程 86–88；私有提交一度 285.50 MiB，结束回到 270.55 MiB。确认 Debug 宿主实际加载 0.4.14，DLL 哈希与 E91 包一致。未操作 UI/配置或读取活动方案状态；结论只覆盖整个进程当前一分钟，不证明 HUD 独立开销、游戏帧时间、GPU/功耗或长期内存。记录见 [E92](PROJECT_HISTORY.md#evidence-hud-live-performance)，原始数据 artifacts/e92-hud-live-performance。
 
 ## 2. 保留的产品决定
 
@@ -48,4 +50,4 @@
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 分发与维护 | [脚本导航](../scripts/README.md)、[Build-Distribution](../scripts/Build-Distribution.ps1) |
 
-下一步可安装 0.4.14 并显式退出重启，确认手输秒数、单位避让、Net/CPU/GPU 轮播读数与动画，关闭动效及拖动仍正常。托盘方案列表按用户决定暂缓，不安排框架改造；真实输入/硬件性能/原生动画/DPI/跨屏/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
+E92 已确认运行进程加载 0.4.14，无需重复要求安装；手输秒数、单位避让、轮播/动效等交互仍以用户反馈为准。一分钟性能观察已完成，各指标隔离、帧时间和长期性能仍未测。托盘方案列表按用户决定暂缓，不安排框架改造；真实输入/硬件性能/原生动画/DPI/跨屏/保存仍按 A26/A27 保留。宿主 M5 缺口见[验收台账](DEVELOPMENT.md#acceptance)。
