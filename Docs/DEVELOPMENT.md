@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**发布通用化：[E97 随包插件清单](PROJECT_HISTORY.md#evidence-distribution-plugins)。** 本地发布与 CI 统一读取 packaging/plugins.json，默认选择剪贴板、视频和 HUD；插件身份从各自清单取得，版本不重复维护。输出记录实际名单，校验拒绝重复或漏登记文件。脚本语法、配置及引用静态核对完成；新增临时元数据/ZIP 回归尚未执行，未构建本轮完整分发，不继承 E43 的整包证据。
+**发布通用化：[E98 插件自动发现](PROJECT_HISTORY.md#evidence-distribution-discovery)。** 按用户更正删除 E97 的额外名单，本地发布与 CI 自动扫描 Plugins 一级子目录的 plugin.json 与唯一同目录工程，身份/版本从清单读取；不扫描测试或构建输出。产物快照与校验保持。脚本语法和引用静态核对通过；临时元数据/ZIP 回归已更新但未执行，未构建本轮完整分发，不继承 E43 的整包证据。
 
 **本轮审查：[E94 HUD 全量 Review](PROJECT_HISTORY.md#evidence-hud-full-review)。** 用户指定子代理审查，三名 gpt-6.1-sol / high 分别覆盖采样/生命周期、UI/原生窗口、配置/网络/接入，并由主代理复核。对 `5f33fff` / 0.4.15 确认两项 P2：硬件启用开关保存后未失效旧缓存；非硬件方案 `SensorId=null` 可通过校验却导致模型初始化失败。均未修复，建议先修复并补回归；本轮只有静态代码审查，没有新构建或运行测试，不改变 E93 既有证据边界。
 
@@ -34,7 +34,7 @@
 | 日志 | INFO 绿/WARNING 黄/ERROR 红；筛选、复制、暂停、折叠详情，旧上新下、底部跟随，上翻不拉回。“已读”确认点击时全部错误，新错误再提醒。内存 300 条，普通导航不记录 |
 | M5 日志保留 | 10 MiB 分段，UTC 跨日/大小滚动，14 天、最多 20 文件/100 MiB；只清理顶层宿主日志，失败警告后继续。单条磁盘记录 64 KiB，完整原文保留在内存窗口 |
 | M5 数据迁移 | 设置安排/重试/取消；下次业务服务和插件加载前复制 Config/Data/Packages/Logs、校验并原子切换，保留旧根和恢复记录；插件代码不迁移。启动/迁移/失败共用唯一主窗口，完成后原位进入主页 |
-| M5 分发 | 随包工程由 packaging/plugins.json 选择，ID/版本读取 plugin.json；生成宿主 ZIP、每插件独立 ZIP、SHA256SUMS、版本/源码和文件清单，按实际宿主依赖收集许可。本地与 CI 共用脚本，产物按 release.json.plugins 自检；普通 CI 只上传产物，v* 标签经校验后创建 Release 草稿 |
+| M5 分发 | 随包工程从 Plugins 一级子目录自动识别，ID/版本读取 plugin.json；生成宿主 ZIP、每插件独立 ZIP、SHA256SUMS、版本/源码和文件清单，按实际宿主依赖收集许可。本地与 CI 共用脚本，产物按 release.json.plugins 自检；普通 CI 只上传产物，v* 标签经校验后创建 Release 草稿 |
 | M5 安装器 | Inno Setup 6.7.3，当前用户可写目录；从已校验 ZIP 编译，首次附带插件、升级保留现有 Plugins，卸载保留插件及应用数据。安装/启动互斥，首次插件安装中断可用同包恢复；拒绝接管非安装版目录 |
 | 插件打包边界 | Build-Plugin 仍要求 CommunityToolkit.Mvvm；自动复制其许可与插件自备 Licenses，不收集全部私有依赖许可。文档已按源码纠正；非 MVVM 插件不能直接使用当前脚本，SDK 本身无此要求 |
 | 尚未完成/实现 | 新托盘扩展运行验收、GitHub CI/Release 实跑及专项覆盖；E62 本机依赖流程已有用户反馈。私有源认证、其他安装类型、机器级安装、非 Windows 进程适配器、Python/pip/AI 扩展尚未实现。不再有自有源部署任务 |
@@ -146,7 +146,7 @@ E60 历史产物（E62 核对以下宿主目录及两个 ZIP 已不存在，不�
 
 | 入口 | 覆盖及边界 |
 | --- | --- |
-| [DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) | 临时工程元数据与 ZIP：0/1/多个任意命名插件，清单路径/身份/重复项与漏登记文件；不编译或加载 DLL，不联网。E97 仅通过语法核对，回归未执行 |
+| [DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) | 临时工程元数据与 ZIP：0/1/多个任意命名插件、扫描边界、缺失/多工程、清单身份/重复 ID 与漏登记文件；不编译或加载 DLL，不联网。E98 通过语法核对，回归未执行 |
 | `dotnet run --project tests/TractorTool.Checks -c Release` | 核心存储、管理、日志、依赖、任务与进程；Windows 部分包含真实子进程夹具，包使用内存 ZIP/虚拟 HTTP，不启动 FFmpeg |
 | `dotnet run --project tests/TractorTool.ClipboardChecks` | 剪贴板模型/替身，不证明 WinRT 实际系统行为 |
 | `dotnet run --project tests/TractorTool.VideoChecks` | 媒体数据、参数、进度与隔离输出替身，不证明真实转码或 GPU |

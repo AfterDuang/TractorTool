@@ -3,25 +3,26 @@
 param([Parameter(Mandatory)][string]$Repository)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($Repository))
-$pluginRoot = (Join-Path $repo 'Plugins') + [IO.Path]::DirectorySeparatorChar
-$projects = Get-Content -LiteralPath (Join-Path $repo 'packaging/plugins.json') -Raw | ConvertFrom-Json -NoEnumerate
-if ($projects -isnot [array]) { throw '随包插件清单必须是工程相对路径数组。' }
-$seenProjects = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$pluginRoot = Join-Path $repo 'Plugins'
+if (!(Test-Path -LiteralPath $pluginRoot)) { return }
+foreach ($path in @($repo, $pluginRoot)) {
+    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "随包插件路径不能经过链接：$path"
+    }
+}
 $seenIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($relative in $projects) {
-    if ($relative -isnot [string] -or [string]::IsNullOrWhiteSpace($relative) -or [IO.Path]::IsPathRooted($relative) -or
-        [IO.Path]::GetExtension($relative) -ine '.csproj') { throw "无效的插件工程相对路径：$relative" }
-    $project = [IO.Path]::GetFullPath((Join-Path $repo $relative))
-    if (!$project.StartsWith($pluginRoot, [StringComparison]::OrdinalIgnoreCase)) { throw "随包插件工程必须位于仓库 Plugins 内：$relative" }
-    if (!$seenProjects.Add($project)) { throw "随包插件工程重复：$relative" }
-    $manifestPath = Join-Path (Split-Path $project) 'plugin.json'
+foreach ($directory in (Get-ChildItem -LiteralPath $pluginRoot -Directory -Force | Sort-Object Name)) {
+    if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "随包插件路径不能经过链接：$($directory.FullName)" }
+    $manifestPath = Join-Path $directory.FullName 'plugin.json'
+    if (!(Test-Path -LiteralPath $manifestPath)) { continue }
+    # Only direct plugin projects; never discover build outputs or nested helper projects.
+    $projects = @(Get-ChildItem -LiteralPath $directory.FullName -Filter '*.csproj' -File -Force)
+    if ($projects.Count -ne 1) { throw "插件清单同目录必须有且仅有一个 csproj：$manifestPath" }
+    $project = $projects[0].FullName
     foreach ($path in @($project, $manifestPath)) {
         if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "随包插件缺少文件：$path" }
-        for ($current = $path; ; $current = Split-Path $current) {
-            if ((Get-Item -LiteralPath $current -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                throw "随包插件路径不能经过链接：$current"
-            }
-            if ($current -eq $repo) { break }
+        if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "随包插件路径不能经过链接：$path"
         }
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json

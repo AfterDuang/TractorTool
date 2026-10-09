@@ -4,7 +4,7 @@
 
 ## 1. 当前工作
 
-发布层 E97 已移除固定两插件名单：增删随包工程只改 [packaging/plugins.json](../packaging/plugins.json)，默认包含现有三个正式插件；版本读取各插件清单。校验/安装器使用 release.json.plugins 快照，源码名单变化不影响旧产物自检。仅改发布脚本、配置和文档，未改宿主或插件运行代码；语法/配置静态核对通过，新回归与完整发布尚未执行，后续需补证。详见[当前台账](DEVELOPMENT.md#current-status)。
+发布层 E98 按用户更正改为自动发现：删除 E97 的 packaging/plugins.json，扫描 Plugins 一级子目录中带 plugin.json 和唯一同目录工程的插件，ID/版本读取清单。无名单维护，不递归纳入测试或构建输出；该正式目录中符合规则的工程都会随包发布。校验/安装器仍使用 release.json.plugins 快照。只改发布发现、回归和文档，语法/引用静态核对通过，回归与完整发布未执行。详见[当前台账](DEVELOPMENT.md#current-status)。
 
 宿主仍处于 M5 发布准备；用户对上一版反馈“看着没问题”并允许继续。涉及宿主、Core、Contracts、公共 UI 的插件需求，仍遵守 AGENTS.md 的框架边界约定。
 

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
 | 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
 | 硬件显示与诊断（HUD） | [E96 · 传感器类型图标与 CPU 访问条件（2026-10-09）](#evidence-hud-hardware-types) |
 | 界面精简（HUD 草稿预览） | [E95 · 删除桌面草稿预览入口与逻辑（2026-10-09）](#evidence-hud-remove-draft-preview) |
@@ -2672,3 +2673,13 @@ HardwareMetrics 打开时记录驱动安装/管理员条件，CPU 温度/功率/
 release.json.plugins 保存实际组包快照；Verify-Distribution 继续逐包哈希/文件校验，并拒绝重复插件记录、路径不一致及未登记的插件文件，不回读当前仓库名单。安装器仍消费经过校验的 ZIP，首次附带/升级保留行为不变。本地菜单和随包说明移除固定数量，README/脚本导航/架构/台账同步；GitHub Actions 沿用同一入口，无需新增流水线分支。Build-Plugin 既有 MVVM/私有许可收集限制未在此轮扩展。
 
 静态验证：4 个相关 PowerShell 文件通过 Parser.ParseFile 语法检查，任务配置及随包清单 JSON、3 个工程 XML 与同目录插件清单可解析；名单身份分别为 TractorTool.ClipboardHistory 1.1.2、TractorTool.VideoExport 0.5.5、TractorTool.SystemHud 0.4.17，版本仅为核对时源码快照。新增 tests/DistributionPluginsChecks.ps1，用临时元数据及 ZIP 覆盖 0/1/多个任意命名插件、坏清单、重复与漏登记；按用户接手测试约定未运行该检查，也未构建分发、启动应用/安装器或执行 CI。静态证据不证明本轮整包已能运行，E43 历史构建不套用于新名单；并行 HUD 实现及用户配置不纳入本轮提交。
+
+<a id="evidence-distribution-discovery"></a>
+
+## E98：删除额外名单，自动识别插件工程（2026-10-09）
+
+用户更正 E97：发布应自动识别，不再维护额外文件。删除 packaging/plugins.json；Get-DistributionPlugins 仅扫描仓库 Plugins 一级子目录，以 plugin.json 识别插件，再要求同目录恰有一个 csproj，按目录名排序并读取身份。不递归进入构建输出或测试目录；无清单的辅助目录跳过，缺工程/多工程、链接、重复 ID 和无效身份明确失败。现有 packaging 目录保存安装器与许可材料，继续保留。
+
+Build-Distribution、VS Code 和 CI 调用入口不变，产物仍以 release.json.plugins 固定实际名单，沿用哈希/身份/未登记文件校验。没有宿主或插件运行代码变更，也未扩展 Build-Plugin 原有 MVVM 及许可收集边界。新增正式插件只需遵循源码目录规则；测试插件保持在 tests，否则符合正式目录规则就会自动纳入发布。
+
+更新 DistributionPluginsChecks 的临时夹具，覆盖无 Plugins、0/1/多个插件、任意工程命名及稳定顺序、辅助/嵌套/测试目录排除、缺失/多工程、坏 JSON、身份/重复 ID 和原有 ZIP 校验。2 个改动脚本通过 PowerShell Parser.ParseFile；现有三个插件工程 XML 与清单 JSON 可解析，文档本地链接及本轮 diff 静态核对通过。全工作区 diff 检查发现用户原有 launch.json 空白，不修改或提交；本轮指定文件检查无误。按用户测试约定未执行回归、完整构建、应用、安装器或 CI，不能将语法检查视为自动发现流程及发布运行已通过。
