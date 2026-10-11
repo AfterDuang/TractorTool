@@ -113,12 +113,14 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
         using var cleanup = new CancellationTokenSource(CleanupTimeout);
         try { await process.StopTreeAsync(cleanup.Token).ConfigureAwait(false); }
         catch (Exception ex) { errors.Add(ex); }
-        await reading.CancelAsync().ConfigureAwait(false);
+        // A confirmed empty tree closes its pipes naturally; cancelling healthy reads creates needless exceptions.
+        if (errors.Count != 0) await reading.CancelAsync().ConfigureAwait(false);
         try { await readers.WaitAsync(CleanupTimeout).ConfigureAwait(false); }
         catch (OperationCanceledException) { }
         catch (TimeoutException ex)
         {
             errors.Add(ex);
+            await reading.CancelAsync().ConfigureAwait(false);
             process.StandardOutput.Dispose();
             process.StandardError.Dispose();
             Observe(readers);

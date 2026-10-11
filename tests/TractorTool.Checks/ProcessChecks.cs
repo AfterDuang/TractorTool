@@ -42,6 +42,20 @@ internal static class ProcessChecks
             await Throws<IOException>(() => run);
             Assert(run.IsFaulted && !run.IsCanceled && session.StopCalls == 2 && session.Disposed);
         });
+        Case("Normal cancellation drains closed pipes without cancelling readers or logging an error", async () =>
+        {
+            var reader = new EofReader();
+            var session = new FakeSession { StandardOutput = reader, Stop = _ => { reader.End.TrySetResult(0); return Task.CompletedTask; } };
+            var log = new TestLog();
+            await using var runner = new ProcessRunner("Test", log, _ => session);
+            using var cancellation = new CancellationTokenSource();
+            var run = runner.RunAsync(Request("wait"), cancellation.Token);
+            await reader.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            cancellation.Cancel();
+            await Throws<OperationCanceledException>(() => run);
+            Assert(run.IsCanceled && session.StopCalls == 1 && session.Disposed);
+            Assert(!reader.Cancelled && log.Errors.Count == 0);
+        });
         Case("Read failure stops the process and disposes its streams", async () =>
         {
             var session = new FakeSession { StandardOutput = new FailingReader() };
@@ -188,6 +202,19 @@ internal static class ProcessChecks
             Assert(result.ExitCode == 0);
             AssertExited(await ReadPidAsync(child));
         });
+        Case("Native tree stop confirms descendants and permits repeated stop after teardown", async () =>
+        {
+            var child = Path.Combine(directory, "native-tree-child.pid");
+            using var session = WindowsProcessSession.Start(Request("tree", [child]));
+            var pid = await ReadPidAsync(child);
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await session.StopTreeAsync(deadline.Token);
+            AssertExited(pid);
+            await session.ExitCode.WaitAsync(TimeSpan.FromSeconds(3));
+            using var cancelled = new CancellationTokenSource();
+            cancelled.Cancel();
+            await session.StopTreeAsync(cancelled.Token); // Already empty: no notification or fresh wait is needed.
+        });
         Case("Cancelling one invocation stops its descendants without stopping another invocation", async () =>
         {
             await using var runner = NewRunner();
@@ -308,6 +335,24 @@ internal static class ProcessChecks
     {
         public override ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default) =>
             ValueTask.FromException<int>(new IOException("fixture read failure"));
+    }
+    private sealed class EofReader() : StreamReader(new MemoryStream())
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<int> End { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private CancellationTokenRegistration _registration;
+        public bool Cancelled { get; private set; }
+        public override ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default)
+        {
+            _registration = cancellationToken.Register(() => { Cancelled = true; End.TrySetCanceled(cancellationToken); });
+            Started.TrySetResult();
+            return new(End.Task);
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _registration.Dispose();
+            base.Dispose(disposing);
+        }
     }
     private sealed record Echo(string[] Arguments, string Directory);
 }

@@ -27,19 +27,23 @@ $shared = @(Get-ChildItem -LiteralPath $files -Recurse -Filter *.dll | Where-Obj
     $_.BaseName -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$'
 })
 if ($shared.Count) { throw '插件输出包含宿主/共享 SDK 的副本。' }
-$assets = Get-Content -LiteralPath (Join-Path $projectRoot 'obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
-$toolkit = @($assets.libraries.Keys | Where-Object { $_ -like 'CommunityToolkit.Mvvm/*' })
-if ($toolkit.Count -ne 1) { throw '未找到唯一的 MVVM 还原版本。' }
-$packagePath = $assets.libraries[$toolkit[0]].path
-$packageRoot = @($assets.packageFolders.Keys | ForEach-Object { Join-Path $_ $packagePath } |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_ 'License.md') }) | Select-Object -First 1
-if (!$packageRoot) { throw '未找到本次还原包的 MVVM 许可。' }
 $licenses = Join-Path $files 'Licenses'
-New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $packageRoot 'License.md') -Destination (Join-Path $licenses 'CommunityToolkit.Mvvm.md')
-Copy-Item -LiteralPath (Join-Path $packageRoot 'ThirdPartyNotices.txt') -Destination $licenses
+# Only collect this known license when the package actually ships; MVVM is not an SDK requirement.
+if (Test-Path -LiteralPath (Join-Path $files 'CommunityToolkit.Mvvm.dll') -PathType Leaf) {
+    $assets = Get-Content -LiteralPath (Join-Path $projectRoot 'obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
+    $toolkit = @($assets.libraries.Keys | Where-Object { $_ -like 'CommunityToolkit.Mvvm/*' })
+    if ($toolkit.Count -ne 1) { throw '未找到唯一的 MVVM 还原版本。' }
+    $packagePath = $assets.libraries[$toolkit[0]].path
+    $packageRoot = @($assets.packageFolders.Keys | ForEach-Object { Join-Path $_ $packagePath } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_ 'License.md') }) | Select-Object -First 1
+    if (!$packageRoot) { throw '未找到本次还原包的 MVVM 许可。' }
+    New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'License.md') -Destination (Join-Path $licenses 'CommunityToolkit.Mvvm.md')
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'ThirdPartyNotices.txt') -Destination $licenses
+}
 $privateLicenses = Join-Path $projectRoot 'Licenses'
 if (Test-Path -LiteralPath $privateLicenses) {
+    New-Item -ItemType Directory -Path $licenses -Force | Out-Null
     Get-ChildItem -LiteralPath $privateLicenses | Copy-Item -Destination $licenses -Recurse
 }
 $archive = Join-Path $destination "$($manifest.id)-$($manifest.version).zip"

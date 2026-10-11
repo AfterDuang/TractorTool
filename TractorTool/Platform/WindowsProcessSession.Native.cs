@@ -44,6 +44,20 @@ internal sealed partial class WindowsProcessSession
         public long UserTime, KernelTime, PeriodUserTime, PeriodKernelTime;
         public uint PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobCompletionPort { public IntPtr Key, Port; }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern SafeFileHandle CreateIoCompletionPort(IntPtr file, IntPtr existingPort, nuint key, uint threads);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetQueuedCompletionStatus(SafeFileHandle port, out uint message, out nuint key, out IntPtr overlapped, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostQueuedCompletionStatus(SafeFileHandle port, uint message, nuint key, IntPtr overlapped);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(SafeJobHandle job, int kind, ref JobCompletionPort port, int size);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern SafeJobHandle CreateJobObjectW(IntPtr attributes, string? name);

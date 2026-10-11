@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -15,17 +16,15 @@ internal sealed partial class WindowsProcessSession : IProcessSession
     private readonly SafeWaitHandle _process;
     private readonly ProcessWaitHandle _signal;
     private readonly RegisteredWaitHandle _wait;
-    private readonly Action? _pollingWarning;
     private readonly TaskCompletionSource<int> _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public StreamReader StandardOutput { get; }
     public StreamReader StandardError { get; }
     public Task<int> ExitCode => _exit.Task;
 
     private WindowsProcessSession(SafeJobHandle job, SafeWaitHandle process,
-        AnonymousPipeServerStream output, AnonymousPipeServerStream error, Action? pollingWarning)
+        AnonymousPipeServerStream output, AnonymousPipeServerStream error)
     {
         _job = job;
-        _pollingWarning = pollingWarning;
         _process = process;
         StandardOutput = new(output, Encoding.UTF8);
         StandardError = new(error, Encoding.UTF8);
@@ -41,9 +40,7 @@ internal sealed partial class WindowsProcessSession : IProcessSession
         }, null, Timeout.Infinite, executeOnlyOnce: true);
     }
 
-    public static IProcessSession Start(ProcessRequest request) => Start(request, null);
-
-    internal static IProcessSession Start(ProcessRequest request, Action? pollingWarning)
+    public static IProcessSession Start(ProcessRequest request)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10))
             throw new PlatformNotSupportedException("受管理的工具进程当前需要 Windows 10 或更新版本。");
@@ -84,7 +81,7 @@ internal sealed partial class WindowsProcessSession : IProcessSession
             error.DisposeLocalCopyOfClientHandle();
             input.DisposeLocalCopyOfClientHandle();
             // Disposing the remaining input writer at return delivers EOF, never an interactive console.
-            var session = new WindowsProcessSession(job, process, output, error, pollingWarning);
+            var session = new WindowsProcessSession(job, process, output, error);
             transferred = true;
             return session;
         }
@@ -100,21 +97,54 @@ internal sealed partial class WindowsProcessSession : IProcessSession
         }
     }
 
-    public async Task StopTreeAsync(CancellationToken cancellationToken)
+    public Task StopTreeAsync(CancellationToken cancellationToken)
     {
-        Check(QueryInformationJobObject(_job, 1, out var before, Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
-        if (before.ActiveProcesses == 0) return;
-        Check(TerminateJobObject(_job, 0xC000013A));
-        // Bounded cleanup only; normal process completion uses the OS wait above, with no idle polling.
-        var warned = false;
-        while (true)
+        if (IsTreeEmpty()) return Task.CompletedTask;
+        // Only teardown needs a blocking native wait; no worker or notification queue during normal execution.
+        return Task.Run(() => StopTree(cancellationToken));
+    }
+
+    private void StopTree(CancellationToken cancellationToken)
+    {
+        using var port = CreateIoCompletionPort(new IntPtr(-1), IntPtr.Zero, 0, 1);
+        if (port.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var association = new JobCompletionPort { Port = port.DangerousGetHandle() };
+        Check(SetInformationJobObject(_job, 7, ref association, Marshal.SizeOf<JobCompletionPort>()));
+        try
         {
+            Check(TerminateJobObject(_job, 0xC000013A));
+            if (IsTreeEmpty()) return;
+            // Posting wakes cancellation promptly. The native timeout also bounds a failed wakeup.
+            using var cancel = cancellationToken.Register(() => PostQueuedCompletionStatus(port, 0, 1, IntPtr.Zero));
+            var clock = Stopwatch.StartNew();
+            while (!cancellationToken.IsCancellationRequested && clock.ElapsedMilliseconds < 3000)
+            {
+                var remaining = (uint)Math.Max(1, 3000 - clock.ElapsedMilliseconds);
+                if (!GetQueuedCompletionStatus(port, out var message, out var key, out _, remaining))
+                {
+                    var error = Marshal.GetLastWin32Error();
+                    if (error != 258) throw new Win32Exception(error); // WAIT_TIMEOUT
+                    break;
+                }
+                if (key == 1) break;
+                if (message == 4 && IsTreeEmpty()) return; // JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO
+            }
+            // Job notifications are not guaranteed: confirm state once at the deadline before reporting failure.
+            if (IsTreeEmpty()) return;
             cancellationToken.ThrowIfCancellationRequested();
-            Check(QueryInformationJobObject(_job, 1, out var accounting, Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
-            if (accounting.ActiveProcesses == 0) return;
-            if (!warned) { _pollingWarning?.Invoke(); warned = true; }
-            await Task.Delay(20, cancellationToken).ConfigureAwait(false);
+            throw new TimeoutException("工具进程树未在 3 秒内退出。");
         }
+        finally
+        {
+            association.Port = IntPtr.Zero;
+            Check(SetInformationJobObject(_job, 7, ref association, Marshal.SizeOf<JobCompletionPort>()));
+        }
+    }
+
+    private bool IsTreeEmpty()
+    {
+        Check(QueryInformationJobObject(_job, 1, out var accounting, Marshal.SizeOf<JobAccounting>(), IntPtr.Zero));
+        return accounting.ActiveProcesses == 0;
     }
 
     public void Dispose()

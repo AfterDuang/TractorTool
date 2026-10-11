@@ -10,7 +10,6 @@ using TractorTool.Core.Packages;
 using TractorTool.Core.Processes;
 using TractorTool.Core.Tasks;
 using TractorTool.Contracts;
-using TractorTool.Contracts.Processes;
 using TractorTool.Contracts.Tasks;
 using System.Net.Http;
 using TractorTool.Platform;
@@ -42,7 +41,6 @@ public partial class App : Application
     private BackgroundTaskService? _tasks;
     private bool _confirmingExit;
     private CancellationTokenSource? _exitConfirmation;
-    private int _pollingWarningReported;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -176,12 +174,12 @@ public partial class App : Application
         _tasks = new BackgroundTaskService(Path.Combine(paths.DataRoot, "Data", "tasks.json"), _log);
         ThemeService.Apply(settings);
         _packageHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        _packageProcesses = new ProcessRunner("Packages", _log, OperatingSystem.IsWindows() ? StartWindowsProcess :
+        _packageProcesses = new ProcessRunner("Packages", _log, OperatingSystem.IsWindows() ? WindowsProcessSession.Start :
             _ => throw new PlatformNotSupportedException("当前平台尚未提供受管理的工具进程适配器。"));
         _packages = new ExternalPackageService(paths.PackageRoot, compatibility.Rid, _packageHttp, _packageProcesses, _log,
             sourcesFile: Path.Combine(paths.ConfigRoot, "dependency-sources.json"));
         _plugins = new PluginHost(paths, compatibility, _log,
-            OperatingSystem.IsWindows() ? StartWindowsProcess : null, _packages, _tasks);
+            OperatingSystem.IsWindows() ? WindowsProcessSession.Start : null, _packages, _tasks);
         if (managementError is not null) _plugins.Discover([], startupError: managementError);
         _tray = new TrayService(Restore, ExitAsync, _log, Program.LaunchArguments.Contains("--no-tray"));
         _vm = new MainViewModel(paths, _plugins, _log, new SettingsViewModel(paths, store, settings, _log, _packages, _pluginManager), ExitAsync,
@@ -196,13 +194,6 @@ public partial class App : Application
         if (window.WindowState == WindowState.Minimized) window.WindowState = WindowState.Normal;
         window.Activate();
     }
-
-    private IProcessSession StartWindowsProcess(ProcessRequest request) => WindowsProcessSession.Start(request, () =>
-    {
-        if (Interlocked.Exchange(ref _pollingWarningReported, 1) == 0)
-            _log?.Write(AppLogLevel.Warning, "Performance",
-                "开发优化提醒：Windows 进程树终止后仍使用 20ms 有界轮询确认子进程退出，单次上限 3 秒；后续应改为 Job 事件通知。正常退出、日志和剪贴板更新不轮询。本次启动只提示一次。");
-    });
 
     private Task ExitAsync() => ExitCoreAsync(systemExit: false);
     private async Task ExitCoreAsync(bool systemExit)

@@ -15,8 +15,10 @@ Invoke-Recorded 'core-checks' { dotnet run --project (Join-Path $repo 'tests/Tra
 $before = @(Get-ChildItem -LiteralPath $publish -Recurse -File | ForEach-Object { [pscustomobject]@{ Path = [IO.Path]::GetRelativePath($publish, $_.FullName); SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
 $before | ConvertTo-Json | Set-Content (Join-Path $run 'host-hashes-before.json')
 # Local development may have built the plugin already. Rebuild using ONLY the published SDK after hashing the host.
-$pluginOutput = Join-Path $run 'plugin-build'
-Invoke-Recorded 'plugin-build' { dotnet build (Join-Path $repo 'tests/IndependentPlugin/IndependentPlugin.csproj') -t:Rebuild -c $Configuration -m:1 -nr:false "-p:HostSdkDir=$publish" -o $pluginOutput }
+$pluginPackage = Join-Path $run 'plugin-build'
+# This fixture intentionally has no MVVM dependency; exercise the same packaging entry as real plugins.
+Invoke-Recorded 'plugin-build' { & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project (Join-Path $repo 'tests/IndependentPlugin/IndependentPlugin.csproj') -HostSdkDir $publish -Output $pluginPackage }
+$pluginOutput = Join-Path $pluginPackage 'files'
 $pluginManifest = Get-Content -LiteralPath (Join-Path $pluginOutput 'plugin.json') -Raw | ConvertFrom-Json
 $install = Join-Path $publish "Plugins/$($pluginManifest.id)/$($pluginManifest.version)"
 New-Item -ItemType Directory -Path $install -Force | Out-Null

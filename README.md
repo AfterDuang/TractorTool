@@ -91,7 +91,7 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 ### GitHub Release 草稿
 
-仓库上传 GitHub 后，推送与 `Directory.Build.props` 版本一致的标签（例如 `v0.1.0`），工作流会构建、校验并创建 **Release 草稿**。普通提交、PR 和手动构建只保留 Actions 产物。标签、产物版本与源码提交须一致，工作区须干净；预发布标签生成 prerelease 草稿。
+仓库上传 GitHub 后，推送 `v` 加 `Directory.Build.props` 中产品版本的标签，工作流会构建、校验并创建 **Release 草稿**。普通提交、PR 和手动构建只保留 Actions 产物。标签、产物版本与源码提交须一致，工作区须干净；预发布标签生成 prerelease 草稿。
 
 草稿不会自动公开。维护者核对附件、发布说明、本项目授权和实际运行验收后，再到 GitHub 发布。已有同标签 Release 不覆盖；上传失败或任务中断可能留下不完整草稿，先在 Releases 核对，仅删除本次失败的草稿，再重跑 `draft-release` job。不要删除正式 Release 来绕过保护。当前配置尚未在 GitHub 实跑，也未自动配置远程或推送。
 

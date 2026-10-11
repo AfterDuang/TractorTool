@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
 | 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
 | 硬件显示与诊断（HUD） | [E96 · 传感器类型图标与 CPU 访问条件（2026-10-09）](#evidence-hud-hardware-types) |
@@ -2683,3 +2684,34 @@ release.json.plugins 保存实际组包快照；Verify-Distribution 继续逐包
 Build-Distribution、VS Code 和 CI 调用入口不变，产物仍以 release.json.plugins 固定实际名单，沿用哈希/身份/未登记文件校验。没有宿主或插件运行代码变更，也未扩展 Build-Plugin 原有 MVVM 及许可收集边界。新增正式插件只需遵循源码目录规则；测试插件保持在 tests，否则符合正式目录规则就会自动纳入发布。
 
 更新 DistributionPluginsChecks 的临时夹具，覆盖无 Plugins、0/1/多个插件、任意工程命名及稳定顺序、辅助/嵌套/测试目录排除、缺失/多工程、坏 JSON、身份/重复 ID 和原有 ZIP 校验。2 个改动脚本通过 PowerShell Parser.ParseFile；现有三个插件工程 XML 与清单 JSON 可解析，文档本地链接及本轮 diff 静态核对通过。全工作区 diff 检查发现用户原有 launch.json 空白，不修改或提交；本轮指定文件检查无误。按用户测试约定未执行回归、完整构建、应用、安装器或 CI，不能将语法检查视为自动发现流程及发布运行已通过。
+
+<a id="evidence-framework-packaging-process"></a>
+
+## E99：框架打包与进程清理收尾（2026-10-11）
+
+用户要求先解决软件框架，插件问题暂缓。本轮不改 Plugins 业务、Contracts/UI 接口或用户配置；保留 .gitignore、.vscode/launch.json 和 Directory.Build.props 的用户修改。props 当前产品版本是 1.0.0，删除当前文档中固定 0.1.0 的默认值描述；历史包版本不改。
+
+### 实现与判断
+
+- Build-Plugin 仅在输出实际带 CommunityToolkit.Mvvm.dll 时读取其唯一还原版本并复制许可；不存在该 DLL 时不需要 MVVM 元数据或许可。随包 MVVM 的元数据/许可缺失仍失败，插件自备 Licenses 始终复制；其他私有库许可仍由作者维护，不引入第二套通用许可扫描器。Verify-PluginHost 改为通过同一脚本打包既有、无 MVVM 的 IndependentPlugin，避免验证绕过实际发布入口。
+- WindowsProcessSession 保留创建时原子 Job 归属、句柄继承白名单与 KILL_ON_JOB_CLOSE。仅终止时临时关联 IO 完成端口，在后台阻塞等待空树事件，取消通过投递消息唤醒；原生等待独立限制三秒，结束时解除关联并释放句柄。初始、空树通知及取消/截止点核对实际活动进程数，不定时查询。删除 App 的轮询提醒字段/包装方法和适配器回调。
+- 不能单独依赖空树通知：Microsoft 明确说明普通 Job 消息不保证送达，见 [完成端口关联](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port)。因此截止时仍做一次状态核对，避免已退出但丢通知时误报；等待/取消机制参考 [GetQueuedCompletionStatus](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getqueuedcompletionstatus) 和 [PostQueuedCompletionStatus](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-postqueuedcompletionstatus)。没有将等待根进程误当作整棵树已退出。
+- ProcessRunner 在确认树为空后让 stdout/stderr 自然读到 EOF；只有清理失败或管道超时才取消读取。正常调用方取消仍返回取消，意外适配器取消/清理失败仍是错误，不调整调试器设置或吞掉真实异常。此前用户截图触发原因未知，本轮仅删除确认存在的冗余读取取消，不能宣称旧异常已完全解决。
+- ProcessChecks 新增正常取消不取消健康读取/不记 Error 的替身断言，以及真实 Job 子进程清理后重复停止用例；沿用根先退、多个并行调用隔离、超时/退出和未确认清理失败的既有用例。只编译，未运行；通知丢失的极端路径未注入验证。
+
+### 构建与静态证据
+
+产物根为 artifacts/e99-framework。执行以下构建，无应用/检查 DLL 执行：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Release -m:1 -nr:false -o artifacts/e99-framework/host-build
+dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Release -m:1 -nr:false -o artifacts/e99-framework/checks-build
+./scripts/Build-Plugin.ps1 -Project tests/IndependentPlugin/IndependentPlugin.csproj -HostSdkDir artifacts/e99-framework/host-build -Output artifacts/e99-framework/no-mvvm-package
+./scripts/Build-Plugin.ps1 -Project tests/PackageProbePlugin/PackageProbePlugin.csproj -HostSdkDir artifacts/e99-framework/host-build -Output artifacts/e99-framework/mvvm-package
+```
+
+宿主构建 0 错误/2 条 NU1900，核心检查工程 0 错误/0 警告；两插件各 0 错误/2 条 NU1900。警告均为 NuGet 漏洞数据源 https://api.nuget.org/v3/index.json 网络不可达，没有关闭审计或把查询记为通过。独立插件引用本轮宿主构建输出中的公开 SDK，不是本轮自包含发布包；无源码 SDK 回退或宿主文件变更。
+
+Test.Independent-1.0.1.zip（10 文件）与 Test.PackageProbe-1.1.0.zip（9 文件）逐项文件 SHA256 和 .sha256 侧文件核对一致；前者无 MVVM DLL，后者有 DLL 及两份许可文件。SDK 输出 87 文件打包前后哈希一致。首次 ZIP 核对误用不存在的 Select-Object -Single 参数而中止，改为显式检查唯一 ZIP 后完整重做成功；未将失败调用算作校验通过。原始 SDK 哈希清单与包核对结论保存在该产物根。
+
+两个修改的 PowerShell 脚本通过 Parser.ParseFile；本轮改动文档本地链接、陈旧引用和指定 diff 静态核对通过。未运行 Verify-PluginHost、核心断言、真实 Windows Job/媒体/UI、完整分发/安装器或 CI；用户继续负责运行验收。插件 E94 两项 P2、迁移故障/长期内存/跨会话/无 SDK 环境缺口不因本轮编译成功而关闭。

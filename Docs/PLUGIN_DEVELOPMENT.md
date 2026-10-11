@@ -256,7 +256,7 @@ var result = await context.Processes!.RunAsync(
 - 模型变更须兼顾已有配置、版本拒绝/迁移与回退，不在读取失败时覆盖原文件。插件专属设置由插件自己解释，宿主不理解业务字段。
 - 日志通过上下文记录可定位的插件/操作信息，不输出用户正文、凭据或其他敏感数据。API 1.7 支持 `context.Log.Write(AppLogLevel.Warning, context.PluginId, message)`；原 Write 签名保留，无异常为 INFO、带异常为 ERROR。调用新重载的插件须声明 API 1.7。
 - 记录重要操作结果、生命周期和失败，不记录日常导航、逐帧进度或重复刷新。正常取消记 INFO，能力降级记 WARNING，真正失败带必要异常记 ERROR；未请求的取消不能冒充用户取消。公共任务服务已记录排队/执行/取消/终态和每 10% 或阶段变化，插件无需重复写一套公共任务日志。
-- 更新优先订阅事件；若确有无法避免的轮询，应在实际启用时记录一次面向开发者的优化 WARNING，说明范围、频率和退出条件，禁止每轮刷屏。宿主已对 Windows 进程树终止确认提供该提醒，不需要插件重复实现。
+- 更新优先订阅事件；若确有无法避免的轮询，应在实际启用时记录一次面向开发者的优化 WARNING，说明范围、频率和退出条件，禁止每轮刷屏。宿主 Windows 进程树清理通过 Job 通知及截止时状态核对完成，不再定时轮询。
 
 ### 可选插件图标（UI API 1.2）
 
@@ -299,7 +299,7 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 
 独立交付须先发布宿主到新目录并记录原文件哈希，再引用该 SDK 构建插件、核对完整依赖与许可，最后复核宿主哈希未变。源码模式编译不能代替独立构建证据；ZIP 安装、DLL 装载及真实交互也分别取证。
 
-当前 [Build-Plugin](../scripts/Build-Plugin.ps1) 适用于使用 CommunityToolkit.Mvvm 的仓库插件，要求 PowerShell 7.4+ 和根 global.json 指定的 SDK；该要求来自脚本，不是插件协议。它复制 MVVM 和插件自备许可，不自动补齐其他私有库许可，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
+[Build-Plugin](../scripts/Build-Plugin.ps1) 要求 PowerShell 7.4+ 和根 global.json 指定的 SDK，不要求插件使用 CommunityToolkit.Mvvm。脚本复制实际随包的 MVVM 许可及插件自备许可，不自动补齐其他私有库许可，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
 
 以下是命令示例，未表示已经执行；从仓库根目录操作，两个输出位置均使用新目录：
 
