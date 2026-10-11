@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 公共页面切换 | [E100 · 消除整页透明入场及嵌套首次叠加（2026-10-11）](#evidence-page-entrance) |
 | 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
 | 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
@@ -2731,3 +2732,23 @@ Test.Independent-1.0.1.zip（10 文件）与 Test.PackageProbe-1.1.0.zip（9 文
 按用户要求只整理文档：DEVELOPMENT 合并逐轮开场摘要，区分实现、证据和未关闭项，A19/A22/A24 同步当前进程、分发及托盘验证边界；PROJECT_CONTEXT 缩为接续摘要和入口，不重复数值证据。架构明确三秒限制只针对原生通知等待，宿主与插件的许可收集职责分开，脚本说明同步。根 README 和插件规范核对后保留，不增加具体插件内部说明。
 
 只读确认 E99 宿主/核心检查输出、两份机制 ZIP 及 E96 HUD ZIP 仍存在；旧 E51 分发、E52 视频包、E56 夹具、E58 沙盒、E63/E64 托盘副本及 E67 隔离宿主已不存在，从当前入口移除，旧证据留在各 E 记录。本轮没有删除、重建或重新校验产物内容。十份框架相关文档的 403 个本地链接、其中 212 个 Markdown 锚点全部通过；改动文件 diff 空白检查通过。未构建、运行检查程序或启动应用，E99 P2 回归和其他未完成验收保持未关闭。
+
+<a id="evidence-page-entrance"></a>
+
+## E100：公共页面切换闪动修复（2026-10-11）
+
+用户提供切页轻微闪动的分析截图，要求确认后修复。源码确认 PageHost 每次开启动画时先将承载整个页面的 Border.Opacity 设为 0，再以 500ms 淡入并从 18 DIP 偏移恢复；新内容存在透明阶段，会露出宿主背景。设置和视频在 Loaded 中装入首个内层页，日志也复用 PageHost，旧实现未区分首次装入与替换，会叠加父子入场。此为确定的代码行为，未启动真实窗口复现，不将截图推断当作 GPU 驱动故障。
+
+修复只进入公共 PageHost：透明度保持 1，删除透明度过渡；已有内容且已挂载到 TopLevel、动画开启时才播放 8 DIP / 180ms 位移。首次内容直接显示，内层实际切页继续有动效。保留原离页取消、同步失败恢复、过期回调保护、统一动画开关及公开 ABI，不增加页面缓存、计时器、图形后端设置或插件特判。
+
+NavigationChecks 扩展快速切换/清空回归，切换开始及动画期间均断言不透明，等待条件改为位移完成；新增首次嵌套不重复入场、后续内层切换仍有动效、关闭动画复位断言。既有导航取消、故障恢复、页面回收与设置生命周期检查保留。新增逻辑只编译未运行。
+
+构建命令：
+
+```powershell
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false -o artifacts/e100-navigation/checks-build
+```
+
+首次构建误用了当前 Avalonia 不提供的 GetVisualRoot，失败为 CS1061，记录在 build.log；改用仓库已有的 TopLevel.GetTopLevel 后完整重建成功，0 错误/6 条 NU1900（NuGet 漏洞数据源不可达，未关闭审计），记录在 build-fixed.log。输出包含本轮宿主、Core、Contracts、UI 和集成检查程序集，不是自包含发布或安装包。未执行导航断言、应用、真实 GPU/UI 或完整分发；保留用户配置和插件业务。真实切页观感、E99 P2 回归及其他原有验收缺口继续留在台账。
+
+四份改动文档的 253 个本地链接、其中 175 个 Markdown 锚点通过；源码及文档 diff 空白检查通过。未修改或提交用户 .gitignore、.vscode/launch.json、Directory.Build.props。

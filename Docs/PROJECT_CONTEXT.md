@@ -4,13 +4,13 @@
 
 ## 1. 当前工作
 
-**当前在 M5 可靠性与发布准备；用户要求先处理框架，插件问题暂缓，本轮只整理文档。** Windows 通知、pip/Python 和托盘动态方案列表不在本轮范围。
+**当前在 M5 可靠性与发布准备；先处理框架，插件问题暂缓。本轮按用户截图排查并修复页面切换闪动。** Windows 通知、pip/Python 和托盘动态方案列表不在本轮范围。
 
-最近生产代码提交 `907d23e`：[E99](PROJECT_HISTORY.md#evidence-framework-packaging-process) 允许非 MVVM 插件独立打包，Windows Job 清理改为通知等待，确认退出后自然排空管道。构建及包静态校验已有证据，新增检查和原生行为未运行；不能视为旧截图取消异常已完全解决。
+最近修复 [E100](PROJECT_HISTORY.md#evidence-page-entrance)：公共 PageHost 不再把整页设透明，只在已挂载容器替换现有页时播放短位移；初次子页装入直接显示，避免嵌套叠加。快速导航、持续可见、嵌套首次及动画开关回归已补并编译，未执行检查程序或真实 UI；实际观感由用户确认。未改公开 ABI、插件业务或 GPU 配置。
 
-随后三名 gpt-6.1-sol / high 子代理只读审查，主代理复核，未发现确定的新增功能缺陷；审查记录提交 `7ee3e2d`。**下一项是补 P2 回归：进程树清理成功但 reader 不给 EOF 时的超时取消、释放及错误报告。** 当前只整理文档，该项未修复；全部覆盖限制和后续顺序见[下一步](DEVELOPMENT.md#next)。
+此前 E99 生产代码提交 `907d23e`、三代理审查记录 `7ee3e2d` 保留。**进程树清理成功但 reader 不给 EOF 的 P2 回归仍未补**；不把此次导航构建当作进程或整版运行验证。全部覆盖限制和后续顺序见[下一步](DEVELOPMENT.md#next)。
 
-本次移除了已不存在的旧测试入口；仍存在的构建和插件包集中列在[本地产物](DEVELOPMENT.md#local-artifacts)。E99 构建目录不是自包含完整分发，不用旧宿主与新夹具拼装代替当前验证。
+当前构建和插件包集中列在[本地产物](DEVELOPMENT.md#local-artifacts)。E100 输出位于 artifacts/e100-navigation，不是自包含完整分发；不要使用已从文档移除的旧测试目录。
 
 ## 2. 接续时必须保留
 
@@ -23,6 +23,7 @@
 
 | 工作 | 入口 |
 | --- | --- |
+| 页面切换与回归 | [PageHost](../TractorTool.UI/Controls/PageHost.cs)、[NavigationChecks](../tests/TractorTool.IntegrationChecks/NavigationChecks.cs)；设置/日志及视频内层复用同一控件 |
 | 进程清理与回归 | [WindowsProcessSession](../TractorTool/Platform/WindowsProcessSession.cs)、[ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs)、[ProcessChecks](../tests/TractorTool.Checks/ProcessChecks.cs) |
 | 独立打包 | [Build-Plugin](../scripts/Build-Plugin.ps1)、[Verify-PluginHost](../scripts/Verify-PluginHost.ps1)、[脚本边界](../scripts/README.md) |
 | 装载与公共接口 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[接入规范](PLUGIN_DEVELOPMENT.md) |

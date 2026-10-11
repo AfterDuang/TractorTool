@@ -51,14 +51,16 @@ internal static class NavigationChecks
             try
             {
                 Motion.Configure(Application.Current!, true);
-                presenter.Present(new Border()); presenter.Clear();
-                presenter.Present(new Border()); presenter.Present(new Border());
+                presenter.Present(new Border()); presenter.Present(new Border()); presenter.Clear();
+                presenter.Present(new Border()); presenter.Present(new Border()); presenter.Present(new Border());
+                Require(presenter.Child!.Opacity == 1);
                 window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var deadline = DateTime.UtcNow.AddSeconds(2);
-                while (presenter.Child!.Opacity < 1 && DateTime.UtcNow < deadline)
+                while (!presenter.Child!.RenderTransform!.Value.IsIdentity && DateTime.UtcNow < deadline)
                 {
                     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                     Dispatcher.UIThread.RunJobs(); Thread.Sleep(10);
+                    Require(presenter.Child.Opacity == 1);
                 }
                 Require(presenter.Child!.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
                 presenter.Present(new Border());
@@ -69,6 +71,36 @@ internal static class NavigationChecks
                 Require(presenter.Child.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
             }
             finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
+        });
+
+        check("Nested initial content stays visible and does not replay its parent's entrance", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            var outer = new PageHost();
+            var window = new Window { Content = outer, Width = 400, Height = 300 };
+            window.Show();
+            try
+            {
+                Motion.Configure(Application.Current!, true);
+                outer.Present(new Border());
+                Require(outer.Child!.Opacity == 1 && outer.Child.RenderTransform!.Value.IsIdentity);
+                var nested = new PageHost();
+                outer.Present(nested);
+                Require(outer.Child.Opacity == 1 && !outer.Child.RenderTransform!.Value.IsIdentity);
+                // Settings and video create their first inner page after attachment/Loaded.
+                nested.Present(new Border());
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                Require(nested.Child!.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
+                Require(nested.Child.Transitions is null);
+
+                nested.Present(new Border());
+                Require(nested.Child.Opacity == 1 && !nested.Child.RenderTransform!.Value.IsIdentity);
+                Dispatcher.UIThread.RunJobs();
+                Motion.Configure(Application.Current!, false);
+                Require(outer.Child.Opacity == 1 && outer.Child.RenderTransform!.Value.IsIdentity);
+                Require(nested.Child.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
+            }
+            finally { outer.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });
 
         check("UI 1.5 accepts existing page contracts and rejects future versions", () =>

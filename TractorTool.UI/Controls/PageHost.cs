@@ -18,7 +18,7 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
     public static readonly RoutedEvent<CancelRoutedEventArgs> NavigatingFromEvent =
         RoutedEvent.Register<PageHost, CancelRoutedEventArgs>("NavigatingFrom", RoutingStrategies.Direct);
 
-    private static readonly TransformOperations EntranceOffset = TransformOperations.Parse("translate(0px, 18px)");
+    private static readonly TransformOperations EntranceOffset = TransformOperations.Parse("translate(0px, 8px)");
     private Border _presenter = new();
 
     public PageHost()
@@ -43,9 +43,10 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
             if (navigating.Cancel) return false;
 
             var presenter = _presenter;
-            var animate = FAUISettings.AreAnimationsEnabled();
+            // Initial nested content enters with its parent; keep replacements opaque to avoid a blank flash.
+            var animate = presenter.Child is not null && TopLevel.GetTopLevel(this) is not null && FAUISettings.AreAnimationsEnabled();
             presenter.Transitions = null;
-            presenter.Opacity = animate ? 0 : 1;
+            presenter.Opacity = 1;
             presenter.RenderTransform = animate ? EntranceOffset : TransformOperations.Identity;
             presenter.Child = page;
             if (animate)
@@ -57,10 +58,8 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
                     if (FAUISettings.AreAnimationsEnabled())
                         presenter.Transitions = new Transitions
                         {
-                            new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) },
-                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) }
+                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) }
                         };
-                    presenter.Opacity = 1;
                     presenter.RenderTransform = TransformOperations.Identity;
                 }, DispatcherPriority.Render);
             }
