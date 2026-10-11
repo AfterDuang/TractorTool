@@ -1,8 +1,11 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using FluentAvalonia.Core;
 using TractorTool.Core.Logging;
@@ -106,6 +109,50 @@ internal static class NavigationChecks
                 Require(nested.Child.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
             }
             finally { outer.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
+        });
+
+        check("Animated replacements retain pixels without retaining the departed page's resources", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            var host = new PageHost();
+            var window = new Window { Content = host, Width = 100, Height = 100 };
+            window.Show();
+            try
+            {
+                Motion.Configure(Application.Current!, false);
+                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                var empty = ReadCenterPixel(host);
+                var old = new Border { Background = Brushes.Red };
+                host.Present(old); window.UpdateLayout();
+                var red = ReadCenterPixel(host);
+                Require(red != empty);
+                Motion.Configure(Application.Current!, true);
+                host.Present(new Border { Background = Brushes.Blue });
+                old.Background = Brushes.Green; // Simulate immediate cleanup or mutation after leaving.
+                window.UpdateLayout();
+                Require(ReadCenterPixel(host) == red);
+                host.Present(new Border { Background = Brushes.Yellow });
+                window.UpdateLayout();
+                Require(ReadCenterPixel(host) == red); // Rapid navigation captures the currently visible composite.
+                var deadline = DateTime.UtcNow.AddSeconds(2);
+                while (host.Child!.Opacity < 1 && DateTime.UtcNow < deadline)
+                {
+                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();
+                    Require(ReadCenterPixel(host) != empty);
+                    Thread.Sleep(10);
+                }
+                Require(host.Child!.Opacity == 1 && ReadCenterPixel(host) != red);
+                var yellow = ReadCenterPixel(host);
+                host.Present(new Border()); window.UpdateLayout();
+                Require(ReadCenterPixel(host) == yellow);
+                Motion.Configure(Application.Current!, false); Dispatcher.UIThread.RunJobs();
+                Require(ReadCenterPixel(host) == empty);
+                Motion.Configure(Application.Current!, true);
+                host.Present(new Border { Background = Brushes.Red });
+                host.Clear(); window.UpdateLayout();
+                Require(ReadCenterPixel(host) == empty);
+            }
+            finally { host.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });
 
         check("UI 1.5 accepts existing page contracts and rejects future versions", () =>
@@ -271,6 +318,20 @@ internal static class NavigationChecks
             }
             finally { vm.Dispose(); host.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         });
+    }
+
+    private static int ReadCenterPixel(Control control)
+    {
+        var size = PixelSize.FromSize(control.Bounds.Size, 1);
+        using var bitmap = new RenderTargetBitmap(size);
+        bitmap.Render(control);
+        var pixel = Marshal.AllocHGlobal(4);
+        try
+        {
+            bitmap.CopyPixels(new PixelRect(size.Width / 2, size.Height / 2, 1, 1), pixel, 4, 4);
+            return Marshal.ReadInt32(pixel);
+        }
+        finally { Marshal.FreeHGlobal(pixel); }
     }
 
     private static void Require(bool condition)

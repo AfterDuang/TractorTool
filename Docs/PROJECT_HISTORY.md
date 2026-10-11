@@ -14,7 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
-| 公共页面切换 | [E100 · 页面切换时序，保留原动画（2026-10-11）](#evidence-page-entrance) |
+| 公共页面切换 | [E100 · 页面画面衔接，保留原动画（2026-10-11）](#evidence-page-entrance) |
 | 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
 | 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
@@ -2768,3 +2768,19 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 ```
 
 最终构建 0 错误/3 条 NU1900（漏洞数据源不可达），记录在 artifacts/e100-navigation/build-retained-motion-final.log；没有关闭漏洞审计。四份文档的 257 个本地链接目标存在，指定六个改动文件 diff 空白检查通过。与修复前 e157764 对照，生产代码仅改变启动时序，原动效参数一致。检查程序、真实 UI、GPU 和完整分发未运行，继续遵循用户接手运行验证的约定；用户原有三个配置文件保持未提交。
+
+### E100 用户复测后：补齐旧画面衔接（2026-10-11）
+
+用户运行后仍发现闪烁，进一步确认“切换页面时内容区域闪一下”，临时关闭界面动画后不闪。前版 4e7803a 的调度调整没有解决实际问题。源码仍会先移除旧页，再让新页从完全透明开始；本次补齐过渡底层画面，不缩短时长、位移或删除淡入。
+
+PageHost 用 Avalonia [RenderTargetBitmap](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Media/Imaging/RenderTargetBitmap.cs) 按窗口 DPI 截取离页前的内容区域，在新页下面保留一张位图；快速连点截取当前合成结果，再释放上一张。共享样式让新页承载容器绘制 AppBackgroundBrush，与内容一起淡入并覆盖旧画面，避免透明内容在结束时突然露出或移除旧文字。原始 500ms、18 DIP、缓动曲线及首次/嵌套入场保留，旧页对象仍立即脱离并交调用方清理。动画完成、禁用、Clear、离树及失败恢复均释放暂存图；不写磁盘、不加计时器、页面历史、图形后端设置或公开接口。
+
+新增像素回归：红色旧页 → 透明起点 → 快速替换 → 最终新页，检查过程中不是空背景；离页后改变旧控件不影响暂存像素，关闭动画和清空后不残留旧画面。保留原参数、过期回调、导航取消、错误恢复及页面对象回收检查。所有回归仅编译，未执行，不将静态推导当作像素测试已通过。
+
+```powershell
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e100-navigation/frame-handoff-build
+```
+
+构建包含宿主/UI/Core/Contracts/集成检查，0 错误/1 条 NU1900（漏洞数据源不可达），日志 artifacts/e100-navigation/build-frame-handoff.log。未运行检查程序或应用，未重新打包分发、替换安装目录或修改 GPU 配置。真实切页、主题/缩放和高 DPI 下截帧耗时/临时位图内存待用户验证；一张 3840×2160 的 32 位像素约 31.6 MiB，不宣称截帧零开销。用户已有 .gitignore、.vscode/launch.json、Directory.Build.props 保留。
+
+静态核对通过：七个改动文件 diff 空白检查、共享样式 XML、四份文档 257 个本地链接目标；本轮没有子代理运行或真实像素结果，未套用前轮测试证据。
