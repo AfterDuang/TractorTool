@@ -4,11 +4,11 @@
 
 ## 1. 当前工作
 
-**当前在 M5，切页动画末段抖动修正待用户复测；插件问题暂缓。** 用户明确“动画快结束时闪一下，人眼看像抖动”，关动画后不出现。三轮失败尝试已回滚；用户随后批准采用官方文字渲染方案。
+**当前在 M5，剩余组件切页闪动修正待用户复测；插件问题暂缓。** 用户最新反馈文字不闪，但 Border 等组件仍闪。已回滚的三轮起始时序/快照尝试不恢复，继续按官方实现核对末段渲染。
 
-[E100 文字渲染修正](PROJECT_HISTORY.md#evidence-page-text-rendering)：仅在公共 PageHost 设置 `TextHintingMode.None` 和 `BaselinePixelAlignment.Unaligned`，保留全部原动画参数和启动调度。构建、导航回归及离屏文字对照已执行；单独 Unaligned 无改善，两项组合使夹具中的跳变减小但未完全连续。这不是显示器逐帧证据，不将官方建议或测试结果当作本机根因确认。
+[E100 整体透明度修正](PROJECT_HISTORY.md#evidence-page-opacity)：保留文字 Hinting/基线设置，PageHost 补 `RequiresFullOpacityHandling=true` 和 `TextRenderingMode.Antialias`。前者消除逐画刷透明度取整的末帧跳亮，后者避免临时合成层结束时切换文字抗锯齿。回归分别捕获两种变化，最终构建和 11 项导航检查通过；完整状态归开发台账，真实 GPU 观感及临时合成开销未测。
 
-下一步由用户复测相同切页和静止文字清晰度，不接着改首帧或引入快照。E99 reader 不给 EOF 的 P2 回归及其他缺口仍未处理，验证状态统一见[下一步](DEVELOPMENT.md#next)。
+下一步由用户复测相同切页的组件闪动和静止文字清晰度，不接着改首帧或引入自建快照。E99 reader 不给 EOF 的 P2 回归及其他缺口仍未处理，验证状态统一见[下一步](DEVELOPMENT.md#next)。
 
 ## 2. 接续时必须保留
 

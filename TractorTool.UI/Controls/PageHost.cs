@@ -28,6 +28,10 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
         // Avoid whole-pixel text jumps as page translation settles.
         TextOptions.SetTextHintingMode(this, TextHintingMode.None);
         TextOptions.SetBaselinePixelAlignment(this, BaselinePixelAlignment.Unaligned);
+        // Keep glyph antialiasing consistent inside and outside the temporary opacity layer.
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.Antialias);
+        // Composite before fading to avoid per-brush alpha rounding at the final frame.
+        RenderOptions.SetRequiresFullOpacityHandling(this, true);
         // FAFrame 3.1.0 retains detached frames through TopLevel.BackRequested.
         // This host needs only one page, not a window subscription or navigation history.
         Child = _presenter;

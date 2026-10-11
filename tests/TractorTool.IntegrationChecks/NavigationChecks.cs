@@ -2,8 +2,11 @@ using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using FluentAvalonia.Core;
+using SkiaSharp;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
@@ -67,6 +70,47 @@ internal static class NavigationChecks
                 Require(presenter.Child.Opacity == 1 && presenter.Child.Transitions is null);
                 presenter.Present(new Border());
                 Require(presenter.Child.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
+            }
+            finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
+        });
+
+        check("Page text, borders and fills remain stable when the entrance fade completes", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            Motion.Configure(Application.Current!, false);
+            var presenter = new PageHost();
+            var window = new Window { Content = presenter, Background = Brushes.Black, Width = 260, Height = 110 };
+            try
+            {
+                presenter.Present(new Border
+                {
+                    Margin = new Thickness(20), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8),
+                    Background = new SolidColorBrush(Color.FromRgb(50, 50, 54)), BorderBrush = Brushes.White,
+                    Child = new TextBlock { Text = "文字对照 TractorTool", FontSize = 14, Foreground = Brushes.White, Margin = new Thickness(12) }
+                });
+                window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                // Hold position fixed to isolate the final opacity step from normal movement.
+                SKColor[] Capture(double opacity)
+                {
+                    presenter.Child!.Opacity = opacity;
+                    Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();
+                    using var frame = window.CaptureRenderedFrame() ?? throw new InvalidOperationException("Missing rendered frame.");
+                    using var encoded = new MemoryStream();
+                    frame.Save(encoded, new PngBitmapEncoderOptions());
+                    using var pixels = SKBitmap.Decode(encoded.ToArray());
+                    return pixels.Pixels;
+                }
+                var before = Capture(0.999999);
+                var after = Capture(1);
+                // Removing the opacity layer must not switch glyph antialiasing at the end.
+                for (var i = 0; i < before.Length; i++)
+                    if (Math.Abs(before[i].Red - after[i].Red) > 1 || Math.Abs(before[i].Green - after[i].Green) > 1 || Math.Abs(before[i].Blue - after[i].Blue) > 1)
+                        throw new InvalidOperationException($"Final opacity changed glyph/edge pixel {i}: {before[i]} -> {after[i]}.");
+                // Flat fill and border samples exclude normal corner coverage differences.
+                foreach (var index in new[] { 55 * 260 + 130, 20 * 260 + 130, 89 * 260 + 130, 55 * 260 + 20, 55 * 260 + 239 })
+                    if (before[index] != after[index])
+                        throw new InvalidOperationException($"Final opacity changed pixel {index}: {before[index]} -> {after[index]}.");
+                Require(after[55 * 260 + 130].Red == 50 && after[20 * 260 + 130].Red == 255);
             }
             finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 组件末帧闪动 | [E100 · 整体透明度处理及先失败后通过的像素回归（2026-10-11）](#evidence-page-opacity) |
 | 动画文字渲染 | [E100 · 官方 Hinting/基线设置与离屏对照（2026-10-11）](#evidence-page-text-rendering) |
 | 动画修复回滚与重新定位 | [E100 · 三轮尝试全部撤回；末段文字抖动候选（2026-10-11）](#evidence-page-entrance-rollback) |
 | 公共页面切换 | [E100 · 页面画面衔接，保留原动画（2026-10-11）](#evidence-page-entrance) |
@@ -2819,5 +2820,24 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 - 临时 `frame-probe` 构建 0 错误/1 条 CS0618（旧诊断分支的截图 Save 重载，不在生产代码）；`FrameProbe.dll artifacts/e100-navigation/baseline-alignment-final-pixels --baseline-pixels` 对照通过，CSV/PNG 位于该输出目录。单项失败保留于 `baseline-alignment-pixels.log`，最终结果见 `baseline-alignment-final-pixels.log`。
 
 未运行本轮原生屏幕/高 DPI/完整插件与硬件回归，未操作用户配置或重新打包分发。文字光栅化改善不等于实际切页抖动验收；交用户复测同一场景及静止文字清晰度。用户三个配置文件保持不提交，临时诊断留在忽略的 artifacts。
+
+<a id="evidence-page-opacity"></a>
+
+### E100 用户反馈后补齐组件整体透明度处理（2026-10-11）
+
+用户反馈文字已不闪，但 Border 等组件仍闪，要求继续核对官方。上一轮只覆盖文字，不应视为整体修复完成。核对 [12.1.2 DrawingContextImpl](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/DrawingContextImpl.cs) 的 CreatePaint/PushOpacity：默认抗锯齿已开启，默认淡入将每个画刷的 alpha 截为 byte；`Opacity` 接近 1 时仍可能比终值暗一个色阶。[官方 RenderOptions](https://docs.avaloniaui.net/api/avalonia/media/renderoptions) 的 RequiresFullOpacityHandling 改用 SaveLayer/浮点群组透明度，先合成再淡入。此为源码与夹具支持的机制，不代表已确认用户机器的所有闪动来源。
+
+临时边框位移对照同时走 RenderTargetBitmap 和 Headless 合成器 CaptureRenderedFrame：末段 0.0001→0 DIP 且透明度同步趋近 1 时，默认路径最大单通道差 2、亮度总和变化 15,241；整体透明度路径合成帧最大差 1、总和变化 35，仍有圆角覆盖差异。显式设置 EdgeMode.Antialias 与默认结果相同，因此未加入无效开关。CSV/PNG 和下载的官方版本源码留在忽略的 `artifacts/e100-navigation/border-compositor-pixels`、`avalonia-source` 等诊断目录。
+
+补查文字连带影响：在相同夹具加入中英文字后，单独启用分层会让文字在合成层结束时改变抗锯齿，末段最大通道差达 125；这比旧路径更明显，因此不能单独交付该设置。配套使用[官方 TextRenderingMode.Antialias](https://docs.avaloniaui.net/docs/graphics-animation/text-options#textrenderingmode)，让静止和动画都用灰度抗锯齿，最大差降至 1。样图已查看，去掉 LCD 彩色子像素边缘后字形观感有所变化；对照见 `border-text-compositor`、`border-graytext-compositor`。
+
+最终生产只在 PageHost 构造函数增加 `RenderOptions.SetRequiresFullOpacityHandling(this, true)`、`TextOptions.SetTextRenderingMode(this, TextRenderingMode.Antialias)` 及原因注释。原 Hinting/基线设置、动画参数、调度、生命周期、GPU 后端和依赖均不变。使用框架临时合成层，不恢复自建截图缓存；有额外合成成本，未测原生 GPU/高 DPI 耗时。
+
+新增 NavigationChecks 固定位置，仅将父透明度从 0.999999 变为 1。旧版填充色 `#313135`→`#323236` 导致 10 通过/1 失败；加入文字全帧检查后，单独分层再次失败（glyph 像素 `#3c3c40`→`#32324f`）。最终两项设置下填充/四边采样相同，全帧各 RGB 通道差不超过 1，11/11 通过；现有导航、回收、取消/恢复及嵌套设置检查保留。日志均位于 `artifacts/e100-navigation`：
+
+- 构建：`dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e100-navigation/border-opacity-build`，最终 0 错误/1 条 NU1900（漏洞源不可达），见 `build-border-graytext-final.log`。
+- 执行：`dotnet artifacts/e100-navigation/border-opacity-build/TractorTool.IntegrationChecks.dll artifacts/e100-navigation/border-opacity-build artifacts/e100-navigation/border-graytext-final-checks --navigation-only`。两个失败日志为 `check-border-regression-before.log`、`check-border-text-before.log`，最终通过为 `check-border-graytext-final.log`。
+
+未启动本轮真实窗口、插件/媒体或完整分发，不操作用户 profile；结果为离屏合成帧证据，剩余组件闪动仍交用户复测。用户已有三个配置改动不纳入提交。
 
 本轮静态核对：四份文档的 130 个本地文件链接目标存在，共享样式 XML 可解析；指定七个改动文件 diff 空白检查通过。用户 launch.json 的既有行尾空白未处理。
