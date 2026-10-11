@@ -2,3 +2,25 @@
 **/obj/
 artifacts/
 .vs/
+
+# IDE 的个人状态；共享 .vscode 配置继续纳入版本控制。
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 测试结果、构建日志和运行诊断。
+[Tt]est[Rr]esults/
+*.trx
+*.log
+*.binlog
+*.dmp
+*.nettrace
+
+# 临时文件与操作系统生成的元数据。
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
