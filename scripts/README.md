@@ -12,7 +12,7 @@
 | [Get-DistributionPlugins.ps1](Get-DistributionPlugins.ps1) | 扫描 Plugins 一级子目录的 plugin.json 与同目录工程，校验路径和身份，不编译或加载 DLL | 完整分发的前置校验，在创建输出前完成 |
 | [Build-Installer.ps1](Build-Installer.ps1) | 把**已有且校验通过的分发 ZIP**编译成 setup.exe，附带 installer.json 来源信息及 SHA256SUMS；不运行生成的安装器 | 完整发布时自动调用；也可对已有 ZIP 单独生成安装包，无需重编宿主 |
 | [Build-Plugin.ps1](Build-Plugin.ps1) | 引用发布 SDK 独立构建插件，复制随包 MVVM 许可与插件自备 Licenses，输出 ZIP/.sha256 并拒绝共享 DLL 副本 | 不要求使用 MVVM；完整分发及宿主验证也调用 |
-| [Export-DependencyNotices.ps1](Export-DependencyNotices.ps1) | 根据实际还原/发布依赖，收集第三方许可原文、NuGet 元数据和 dependencies.json；材料缺失则失败 | 完整分发自动调用，平时不用单独运行 |
+| [Export-DependencyNotices.ps1](Export-DependencyNotices.ps1) | 根据宿主实际还原/发布依赖，收集第三方许可原文、NuGet 元数据和 dependencies.json；材料缺失则失败 | 完整分发自动调用，平时不用单独运行 |
 | [Generate-AppIcon.ps1](Generate-AppIcon.ps1) | 把 Artwork 中的图标母版导出为 PNG 和多尺寸 ICO，默认重写 TractorTool/Assets 中对应资源 | 更换应用图标后手动运行；普通构建直接使用已入库的图标，详见 [图标说明](../Artwork/README.md) |
 | [Get-InnoCompiler.ps1](Get-InnoCompiler.ps1) | 下载固定版本的 Inno Setup，校验 SHA256 和签名，以便携方式展开编译器，返回 ISCC.exe 路径 | 需要安装包时准备构建工具；VS Code 安装包选项和 CI 自动调用，ZIP 模式不需要 |
 | [Publish-Host.ps1](Publish-Host.ps1) | **只发布宿主**，默认生成 Release / win-x64 自包含目录，含公开 SDK；不编译或装入正式插件，也不生成 ZIP/安装包 | 完整分发内部调用；单独准备插件开发用的宿主 SDK 时也可使用 |
