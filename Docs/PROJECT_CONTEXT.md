@@ -8,6 +8,8 @@
 
 E99 已完成框架打包与进程清理调整：Build-Plugin 支持无 MVVM 插件，仅在实际随包包含 MVVM DLL 时复制对应许可；Verify-PluginHost 复用同一打包入口。Windows Job 清理用临时完成端口等待，移除 20ms 轮询及关联提醒；通知不保证送达，截止时仍查证活动进程数，保留三秒上限。确认进程退出后自然排空管道，失败/超时才取消读取。旧截图的取消异常触发不明，未声称全部消失。
 
+用户随后要求子代理 Review：三名 gpt-6.1-sol / high 只读覆盖原生 Job、进程协调/回归、打包/文档，主代理复核，未发现确定的新增功能缺陷。保留 P2 测试缺口：进程树清理成功但 reader 不给 EOF 时，需要断言超时取消、释放和错误报告。此次只记录审查结果，不改生产代码或执行检查；详细边界见 E99 记录与唯一台账。
+
 宿主与核心检查工程编译成功；使用本轮宿主构建输出的公开 SDK 独立打包两种机制夹具，无 MVVM/有 MVVM 的 ZIP 分别 10/9 文件哈希一致，87 个 SDK 输出文件未变。宿主及插件构建有 NU1900 网络警告；核心工程 0 警告。新增回归仅编译，未运行应用、检查程序或完整自包含分发。产物位于 artifacts/e99-framework；详细命令和证据见 [E99](PROJECT_HISTORY.md#evidence-framework-packaging-process)。
 
 E98 发布自动发现保持：仅扫描 Plugins 一级子目录中带 plugin.json 和唯一同目录工程的插件，ID/版本读取清单；没有 packaging/plugins.json 名单。校验与安装器使用 release.json.plugins 快照。自动发现回归尚未执行，不能继承旧整包验证结果。

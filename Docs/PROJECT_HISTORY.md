@@ -2715,3 +2715,13 @@ dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Release -m:1 
 Test.Independent-1.0.1.zip（10 文件）与 Test.PackageProbe-1.1.0.zip（9 文件）逐项文件 SHA256 和 .sha256 侧文件核对一致；前者无 MVVM DLL，后者有 DLL 及两份许可文件。SDK 输出 87 文件打包前后哈希一致。首次 ZIP 核对误用不存在的 Select-Object -Single 参数而中止，改为显式检查唯一 ZIP 后完整重做成功；未将失败调用算作校验通过。原始 SDK 哈希清单与包核对结论保存在该产物根。
 
 两个修改的 PowerShell 脚本通过 Parser.ParseFile；本轮改动文档本地链接、陈旧引用和指定 diff 静态核对通过。未运行 Verify-PluginHost、核心断言、真实 Windows Job/媒体/UI、完整分发/安装器或 CI；用户继续负责运行验收。插件 E94 两项 P2、迁移故障/长期内存/跨会话/无 SDK 环境缺口不因本轮编译成功而关闭。
+
+### E99 后续子代理审查（2026-10-11）
+
+用户要求修复完成后交子代理 Review。三名子代理均显式 gpt-6.1-sol / high、只读，以 907d23e 对 d4094b9 为范围，分别覆盖 Windows 原生 Job/IOCP、ProcessRunner/App/回归、打包调用链/许可/文档；主代理核对关联调用及 Win32 官方契约。没有构建、检查程序或应用执行，也没有生产代码改动。
+
+未发现可确认的新增功能缺陷、无用生产代码或需要删除的重复抽象。确认原生句柄/结构布局、取消消息区分和释放顺序、截止 Query 的意图，以及正常取消/执行超时/清理失败分类。新增自然 EOF 替身测试在父提交会因无条件 CancelAsync 触发 Cancelled 而失败，具有实际回归价值；此为静态推导，未运行父提交或新测试。
+
+保留一项 P2 测试缺口：ProcessChecks 的新增正常取消用例在 Stop 中立即完成 reader.End，未覆盖 StopTree 成功、reader 一直不返回 EOF 时 ProcessRunner:117–129 的超时兜底。最小补充是复用 EofReader，让 Stop 成功但不完成 End，限时等待并断言读取令牌被取消、session 释放、任务 Faulted/IOException 和清理错误日志。该项尚未修复，不是已复现的生产故障。
+
+其他边界：原生通知丢失、取消唤醒、截止查证及 API 失败无确定性注入覆盖；两种 MVVM 分支有 E99 一次性打包/哈希证据，尚缺持续断言。Task.Run 排队不计入内部 Stopwatch，但当前实际消费者主要串行，没有当前负载失效证据，不作为确定 bug。Verify-PluginHost 的 Debug 参数如今不改变机制插件的固定 Release 打包；无现行 Debug 调用、同配置要求或条件夹具行为，仅保留低风险备注，不为参数一致性新增选项。清理期间迟到读取/回调异常保留原取消分类的逻辑父版已有，不作为本次引入问题。
