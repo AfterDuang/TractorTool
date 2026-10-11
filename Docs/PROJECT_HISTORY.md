@@ -14,7 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
-| 动画修复回滚与重新定位 | [E100 · 三轮尝试全部撤回；末段文字抖动候选待确认（2026-10-11）](#evidence-page-entrance-rollback) |
+| 动画文字渲染 | [E100 · 官方 Hinting/基线设置与离屏对照（2026-10-11）](#evidence-page-text-rendering) |
+| 动画修复回滚与重新定位 | [E100 · 三轮尝试全部撤回；末段文字抖动候选（2026-10-11）](#evidence-page-entrance-rollback) |
 | 公共页面切换 | [E100 · 页面画面衔接，保留原动画（2026-10-11）](#evidence-page-entrance) |
 | 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
@@ -2802,5 +2803,21 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 新的候选只涉及文字基线：[Avalonia 官方说明](https://docs.avaloniaui.net/docs/graphics-animation/text-options#baselinepixelalignment) 推荐 Unaligned 避免 RenderTransform 动画中文字跳动；[12.1.2 GlyphRunImpl](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/GlyphRunImpl.cs) 的 CreateFont 默认 BaselineSnap=true，显式 Unaligned 才关闭，且当前 NuGet API 确实支持此设置。仓库未设置该属性。这只支持候选假设，尚未证实本机根因；计划经用户确认后仅在公共页面内容容器设置此属性，检查末段抖动与静止文字清晰度，保留全部动画参数。没有实施候选修复、改 GPU 后端或新增正式依赖。
 
 未执行完整集成、真实插件/媒体/GPU回归或完整分发，E99/E94 等既有缺口不变。用户三个配置文件保持不提交，诊断文件仅留在忽略的 artifacts。
+
+<a id="evidence-page-text-rendering"></a>
+
+### E100 按官方方案调整页面文字渲染（2026-10-11）
+
+用户批准采用官方方案。生产改动仅为 PageHost 构造函数中的两项设置：`TextHintingMode.None`、`BaselinePixelAlignment.Unaligned`；依据 [Avalonia 容器文字选项](https://docs.avaloniaui.net/docs/graphics-animation/text-options#applying-to-a-container) 和 [12.1.2 Skia 实现](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/GlyphRunImpl.cs)。作用于页面子内容且动画结束后不切回对齐模式；500ms、18 DIP、透明度 0→1、缓动、调度和导航所有权全部不变。未增加缓存、快照、依赖或公开接口。
+
+先尝试样式 Setter，12.1.2 编译报 AVLN2000（没有对应 AvaloniaProperty 字段），已删除并改用官方 C# 设置方法。离屏夹具使用当前 Avalonia/Skia、14px 中英文字、96 DPI，以 0.05 DIP 递增扫描 0–1 DIP，测量亮度重心。单独 Unaligned 的最大跳变仍为 1 像素，断言失败；组合 None 后为 0.44286 像素，默认设置为 1.00000 像素。最终夹具直接使用生产 PageHost，仅对对照组恢复默认设置，结果一致；不将减少跳变描述成完全连续或本机故障已修复。零位移静止样图已查看，字体像素外观有轻微变化；真实缩放下清晰度仍待用户判断。
+
+验证（日志均在 `artifacts/e100-navigation`）：
+
+- `dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e100-navigation/baseline-alignment-build`：最终 0 错误/1 条 NU1900，漏洞数据源不可达，未关闭生产审计；见 `build-baseline-alignment-final.log`。
+- `dotnet artifacts/e100-navigation/baseline-alignment-build/TractorTool.IntegrationChecks.dll artifacts/e100-navigation/baseline-alignment-build artifacts/e100-navigation/baseline-alignment-final-checks --navigation-only`：10/10 通过，覆盖快速导航、取消/错误恢复、页面回收和嵌套设置；见 `check-baseline-alignment-final.log`。
+- 临时 `frame-probe` 构建 0 错误/1 条 CS0618（旧诊断分支的截图 Save 重载，不在生产代码）；`FrameProbe.dll artifacts/e100-navigation/baseline-alignment-final-pixels --baseline-pixels` 对照通过，CSV/PNG 位于该输出目录。单项失败保留于 `baseline-alignment-pixels.log`，最终结果见 `baseline-alignment-final-pixels.log`。
+
+未运行本轮原生屏幕/高 DPI/完整插件与硬件回归，未操作用户配置或重新打包分发。文字光栅化改善不等于实际切页抖动验收；交用户复测同一场景及静止文字清晰度。用户三个配置文件保持不提交，临时诊断留在忽略的 artifacts。
 
 本轮静态核对：四份文档的 130 个本地文件链接目标存在，共享样式 XML 可解析；指定七个改动文件 diff 空白检查通过。用户 launch.json 的既有行尾空白未处理。

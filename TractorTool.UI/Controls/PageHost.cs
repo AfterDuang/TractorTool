@@ -3,6 +3,7 @@ using Avalonia.Animation;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -24,6 +25,9 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
     public PageHost()
     {
         ClipToBounds = true;
+        // Avoid whole-pixel text jumps as page translation settles.
+        TextOptions.SetTextHintingMode(this, TextHintingMode.None);
+        TextOptions.SetBaselinePixelAlignment(this, BaselinePixelAlignment.Unaligned);
         // FAFrame 3.1.0 retains detached frames through TopLevel.BackRequested.
         // This host needs only one page, not a window subscription or navigation history.
         Child = _presenter;
