@@ -18,7 +18,7 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
     public static readonly RoutedEvent<CancelRoutedEventArgs> NavigatingFromEvent =
         RoutedEvent.Register<PageHost, CancelRoutedEventArgs>("NavigatingFrom", RoutingStrategies.Direct);
 
-    private static readonly TransformOperations EntranceOffset = TransformOperations.Parse("translate(0px, 8px)");
+    private static readonly TransformOperations EntranceOffset = TransformOperations.Parse("translate(0px, 18px)");
     private Border _presenter = new();
 
     public PageHost()
@@ -43,25 +43,28 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
             if (navigating.Cancel) return false;
 
             var presenter = _presenter;
-            // Initial nested content enters with its parent; keep replacements opaque to avoid a blank flash.
-            var animate = presenter.Child is not null && TopLevel.GetTopLevel(this) is not null && FAUISettings.AreAnimationsEnabled();
+            var animate = FAUISettings.AreAnimationsEnabled();
             presenter.Transitions = null;
-            presenter.Opacity = 1;
-            presenter.RenderTransform = animate ? EntranceOffset : TransformOperations.Identity;
             presenter.Child = page;
+            presenter.Opacity = animate ? 0 : 1;
+            presenter.RenderTransform = animate ? EntranceOffset : TransformOperations.Identity;
             if (animate)
             {
-                // Start after layout. Stale callbacks must not animate a replacement page.
-                Dispatcher.UIThread.Post(() =>
+                void StartEntrance()
                 {
                     if (!ReferenceEquals(_presenter, presenter) || !ReferenceEquals(presenter.Child, page)) return;
                     if (FAUISettings.AreAnimationsEnabled())
                         presenter.Transitions = new Transitions
                         {
-                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(180), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) }
+                            new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) },
+                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) }
                         };
+                    presenter.Opacity = 1;
                     presenter.RenderTransform = TransformOperations.Identity;
-                }, DispatcherPriority.Render);
+                }
+                // Start attached transitions before yielding to rendering; do not queue a hidden, idle frame.
+                if (TopLevel.GetTopLevel(presenter) is not null) StartEntrance();
+                else Dispatcher.UIThread.Post(StartEntrance, DispatcherPriority.Render);
             }
             return true;
         }

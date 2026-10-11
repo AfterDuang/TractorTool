@@ -14,7 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
-| 公共页面切换 | [E100 · 消除整页透明入场及嵌套首次叠加（2026-10-11）](#evidence-page-entrance) |
+| 公共页面切换 | [E100 · 页面切换时序，保留原动画（2026-10-11）](#evidence-page-entrance) |
 | 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
 | 发布通用化（随包插件选择） | [E97 · 工程清单与产物快照校验（2026-10-09）](#evidence-distribution-plugins) |
@@ -2752,3 +2752,19 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 首次构建误用了当前 Avalonia 不提供的 GetVisualRoot，失败为 CS1061，记录在 build.log；改用仓库已有的 TopLevel.GetTopLevel 后完整重建成功，0 错误/6 条 NU1900（NuGet 漏洞数据源不可达，未关闭审计），记录在 build-fixed.log。输出包含本轮宿主、Core、Contracts、UI 和集成检查程序集，不是自包含发布或安装包。未执行导航断言、应用、真实 GPU/UI 或完整分发；保留用户配置和插件业务。真实切页观感、E99 P2 回归及其他原有验收缺口继续留在台账。
 
 四份改动文档的 253 个本地链接、其中 175 个 Markdown 锚点通过；源码及文档 diff 空白检查通过。未修改或提交用户 .gitignore、.vscode/launch.json、Directory.Build.props。
+
+### E100 用户更正：保留原动画（2026-10-11）
+
+用户明确只修闪动，不改变动画展示效果。上一版 a5e42f2 缩短位移/时长、删除淡入并跳过首次动画，超出要求，本次撤回这些行为：恢复 18 DIP、500ms、透明度 0→1、SplineEasing(0.1, 0.9, 0.2, 1) 及首次/嵌套入场。原淡入本身会露出背景，不能将这一正常效果直接认定为用户观察到的额外闪动。
+
+最小修正位于公共 PageHost：先挂载新页，再设置入场值；已挂载容器在同一次 Present 中建立过渡并提交终值，不再先隐藏内容、等待 Render 队列才启动。未挂载容器保留带页面身份校验的延迟启动；不增加旧页快照、缓存、定时器或 GPU 设置。导航取消、清空、异常恢复和旧页释放边界不变。
+
+核对 Avalonia 12.1.2 官方实现：[Animatable](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Animation/Animatable.cs) 在基础属性变化时启动 Transition；[Visual](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Visual.cs) 在挂入可视树后启用过渡；[DispatcherPriority](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Threading/DispatcherPriority.cs) 的 Render 表示与渲染同优先级，不保证“布局完成之后”。这些依据支持调整时序，但没有真实窗口复现，不能证明它覆盖了用户看到的全部闪动。
+
+NavigationChecks 撤回“不透明/首次无动画”断言，改为在未让出调度前检查已提交终值、原始入场值和两种过渡参数；保留首次嵌套动效、快速切换、清空后过期回调及关闭动画复位检查。首次构建因测试误用 Optional<ITransform> 和 ITransition API 出现 3 个 CS1061，见 build-retained-motion.log；修正后生成成功但有一条 CS8604，见 build-retained-motion-fixed.log，随后补齐空值标注。
+
+```powershell
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e100-navigation/retained-motion-build
+```
+
+最终构建 0 错误/3 条 NU1900（漏洞数据源不可达），记录在 artifacts/e100-navigation/build-retained-motion-final.log；没有关闭漏洞审计。四份文档的 257 个本地链接目标存在，指定六个改动文件 diff 空白检查通过。与修复前 e157764 对照，生产代码仅改变启动时序，原动效参数一致。检查程序、真实 UI、GPU 和完整分发未运行，继续遵循用户接手运行验证的约定；用户原有三个配置文件保持未提交。

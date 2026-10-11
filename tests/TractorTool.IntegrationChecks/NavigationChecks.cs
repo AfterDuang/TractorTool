@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
@@ -53,18 +54,16 @@ internal static class NavigationChecks
                 Motion.Configure(Application.Current!, true);
                 presenter.Present(new Border()); presenter.Present(new Border()); presenter.Clear();
                 presenter.Present(new Border()); presenter.Present(new Border()); presenter.Present(new Border());
-                Require(presenter.Child!.Opacity == 1);
                 window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var deadline = DateTime.UtcNow.AddSeconds(2);
-                while (!presenter.Child!.RenderTransform!.Value.IsIdentity && DateTime.UtcNow < deadline)
+                while ((presenter.Child!.Opacity < 1 || !presenter.Child.RenderTransform!.Value.IsIdentity) && DateTime.UtcNow < deadline)
                 {
                     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                     Dispatcher.UIThread.RunJobs(); Thread.Sleep(10);
-                    Require(presenter.Child.Opacity == 1);
                 }
                 Require(presenter.Child!.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
                 presenter.Present(new Border());
-                Motion.Configure(Application.Current!, false); // Also disable a queued entrance.
+                Motion.Configure(Application.Current!, false);
                 Dispatcher.UIThread.RunJobs();
                 Require(presenter.Child.Opacity == 1 && presenter.Child.Transitions is null);
                 presenter.Present(new Border());
@@ -73,7 +72,7 @@ internal static class NavigationChecks
             finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });
 
-        check("Nested initial content stays visible and does not replay its parent's entrance", () =>
+        check("Attached entrances preserve fade and movement and start before yielding to rendering", () =>
         {
             var originalMotion = FAUISettings.AreAnimationsEnabled();
             var outer = new PageHost();
@@ -82,20 +81,26 @@ internal static class NavigationChecks
             try
             {
                 Motion.Configure(Application.Current!, true);
+                var detached = new PageHost();
+                detached.Present(new Border()); detached.Clear(); // Retire a queued, unattached entrance.
                 outer.Present(new Border());
-                Require(outer.Child!.Opacity == 1 && outer.Child.RenderTransform!.Value.IsIdentity);
+                Require(outer.Child!.GetBaseValue(Visual.OpacityProperty) == 1);
+                Require(outer.Child.GetBaseValue(Visual.RenderTransformProperty).Value!.Value.IsIdentity);
+                Require(outer.Child.Transitions is { Count: 2 });
+                var fade = outer.Child.Transitions!.OfType<DoubleTransition>().Single();
+                var movement = outer.Child.Transitions!.OfType<TransformOperationsTransition>().Single();
+                Require(fade.Property == Visual.OpacityProperty && fade.Duration == TimeSpan.FromMilliseconds(500));
+                Require(movement.Property == Visual.RenderTransformProperty && movement.Duration == fade.Duration);
+                Require(outer.Child.Opacity == 0 && outer.Child.RenderTransform!.Value.M32 == 18);
                 var nested = new PageHost();
                 outer.Present(nested);
-                Require(outer.Child.Opacity == 1 && !outer.Child.RenderTransform!.Value.IsIdentity);
-                // Settings and video create their first inner page after attachment/Loaded.
                 nested.Present(new Border());
+                // The animation is active and its final values are committed without pumping the dispatcher.
+                Require(nested.Child!.GetBaseValue(Visual.OpacityProperty) == 1);
+                Require(nested.Child.GetBaseValue(Visual.RenderTransformProperty).Value!.Value.IsIdentity);
+                Require(nested.Child.Transitions is { Count: 2 });
                 window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-                Require(nested.Child!.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
-                Require(nested.Child.Transitions is null);
-
-                nested.Present(new Border());
-                Require(nested.Child.Opacity == 1 && !nested.Child.RenderTransform!.Value.IsIdentity);
-                Dispatcher.UIThread.RunJobs();
+                Require(((Border)detached.Child!).Child is null && detached.Child.Opacity == 1);
                 Motion.Configure(Application.Current!, false);
                 Require(outer.Child.Opacity == 1 && outer.Child.RenderTransform!.Value.IsIdentity);
                 Require(nested.Child.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
