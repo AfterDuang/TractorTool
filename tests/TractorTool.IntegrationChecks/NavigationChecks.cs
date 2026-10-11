@@ -1,11 +1,7 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Avalonia;
-using Avalonia.Animation;
 using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using FluentAvalonia.Core;
 using TractorTool.Core.Logging;
@@ -55,104 +51,24 @@ internal static class NavigationChecks
             try
             {
                 Motion.Configure(Application.Current!, true);
-                presenter.Present(new Border()); presenter.Present(new Border()); presenter.Clear();
-                presenter.Present(new Border()); presenter.Present(new Border()); presenter.Present(new Border());
+                presenter.Present(new Border()); presenter.Clear();
+                presenter.Present(new Border()); presenter.Present(new Border());
                 window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var deadline = DateTime.UtcNow.AddSeconds(2);
-                while ((presenter.Child!.Opacity < 1 || !presenter.Child.RenderTransform!.Value.IsIdentity) && DateTime.UtcNow < deadline)
+                while (presenter.Child!.Opacity < 1 && DateTime.UtcNow < deadline)
                 {
                     AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                     Dispatcher.UIThread.RunJobs(); Thread.Sleep(10);
                 }
                 Require(presenter.Child!.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
                 presenter.Present(new Border());
-                Motion.Configure(Application.Current!, false);
+                Motion.Configure(Application.Current!, false); // Also disable a queued entrance.
                 Dispatcher.UIThread.RunJobs();
                 Require(presenter.Child.Opacity == 1 && presenter.Child.Transitions is null);
                 presenter.Present(new Border());
                 Require(presenter.Child.Opacity == 1 && presenter.Child.RenderTransform!.Value.IsIdentity);
             }
             finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
-        });
-
-        check("Attached entrances preserve fade and movement and start before yielding to rendering", () =>
-        {
-            var originalMotion = FAUISettings.AreAnimationsEnabled();
-            var outer = new PageHost();
-            var window = new Window { Content = outer, Width = 400, Height = 300 };
-            window.Show();
-            try
-            {
-                Motion.Configure(Application.Current!, true);
-                var detached = new PageHost();
-                detached.Present(new Border()); detached.Clear(); // Retire a queued, unattached entrance.
-                outer.Present(new Border());
-                Require(outer.Child!.GetBaseValue(Visual.OpacityProperty) == 1);
-                Require(outer.Child.GetBaseValue(Visual.RenderTransformProperty).Value!.Value.IsIdentity);
-                Require(outer.Child.Transitions is { Count: 2 });
-                var fade = outer.Child.Transitions!.OfType<DoubleTransition>().Single();
-                var movement = outer.Child.Transitions!.OfType<TransformOperationsTransition>().Single();
-                Require(fade.Property == Visual.OpacityProperty && fade.Duration == TimeSpan.FromMilliseconds(500));
-                Require(movement.Property == Visual.RenderTransformProperty && movement.Duration == fade.Duration);
-                Require(outer.Child.Opacity == 0 && outer.Child.RenderTransform!.Value.M32 == 18);
-                var nested = new PageHost();
-                outer.Present(nested);
-                nested.Present(new Border());
-                // The animation is active and its final values are committed without pumping the dispatcher.
-                Require(nested.Child!.GetBaseValue(Visual.OpacityProperty) == 1);
-                Require(nested.Child.GetBaseValue(Visual.RenderTransformProperty).Value!.Value.IsIdentity);
-                Require(nested.Child.Transitions is { Count: 2 });
-                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-                Require(((Border)detached.Child!).Child is null && detached.Child.Opacity == 1);
-                Motion.Configure(Application.Current!, false);
-                Require(outer.Child.Opacity == 1 && outer.Child.RenderTransform!.Value.IsIdentity);
-                Require(nested.Child.Opacity == 1 && nested.Child.RenderTransform!.Value.IsIdentity);
-            }
-            finally { outer.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
-        });
-
-        check("Animated replacements retain pixels without retaining the departed page's resources", () =>
-        {
-            var originalMotion = FAUISettings.AreAnimationsEnabled();
-            var host = new PageHost();
-            var window = new Window { Content = host, Width = 100, Height = 100 };
-            window.Show();
-            try
-            {
-                Motion.Configure(Application.Current!, false);
-                window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
-                var empty = ReadCenterPixel(host);
-                var old = new Border { Background = Brushes.Red };
-                host.Present(old); window.UpdateLayout();
-                var red = ReadCenterPixel(host);
-                Require(red != empty);
-                Motion.Configure(Application.Current!, true);
-                host.Present(new Border { Background = Brushes.Blue });
-                old.Background = Brushes.Green; // Simulate immediate cleanup or mutation after leaving.
-                window.UpdateLayout();
-                Require(ReadCenterPixel(host) == red);
-                host.Present(new Border { Background = Brushes.Yellow });
-                window.UpdateLayout();
-                Require(ReadCenterPixel(host) == red); // Rapid navigation captures the currently visible composite.
-                var deadline = DateTime.UtcNow.AddSeconds(2);
-                while (host.Child!.Opacity < 1 && DateTime.UtcNow < deadline)
-                {
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();
-                    Require(ReadCenterPixel(host) != empty);
-                    Thread.Sleep(10);
-                }
-                Require(host.Child!.Opacity == 1 && ReadCenterPixel(host) != red);
-                var yellow = ReadCenterPixel(host);
-                host.Present(new Border()); window.UpdateLayout();
-                Require(ReadCenterPixel(host) == yellow);
-                Motion.Configure(Application.Current!, false); Dispatcher.UIThread.RunJobs();
-                Require(ReadCenterPixel(host) == empty);
-                Motion.Configure(Application.Current!, true);
-                host.Present(new Border { Background = Brushes.Red });
-                host.Clear(); window.UpdateLayout();
-                Require(ReadCenterPixel(host) == empty);
-            }
-            finally { host.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });
 
         check("UI 1.5 accepts existing page contracts and rejects future versions", () =>
@@ -318,20 +234,6 @@ internal static class NavigationChecks
             }
             finally { vm.Dispose(); host.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
         });
-    }
-
-    private static int ReadCenterPixel(Control control)
-    {
-        var size = PixelSize.FromSize(control.Bounds.Size, 1);
-        using var bitmap = new RenderTargetBitmap(size);
-        bitmap.Render(control);
-        var pixel = Marshal.AllocHGlobal(4);
-        try
-        {
-            bitmap.CopyPixels(new PixelRect(size.Width / 2, size.Height / 2, 1, 1), pixel, 4, 4);
-            return Marshal.ReadInt32(pixel);
-        }
-        finally { Marshal.FreeHGlobal(pixel); }
     }
 
     private static void Require(bool condition)

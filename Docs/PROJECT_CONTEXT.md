@@ -4,17 +4,15 @@
 
 ## 1. 当前工作
 
-**当前在 M5 可靠性与发布准备；先处理框架，插件问题暂缓。本轮按用户截图排查并修复页面切换闪动。** Windows 通知、pip/Python 和托盘动态方案列表不在本轮范围。
+**当前在 M5，优先处理切页动画末段抖动；插件问题暂缓。** 用户最新明确“动画快结束时闪一下，人眼看像抖动”，关动画后不出现，首帧空白不是已确认原因。三轮尝试未解决且快照方案更严重，已回滚到 `e157764` 的 PageHost/共享样式/导航检查；先给方案，未经确认不继续改动画。
 
-最近修复 [E100](PROJECT_HISTORY.md#evidence-page-entrance)：用户确认调整启动时序后切页内容区仍闪，关闭动画后不闪；不能再把前版描述为已解决。当前保留原淡入/位移/时长/曲线，以一张旧画面位图承接新页，背景随新页一起覆盖；完成/禁用/清空/脱离时释放，不留旧插件对象或落盘。像素级与既有导航回归已编译，未执行检查程序或真实 UI；当前效果及高 DPI 截帧成本仍待验。未改公开 ABI、插件业务或 GPU 配置。
+[E100 回滚与诊断](PROJECT_HISTORY.md#evidence-page-entrance-rollback)：隔离宿主构建通过，原生稳定布局已查看；另记录原生动画帧回调，未发现透明度二次下降，但有初始全透明回调及嵌套晚启动。这不是显示器逐帧证据，根因未确认，不再凭低采样率截图或编译成功宣称修复。
 
-此前 E99 生产代码提交 `907d23e`、三代理审查记录 `7ee3e2d` 保留。**进程树清理成功但 reader 不给 EOF 的 P2 回归仍未补**；不把此次导航构建当作进程或整版运行验证。全部覆盖限制和后续顺序见[下一步](DEVELOPMENT.md#next)。
-
-当前构建和插件包集中列在[本地产物](DEVELOPMENT.md#local-artifacts)。E100 输出位于 artifacts/e100-navigation，不是自包含完整分发；不要使用已从文档移除的旧测试目录。
+候选仅在公共页面内容容器设置 `TextOptions.BaselinePixelAlignment=Unaligned`：当前 Avalonia 12.1.2 的默认文字基线吸附与官方已记录的动画文字跳动相符，但尚未证明是本次根因。用户确认后才做单项对照，保留 500ms、18 DIP、淡入/缓动，检查静止字形清晰度。E99 reader 不给 EOF 的 P2 回归及其他缺口仍未处理，统一见[下一步](DEVELOPMENT.md#next)。
 
 ## 2. 接续时必须保留
 
-- **测试归用户**：E62 已反馈常规依赖/视频/GPU/升级/迁移测试暂未发现问题，不重复要求常规测试、不外推专项通过。未经新指示不启动应用、检查程序、FFmpeg 或接管 UI；此前 HUD 离屏授权不外推到框架测试。E94 插件两项 P2 仍暂缓，状态留在[台账](DEVELOPMENT.md#next)。
+- **测试归用户**：E62 已反馈常规测试暂未发现问题，不外推专项通过；E100 最新指示仅授权隔离切页预览/诊断，不扩展为其他运行测试，不接管真实配置/媒体/插件。E94 两项 P2 继续暂缓。
 - **已有工作区改动**：保留用户 `.vscode/launch.json`、`.gitignore`、`Directory.Build.props`，不纳入本轮提交；产品版本只读取 props。被忽略但已跟踪的 Docs 用 `git add -u` 指定文件暂存。本地提交不等于远程授权，CI/Release 尚未实跑。
 - **已确认的框架边界**：外部依赖只有 Packages/依赖来源，默认 GitHub，不恢复自有源；发布自动识别 Plugins 一级目录的清单与唯一工程，不恢复额外名单。细节见[架构](ARCHITECTURE.md#packages)及[脚本规则](../scripts/README.md#随包插件自动识别)。
 - **工作约定**：遵循根 [AGENTS.md](../AGENTS.md)，保留精干框架与独立插件边界；插件工作若需更改框架，先交架构侧分析。只改当前授权范围，不动真实用户数据、不推送；子代理显式使用 gpt-6.1-sol / high。
@@ -23,7 +21,6 @@
 
 | 工作 | 入口 |
 | --- | --- |
-| 页面切换与回归 | [PageHost](../TractorTool.UI/Controls/PageHost.cs)、[NavigationChecks](../tests/TractorTool.IntegrationChecks/NavigationChecks.cs)；设置/日志及视频内层复用同一控件 |
 | 进程清理与回归 | [WindowsProcessSession](../TractorTool/Platform/WindowsProcessSession.cs)、[ProcessRunner](../TractorTool.Core/Processes/ProcessRunner.cs)、[ProcessChecks](../tests/TractorTool.Checks/ProcessChecks.cs) |
 | 独立打包 | [Build-Plugin](../scripts/Build-Plugin.ps1)、[Verify-PluginHost](../scripts/Verify-PluginHost.ps1)、[脚本边界](../scripts/README.md) |
 | 装载与公共接口 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[接入规范](PLUGIN_DEVELOPMENT.md) |

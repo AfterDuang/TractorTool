@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 动画修复回滚与重新定位 | [E100 · 三轮尝试全部撤回；末段文字抖动候选待确认（2026-10-11）](#evidence-page-entrance-rollback) |
 | 公共页面切换 | [E100 · 页面画面衔接，保留原动画（2026-10-11）](#evidence-page-entrance) |
 | 框架可靠性与打包 | [E99 · 可选 MVVM、Job 通知等待、管道清理（2026-10-11）](#evidence-framework-packaging-process) |
 | 发布精简（自动发现插件） | [E98 · 删除额外名单，按源码目录识别（2026-10-09）](#evidence-distribution-discovery) |
@@ -2784,3 +2785,22 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 构建包含宿主/UI/Core/Contracts/集成检查，0 错误/1 条 NU1900（漏洞数据源不可达），日志 artifacts/e100-navigation/build-frame-handoff.log。未运行检查程序或应用，未重新打包分发、替换安装目录或修改 GPU 配置。真实切页、主题/缩放和高 DPI 下截帧耗时/临时位图内存待用户验证；一张 3840×2160 的 32 位像素约 31.6 MiB，不宣称截帧零开销。用户已有 .gitignore、.vscode/launch.json、Directory.Build.props 保留。
 
 静态核对通过：七个改动文件 diff 空白检查、共享样式 XML、四份文档 257 个本地链接目标；本轮没有子代理运行或真实像素结果，未套用前轮测试证据。
+
+<a id="evidence-page-entrance-rollback"></a>
+
+### E100 全部回滚与重新定位（2026-10-11）
+
+用户反馈最后一版更严重，要求退回开始修改前，先预览并给方案再改。用 `git revert --no-commit caaba18 4e7803a a5e42f2` 撤回三轮尝试；PageHost、SharedStyles、NavigationChecks 与 `e157764` 完全一致。原始动画、单页面所有权及故障恢复保留；快照及其测试全部撤回。以上三个历史小节是失败尝试，不是现行设计或已通过验收。
+
+隔离验证与限制：
+
+- `dotnet build TractorTool/TractorTool.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e100-navigation/rollback-preview-build` 通过，0 错误/0 警告。
+- 原生宿主使用该独立输出和 `artifacts/e100-navigation/rollback-preview-profile`，不装插件、不访问真实 profile。查看主页及切到设置后的布局；普通截图采样不能判断瞬时闪帧，不作为闪烁复现/排除证据。日志点击因检测到用户输入而未继续 UI 操作。
+- 临时诊断在 `artifacts/e100-navigation/frame-probe`，加载未改动的应用/UI 代码；Headless/Skia 采样用于核对状态，另经原生窗口 `RequestAnimationFrame` 记录 9 次主页/设置/日志切换，共 1,114 次回调。结果在 `frame-evidence/native-frames.csv`、`native-events.txt`。外层透明度未出现二次下降；首段 1–2 次回调为全透明，设置内层晚启动；动画末段位移逐步归零。回调数不等于显示器实际呈现帧数，未捕获用户看到的末段抖动。诊断编译有一条 CS0618（临时截图 Save 重载），不在生产代码；最初 dotnet run 隐式构建失败，改用显式 restore/build -m:1 后执行成功。
+- 用户随后明确现象在“动画快结束时”，不是开头；因此不能根据初始透明阶段继续猜根因。此前处理起始时序/旧画面衔接的方向撤回。
+
+新的候选只涉及文字基线：[Avalonia 官方说明](https://docs.avaloniaui.net/docs/graphics-animation/text-options#baselinepixelalignment) 推荐 Unaligned 避免 RenderTransform 动画中文字跳动；[12.1.2 GlyphRunImpl](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/GlyphRunImpl.cs) 的 CreateFont 默认 BaselineSnap=true，显式 Unaligned 才关闭，且当前 NuGet API 确实支持此设置。仓库未设置该属性。这只支持候选假设，尚未证实本机根因；计划经用户确认后仅在公共页面内容容器设置此属性，检查末段抖动与静止文字清晰度，保留全部动画参数。没有实施候选修复、改 GPU 后端或新增正式依赖。
+
+未执行完整集成、真实插件/媒体/GPU回归或完整分发，E99/E94 等既有缺口不变。用户三个配置文件保持不提交，诊断文件仅留在忽略的 artifacts。
+
+本轮静态核对：四份文档的 130 个本地文件链接目标存在，共享样式 XML 可解析；指定七个改动文件 diff 空白检查通过。用户 launch.json 的既有行尾空白未处理。
