@@ -1,14 +1,14 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-11。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-10-12。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
 
-**当前在 M5，剩余组件切页闪动修正待用户复测；插件问题暂缓。** 用户最新反馈文字不闪，但 Border 等组件仍闪。已回滚的三轮起始时序/快照尝试不恢复，继续按官方实现核对末段渲染。
+**当前在 M5，切页末段闪烁仍未解决；插件问题暂缓。** 2026-10-12 用户确认卡片/边框在切页快结束时仍闪，要求查 Avalonia 官方及社区。本轮只读调研和既有图片复核，未运行应用或修改生产代码。已回滚的三轮起始时序/快照尝试不恢复。
 
-[E100 整体透明度修正](PROJECT_HISTORY.md#evidence-page-opacity)：保留文字 Hinting/基线设置，PageHost 补 `RequiresFullOpacityHandling=true` 和 `TextRenderingMode.Antialias`。前者消除逐画刷透明度取整的末帧跳亮，后者避免临时合成层结束时切换文字抗锯齿。回归分别捕获两种变化，最终构建和 11 项导航检查通过；完整状态归开发台账，真实 GPU 观感及临时合成开销未测。
+[E100 末段调研](PROJECT_HISTORY.md#evidence-page-flicker-research)：现行 PageHost 保留文字 Hinting/基线、整体透明度和灰度抗锯齿设置。此前 11 项检查通过只证明对应夹具；既有图片在更早的 0.05→0.01 DIP 区间仍有填充/边框亮度变化，位移与透明度同时改变，尚不能归因。社区末帧报告只是线索，不能套用旧版本结论或 Bounds 绕行方案。
 
-下一步由用户复测相同切页的组件闪动和静止文字清晰度，不接着改首帧或引入自建快照。E99 reader 不给 EOF 的 P2 回归及其他缺口仍未处理，验证状态统一见[下一步](DEVELOPMENT.md#next)。
+下一步应分离纯位移/纯淡入/原组合，并对照软件与原生 GPU 的整个末段；先取得定位证据再改生产实现，不改变用户要求保留的动效。对照尚未执行，运行授权仍按用户约定；E99 reader 不给 EOF 的 P2 回归及其他缺口仍未处理，验证状态统一见[下一步](DEVELOPMENT.md#next)。
 
 ## 2. 接续时必须保留
 

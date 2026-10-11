@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 组件末段闪动调研 | [E100 · 用户确认仍闪，官方/社区及既有图片复核（2026-10-12）](#evidence-page-flicker-research) |
 | 组件末帧闪动 | [E100 · 整体透明度处理及先失败后通过的像素回归（2026-10-11）](#evidence-page-opacity) |
 | 动画文字渲染 | [E100 · 官方 Hinting/基线设置与离屏对照（2026-10-11）](#evidence-page-text-rendering) |
 | 动画修复回滚与重新定位 | [E100 · 三轮尝试全部撤回；末段文字抖动候选（2026-10-11）](#evidence-page-entrance-rollback) |
@@ -2841,3 +2842,20 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 未启动本轮真实窗口、插件/媒体或完整分发，不操作用户 profile；结果为离屏合成帧证据，剩余组件闪动仍交用户复测。用户已有三个配置改动不纳入提交。
 
 本轮静态核对：四份文档的 130 个本地文件链接目标存在，共享样式 XML 可解析；指定七个改动文件 diff 空白检查通过。用户 launch.json 的既有行尾空白未处理。
+
+<a id="evidence-page-flicker-research"></a>
+
+### E100 官方/社区调研与残留闪烁反馈（2026-10-12）
+
+用户确认上一轮处理后观感仍闪，具体为切页快结束时卡片/边框突然亮一下或抖一下。本轮核对生产提交 `6f29dbd`、原有诊断文件及公开资料；只更新调研和未解决状态，没有改生产实现或执行应用/检查程序。
+
+参考资料及适用边界：
+
+- [Avalonia Discussion #13336](https://github.com/AvaloniaUI/Avalonia/discussions/13336)：2023 年报告复杂页面在 PageSlide/TranslateTransform 动画结束时旧控件闪回；作者自行改用 Bounds 绕行。现行 PageHost 使用 TransformOperationsTransition 且不保留退出页，不能认定为同一缺陷，也不直接采用改 Bounds 的方案。
+- [Avalonia Issue #9105](https://github.com/AvaloniaUI/Avalonia/issues/9105)：FluentAvalonia 作者报告组合渲染器下透明度/缩放动画起始的偶发闪动；现象与本次末段不完全一致，原报告来自 11.0-preview1，不能当作 12.1.2 已复现证据。
+- [Avalonia Issue #15704](https://github.com/AvaloniaUI/Avalonia/issues/15704)：特定 Back/Elastic 缓动越界造成可见性闪烁，已关联修复 #15726；本项目使用无此越界的 SplineEasing，匹配度低。[#9103](https://github.com/AvaloniaUI/Avalonia/issues/9103) 则为旧版 Windows 调整窗口尺寸时的 DirectComposition 闪动，不对应当前描述。
+- [12.1.2 渲染遍历](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionVisual/ServerCompositionVisual.Render.cs) 只在 visual.Opacity != 1 时 PushOpacity；[Skia DrawingContextImpl](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/DrawingContextImpl.cs) 的整体透明度选项使用 SaveLayer/浮点 alpha，未使所有帧永远采用同一路径，也不保证最终像素连续。细描边的亚像素覆盖变化、透明度量化和原生合成均仍是待分离候选。
+
+复核既有 `artifacts/e100-navigation/border-graytext-compositor/border-pixels.csv` 及 `group-graytext-0.0500.png`、`group-graytext-0.0100.png`、`group-graytext-0.0000.png`：用 System.Drawing 只读取像素。在 (130,60) 填充采样为 #313131→#323232→#323232；(130,20) 和 (130,89) 边框采样为 #F3F3F3→#FFFFFF→#FFFFFF。CSV 的亮度总和在 0.05→0.01 DIP 为 984807→1000346；最后 0.0001→0 则只有 1000364→1000329。该夹具同时设置 `Opacity=1-offset/18`，因此不能把这些变化全部归于位移或视为已复现屏幕故障；它只说明最后两态稳定不代表整个末段稳定。
+
+现有 NavigationChecks 明确固定位置，只比较透明度 0.999999→1，覆盖范围窄于用户反馈。后续诊断建议分离纯位移/纯淡入/组合，再在相同 DPI 下对照软件与 GPU 路径、记录整个末段；保留用户原动效要求，不通过删动画、改时长或新增截图缓存冒充修复。上述对照本轮未执行，旧原生帧回调也不等同于显示器实际呈现帧。构建、原生 GPU/DPI 与性能无新增证据。
