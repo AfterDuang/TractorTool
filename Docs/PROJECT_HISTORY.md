@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 剪贴板离页清理 | [E103 · WinRT Cancel 不支持与插件取消修正（2026-10-14）](#evidence-clipboard-winrt-cancellation) |
+| 框架版本对照 | [E102 · Avalonia 12.1.4 未消闪，已撤回（2026-10-13）](#evidence-page-framework-upgrade) |
 | 组件末段闪动调研 | [E100 · 用户确认仍闪，官方/社区及既有图片复核（2026-10-12）](#evidence-page-flicker-research) |
 | 组件末帧闪动 | [E100 · 整体透明度处理及先失败后通过的像素回归（2026-10-11）](#evidence-page-opacity) |
 | 动画文字渲染 | [E100 · 官方 Hinting/基线设置与离屏对照（2026-10-11）](#evidence-page-text-rendering) |
@@ -2859,3 +2861,103 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 复核既有 `artifacts/e100-navigation/border-graytext-compositor/border-pixels.csv` 及 `group-graytext-0.0500.png`、`group-graytext-0.0100.png`、`group-graytext-0.0000.png`：用 System.Drawing 只读取像素。在 (130,60) 填充采样为 #313131→#323232→#323232；(130,20) 和 (130,89) 边框采样为 #F3F3F3→#FFFFFF→#FFFFFF。CSV 的亮度总和在 0.05→0.01 DIP 为 984807→1000346；最后 0.0001→0 则只有 1000364→1000329。该夹具同时设置 `Opacity=1-offset/18`，因此不能把这些变化全部归于位移或视为已复现屏幕故障；它只说明最后两态稳定不代表整个末段稳定。
 
 现有 NavigationChecks 明确固定位置，只比较透明度 0.999999→1，覆盖范围窄于用户反馈。后续诊断建议分离纯位移/纯淡入/组合，再在相同 DPI 下对照软件与 GPU 路径、记录整个末段；保留用户原动效要求，不通过删动画、改时长或新增截图缓存冒充修复。上述对照本轮未执行，旧原生帧回调也不等同于显示器实际呈现帧。构建、原生 GPU/DPI 与性能无新增证据。
+
+<a id="evidence-page-layout-candidate"></a>
+
+### E100 布局位移候选及撤回（2026-10-12）
+
+用户授权尝试社区第一种思路，但要求不提交，先由用户确认效果，再 Review 后提交。核对 [Discussion #13336](https://github.com/AvaloniaUI/Avalonia/discussions/13336) 的 BoundsX 示例和 [12.1.2 Layoutable.ArrangeCore](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Layout/Layoutable.cs)：社区报告是旧页面闪回，不代表本机同一根因；直接将偏移交给基础 ArrangeCore 会被正常布局取整。
+
+工作区候选只改变 PageHost 的内部容器：PagePresenter 仍继承 Border，Offset 使用 DoubleTransition；变化只使 Arrange 失效，在正常 ArrangeCore 后给容器 Bounds 加小数偏移。每次从当前布局位置重新计算，避免累计漂移和缩放后丢失偏移；子页面仍保留正常取整。原 500ms、18 DIP、SplineEasing、淡入、渲染选项、异步启动和过期回调检查不变。生产文件 27 行增加/6 行删除（净增 21），未改调用接口、依赖或插件。
+
+验证与限制（产物在 `artifacts/e101-layout-motion`）：
+
+- 构建命令：`dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e101-layout-motion/build`。最终 `build-loop.log` 为 0 错误/1 条 NU1900，漏洞数据源不可达；初稿测试两条可空警告已修正。
+- 导航命令：`dotnet artifacts/e101-layout-motion/build/TractorTool.IntegrationChecks.dll artifacts/e101-layout-motion/build artifacts/e101-layout-motion/navigation-loop --navigation-only`，`navigation-loop.log` 为 12/12。新增布局回归检查 18/9.25/0.5/0.05/0.0001/0 DIP、内外嵌套、窗口缩放及页面子内容没有因纯位移重复 Measure/Arrange；旧透明度像素及取消/回收检查保留。
+- 旧快速导航检查仅 ForceRenderTimerTick/RunJobs，候选布局动画在该驱动下停留中途；改为有截止时间的正常 DispatcherFrame 消息循环后通过，未修改生产动画时钟或加延迟。初始失败日志保留于 `navigation-checks.log`、`navigation-diagnostic.log`、`navigation-capture.log`，不隐去失败过程。
+- 临时 `frame-probe` 加入 `--layout-comparison`，分别比较纯位移、纯透明度及组合；两个路径使用同样的文字/圆角/边框及渲染设置。RenderTargetBitmap 在 96/120/144/192 DPI 共 216 帧，Headless 合成器在 96 DPI 共 54 帧；新旧相同位置最大 RGB 差均为 0。中途正常移动仍有像素覆盖变化；合成器最后一步组合/透明度最大单通道差为 1。CSV 位于 `comparison/comparison.csv`、`compositor-comparison/comparison.csv`，已查看静止样图。结果说明所测位置的画面一致，不证明候选改善真实闪烁。
+- 小夹具记录 SetValue/UpdateLayout 耗时，候选纯位移/组合每组平均约 19–24 微秒；这是少量软件侧样本，未作真实性能结论。诊断构建保留既有旧分支 CS0618 警告，不在生产代码；未增加正式项目或包引用。
+
+候选验证未启动原生应用、用户插件或改用户数据，未测试真实 GPU/显示器/系统 DPI。正式文字位移像素回归仍未固化，新增几何检查不替代它；E99 回归缺口不变。
+
+随后用户反馈“不是这个原因，revert 掉吧先”。已将 PageHost 与 NavigationChecks 恢复到 `7193494`，保留原 RenderTransform 动画及已提交的文字/透明度设置；删除临时 `--layout-comparison` 入口及 LayoutComparison.cs，既有诊断代码和上述产物留存。撤回只做静态差异核对，未重新构建或运行；候选的 12 项检查不作为恢复后新增验证。闪动仍未解决，候选不进入提交前 Review。用户三个已有配置改动保持不动，本轮未暂存/提交。
+
+<a id="evidence-page-dot-analysis"></a>
+
+### E100 dot 建议复核（2026-10-13）
+
+用户提供讨论截图，要求分析；本轮只读核对源码和官方资料，未改实现、构建、运行或提交。
+
+- **确定缺陷**：[12.1.2 SplineEasing](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Animation/Easings/SplineEasing.cs) 四参数构造函数最后误写 `Y1 = y2`，Y2 留在默认 1。PageHost 两处 `(0.1, 0.9, 0.2, 1)` 因此实际为 `(0.1, 1, 0.2, 1)`。[官方 PR #22169](https://github.com/AvaloniaUI/Avalonia/pull/22169) 及 [12.1.3 发布说明](https://github.com/AvaloniaUI/Avalonia/releases/tag/12.1.3) 确认修复。属性初始化可绕开，属于恢复声明的节奏；没有证据表明它就是闪动根因。
+- **待证实解释**：对固定前后景，理想透明度混合后单次量化保持单调，仅说“8 位取整”不足以证明亮度先降后升。实际分步计算、亚像素覆盖与合成路径差异仍可能造成变化。当前已启用整体透明度处理；[Skia 实现](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/DrawingContextImpl.cs) 使用浮点 alpha 的 SaveLayer，而 [合成遍历](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionVisual/ServerCompositionVisual.Render.cs) 在 Opacity=1 时不 PushOpacity。此源码边界不是本机缺陷已复现证据；截图提到的录屏/数学计算未在本轮取得并复核。
+- **方案遗漏**：当前 Program 未解析 `--software-rendering` 或设置 RenderingMode；需显式接入 [Win32PlatformOptions](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Windows/Avalonia.Win32/Win32PlatformOptions.cs) 才能作软件/GPU 对照，现有可执行文件直接传该参数不构成对照。软件模式是诊断/兼容选项，不能先改成默认。
+- **升级边界**：[12.1.4](https://github.com/AvaloniaUI/Avalonia/releases/tag/12.1.4) 含后续修复，但没有证据承诺消除此闪动。HostCompatibility 精确比较 AvaloniaVersion，UI SDK 当前声明 12.1.2；升级需要统筹依赖、SDK 身份、插件声明及兼容验证，不能只改宿主 NuGet 版本。
+
+建议下一轮先只纠正两处缓动初始化并由用户对比，保留 500ms、18 DIP、淡入；仍闪再单独做原生渲染路径对照。升级作为独立变更，避免同时改变多个变量。以上仅为建议，代码保持回滚后状态，闪动验收仍未通过。
+
+<a id="evidence-page-easing-initializer"></a>
+
+### E100 缓动初始化修正，用户确认未消闪（2026-10-13）
+
+用户授权先修改缓动初始化。PageHost 仅改两行：透明度和位移过渡均使用 `new SplineEasing { X1 = 0.1, Y1 = 0.9, X2 = 0.2, Y2 = 1 }`，绕过上述构造函数缺陷。保留 500ms、18 DIP、淡入、RenderTransform、调度及渲染选项，未增加抽象、依赖或测试代码。实际 Y1 从错误的 1 恢复为声明的 0.9，动画节奏因此会有修正，不宣称完全相同曲线或闪动已消除。
+
+构建 `dotnet build TractorTool.UI/TractorTool.UI.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e101-easing-initializer/build` 成功，0 警告/0 错误；日志为 `artifacts/e101-easing-initializer/build.log`。静态差异仅两处初始化；未运行应用、检查程序或原生 GPU 对照。用户的 Directory.Build.props 改动保留，未暂存/提交，等待用户效果反馈后再 Review。
+
+随后用户确认“并没有得到解决”，询问后续方案。构造函数缺陷修正保留，不能作为消闪修复通过。建议下一轮仅在 Program 接入启动参数，以官方 Win32PlatformOptions 强制 Software，与同版本默认渲染比较；保持页面、DPI、尺寸和动效一致，先彻底退出托盘以避免启动参数未作用于旧进程。软件模式若不闪，优先缩小到默认图形后端/Windows 合成路径，但不直接断定驱动有缺陷；若都闪，再在原生环境对照纯淡入/纯位移，诊断后恢复原动效。升级另行评估，不与对照混改。本轮只核对启动代码/官方选项和更新文档，未实施开关、构建、运行或提交。
+
+<a id="evidence-page-dot-instructions"></a>
+
+### E100 dot 本地实施说明复核（2026-10-13）
+
+用户要求评估附件《TractorTool 页面闪动本地实施说明》，未要求执行全部步骤。原始文件位于会话附件 `2253dc1a-c516-4419-9642-9ad1e74d86e0/已粘贴的文本.txt`；其中提交、运行和发布步骤仅作待评估建议，不覆盖用户尚未允许提交及自行运行验收的约定。
+
+- 数学例子已独立复算：前景 (50,50,54)、背景 (39,39,42)，alpha 245/255→246/255 时，理想 R 为 49.5686→49.6118，而两项分别四舍五入再相加为 (50,50,54)→(49,49,53)。它补充了上一轮缺失的“分阶段取整”条件，不是对最终结果只取整一次。
+- GitHub 子模块元数据确认 [SkiaSharp v3.119.4](https://github.com/mono/SkiaSharp/tree/v3.119.4/externals/skia) 指向 `7dbfc07dd33181f84e0958afb7ee805c6c769f0b`；该版 [SkRasterPipeline](https://github.com/mono/skia/blob/7dbfc07dd33181f84e0958afb7ee805c6c769f0b/src/core/SkRasterPipeline.cpp#L133-L161) 存在预量化的低精度颜色， [source-over](https://github.com/mono/skia/blob/7dbfc07dd33181f84e0958afb7ee805c6c769f0b/src/opts/SkRasterPipeline_opts.h#L5097-L5112) 对背景残余另行计算。仅证明候选机制存在，不能确认 Windows GPU/SaveLayer 走该分支。
+- [NuGet DataGrid 页面](https://www.nuget.org/packages/Avalonia.Controls.DataGrid/) 当前为 12.1.2，不能机械统一为 12.1.4。[PR #22114](https://github.com/AvaloniaUI/Avalonia/pull/22114) 针对顶层透明提示/主题变化与 Win32 blur/Mica 的帧状态同步，不是普通页面淡入已修的证据。附件的混合依赖测试通过、Linux 原版/mask/覆盖层录像及其采样未取得原始工程或记录，不计为本仓库验证。
+- 适配实际工程：缓动已改且用户确认未消闪，无须再提取工厂。附件提及 OptionalWindowsRendering.cs，但本次只附说明、当前工程也无该文件；实施时可直接在已有 Program 中作小范围调整。升级还必须覆盖 UI SDK 身份、HostCompatibility 的精确版本校验、插件清单及测试项目引用，不能仅改所列三个工程。
+
+采纳保留原动效、单变量原生对照、实际后端确认、平坦区域和静态噪声对照的验收原则；先做现有 12.1.2 的默认/Software 对照，再独立决定升级。mask、覆盖层、永久低于 1 的透明度和可选插件 3 DIP 留白不加入当前修改。每组 20 次/100 次导航留作候选方案的后续验收，第一轮先确认可稳定复现及路径差异。本轮仅资料核对和数学复算，未改实现、构建、运行或提交。
+
+<a id="evidence-page-software-rendering"></a>
+
+### E100 软件渲染启动对照与撤回（2026-10-13）
+
+用户授权试行默认/软件渲染对照。Program 保留原入口、Windows 维护、单实例、设计器及 AppBuilder 配置，仅在 Windows 且 LaunchArguments 包含 `--software-rendering` 时增加 `Win32PlatformOptions { RenderingMode = [Win32RenderingMode.Software] }`。未配置额外回退后端、不改变 CompositionMode/DPI/动画或持久设置，不增加 helper/依赖/公开接口。App 通过已有日志服务记录本次“强制 Windows 软件渲染”或“默认，由 Avalonia 选择可用后端”；记录的是配置，默认路径没有冒充已测得的 GPU/驱动信息。
+
+`dotnet build TractorTool/TractorTool.csproj -c Release --no-restore -m:1 -nr:false -o artifacts/e101-software-rendering/build` 通过，0 警告/0 错误；日志 `artifacts/e101-software-rendering/build.log`。静态核对参数在 BuildAvaloniaApp 前设置，单实例复用旧进程时不会谎称切换后端；无参数及非 Windows 保持既有配置，当前没有 CustomPlatformGraphics/其他 Win32PlatformOptions 被覆盖。未运行应用、检查程序、设计器或原生图形验证，未新增仅镜像参数分支的测试。
+
+用户在同一工作副本默认 Debug 输出运行两组：`dotnet run --project .\TractorTool\TractorTool.csproj --no-restore` 与追加 `-- --software-rendering` 的同一命令；每组开始前先从托盘彻底退出，保持页面/DPI/窗口/主题一致，检查本次启动日志。移除参数并重启恢复默认；软件模式 CPU/帧耗时及闪动结果待用户反馈，构建不能替代。既有缓动修正保留，用户 Directory.Build.props 改动未触及；未暂存/提交。
+
+随后用户反馈“软件渲染要稍微好点”，并要求撤回，明确本次只比较软件渲染与默认渲染的区别。该反馈不构成消闪验收，也未证明 GPU/驱动或分阶段舍入是根因；没有新增逐帧或性能测量。已移除 Program 的参数判断/Win32 配置及 App 的试验日志，两文件恢复 HEAD 实现；保留 PageHost 缓动初始化修正和用户 Directory.Build.props 改动。撤回后仅静态核对差异及残留引用，未重新构建、运行或提交。以上命令和构建日志仅为已撤回候选的历史证据。
+
+<a id="evidence-page-framework-upgrade"></a>
+
+### E102 Avalonia 12.1.4 升级对照，用户确认无效后撤回（2026-10-13）
+
+用户授权试升版本。宿主/UI 及插件、夹具和检查工程的 Avalonia 核心/桌面/字体/Skia/ColorPicker/Headless 从 12.1.2 升至 12.1.4；DataGrid 保持 12.1.2，FluentAvaloniaUI 3.1.0、MVVM 8.4.2 不变。UiApi.AvaloniaVersion 与 5 份插件/夹具清单同步为 12.1.4；HostCompatibility 精确匹配逻辑、公开接口及插件业务不改。Core 检查中成对构造的 12.1.2 虚拟宿主/清单是独立测试输入，不是运行依赖，予以保留。PageHost 保持前轮属性初始化、500ms/18 DIP/淡入和渲染选项，Program/App 保持默认后端，未重新加入软件渲染开关。
+
+官方依据：[12.1.4 发布记录](https://github.com/AvaloniaUI/Avalonia/releases/tag/12.1.4)、[Avalonia NuGet](https://www.nuget.org/packages/Avalonia/12.1.4)。首次分发因许可来源仍绑定旧提交，在 ColorPicker/12.1.4 报缺少许可原文而停止；没有跳过校验。核对新 NuGet repository commit `2d79ba55fae1b1e71c69f93a668080c9029e6a31` 的[许可原文](https://raw.githubusercontent.com/AvaloniaUI/Avalonia/2d79ba55fae1b1e71c69f93a668080c9029e6a31/licence.md)与既有 Avalonia.txt 一致，仅更新 sources.json 对应提交及来源。失败记录保留，改用新目录重新打包。
+
+- `dotnet build TractorTool.slnx -c Release -m:1 -nr:false`：15 工程构建通过，0 警告/0 错误；日志 `artifacts/e102-avalonia-12.1.4/solution-build.log`。仅编译，未执行检查程序。
+- `./scripts/Build-Distribution.ps1 -Output H:/ProjH/TractorTool/artifacts/e102-avalonia-12.1.4/distribution`：宿主自包含发布成功，许可收集失败；日志 `distribution-build.log`。
+- 同脚本改用输出 `artifacts/e102-avalonia-12.1.4/distribution-ready`：宿主发布、3 个正式插件引用发布 SDK 独立构建通过（各 0 警告/0 错误）；宿主文件哈希未变；现有 Verify-Distribution 静态校验 379 文件、3 插件通过。日志 `distribution-ready.log`；未生成安装器。
+- `resolved-ui-packages.txt` / `runtime-manifest-check.json` 保存实际还原及产物依赖、插件声明。Avalonia 核心及桌面渲染组件为 12.1.4；DataGrid 12.1.2、FluentAvaloniaUI 3.1.0、SkiaSharp 3.119.4、ANGLE 原生包不变，不能把 Avalonia.Skia 升级描述为底层 SkiaSharp 升级。
+
+测试入口为 `artifacts/e102-avalonia-12.1.4/distribution-ready/layout/TractorTool-1.0.0-win-x64/TractorTool.exe`。3 个插件沿用原版本号，仅在新副本中使用，不安装为同版更新包、不覆盖旧安装。原 Debug/F5 目录的 12.1.2 插件仍会被升级宿主拒绝，应使用完整测试副本；默认不传 profile 参数仍使用现有数据目录。由用户从托盘彻底退出旧进程后，在相同页面/主题/窗口/DPI 下对照。未启动应用、接管 UI、验证原生加载/闪动或取得性能数据，未改用户 Directory.Build.props，未暂存或提交；不能宣称升级已消闪。
+
+随后用户明确反馈“确认升级不管用，可以 Revert 了”。已撤回本轮依赖版本、UiApi.AvaloniaVersion、5 份插件/夹具清单、编译引用、许可来源及对应接入文档，恢复 12.1.2；保留试验前的 PageHost 缓动初始化修正和用户 Directory.Build.props。`dotnet build TractorTool.slnx -c Release -m:1 -nr:false` 撤回后通过，15 工程、0 警告/0 错误，记录为 `artifacts/e102-avalonia-12.1.4/revert-build.log`。未运行应用或检查程序、未重建分发、未暂存/提交。12.1.4 EXE/ZIP 仍是原试验版本，只保留历史证据，不再作为当前运行入口；用户数据与原安装未覆盖。此次反馈证明该升级未解决本机症状，不外推排除所有框架或合成问题。
+
+<a id="evidence-clipboard-winrt-cancellation"></a>
+
+### E103 剪贴板离页清理异常（2026-10-14）
+
+用户提供“页面离开清理失败”及调试控制台 AggregateException 截图。只读实际日志 `E:/CACHE/TractorTool/Logs/host-20261014-143902-15884-3f1379580bc54551817c6f9fc6666a63-0001.log`，27–48 行确认：`IAsyncInfoMethods.Cancel → IAsyncOperationImpl.Cancel → AsyncInfoToTaskBridge 取消回调 → CancellationTokenSource.ExecuteCallbackHandlers → ClipboardHistoryViewModel.OnNavigatedFrom:203 → MainViewModel.ReleasePage:224`，内部为 NotImplementedException。它证明本机原生取消失败，无法从该堆栈分辨当时是哪一个具体读取 API；不是插件留有 throw NotImplementedException，也没有证据关联动画。宿主已捕获记录；插件的取消抛错会跳过随后的选择、预览、列表清理，且 `_left` 已为 true，重入不能补清理。
+
+最小修改只在插件 Windows 适配：10 处 WinRT 等待使用无令牌 AsTask，成功返回后检查托管取消；不调用原生 Cancel，不使用 WaitAsync 提前遗弃操作。页面仍同步退出并释放现有显示资源；图片流先进入 using 后检查取消，解码/取像素调用完成后才释放输入流。新增模型用例同时挂起历史刷新和替换预览，离页立即清空并禁用操作，再观察两项迟到失败。该替身不调用 WinRT，不模拟本机 Cancel 故障，不证明真实流释放。未改宿主/Core/Contracts/公共 UI，本轮与既有缓动初始化修改分开；插件版本升为 1.1.3，未覆盖已安装版本。
+
+- `dotnet build tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj -c Release -m:1 -nr:false`：4 工程编译成功，0 错误、2 条 NU1900（NuGet 漏洞数据查询网络失败）。日志 `artifacts/e103-clipboard-cancellation/build.log`；未运行检查程序。
+- `scripts/Build-Plugin.ps1` 引用此次实际运行宿主 `TractorTool/bin/Debug/net10.0` 的 Contracts/UI 独立构建 1.1.3，0 错误、2 条同类 NU1900。依赖静态确认 Avalonia/Desktop 12.1.2；这是用户当前宿主的 SDK 快照，不是新的正式宿主发布。日志 `package-build.log`，产物 `artifacts/e103-clipboard-cancellation/plugin/TractorTool.ClipboardHistory-1.1.3.zip`。
+- `static-verification.json`：ZIP 13 文件与构建目录逐项 SHA256 一致、清单 1.1.3/12.1.2；宿主顶层 46 文件哈希未变。打包脚本确认无共享 SDK DLL 副本。ZIP SHA256 为 `514B26FE031FF0A0A1B5FCD93E91F1AA877892B4868ED24116EE9F03A21E51C8`。
+- gpt-6.1-sol / high 子代理独立诊断并复审最终源码，未发现阻止打包的缺陷；重点检查全部取消入口、图片流作用域、迟到异常及调用方状态。git diff --check 通过；不把静态审查当运行通过。
+
+用户从当前宿主插件页安装 ZIP，显式退出重启，验证读取/图片预览过程中切页、快速改选、重返页面及错误日志。没有启动应用、检查程序或接管 Windows UI，没有读取剪贴板内容、改用户数据、自动安装、暂存或提交。边界：不能强制终止不支持取消的原生调用，若其迟迟不结束，相关任务与资源也会保留到结束；真实行为仍待用户反馈。原切页动画闪动及其他未关闭项继续保留。

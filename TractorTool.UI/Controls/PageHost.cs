@@ -65,8 +65,8 @@ public sealed class PageHost : Decorator, IFANavigationPageFactory
                     if (FAUISettings.AreAnimationsEnabled())
                         presenter.Transitions = new Transitions
                         {
-                            new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) },
-                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing(0.1, 0.9, 0.2, 1) }
+                            new DoubleTransition { Property = Visual.OpacityProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing { X1 = 0.1, Y1 = 0.9, X2 = 0.2, Y2 = 1 } },
+                            new TransformOperationsTransition { Property = Visual.RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(500), Easing = new SplineEasing { X1 = 0.1, Y1 = 0.9, X2 = 0.2, Y2 = 1 } }
                         };
                     presenter.Opacity = 1;
                     presenter.RenderTransform = TransformOperations.Identity;

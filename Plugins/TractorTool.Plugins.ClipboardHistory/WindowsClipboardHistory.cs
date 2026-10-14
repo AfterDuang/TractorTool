@@ -61,7 +61,9 @@ internal sealed class WindowsClipboardHistory : IClipboardHistoryService
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
-        var result = await Clipboard.GetHistoryItemsAsync().AsTask(cancellationToken);
+        // Some clipboard WinRT operations reject Cancel; cancel consumption between awaited calls instead.
+        var result = await Clipboard.GetHistoryItemsAsync().AsTask();
+        cancellationToken.ThrowIfCancellationRequested();
         if (result.Status != ClipboardHistoryItemsResultStatus.Success)
         {
             if (result.Status == ClipboardHistoryItemsResultStatus.ClipboardHistoryDisabled) _items.Clear();
@@ -79,9 +81,13 @@ internal sealed class WindowsClipboardHistory : IClipboardHistoryService
             try
             {
                 kind = GetKind(item.Content);
-                summary = kind == HistoryKind.Text
-                    ? Summary(await item.Content.GetTextAsync().AsTask(cancellationToken))
-                    : kind == HistoryKind.Image ? "选择以预览图片" : string.Join(" · ", item.Content.AvailableFormats);
+                if (kind == HistoryKind.Text)
+                {
+                    var text = await item.Content.GetTextAsync().AsTask();
+                    cancellationToken.ThrowIfCancellationRequested();
+                    summary = Summary(text);
+                }
+                else summary = kind == HistoryKind.Image ? "选择以预览图片" : string.Join(" · ", item.Content.AvailableFormats);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch { summary = "内容暂时无法预览"; }
@@ -113,12 +119,22 @@ internal sealed class WindowsClipboardHistory : IClipboardHistoryService
         switch (GetKind(data))
         {
             case HistoryKind.Image: return await ReadImageAsync(data, cancellationToken);
-            case HistoryKind.Text: return TextPreview(await data.GetTextAsync().AsTask(cancellationToken));
+            case HistoryKind.Text:
+                var text = await data.GetTextAsync().AsTask();
+                cancellationToken.ThrowIfCancellationRequested();
+                return TextPreview(text);
             // Display source as inert text; never execute HTML, load remote resources or open files.
-            case HistoryKind.Html: return TextPreview(await data.GetHtmlFormatAsync().AsTask(cancellationToken), "网页片段的源码预览；复制时保留原格式。");
-            case HistoryKind.RichText: return TextPreview(await data.GetRtfAsync().AsTask(cancellationToken), "富文本的源码预览；复制时保留原格式。");
+            case HistoryKind.Html:
+                var html = await data.GetHtmlFormatAsync().AsTask();
+                cancellationToken.ThrowIfCancellationRequested();
+                return TextPreview(html, "网页片段的源码预览；复制时保留原格式。");
+            case HistoryKind.RichText:
+                var rtf = await data.GetRtfAsync().AsTask();
+                cancellationToken.ThrowIfCancellationRequested();
+                return TextPreview(rtf, "富文本的源码预览；复制时保留原格式。");
             case HistoryKind.Files:
-                var files = await data.GetStorageItemsAsync().AsTask(cancellationToken);
+                var files = await data.GetStorageItemsAsync().AsTask();
+                cancellationToken.ThrowIfCancellationRequested();
                 return TextPreview(string.Join(Environment.NewLine, files.Select(f => f.Name)), "文件名预览；复制时使用系统原内容。");
             default: return new("", "暂不支持预览此类型，可以复制原内容。\n格式：" + string.Join("、", data.AvailableFormats));
         }
@@ -133,10 +149,13 @@ internal sealed class WindowsClipboardHistory : IClipboardHistoryService
 
     private static async Task<HistoryPreview> ReadImageAsync(DataPackageView data, CancellationToken token)
     {
-        var reference = await data.GetBitmapAsync().AsTask(token);
-        using var stream = await reference.OpenReadAsync().AsTask(token);
+        var reference = await data.GetBitmapAsync().AsTask();
+        token.ThrowIfCancellationRequested();
+        using var stream = await reference.OpenReadAsync().AsTask();
+        token.ThrowIfCancellationRequested();
         if (stream.Size > 32 * 1024 * 1024) return new("", "图片较大，暂不生成预览；仍可复制原图片。");
-        var decoder = await BitmapDecoder.CreateAsync(stream).AsTask(token);
+        var decoder = await BitmapDecoder.CreateAsync(stream).AsTask();
+        token.ThrowIfCancellationRequested();
         if (decoder.PixelWidth == 0 || decoder.PixelHeight == 0 || (ulong)decoder.PixelWidth * decoder.PixelHeight > 100_000_000)
             return new("", "图片尺寸超出预览范围；仍可复制原图片。");
         var scale = Math.Min(1d, 1600d / Math.Max(decoder.PixelWidth, decoder.PixelHeight));
@@ -144,7 +163,7 @@ internal sealed class WindowsClipboardHistory : IClipboardHistoryService
         var height = Math.Max(1, (int)(decoder.PixelHeight * scale));
         var pixels = await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
             new BitmapTransform { ScaledWidth = (uint)width, ScaledHeight = (uint)height },
-            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.ColorManageToSRgb).AsTask(token);
+            ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.ColorManageToSRgb).AsTask();
         token.ThrowIfCancellationRequested();
         var bytes = pixels.DetachPixelData();
         var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);

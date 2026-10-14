@@ -130,6 +130,29 @@ await Check("Departed page rejects late history, late preview and queued events"
     vm = Model(service); await vm.InitializeAsync(); var oldPreview = vm.PreviewCompletion; vm.OnNavigatedFrom();
     preview.SetResult(new("late image substitute", "")); await oldPreview; Assert(vm.Preview is null && !vm.CanCopy);
 });
+await Check("Departure completes cleanup even when pending reads ignore cancellation and fail later", async () =>
+{
+    var lateHistory = new TaskCompletionSource<HistoryResult>();
+    var latePreview = new TaskCompletionSource<HistoryPreview>();
+    CancellationToken historyToken = default, previewToken = default;
+    var service = new Service(_ => Task.FromResult(Snapshot(Entry("one"), Entry("two"))));
+    var vm = Model(service); await vm.InitializeAsync();
+    service.Preview = (_, token) => { previewToken = token; return latePreview.Task; };
+    vm.SelectedEntry = vm.Items[1];
+    var preview = vm.PreviewCompletion;
+    service.Read = token => { historyToken = token; return lateHistory.Task; };
+    var refresh = vm.RequestRefreshAsync();
+    vm.OnNavigatedFrom();
+    Assert(historyToken.IsCancellationRequested && previewToken.IsCancellationRequested);
+    Assert(service.Disposed && service.Subscribers == 0 && vm.Items.Count == 0 && vm.SelectedEntry is null && vm.Preview is null);
+    Assert(!vm.CanRefresh && !vm.CanCopy && !refresh.IsCompleted && !preview.IsCompleted);
+    lateHistory.SetException(new IOException("SENSITIVE_FIXTURE"));
+    latePreview.SetException(new IOException("SENSITIVE_FIXTURE"));
+    await Task.WhenAll(refresh, preview);
+    vm.OnNavigatedFrom();
+    Assert(vm.Items.Count == 0 && vm.Preview is null && !vm.IsLoading && !vm.IsPreviewLoading);
+    Assert(!vm.Status.Contains("SENSITIVE_FIXTURE") && !vm.CopyStatus.Contains("SENSITIVE_FIXTURE"));
+});
 await Check("Temporary access denial retains selection; disabled history clears it", async () =>
 {
     var service = new Service(_ => Task.FromResult(Snapshot(Entry("one"))));
