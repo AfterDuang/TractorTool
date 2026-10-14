@@ -14,6 +14,12 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 重置恢复修复 | [E109 · 卸载根独立与待安装代码清理重试（2026-10-15）](#evidence-reset-transaction-retry) |
+| 存储扩大复审 | [E108 · 重置与安装/卸载组合恢复的两项 P2（2026-10-15）](#evidence-storage-reset-review) |
+| 存储审查修复 | [E107 · 目标副本复验与卸载事务保留（2026-10-15）](#evidence-storage-review-fixes) |
+| 存储代码审查 | [E106 · 1 项 P1、1 项 P2 待修复（2026-10-14）](#evidence-storage-review-open-findings) |
+| 迁移失败修正 | [E105 · 缺失探测与旧目标回退引用（2026-10-14）](#evidence-migration-probe-stale-recovery) |
+| 数据迁移清理与默认初始化 | [E104 · 旧业务清单清理及自定义根删除后恢复默认（2026-10-14）](#evidence-data-migration-cleanup-reset) |
 | 剪贴板离页清理 | [E103 · WinRT Cancel 不支持与插件取消修正（2026-10-14）](#evidence-clipboard-winrt-cancellation) |
 | 框架版本对照 | [E102 · Avalonia 12.1.4 未消闪，已撤回（2026-10-13）](#evidence-page-framework-upgrade) |
 | 组件末段闪动调研 | [E100 · 用户确认仍闪，官方/社区及既有图片复核（2026-10-12）](#evidence-page-flicker-research) |
@@ -2961,3 +2967,91 @@ dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.c
 - gpt-6.1-sol / high 子代理独立诊断并复审最终源码，未发现阻止打包的缺陷；重点检查全部取消入口、图片流作用域、迟到异常及调用方状态。git diff --check 通过；不把静态审查当运行通过。
 
 用户从当前宿主插件页安装 ZIP，显式退出重启，验证读取/图片预览过程中切页、快速改选、重返页面及错误日志。没有启动应用、检查程序或接管 Windows UI，没有读取剪贴板内容、改用户数据、自动安装、暂存或提交。边界：不能强制终止不支持取消的原生调用，若其迟迟不结束，相关任务与资源也会保留到结束；真实行为仍待用户反馈。原切页动画闪动及其他未关闭项继续保留。
+
+<a id="evidence-data-migration-cleanup-reset"></a>
+
+### E104 数据迁移清理与自定义目录删除后恢复默认（2026-10-14）
+
+用户明确更正：迁移成功后清理旧业务数据；自定义目录被删除后，下次启动回默认 C 盘数据根重新初始化，需要时由用户重新迁移，不重建原自定义目录。方案沿用固定 bootstrap/host.lock，只保留必要定位元数据，不引入注册表或通用恢复平台。
+
+实现涉及宿主启动组装及 Core 存储/插件管理，不修改 Contracts 或插件代码。迁移沿用分块复制、SHA256 与两端清单校验，在目标归属 marker 持久化源 Config/Data/Packages/Logs/Cache 的清理清单后提交指针；回退快照重绑完成才删除清单中大小/修改时间等信息未变化的文件和空目录。缓存及未完成下载不复制，但列入源清理；未知根项、固定 bootstrap 与锁保留。清理受阻、源内容变化或出现清单外业务文件时保留相关内容和迁移请求，下一启动继续收尾。旧版已提交事务无 Cleanup 清单时，不探测或锁定旧源，保留旧数据并验证目标归属、完成原有回退元数据收尾，再清迁移请求；正常启动并 Warning 提示用户确认新数据完整后自行清理，不补造删除授权。当前清理不重新做内容哈希比对，外部改写同时保留大小/修改时间的情况不在检测覆盖内。
+
+自定义本地根通过属性/目录枚举确认缺失，且无 Migration 时，AppPaths.Open 仅产生默认根候选；启动取得插件安装锁后调用 CompleteDataReset，统一执行最终缺失确认、取消检查及管理清理回调，避免启动过程中目录恢复却先丢管理记录。回调丢弃旧根关联 Pending/Recovery 和失效加载状态，保留活动版本、启停、卸载墓碑及已移动代码，安全清理 staging；随后清默认根残留五类业务数据，最后原子保存默认 bootstrap，再创建业务目录和加载插件。任何管理初始化/清理/保存失败均阻断，最终提交前保留旧指针；自定义根锁只打开现有目录。离线、ACL、链接/文件占位、损坏记录和未完迁移不授权重置；启动 Warning 说明已恢复默认且需自行重新迁移。
+
+- 构建：三轮 slnx Release --no-restore 均成功，均为 0 错误/1 条 NU1900（nuget.org 漏洞数据查询网络失败），分别 32.31、23.93、3.42 秒；最后一轮 15 工程全部构建成功。不继承 E102/E103 的历史证据。
+- 子代理 Review：发现两项 P2（Windows 短路径误判为缺失、目录恢复前管理写入顺序），修正后复审闭合；随后 legacy 已提交事务旧源 ACL 前置探测 P2 通过 PathIssue(checkSource: !committed) 修正。最终独立复核通过，三项问题均闭合，未发现阻断问题。
+- 静态：git diff --check 及五份文档本地文件链接检查通过，不作为运行验收。
+- 回归用例：已调整旧源保留断言，新增迁移清理/中断、默认初始化/故障区分、旧根关联事务丢弃与重试及 legacy Warning 覆盖；Windows 8.3 短路径可用时覆盖，不可用显式 SKIP。仅编译，检查程序尚未运行，不能将条件覆盖写成已经执行通过。
+- 未启动应用、检查程序或接管 Windows UI；未更改真实用户数据、安装插件或提交。本轮运行仍由用户负责，跨卷/近满盘/ACL/离线及中断恢复尚待专项证据。
+
+当前结论和下一步只见[开发台账](DEVELOPMENT.md#current-status)；剪贴板原生回归、切页闪动与其他未关闭验收继续保留。
+
+<a id="evidence-migration-probe-stale-recovery"></a>
+
+### E105 迁移异常探测与旧回退引用修正（2026-10-14）
+
+用户运行 E104 后提供首次引发异常及迁移失败日志，并要求主代理自己检查。只读核对 bootstrap、当前 Debug 安装的管理状态和快照存在性：迁移尚未提交，4 个插件回退记录仍指向曾删除的目标数据根，两端都无对应 snapshot.json；另 1 个源根快照存在且已复制。RebindDataRoot 预检同时接受源/目标根，因而把旧目标引用误当作本次快照。没有读取插件凭据或修改任何真实数据。
+
+同时确认 E104 将原先的 FileInfo.Attributes 探测改成 File.GetAttributes 后捕获缺失异常，导致锁、marker、临时文件与目标文件尚未创建时反复产生首次引发异常。依据 [.NET 文档](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.attributes?view=net-10.0) 和 [.NET 10 Windows 实现](https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileSystemInfo.Windows.cs)，恢复缺失返回 -1 的标准库查询；访问错误继续传播，父目录可访问性、卷类型、短路径与链接检查保留。
+
+修正只涉及已有存储/管理边界：提交前验证源根快照；提交后复用持久化源清单辨识并清除旧目标引用，本次已复制快照丢失仍阻断收尾，旧事务缺清单保持保守处理。另在自行复核中发现默认重置会丢弃默认根残留数据但未清对应管理引用，补齐两个根的清理回调。活动版本、启停与其他数据根的管理记录保留，不新增文件格式字段、公开 Contracts、平台层或插件业务判断。
+
+- 新增 5 项用例：首次启动/重置/迁移不产生预期缺失异常；旧目标记录正常清除及提交后重启清除；已重绑快照丢失继续保留源并阻断；默认重置清两根引用而保留其他根。沿用损坏快照、取消、状态写失败及旧清单兼容用例。
+- 两轮 `dotnet build TractorTool.slnx -c Release -m:1 -nr:false --no-restore` 成功，分别 11.44、5.06 秒，均 0 错误/1 条 NU1900（nuget.org 漏洞数据网络查询失败），最终 15 工程成功。用例仅编译，未执行。
+- 主代理自行复核启动调用链、提交前后重试、管理状态写入与源码差异；本轮未委派子代理。git diff --check 与五份文档本地文件链接检查通过，静态检查不替代运行证据。
+- 未启动应用/检查程序或接管 UI，未更改真实 bootstrap、插件管理状态或迁移文件，未提交。现有失败请求需用户在设置中显式重试；若后续源文件变化造成部分目标冲突，沿现有流程选择新空目录，不能自动覆盖。
+
+E104 的旧 Review 没有发现本次实测缺陷，不作为当前运行通过；现行状态与剩余验收只见[开发台账](DEVELOPMENT.md#current-status)。
+
+<a id="evidence-storage-review-open-findings"></a>
+
+### E106 E104/E105 子代理 Review：两项待修复（2026-10-14）
+
+用户要求按原标准由子代理 Review。3 名 gpt-6.1-sol / high 分别只读检查迁移/清理安全、默认重置/回退管理事务、代码精简与测试；主代理复核关联调用和具体触发链。范围为全部未提交存储改动及宿主调用、检查用例、文档，不涉及其他插件业务。
+
+1. **P1，提交后恢复未复验普通目标副本**：DataRootMigration 已提交分支只核对 marker、回退快照，然后 CleanSource 仅验证源清单。提交后清理前取消并退出，停机期间删除目标 Config 文件，源仍完好；恢复会删除源并清请求，失去最后的好副本。修正需在清理剩余持久文件前确认对应目标安全完整，明确排除不复制的 Cache/Packages/.work，并处理已重绑的快照元数据。补“提交后中断→普通目标丢失→恢复阻断、源保留”检查；现有仅有回退 snapshot 丢失检查。该缺陷不属于已说明的源大小/mtime 隐蔽改写限制。
+2. **P2，重置丢失部分完成的卸载事务**：PluginManager.Apply(Uninstall) 已将代码移入 `.management/removed/<Token>`，后续删除或保存失败/中断，依赖原 Pending 重试。自定义根随后删除时，DiscardDataRootState 清 Pending 但保留 ActiveVersion，失去卸载收尾记录并留下未加载活动版本及 removed 残留；CancelPending 原本禁止丢弃这种记录。最小修法是保留这一代码事务、重绑默认根并由既有 ApplyPending 完成，不新建状态层；补中断卸载后重置回归。
+
+本轮未修改代码、未运行构建/检查程序/应用、未操作真实数据或提交；仅同步审查状态。以上为静态控制流发现，不声称已执行复现。当前结论为先修这两项，缺陷与回归缺口保留在[当前台账](DEVELOPMENT.md#current-status)，不将归档视为关闭。
+
+<a id="evidence-storage-review-fixes"></a>
+
+### E107 目标副本复验与卸载事务保留（2026-10-15）
+
+用户授权处理 E106 两项发现，沿既有迁移清单、插件管理状态与恢复流程修正，未新增持久格式、公开 Contracts 或状态层。
+
+- **P1**：CleanSource 先确认剩余源清单未变化，再全量核对需复制的目标目录、文件长度与 SHA256，任何失败均在开始删除前停止。逐文件删除前再次复验并持有目标 FileShare.Read 句柄直至删源结束，覆盖预检后目标变化；Cache/Packages/.work 仍按源清单清理。IsReboundRecoveryMetadata 仅对当前回退记录的精确 snapshot.json/.bak 路径放行 DataRoot 字段变化，其余 record 字段全部相同；长度不同也进入该判断，多次迁移 .bak 可保留更早源根。
+- **P2**：DiscardDataRootState 保留被丢弃根的 Uninstall Pending、Token 和 Error，仅重绑默认根；两次根清理回调及中断重试均保留请求，后续 ApplyPending 处理已移动至 removed 的代码并提交卸载记录。安装/回退等数据关联状态仍按既有规则丢弃，其他根请求不改。
+- 新增 **7 项**检查：目标被删、截断、等长保留 mtime 改写、预检后被删；未执行/已移码卸载遇到默认重置；连续两次不同长度路径迁移中的 .bak 旧根、损坏阻断及修复后接续。每项包含故障时保留源/请求或持久化重开及最终收尾断言；沿用正常回退、快照丢失、管理保存失败及旧 marker 检查。
+- `dotnet build TractorTool.slnx -c Release -m:1 -nr:false --no-restore` 成功，15 工程、12.18 秒、0 错误/1 条 NU1900（nuget.org 漏洞数据网络查询失败）。新增用例仅编译，未执行。
+- 3 名既有 gpt-6.1-sol / high 子代理分别复审迁移安全、重置事务、独立质量与测试；主代理复核，均未发现新增确定缺陷。原 P1/P2 在源码层面闭合，未将静态审查等同运行验收。
+- 同步需求、架构、当前台账与交接。未运行应用/检查程序或接管 UI，未操作真实数据、暂存或提交；工作区保留 E104/E105 既有改动。内容复验增加读取成本，大数据耗时、Windows 文件共享锁和故障接续仍待实际运行；不承诺跨文件原子清理或 Cache/.work 的同大小/时间隐藏改写检测。
+
+<a id="evidence-storage-reset-review"></a>
+
+### E108 存储扩大复审：两项 P2（2026-10-15）
+
+用户再次要求按既有标准由子代理 Review。新建 3 名 gpt-6.1-sol / high 子代理，分别审迁移事务安全、默认重置与插件生命周期、代码精简及回归覆盖；范围是整组未提交存储改动及关联调用，不只 E107 两处修复。主代理复核并交叉确认下列问题，未修改实现。
+
+1. **P2：重置失败后恢复旧根，卸载无法接续。** PluginManager.DiscardDataRootState（97–103 行）先将 Uninstall.Pending.DataRoot 持久化为默认根，AppPaths.CompleteDataReset（81–85 行）之后才清默认数据并提交 bootstrap。清理/保存失败或取消时旧指针仍在；用户恢复旧自定义目录后再启动，Open 不再触发重置，Apply 的根匹配检查拒绝卸载并留下 Error，CancelPending 禁止取消，Pending 又阻止新卸载及迁移。最小修正是让只操作 AppRoot 代码和 removed 的卸载不依赖数据根切换，避免重绑一个尚未提交的指针。现有回归只覆盖重置成功后的卸载，需补“失败重置→恢复旧根→继续卸载”。
+2. **P2：首次安装移码后重置，遗留不可管理代码。** Activate 已把 staging 版本移到 Plugins/id/version、保存活动选择前退出；删除自定义根后重置仅删 staging 并清 Pending（PluginManager 94–100 行），留下 ActiveVersion=null/Pending=null 和实体版本。PluginHost 54–67 行跳过该选择，PluginsViewModel 70–72 行隐藏该管理项；QueueInstall 201–203 行拒绝任何同 ID 包，QueueChange 234 行又拒绝卸载。CancelPending 252–262 行已有按移码状态及 digest 限定目标归属的清理规则，重置没有复用。应在清请求前安全清理本次尚未激活的代码，失败则保留请求供重试；现有 PluginManagementChecks 78–118 行反而断言遗留代码保留，应改为验证可重装/管理。E104 历史记录了保留移码的实现选择，但没有覆盖这一正常 UI 无法恢复的后果。
+
+迁移目标副本复验、回退 main/bak 限定差异及清理句柄未发现新的确定缺陷；未确认额外悬空接口或无需求抽象。两项发现均来自源码控制流，未执行故障复现。本轮未构建、运行应用/检查程序、操作真实数据或提交，仅同步当前台账与交接；E107 构建和用例编译不能作为上述组合路径通过的证据。
+
+<a id="evidence-reset-transaction-retry"></a>
+
+### E109 卸载根独立与待安装代码清理重试（2026-10-15）
+
+用户要求处理 E108 两项问题，并以相同标准再次使用子代理 Review。本轮生产改动集中于 PluginManager，不新增状态格式或公共接口：
+
+- 保留卸载 Pending 的原 DataRoot、Token 及错误；Apply 仅为纯代码卸载免除数据根一致性检查。默认清理或 bootstrap 保存失败、用户恢复旧根后仍可完成 removed 清理；其余变更维持原根约束。
+- CancelPending 与 DiscardDataRootState 共用 CleanPendingActivation，先清理后保存清请求。移码目标需非活动版本、无暂存版本且摘要一致，确认归属才移回原 token staging 再删除。删除中断可从残缺 staging 接续，管理状态保存失败也保留请求；修改过或归属不明的目标停止清理。
+- 三名 gpt-6.1-sol / high 分别只读复审启动/重置/卸载、代码清理与文件边界、用例覆盖和代码质量。清理审查补出 P2：Exists 将访问失败视为缺失，可能过早清 Pending。局部 DirectoryPresent 改用 Attributes，只将 -1 视为缺失；严格检查 staging、暂存版本和 target，文件/重解析点拒绝，权限/I/O 错误传播。发现者与质量审查代理复核最终修改，未发现新增确定缺陷；未发现需要删除的死代码或无需求抽象。
+
+验证证据与限制：
+
+- 新增 11 项检查：首次安装/更新移码后重置仍可重装发现（2）；取消/重置遇改动代码保留请求（2）；部分 staging 删除失败重试（2）；staging 文件占位后恢复重试（2）；重置清理/bootstrap 保存失败后恢复旧根并完成卸载（2）；移码后管理状态保存失败再重试（原用例扩为两个分支，净增 1）。修正已有成功重置卸载断言为完整请求不变，其他根使用 Disable 验证根约束。所有夹具使用临时 GUID 目录；Discover 断言不冒充真实 DLL 加载。
+- 两次执行 `dotnet build TractorTool.slnx -c Release -m:1 -nr:false --no-restore`，15 工程均成功；分别 14.04 秒、6.10 秒，均 0 错误/1 条 NU1900（nuget.org 漏洞数据服务索引不可达）。新增用例仅编译，未执行。
+- 静态检查：`git diff --check` 通过，仅提示既有 CRLF 规范转换；架构、开发台账和上下文的本地文件链接存在，E109 历史锚点唯一。
+- 部分删除用例直接构造残缺 staging；文件占位用例不替代真实 ACL 注入。Windows 文件共享、权限拒绝、进程中断及恢复路径仍待用户运行，内容复验耗时未测。不承诺跨文件原子清理或对外部并发改写路径的完整隔离。
+- 已同步架构、当前台账与交接；未启动应用/检查程序或接管 UI，未操作真实数据、暂存或提交，保留其他既有工作区改动。

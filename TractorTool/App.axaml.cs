@@ -107,8 +107,9 @@ public partial class App : Application
                 _lease = new InstanceLease(AppPaths.Absolute(fixedRoot));
                 var paths = AppPaths.Open(Program.ProfileRoot, ensureDirectories: false);
                 if (!string.Equals(paths.DataRoot, paths.BootstrapRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-                    _dataLease = new InstanceLease(paths.DataRoot);
-                var settings = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate).Load();
+                    _dataLease = new InstanceLease(paths.DataRoot, createDirectory: false);
+                var settings = paths.MissingDataRoot is not null ? new HostSettings() :
+                    new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate).Load();
                 return (Paths: paths, Settings: settings);
             });
             startup.Token.ThrowIfCancellationRequested();
@@ -124,18 +125,21 @@ public partial class App : Application
                 try { _pluginManager = new PluginManager(paths, compatibility); }
                 catch (Exception ex)
                 {
+                    if (paths.MissingDataRoot is not null) throw new IOException("重置数据需要独占插件管理目录，请先解决访问问题后重试。\n" + ex.Message, ex);
                     if (requested) throw new IOException("迁移需要独占插件管理目录，请先解决访问问题后重试。\n" + ex.Message, ex);
                     managementError = "插件管理不可用：" + ex.Message;
                 }
+                if (paths.MissingDataRoot is not null)
+                    paths.CompleteDataReset(_pluginManager!.DiscardDataRootState, startup.Token);
                 var result = _pluginManager is null ? new DataMigrationResult(paths, null) :
                     migration.ApplyAtStartup(_pluginManager, progress, startup.Token);
                 _migrationLease = result.TargetLease; // Keep both roots exclusively owned until process exit.
                 startup.Token.ThrowIfCancellationRequested();
                 result.Paths.EnsureDataDirectories();
-                return (result.Paths, result.Error, managementError, Migrated: requested && result.Error is null);
+                return (result.Paths, result.Error, result.Warning, managementError, Migrated: requested && result.Error is null);
             });
             startup.Token.ThrowIfCancellationRequested();
-            ConfigureMainWindow(window, prepared.Paths, compatibility, prepared.managementError, prepared.Error, prepared.Migrated);
+            ConfigureMainWindow(window, prepared.Paths, compatibility, prepared.managementError, prepared.Error, prepared.Warning, prepared.Migrated);
             _startup = null;
             _ready = true;
             window.ShowWorkspace();
@@ -162,11 +166,14 @@ public partial class App : Application
         finally { startup.Dispose(); }
     }
 
-    private void ConfigureMainWindow(MainWindow window, AppPaths paths, HostCompatibility compatibility, string? managementError, string? migrationError, bool migrated)
+    private void ConfigureMainWindow(MainWindow window, AppPaths paths, HostCompatibility compatibility, string? managementError, string? migrationError, string? migrationWarning, bool migrated)
     {
         _log = new AppLog(paths.LogRoot);
         if (migrationError is not null) _log.Write(AppLogLevel.Error, "Storage", migrationError);
-        else if (migrated) _log.Write("Storage", "应用数据迁移完成，原目录保留，插件程序位置不变。");
+        else if (migrationWarning is not null) _log.Write(AppLogLevel.Warning, "Storage", migrationWarning);
+        else if (migrated) _log.Write("Storage", "应用数据迁移完成，旧业务数据已清理，插件程序位置不变。");
+        if (paths.MissingDataRoot is { } missing)
+            _log.Write(AppLogLevel.Warning, "Storage", $"原数据目录已删除：{missing}。已在默认目录重新初始化：{paths.DataRoot}；如需更换位置，请重新迁移。");
         if (managementError is not null) _log.Write(AppLogLevel.Error, "Plugins", managementError);
         _log.Write("Host", $"启动：Version={AppInfo.Version}; AppRoot={paths.AppRoot}; DataRoot={paths.DataRoot}; Bootstrap={paths.BootstrapFile}");
         var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate);

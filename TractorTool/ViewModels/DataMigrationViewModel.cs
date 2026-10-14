@@ -41,7 +41,7 @@ public partial class DataMigrationViewModel : ViewModelBase
         if (_manager is null || HasPending || PickDirectoryAsync is null || ConfirmAsync is null) return;
         var target = await PickDirectoryAsync();
         if (target is null || _stopping) return;
-        if (!await ConfirmAsync($"迁移应用数据？\n\n从：{_source}\n到：{target}\n\n下次启动时复制并校验设置、插件数据、依赖包与日志。目标需为空目录；原数据保留，插件程序位置不变。请从托盘或关于页显式退出后重新打开软件。") || _stopping) return;
+        if (!await ConfirmAsync($"迁移应用数据？\n\n从：{_source}\n到：{target}\n\n下次启动时复制并校验设置、插件数据、依赖包与日志，成功后清理旧业务数据和缓存。目标需为空目录；插件程序位置不变。请从托盘或关于页显式退出后重新打开软件。") || _stopping) return;
         var rejection = await Task.Run(() => _migration.Queue(target, _manager));
         Status = rejection ?? "迁移已安排，下次启动时执行。当前任务可以继续，退出前的最新数据也会迁移。";
         _log.Write(rejection is null ? AppLogLevel.Info : AppLogLevel.Warning, "Storage", Status);

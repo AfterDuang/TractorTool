@@ -10,19 +10,21 @@ public sealed record DataMigrationRequest(string Id, string Source, string Targe
     {
         if (!Guid.TryParseExact(value.Id, "N", out _)) throw new InvalidDataException("迁移记录标识无效，原记录保留。");
         _ = AppPaths.Absolute(value.Source); _ = AppPaths.Absolute(value.Target); _ = AppPaths.Absolute(value.AppRoot);
+        if (Path.GetDirectoryName(value.Source) is null || Path.GetDirectoryName(value.Target) is null)
+            throw new InvalidDataException("迁移目录不能是卷根目录。");
         if (AppPaths.Contains(value.Source, value.Target) || AppPaths.Contains(value.Target, value.Source))
             throw new InvalidDataException("迁移目录不能相同或互相包含。");
     }
 }
-public sealed record DataMigrationResult(AppPaths Paths, InstanceLease? TargetLease, string? Error = null);
+public sealed record DataMigrationResult(AppPaths Paths, InstanceLease? TargetLease, string? Error = null, string? Warning = null);
 
 // A startup transaction, not a live path switch. The caller holds the bootstrap/source leases
 // and installation manager, and must not start services until this method has returned.
 public sealed class DataRootMigration(AppPaths paths)
 {
     private const string MarkerName = ".tractortool-migration.json";
+    private const string MarkerBackupName = MarkerName + ".bak";
     private const string TempName = ".tractortool-migration-copy.tmp";
-    private static readonly string[] Folders = ["Config", "Data", "Packages", "Logs"];
     private readonly object _gate = new();
     private readonly JsonFileStore<BootstrapSettings> _store = new(paths.BootstrapFile, BootstrapSettings.Validate);
     public BootstrapSettings Snapshot { get { lock (_gate) return _store.Load(); } }
@@ -76,10 +78,11 @@ public sealed class DataRootMigration(AppPaths paths)
             if (!Same(paths.DataRoot, committed ? request.Target : request.Source))
                 throw new InvalidDataException("启动指针与迁移记录不一致，未更改任何数据。");
             InstanceLease? targetLease = null;
+            InstanceLease? cleanupLease = null;
             try
             {
                 DataMigrationRequest.Validate(request);
-                if (PathIssue(request) is { } issue) throw new InvalidDataException(issue);
+                if (PathIssue(request, checkSource: !committed) is { } issue) throw new InvalidDataException(issue);
                 if (manager.DataMigrationBlockReason is { } blocked) throw new InvalidOperationException(blocked);
                 if (!committed)
                 {
@@ -87,25 +90,36 @@ public sealed class DataRootMigration(AppPaths paths)
                     if (!File.Exists(Path.Combine(request.Target, MarkerName)) && TargetContentIssue(request.Target) is { } occupied)
                         throw new InvalidDataException(occupied);
                     targetLease = new InstanceLease(request.Target);
-                    CheckTargetOwner(request, create: true);
-                    CopyAndVerify(request, progress, token);
+                    var marker = CheckTargetOwner(request, create: true);
+                    var cleanup = CopyAndVerify(request, progress, token);
                     progress?.Report("正在校验插件回退快照…");
                     manager.ValidateDataRootMigration(request.Source, new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target), token);
                     token.ThrowIfCancellationRequested();
+                    SaveTargetMarker(request, marker with { Cleanup = cleanup });
+                    token.ThrowIfCancellationRequested();
                     var switched = state with { DataRoot = request.Target, PreviousDataRoot = request.Source };
-                    Save(switched); // Commit point: all copied files verified; source is untouched.
+                    Save(switched); // Commit point: all copied files verified; cleanup remains restartable.
                     state = switched;
                     committed = true;
                 }
-                else CheckTargetOwner(request, create: false);
+                else
+                {
+                    var marker = CheckTargetOwner(request, create: false);
+                    if (marker.Cleanup is not null && !Same(request.Source, paths.BootstrapRoot) && DataDirectories.Exists(request.Source))
+                        cleanupLease = new InstanceLease(request.Source, createDirectory: false);
+                }
                 progress?.Report("正在完成插件回退记录…");
                 var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target);
                 // Idempotent finalization. A crash here retains the request with the new pointer;
                 // the next startup completes it before any plugin can write to either copy.
-                manager.CompleteDataRootMigration(request.Source, next, token);
+                var sourceInventory = CheckTargetOwner(request, create: false).Cleanup;
+                var sourceFiles = sourceInventory?.Where(e => !e.IsDirectory).Select(e => e.Relative)
+                    .ToHashSet(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+                manager.CompleteDataRootMigration(request.Source, next, sourceFiles, token);
                 token.ThrowIfCancellationRequested();
+                var warning = CleanSource(request, sourceInventory, manager, progress, token);
                 Save(state with { Migration = null });
-                return new(next, targetLease);
+                return new(next, targetLease, Warning: warning);
             }
             catch (Exception ex)
             {
@@ -114,11 +128,12 @@ public sealed class DataRootMigration(AppPaths paths)
                 // the pointer also fails, stop startup rather than write through an unknown root.
                 committed |= Same(_store.Load().DataRoot ?? paths.BootstrapRoot, request.Target);
                 if (ex is OperationCanceledException && token.IsCancellationRequested) throw;
-                if (committed) throw new IOException("数据已复制并切换，迁移收尾尚未完成；请解决以下问题后重启。旧目录仍保留。\n" + ex.Message, ex);
+                if (committed) throw new IOException("数据已复制并切换，迁移收尾尚未完成；请解决以下问题后重启。未清理的旧数据已保留。\n" + ex.Message, ex);
                 var error = "迁移未完成，继续使用原目录：" + ex.Message;
                 Save(state with { Migration = request with { Error = error } });
                 return new(paths, null, error);
             }
+            finally { cleanupLease?.Dispose(); }
         }
     }
 
@@ -128,9 +143,10 @@ public sealed class DataRootMigration(AppPaths paths)
         _store.Save(settings);
     }
 
-    private string? PathIssue(DataMigrationRequest request)
+    private string? PathIssue(DataMigrationRequest request, bool checkSource = true)
     {
         if (!Same(request.AppRoot, paths.AppRoot)) return "请从安排迁移时的软件位置完成迁移。";
+        _ = new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Source);
         if (Path.GetDirectoryName(request.Target) is null) return "请选择专用子目录，不能使用磁盘根目录。";
         if (AppPaths.Contains(request.Source, request.Target) || AppPaths.Contains(request.Target, request.Source))
             return "迁移目录不能相同或互相包含。";
@@ -139,7 +155,8 @@ public sealed class DataRootMigration(AppPaths paths)
         if (AppPaths.Contains(paths.BootstrapRoot, request.Target) || AppPaths.Contains(request.Target, paths.BootstrapRoot))
             return "目标不能与固定启动配置目录重叠，请选择新的专用目录。";
         if (new Uri(request.Target).IsUnc) return "首版迁移仅支持本机磁盘，请选择本地目录。";
-        CheckPath(request.Source); CheckPath(request.Target); CheckPath(paths.BootstrapFile);
+        if (checkSource) CheckPath(request.Source);
+        CheckPath(request.Target); CheckPath(paths.BootstrapFile);
         return null;
     }
 
@@ -152,7 +169,7 @@ public sealed class DataRootMigration(AppPaths paths)
         return null;
     }
 
-    private void CheckTargetOwner(DataMigrationRequest request, bool create)
+    private TargetMarker CheckTargetOwner(DataMigrationRequest request, bool create)
     {
         var markerPath = Path.Combine(request.Target, MarkerName);
         CheckPath(markerPath);
@@ -166,18 +183,27 @@ public sealed class DataRootMigration(AppPaths paths)
         var saved = marker.Load();
         if (saved.Request != (request with { Error = null }) || !Same(saved.BootstrapRoot, paths.BootstrapRoot))
             throw new InvalidDataException("目标属于其他迁移记录，原内容保留。");
+        return saved;
     }
 
-    private static void CopyAndVerify(DataMigrationRequest request, IProgress<string>? progress, CancellationToken token)
+    private static void SaveTargetMarker(DataMigrationRequest request, TargetMarker marker)
     {
-        if (!Directory.Exists(request.Source)) throw new DirectoryNotFoundException("原数据目录不可用，未创建空数据替代。");
+        var path = Path.Combine(request.Target, MarkerName);
+        CheckPath(path); CheckPath(path + ".bak");
+        new JsonFileStore<TargetMarker>(path).Save(marker);
+    }
+
+    private static List<MigrationEntry> CopyAndVerify(DataMigrationRequest request, IProgress<string>? progress, CancellationToken token)
+    {
+        if (!DataDirectories.Exists(request.Source)) throw new DirectoryNotFoundException("原数据目录不可用，未创建空数据替代。");
+        var cleanup = Inventory(request.Source, token, includeCache: true);
         var source = Inventory(request.Source, token, skipDownloads: true);
         var expected = source.ToDictionary(e => e.Relative, StringComparer.OrdinalIgnoreCase);
         foreach (var entry in Directory.EnumerateFileSystemEntries(request.Target))
         {
             CheckPath(entry);
-            if (!Folders.Contains(Path.GetFileName(entry), StringComparer.Ordinal) &&
-                Path.GetFileName(entry) is not (MarkerName or "host.lock" or TempName))
+            if (!DataDirectories.PersistentNames.Contains(Path.GetFileName(entry), StringComparer.Ordinal) &&
+                Path.GetFileName(entry) is not (MarkerName or MarkerBackupName or "host.lock" or TempName))
                 throw new IOException("目标目录出现不属于此次迁移的内容，请选择新的空目录。");
         }
         foreach (var entry in Inventory(request.Target, token))
@@ -239,8 +265,96 @@ public sealed class DataRootMigration(AppPaths paths)
         }
         // The source lease protects cooperating hosts; detect ordinary external changes too.
         if (!source.SequenceEqual(Inventory(request.Source, token, skipDownloads: true))) throw new IOException("源数据在迁移过程中发生变化，启动指针未切换。");
+        if (!cleanup.SequenceEqual(Inventory(request.Source, token, includeCache: true))) throw new IOException("旧数据或缓存在迁移过程中发生变化，启动指针未切换。");
         if (!copiedEntries.SequenceEqual(Inventory(request.Target, token))) throw new IOException("目标数据在迁移过程中发生变化，启动指针未切换。");
         token.ThrowIfCancellationRequested();
+        return cleanup;
+    }
+
+    private static string? CleanSource(DataMigrationRequest request, List<MigrationEntry>? cleanup, PluginManager manager, IProgress<string>? progress, CancellationToken token)
+    {
+        if (cleanup is null) return "迁移已完成。旧版本未记录清理清单，原目录已保留，请确认新数据完整后自行清理：" + request.Source;
+        var expected = new Dictionary<string, MigrationEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in cleanup)
+        {
+            var full = AppPaths.Absolute(Path.Combine(request.Source, entry.Relative));
+            var relative = Path.GetRelativePath(request.Source, full);
+            if (Path.IsPathRooted(entry.Relative) || relative != entry.Relative ||
+                !DataDirectories.OwnedNames.Contains(relative.Split(Path.DirectorySeparatorChar)[0], StringComparer.Ordinal) ||
+                !expected.TryAdd(relative, entry))
+                throw new InvalidDataException("迁移清理清单无效，旧数据已保留。");
+        }
+        if (!DataDirectories.Exists(request.Source)) return null;
+        // shortcut: discarded cache/downloads use size/time only; hash them if exact change detection is needed.
+        var remaining = Inventory(request.Source, token, includeCache: true);
+        foreach (var entry in remaining)
+            if (!expected.TryGetValue(entry.Relative, out var original) || original != entry)
+                throw new IOException("旧目录出现新增或变化的数据，已停止清理并保留剩余内容：" + entry.Relative);
+        // A committed pointer does not prove the copies survived an interrupted startup.
+        // Verify the entire remaining set before deleting anything, including on resume.
+        var buffer = new byte[1024 * 1024];
+        foreach (var entry in remaining)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!RequiresCopy(entry.Relative)) continue;
+            var output = Path.Combine(request.Target, entry.Relative);
+            CheckPath(output);
+            if (entry.IsDirectory)
+            {
+                if (!DataDirectories.Exists(output)) throw new IOException("目标目录缺失，旧数据已保留：" + entry.Relative);
+                continue;
+            }
+            using var copy = OpenVerifiedCopy(request, entry.Relative, manager, buffer, token);
+        }
+        progress?.Report("正在清理旧应用数据…");
+        var deleted = 0;
+        var lastPercent = -1;
+        // Missing entries are already cleaned. Delete children first, never recurse through links.
+        foreach (var entry in remaining.OrderByDescending(e => e.Relative.Length))
+        {
+            token.ThrowIfCancellationRequested();
+            var path = Path.Combine(request.Source, entry.Relative);
+            CheckPath(path);
+            if (entry.IsDirectory) Directory.Delete(path, recursive: false);
+            else
+            {
+                // Keep the verified target read-locked through deletion; earlier files may take time to clean.
+                using var copy = RequiresCopy(entry.Relative) ? OpenVerifiedCopy(request, entry.Relative, manager, buffer, token) : null;
+                var current = new FileInfo(path);
+                if (current.Length != entry.Length || current.LastWriteTimeUtc != entry.Modified)
+                    throw new IOException("旧文件在清理过程中发生变化，已保留：" + entry.Relative);
+                File.Delete(path);
+            }
+            var percent = (int)(++deleted * 100L / remaining.Count);
+            if (percent != lastPercent) { lastPercent = percent; progress?.Report($"正在清理旧应用数据… {percent}%"); }
+        }
+        token.ThrowIfCancellationRequested();
+        if (Inventory(request.Source, token, includeCache: true).Count != 0)
+            throw new IOException("旧目录在清理过程中出现新内容，已保留；请确认后重启。");
+        return null;
+    }
+
+    private static bool RequiresCopy(string relative)
+    {
+        var parts = relative.Split(Path.DirectorySeparatorChar);
+        return parts[0] != "Cache" && !(parts.Length > 1 && parts[0] == "Packages" && parts[1] == ".work");
+    }
+
+    private static FileStream OpenVerifiedCopy(DataMigrationRequest request, string relative, PluginManager manager, byte[] buffer, CancellationToken token)
+    {
+        var input = Path.Combine(request.Source, relative);
+        var output = Path.Combine(request.Target, relative);
+        CheckPath(input); CheckPath(output);
+        using var original = new FileStream(input, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var copy = new FileStream(output, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            if ((original.Length != copy.Length || !Hash(original, buffer, token).AsSpan().SequenceEqual(Hash(copy, buffer, token))) &&
+                !manager.IsReboundRecoveryMetadata(request.Source, request.Target, relative))
+                throw new IOException("目标副本与旧数据不一致，已停止清理：" + relative);
+            return copy;
+        }
+        catch { copy.Dispose(); throw; }
     }
 
     private static byte[] Hash(Stream input, byte[] buffer, CancellationToken token)
@@ -255,14 +369,13 @@ public sealed class DataRootMigration(AppPaths paths)
         return hash.GetHashAndReset();
     }
 
-    private static List<MigrationEntry> Inventory(string root, CancellationToken token, bool skipDownloads = false)
+    private static List<MigrationEntry> Inventory(string root, CancellationToken token, bool skipDownloads = false, bool includeCache = false)
     {
         var entries = new List<MigrationEntry>();
-        foreach (var folder in Folders)
+        foreach (var folder in includeCache ? DataDirectories.OwnedNames : DataDirectories.PersistentNames)
         {
             var start = Path.Combine(root, folder); CheckPath(start);
-            if (File.Exists(start)) throw new IOException("应用数据目录被文件占用：" + start);
-            if (Directory.Exists(start)) Visit(start);
+            if (DataDirectories.Exists(start)) Visit(start);
         }
         return entries.OrderBy(e => e.Relative, StringComparer.Ordinal).ToList();
         void Visit(string path)
@@ -278,15 +391,7 @@ public sealed class DataRootMigration(AppPaths paths)
         }
     }
 
-    private static void CheckPath(string path)
-    {
-        for (string? current = AppPaths.Absolute(path); current is not null; current = Path.GetDirectoryName(current))
-        {
-            var attributes = new FileInfo(current).Attributes;
-            if (attributes != (FileAttributes)(-1) && (attributes & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("迁移不接受链接或重解析目录：" + current);
-        }
-    }
+    private static void CheckPath(string path) => DataDirectories.CheckPath(path);
     private static bool Same(string a, string b) => string.Equals(AppPaths.Absolute(a), AppPaths.Absolute(b),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     private sealed record MigrationEntry(string Relative, bool IsDirectory, long Length, DateTime Modified);
@@ -295,5 +400,6 @@ public sealed class DataRootMigration(AppPaths paths)
         public int SchemaVersion { get; init; } = 1;
         public DataMigrationRequest? Request { get; init; }
         public string BootstrapRoot { get; init; } = "";
+        public List<MigrationEntry>? Cleanup { get; init; }
     }
 }

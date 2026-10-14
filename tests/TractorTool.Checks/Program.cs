@@ -56,12 +56,106 @@ Check("Bootstrap default and fixed pointer", () =>
     var next = AppPaths.Open(profile);
     Assert(next.DataRoot == custom && next.BootstrapFile == opened.BootstrapFile && next.PluginRoot == opened.PluginRoot);
 });
-Check("Unavailable custom root never creates empty replacement", () =>
+if (OperatingSystem.IsWindows())
+{
+    var longRoot = Path.Combine(root, "Long custom data directory"); Directory.CreateDirectory(longRoot);
+    var shortName = new System.Text.StringBuilder(32768);
+    var length = StorageNativeFixture.GetShortPathName(longRoot, shortName, (uint)shortName.Capacity);
+    if (length == 0 || length >= shortName.Capacity || string.Equals(longRoot, shortName.ToString(), StringComparison.OrdinalIgnoreCase))
+        Console.WriteLine("SKIP Short-path storage check: this volume did not provide an 8.3 alias.");
+    else Check("Existing Windows short-path data root never triggers a reset", () =>
+    {
+        var profile = Path.Combine(root, "short-path-profile"); Directory.CreateDirectory(profile);
+        var custom = shortName.ToString();
+        var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+        pointer.Save(new() { DataRoot = custom });
+        var opened = AppPaths.Open(profile);
+        Assert(opened.MissingDataRoot is null && pointer.Load().DataRoot == custom);
+    });
+}
+Check("Deleted custom root resets to clean defaults only after startup settles plugin state", () =>
 {
     var profile = Path.Combine(root, "missing-root"); Directory.CreateDirectory(profile);
     var missing = Path.Combine(root, "must-not-create");
-    new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json")).Save(new() { DataRoot = missing });
-    Throws<DirectoryNotFoundException>(() => AppPaths.Open(profile)); Assert(!Directory.Exists(missing));
+    var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+    pointer.Save(new() { DataRoot = missing, PreviousDataRoot = profile });
+    foreach (var folder in new[] { "Config", "Data", "Packages", "Logs", "Cache" })
+    {
+        Directory.CreateDirectory(Path.Combine(profile, folder));
+        File.WriteAllText(Path.Combine(profile, folder, "old.txt"), "stale data");
+    }
+    File.WriteAllText(Path.Combine(profile, "unrelated.txt"), "keep");
+    using var profileLease = new InstanceLease(profile);
+    var reset = AppPaths.Open(profile);
+    Assert(reset.DataRoot == profile && reset.MissingDataRoot == missing && pointer.Load().DataRoot == missing);
+    Throws<InvalidOperationException>(reset.EnsureDataDirectories);
+    var discarded = new List<string>();
+    reset.CompleteDataReset(discarded.Add);
+    reset.EnsureDataDirectories(); reset.CompleteDataReset(discarded.Add);
+    Assert(discarded.SequenceEqual([missing, profile]));
+    Assert(pointer.Load() is { DataRoot: null, PreviousDataRoot: null, Migration: null });
+    Assert(!Directory.Exists(missing) && !Directory.GetFiles(profile, "old.txt", SearchOption.AllDirectories).Any());
+    Assert(File.ReadAllText(Path.Combine(profile, "unrelated.txt")) == "keep");
+    Assert(new JsonFileStore<HostSettings>(Path.Combine(reset.ConfigRoot, "settings.json")).Load().Theme == "System");
+    Assert(AppPaths.Open(profile).MissingDataRoot is null);
+});
+Check("Missing custom root during migration never resets either side of the commit", () =>
+{
+    foreach (var committed in new[] { false, true })
+    {
+        var profile = Path.Combine(root, "missing-migration-" + committed); Directory.CreateDirectory(profile);
+        var source = profile + "-source"; var target = profile + "-target";
+        var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+        var state = new BootstrapSettings { DataRoot = committed ? target : source,
+            Migration = new(Guid.NewGuid().ToString("N"), source, target, paths.AppRoot) };
+        pointer.Save(state);
+        Throws<IOException>(() => AppPaths.Open(profile));
+        Assert(pointer.Load() == state && !Directory.Exists(Path.Combine(profile, "Config")));
+    }
+});
+Check("File occupying a custom root is an access failure rather than a factory reset", () =>
+{
+    var profile = Path.Combine(root, "file-root"); Directory.CreateDirectory(profile);
+    var custom = profile + "-custom"; File.WriteAllText(custom, "keep");
+    var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+    pointer.Save(new() { DataRoot = custom });
+    Throws<IOException>(() => AppPaths.Open(profile));
+    Assert(pointer.Load().DataRoot == custom && File.ReadAllText(custom) == "keep");
+});
+Check("Reset refuses a root that was restored after the missing-path probe", () =>
+{
+    var profile = Path.Combine(root, "restored-root"); Directory.CreateDirectory(profile);
+    var custom = profile + "-custom";
+    var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+    pointer.Save(new() { DataRoot = custom });
+    var reset = AppPaths.Open(profile);
+    Directory.CreateDirectory(custom);
+    var discarded = false;
+    Throws<IOException>(() => reset.CompleteDataReset(_ => discarded = true));
+    Assert(!discarded);
+    Assert(pointer.Load().DataRoot == custom);
+});
+Check("Existing-only data lease cannot recreate a deleted custom directory", () =>
+{
+    var missing = Path.Combine(root, "missing-lease");
+    Throws<DirectoryNotFoundException>(() => { using var lease = new InstanceLease(missing, createDirectory: false); });
+    Assert(!Directory.Exists(missing));
+});
+if (OperatingSystem.IsWindows()) Check("Failed reset pointer save leaves the old pointer for a complete retry", () =>
+{
+    var profile = Path.Combine(root, "reset-save-failure"); Directory.CreateDirectory(Path.Combine(profile, "Config"));
+    var custom = profile + "-custom";
+    var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+    pointer.Save(new() { DataRoot = custom });
+    File.WriteAllText(Path.Combine(profile, "Config", "stale.txt"), "old data");
+    var reset = AppPaths.Open(profile);
+    using (var locked = new FileStream(pointer.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        Throws<IOException>(() => reset.CompleteDataReset(_ => { }));
+    Assert(pointer.Load().DataRoot == custom && !Directory.Exists(custom));
+    Throws<InvalidOperationException>(reset.EnsureDataDirectories);
+    var retry = AppPaths.Open(profile);
+    retry.CompleteDataReset(_ => { }); retry.EnsureDataDirectories();
+    Assert(pointer.Load().DataRoot is null && !File.Exists(Path.Combine(retry.ConfigRoot, "stale.txt")));
 });
 var file = Path.Combine(paths.ConfigRoot, "settings.json");
 var store = new JsonFileStore<HostSettings>(file, HostSettings.Validate);
@@ -179,3 +273,9 @@ LogChecks.Run(root, Check);
 DataMigrationChecks.Run(root, Check);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; isolated evidence={root}");
 return failed == 0 ? 0 : 1;
+
+internal static class StorageNativeFixture
+{
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    internal static extern uint GetShortPathName(string path, System.Text.StringBuilder shortPath, uint capacity);
+}

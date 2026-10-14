@@ -75,6 +75,247 @@ internal static class PluginManagementChecks
             Assert(manager.Snapshot.Single().Pending is null && !Directory.Exists(stage));
             manager.ApplyPending(); Assert(!Directory.Exists(Path.Combine(paths.PluginRoot, entry.Id)));
         });
+        check("Missing data root discards its transactions while retaining installed selections and other profiles", () =>
+        {
+            var paths = Paths();
+            ManagedPlugin staged, moved;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Assert(manager.QueueInstall(Zip(paths), []) is null);
+                staged = manager.Snapshot.Single();
+                Assert(manager.QueueInstall(Zip(paths, Manifest(id: "Checks.Moved")), []) is null);
+                moved = manager.Snapshot.Single(p => p.Id == "Checks.Moved");
+            }
+            var stage = Path.Combine(paths.PluginRoot, ".management", "staging", staged.Pending!.Token);
+            var movedStage = Path.Combine(paths.PluginRoot, ".management", "staging", moved.Pending!.Token);
+            var movedCode = Path.Combine(paths.PluginRoot, moved.Id, "1.0.0");
+            Directory.CreateDirectory(Path.GetDirectoryName(movedCode)!);
+            Directory.Move(Path.Combine(movedStage, moved.Id, "1.0.0"), movedCode);
+            var recovery = new ManagedPlugin
+            {
+                Id = "Checks.Recovery", ActiveVersion = "2.0.0", Enabled = false, AwaitingLoad = true, Error = "old load failure",
+                Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), paths.DataRoot, true),
+                Pending = new(PluginChangeKind.Rollback, Guid.NewGuid().ToString("N"), paths.DataRoot)
+            };
+            var removed = new ManagedPlugin { Id = "Checks.Removed", Enabled = false };
+            var other = new ManagedPlugin
+            {
+                Id = "Checks.Other", ActiveVersion = "1.0.0", Error = "other profile failure",
+                Pending = new(PluginChangeKind.Disable, Guid.NewGuid().ToString("N"), paths.DataRoot + "-other")
+            };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [staged, moved, recovery, removed, other] });
+            using var reset = new PluginManager(paths, compatibility);
+            var discardedRoot = OperatingSystem.IsWindows() ? paths.DataRoot.ToUpperInvariant() : paths.DataRoot;
+            reset.DiscardDataRootState(discardedRoot);
+            reset.DiscardDataRootState(discardedRoot);
+            Assert(reset.Snapshot.Single(p => p.Id == recovery.Id) == (recovery with { Pending = null, Recovery = null, AwaitingLoad = false, Error = "" }));
+            Assert(reset.Snapshot.Single(p => p.Id == removed.Id) == removed);
+            Assert(reset.Snapshot.Single(p => p.Id == other.Id) == other);
+            Assert(reset.Snapshot.Single(p => p.Id == staged.Id).Pending is null && !Directory.Exists(stage));
+            Assert(reset.Snapshot.Single(p => p.Id == moved.Id).Pending is null && !Directory.Exists(movedStage));
+            Assert(!Directory.Exists(movedCode));
+            Assert(store.Load().Plugins.SequenceEqual(reset.Snapshot));
+        });
+        foreach (var update in new[] { false, true })
+            check("Factory reset cleans a moved " + (update ? "update" : "first installation") + " and allows reinstall", () =>
+        {
+            var paths = Paths();
+            var custom = new AppPaths(paths.AppRoot, paths.BootstrapRoot, paths.DataRoot + "-custom");
+            custom.EnsureDataDirectories();
+            var manifest = Manifest(update ? "2.0.0" : "1.0.0");
+            var target = Path.Combine(paths.PluginRoot, manifest.Id, manifest.Version);
+            using (var manager = new PluginManager(custom, compatibility))
+            {
+                if (update) Install(manager, custom);
+                Assert(manager.QueueInstall(Zip(custom, manifest), []) is null);
+                var request = manager.Snapshot.Single().Pending!;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                Directory.Move(Path.Combine(paths.PluginRoot, ".management", "staging", request.Token, manifest.Id, manifest.Version), target);
+            }
+            new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Save(new() { DataRoot = custom.DataRoot });
+            Directory.Delete(custom.DataRoot, recursive: true); // Isolated fixture only.
+            using var resetManager = new PluginManager(paths, compatibility);
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            reset.CompleteDataReset(resetManager.DiscardDataRootState);
+            Assert(!Directory.Exists(target) && resetManager.Snapshot.Single().Pending is null);
+            Assert(resetManager.Snapshot.Single().ActiveVersion == (update ? "1.0.0" : null));
+            if (update) Assert(File.Exists(Path.Combine(paths.PluginRoot, manifest.Id, "1.0.0", "Fixture.dll")));
+            Assert(resetManager.QueueInstall(Zip(paths, manifest), []) is null);
+            resetManager.ApplyPending();
+            var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot));
+            host.Discover([], resetManager.Snapshot);
+            Assert(host.Records.Single().Manifest?.Version == manifest.Version && host.Records.Single().State == PluginState.Discovered);
+        });
+        foreach (var cancelRequest in new[] { false, true })
+            check((cancelRequest ? "Cancellation" : "Data reset") + " retains changed moved code and its request until safe cleanup", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var item = manager.Snapshot.Single();
+            var target = Path.Combine(paths.PluginRoot, item.Id, item.Pending!.Version!);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            Directory.Move(Path.Combine(paths.PluginRoot, ".management", "staging", item.Pending.Token, item.Id, item.Pending.Version!), target);
+            var foreign = Path.Combine(target, "changed.txt"); File.WriteAllText(foreign, "do not delete");
+            void Clean() { if (cancelRequest) manager.CancelPending(item.Id); else manager.DiscardDataRootState(paths.DataRoot); }
+            Reject<InvalidDataException>(Clean);
+            Assert(manager.Snapshot.Single() == item && File.ReadAllText(foreign) == "do not delete");
+            Assert(new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Load().Plugins.Single() == item);
+            File.Delete(foreign);
+            Clean();
+            Assert(!Directory.Exists(target) && manager.Snapshot.Single().Pending is null);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+        });
+        foreach (var cancelRequest in new[] { false, true })
+        if (OperatingSystem.IsWindows()) check((cancelRequest ? "Cancellation" : "Data reset") + " retries partial staging cleanup before clearing its request", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var item = manager.Snapshot.Single();
+            var staged = Path.Combine(paths.PluginRoot, ".management", "staging", item.Pending!.Token);
+            var package = Path.Combine(staged, item.Id, item.Pending.Version!);
+            File.Delete(Path.Combine(package, "plugin.json")); // Simulate interruption partway through staged deletion.
+            void Clean() { if (cancelRequest) manager.CancelPending(item.Id); else manager.DiscardDataRootState(paths.DataRoot); }
+            using (var locked = new FileStream(Path.Combine(package, "Fixture.dll"), FileMode.Open, FileAccess.Read, FileShare.Read))
+                Reject<IOException>(Clean);
+            Assert(manager.Snapshot.Single() == item);
+            Clean();
+            Assert(!Directory.Exists(staged) && manager.Snapshot.Single().Pending is null);
+        });
+        foreach (var cancelRequest in new[] { false, true })
+            check((cancelRequest ? "Cancellation" : "Data reset") + " retains its request when staging is occupied by a file", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var item = manager.Snapshot.Single();
+            var staged = Path.Combine(paths.PluginRoot, ".management", "staging", item.Pending!.Token);
+            var saved = staged + "-saved";
+            Directory.Move(staged, saved);
+            File.WriteAllText(staged, "conflicting file");
+            void Clean() { if (cancelRequest) manager.CancelPending(item.Id); else manager.DiscardDataRootState(paths.DataRoot); }
+            Reject<InvalidDataException>(Clean);
+            Assert(manager.Snapshot.Single() == item && File.ReadAllText(staged) == "conflicting file");
+            File.Delete(staged);
+            Directory.Move(saved, staged);
+            Clean();
+            Assert(!Directory.Exists(staged) && manager.Snapshot.Single().Pending is null);
+        });
+        check("Factory reset retires recovery records for both discarded data roots only", () =>
+        {
+            var paths = Paths();
+            var missing = paths.DataRoot + "-deleted";
+            var current = new ManagedPlugin { Id = "Checks.Deleted", ActiveVersion = "2.0.0", Enabled = false,
+                Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), missing, true) };
+            var stale = current with { Id = "Checks.Default", Recovery = current.Recovery! with { DataRoot = paths.DataRoot } };
+            var other = current with { Id = "Checks.Other", Recovery = current.Recovery! with { DataRoot = missing + "-other" } };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [current, stale, other] });
+            new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Save(new() { DataRoot = missing });
+            using var manager = new PluginManager(paths, compatibility);
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            reset.CompleteDataReset(manager.DiscardDataRootState);
+            Assert(manager.Snapshot.Single(p => p.Id == current.Id) == (current with { Recovery = null }));
+            Assert(manager.Snapshot.Single(p => p.Id == stale.Id) == (stale with { Recovery = null }));
+            Assert(manager.Snapshot.Single(p => p.Id == other.Id) == other);
+            Assert(new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Load().DataRoot is null);
+        });
+        foreach (var failPointer in new[] { false, true })
+        if (OperatingSystem.IsWindows()) check("Uninstall survives failed reset " + (failPointer ? "pointer save" : "cleanup") + " and restoration of the old root", () =>
+        {
+            var paths = Paths();
+            var custom = new AppPaths(paths.AppRoot, paths.BootstrapRoot, paths.DataRoot + "-custom");
+            custom.EnsureDataDirectories();
+            ManagedPlugin queued;
+            using (var manager = new PluginManager(custom, compatibility))
+            {
+                Install(manager, custom);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+                queued = manager.Snapshot.Single();
+            }
+            var code = Path.Combine(paths.PluginRoot, queued.Id);
+            var trash = Path.Combine(paths.PluginRoot, ".management", "removed", queued.Pending!.Token);
+            Directory.CreateDirectory(Path.GetDirectoryName(trash)!); Directory.Move(code, trash);
+            var savedRoot = custom.DataRoot + "-saved";
+            Directory.Move(custom.DataRoot, savedRoot); // Missing now, restored after the failed reset.
+            var pointer = new JsonFileStore<BootstrapSettings>(paths.BootstrapFile);
+            pointer.Save(new() { DataRoot = custom.DataRoot });
+            var stale = Path.Combine(paths.ConfigRoot, "locked.txt"); File.WriteAllText(stale, "stale default data");
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                using (var locked = new FileStream(failPointer ? paths.BootstrapFile : stale, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    Reject<IOException>(() => reset.CompleteDataReset(manager.DiscardDataRootState));
+                Assert(pointer.Load().DataRoot == custom.DataRoot && manager.Snapshot.Single().Pending == queued.Pending);
+            }
+            Directory.Move(savedRoot, custom.DataRoot);
+            var reopened = AppPaths.Open(paths.BootstrapRoot);
+            Assert(reopened.MissingDataRoot is null && reopened.DataRoot == custom.DataRoot);
+            using var resumed = new PluginManager(custom, compatibility);
+            resumed.ApplyPending();
+            Assert(resumed.Snapshot.Single() is { ActiveVersion: null, Pending: null, Error: "" });
+            Assert(!Directory.Exists(code) && !Directory.Exists(trash));
+        });
+        foreach (var movedCode in new[] { false, true })
+            check("Factory reset completes " + (movedCode ? "interrupted" : "queued") + " uninstall after losing its data root", () =>
+        {
+            var paths = Paths();
+            var custom = new AppPaths(paths.AppRoot, paths.BootstrapRoot, paths.DataRoot + "-custom");
+            custom.EnsureDataDirectories();
+            ManagedPlugin queued;
+            using (var manager = new PluginManager(custom, compatibility))
+            {
+                Install(manager, custom);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+                queued = manager.Snapshot.Single();
+            }
+            var code = Path.Combine(paths.PluginRoot, queued.Id);
+            var trash = Path.Combine(paths.PluginRoot, ".management", "removed", queued.Pending!.Token);
+            if (movedCode)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(trash)!);
+                Directory.Move(code, trash); // Simulate exit after moving code but before deleting it.
+                queued = queued with { Error = "Interrupted uninstall" };
+            }
+            var unrelated = queued with { Id = "Checks.Other", Pending = queued.Pending with
+                { Kind = PluginChangeKind.Disable, Token = Guid.NewGuid().ToString("N"), DataRoot = custom.DataRoot + "-other" } };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [queued, unrelated] });
+            new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Save(new() { DataRoot = custom.DataRoot });
+            Directory.Delete(custom.DataRoot, recursive: true); // Isolated fixture only.
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                reset.CompleteDataReset(manager.DiscardDataRootState);
+                Assert(manager.Snapshot.Single(p => p.Id == queued.Id) == queued);
+                Assert(manager.Snapshot.Single(p => p.Id == unrelated.Id) == unrelated);
+            }
+            // Reopen to prove the recovery request was persisted, not just changed in memory.
+            using var reopened = new PluginManager(paths, compatibility);
+            reopened.ApplyPending();
+            Assert(reopened.Snapshot.Single(p => p.Id == queued.Id) is { ActiveVersion: null, Pending: null, Error: "" });
+            Assert(!Directory.Exists(code) && !Directory.Exists(trash));
+            Assert(store.Load().Plugins.Single(p => p.Id == queued.Id).ActiveVersion is null);
+            Assert(reopened.Snapshot.Single(p => p.Id == unrelated.Id).Pending == unrelated.Pending);
+        });
+        foreach (var movedCode in new[] { false, true })
+        if (OperatingSystem.IsWindows()) check("Missing data root transaction discard retries after state save failure, moved=" + movedCode, () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var pending = manager.Snapshot.Single();
+            var target = Path.Combine(paths.PluginRoot, pending.Id, pending.Pending!.Version!);
+            if (movedCode)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                Directory.Move(Path.Combine(paths.PluginRoot, ".management", "staging", pending.Pending.Token, pending.Id, pending.Pending.Version!), target);
+            }
+            using (var locked = new FileStream(Path.Combine(paths.PluginRoot, ".management", "state.json"), FileMode.Open, FileAccess.Read, FileShare.None))
+                Reject<IOException>(() => manager.DiscardDataRootState(paths.DataRoot));
+            Assert(manager.Snapshot.Single().Pending == pending.Pending && !Directory.Exists(target));
+            manager.DiscardDataRootState(paths.DataRoot);
+            Assert(manager.Snapshot.Single().Pending is null);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+        });
         check("Management rejects ZIP traversal and case duplicate names", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
@@ -165,7 +406,37 @@ internal static class PluginManagementChecks
             Assert(migration.ApplyAtStartup(manager, null, default).Error is not null);
             Assert(!Directory.Exists(target) && migration.Snapshot.DataRoot is null && manager.Snapshot.Single().Pending is not null);
         });
-        check("Management rollback uses migrated snapshots and leaves original data unchanged", () =>
+        check("Repeated migration validates rebound snapshot backups before resumed cleanup", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var recovery = manager.Snapshot.Single().Recovery!;
+            var first = new DataRootMigration(paths);
+            Assert(first.Queue(paths.DataRoot + "-first", manager) is null);
+            var moved = first.ApplyAtStartup(manager, null, default);
+            moved.TargetLease?.Dispose();
+            var second = new DataRootMigration(moved.Paths);
+            var destination = moved.Paths.DataRoot + "-longer-second-destination";
+            Assert(second.Queue(destination, manager) is null);
+            using var cancel = new CancellationTokenSource();
+            Reject<OperationCanceledException>(() => second.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
+            var sourceMetadata = Path.Combine(moved.Paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            var targetMetadata = Path.Combine(destination, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            Assert(new JsonFileStore<PluginManager.RecoveryMetadata>(sourceMetadata + ".bak").Load().DataRoot == paths.DataRoot);
+            Assert(new JsonFileStore<PluginManager.RecoveryMetadata>(targetMetadata + ".bak").Load().DataRoot == moved.Paths.DataRoot);
+            var backup = File.ReadAllText(targetMetadata + ".bak");
+            var damaged = JsonSerializer.Deserialize<PluginManager.RecoveryMetadata>(backup, JsonOptions.Value)! with { Digest = "damaged" };
+            File.WriteAllText(targetMetadata + ".bak", JsonSerializer.Serialize(damaged, JsonOptions.Value));
+            var resumed = new DataRootMigration(new AppPaths(paths.AppRoot, paths.BootstrapRoot, destination));
+            Reject<IOException>(() => resumed.ApplyAtStartup(manager, null, default));
+            Assert(File.Exists(sourceMetadata) && File.Exists(sourceMetadata + ".bak") && resumed.Snapshot.Migration is not null);
+            File.WriteAllText(targetMetadata + ".bak", backup);
+            Assert(resumed.ApplyAtStartup(manager, null, default).Error is null && resumed.Snapshot.Migration is null);
+            Assert(!Directory.Exists(Path.Combine(moved.Paths.DataRoot, "Data")));
+        });
+        check("Management rollback uses migrated snapshots after original business data is cleaned", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
             var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
@@ -186,15 +457,75 @@ internal static class PluginManagementChecks
             Assert(migration.Queue(paths.DataRoot + "-moved", manager) is null);
             var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
             Assert(result.Error is null && manager.Snapshot.Single().Recovery!.DataRoot == result.Paths.DataRoot);
-            var savedMetadata = File.ReadAllText(originalSnapshot);
-            Assert(savedMetadata.Contains(JsonSerializer.Serialize(paths.DataRoot, JsonOptions.Value)));
+            Assert(!File.Exists(originalSnapshot));
             Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
             Assert(manager.Snapshot.Single().Pending!.DataRoot == result.Paths.DataRoot);
             manager.ApplyPending();
             Assert(manager.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null });
             Assert(File.ReadAllText(Path.Combine(result.Paths.GetPluginDataDirectory("Checks.Management"), "preferences.json")) == "old format");
-            Assert(File.ReadAllText(Path.Combine(data, "preferences.json")) == "new format");
-            Assert(File.ReadAllText(originalSnapshot) == savedMetadata);
+            Assert(!Directory.Exists(data));
+        });
+        foreach (var interrupt in new[] { false, true })
+            check("Migration retires only stale target-profile recovery records" + (interrupt ? " after restart" : ""), () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var target = paths.DataRoot + "-moved";
+            var stale = new ManagedPlugin { Id = "Checks.OldProfile", ActiveVersion = "2.0.0", Enabled = false,
+                Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), target, true) };
+            var other = stale with { Id = "Checks.OtherProfile", Recovery = stale.Recovery! with { DataRoot = target + "-other" } };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            manager.Dispose();
+            var state = store.Load();
+            store.Save(state with { Plugins = [.. state.Plugins, stale, other] });
+            using var prepared = new PluginManager(paths, compatibility);
+            var migration = new DataRootMigration(paths);
+            Assert(migration.Queue(target, prepared) is null);
+            if (interrupt)
+            {
+                using var cancel = new CancellationTokenSource();
+                Reject<OperationCanceledException>(() => migration.ApplyAtStartup(prepared,
+                    new CallbackProgress(message => { if (message == "正在完成插件回退记录…") cancel.Cancel(); }), cancel.Token));
+                Assert(migration.Snapshot.DataRoot == target && prepared.Snapshot.Single(p => p.Id == stale.Id) == stale);
+                prepared.Dispose();
+                var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, target);
+                using var targetLease = new InstanceLease(target);
+                using var resumed = new PluginManager(next, compatibility);
+                Assert(new DataRootMigration(next).ApplyAtStartup(resumed, null, default).Error is null);
+            }
+            else
+            {
+                var result = migration.ApplyAtStartup(prepared, null, default); using var lease = result.TargetLease;
+                Assert(result.Error is null);
+            }
+            var final = store.Load().Plugins;
+            Assert(final.Single(p => p.Id == stale.Id) == (stale with { Recovery = null }));
+            Assert(final.Single(p => p.Id == other.Id) == other);
+            Assert(final.Single(p => p.Id == "Checks.Management").Recovery!.DataRoot == target);
+            Assert(migration.Snapshot.Migration is null);
+        });
+        check("A copied recovery snapshot lost after rebinding still blocks cleanup on restart", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "State fixture")]);
+            var recovery = manager.Snapshot.Single().Recovery!;
+            var relative = Path.Combine("Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            var migration = new DataRootMigration(paths); var target = paths.DataRoot + "-moved";
+            Assert(migration.Queue(target, manager) is null);
+            using var cancel = new CancellationTokenSource();
+            Reject<OperationCanceledException>(() => migration.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
+            Assert(manager.Snapshot.Single().Recovery!.DataRoot == target);
+            manager.Dispose();
+            File.Delete(Path.Combine(target, relative));
+            var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, target);
+            using var targetLease = new InstanceLease(target);
+            using var resumed = new PluginManager(next, compatibility);
+            Reject<IOException>(() => new DataRootMigration(next).ApplyAtStartup(resumed, null, default));
+            Assert(resumed.Snapshot.Single().Recovery!.Token == recovery.Token);
+            Assert(File.Exists(Path.Combine(paths.DataRoot, relative)) && migration.Snapshot.Migration is not null);
         });
         foreach (var afterCommit in new[] { false, true })
             check("Migration snapshot cancellation resumes " + (afterCommit ? "after" : "before") + " pointer commit", () =>
@@ -225,7 +556,7 @@ internal static class PluginManagementChecks
             Assert(resumed.Error is null && migration.Snapshot.Migration is null);
             Assert(resumedManager.Snapshot.Single().Recovery!.DataRoot == target);
             Assert(!File.Exists(scratch));
-            Assert(File.ReadAllText(Path.Combine(data, "fixture.txt")) == "retained source");
+            Assert(!Directory.Exists(data));
         });
         check("Migration detects damaged recovery snapshots before committing the pointer", () =>
         {
@@ -260,7 +591,7 @@ internal static class PluginManagementChecks
             var resumed = new DataRootMigration(next).ApplyAtStartup(manager, null, default);
             Assert(resumed.Error is null && migration.Snapshot.Migration is null);
             Assert(manager.Snapshot.Single().Recovery!.DataRoot == target);
-            Assert(File.ReadAllText(Path.Combine(data, "fixture.txt")) == "retained source");
+            Assert(!Directory.Exists(data));
         });
         check("Management pending change rejects different data profile", () =>
         {

@@ -27,6 +27,8 @@ public sealed class AppPaths : IAppPaths
     public string ConfigRoot => Path.Combine(DataRoot, "Config");
     public string LogRoot => Path.Combine(DataRoot, "Logs");
     public string PackageRoot => Path.Combine(DataRoot, "Packages");
+    public string? MissingDataRoot { get; private init; }
+    private bool _dataResetCompleted;
 
     // Production calls use AppContext.BaseDirectory. Explicit roots also make isolation testable.
     public AppPaths(string appRoot, string bootstrapRoot, string? dataRoot = null)
@@ -45,19 +47,49 @@ public sealed class AppPaths : IAppPaths
         var fixedRoot = testProfileRoot ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
         fixedRoot = Absolute(fixedRoot);
+        DataDirectories.CheckPath(fixedRoot);
         Directory.CreateDirectory(fixedRoot);
+        DataDirectories.CheckPath(Path.Combine(fixedRoot, "bootstrap.json"));
         var store = new JsonFileStore<BootstrapSettings>(Path.Combine(fixedRoot, "bootstrap.json"), BootstrapSettings.Validate);
         var settings = store.Load();
         var result = new AppPaths(AppContext.BaseDirectory, fixedRoot, settings.DataRoot);
-        if (settings.DataRoot is not null && !Directory.Exists(result.DataRoot))
-            throw new DirectoryNotFoundException($"数据目录不可用：{result.DataRoot}。请恢复该目录或修正 {result.BootstrapFile}，未创建空数据替代。");
+        if (settings.DataRoot is not null && !DataDirectories.Exists(result.DataRoot))
+        {
+            if (settings.Migration is not null)
+                throw new IOException($"迁移尚未完成，数据目录缺失：{result.DataRoot}。请恢复目录后重试，迁移记录已保留。");
+            // The startup owner must settle plugin records before committing this fallback.
+            return new AppPaths(AppContext.BaseDirectory, fixedRoot) { MissingDataRoot = result.DataRoot };
+        }
         if (ensureDirectories) result.EnsureDataDirectories();
         if (!File.Exists(result.BootstrapFile)) store.Save(settings);
         return result;
     }
 
+    // Called under the bootstrap and plugin installation leases, before any data writer starts.
+    public void CompleteDataReset(Action<string> discardPluginDataState, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(discardPluginDataState);
+        if (MissingDataRoot is null || _dataResetCompleted) return;
+        DataDirectories.CheckPath(BootstrapFile); DataDirectories.CheckPath(BootstrapFile + ".bak");
+        var store = new JsonFileStore<BootstrapSettings>(BootstrapFile, BootstrapSettings.Validate);
+        var settings = store.Load();
+        if (settings.Migration is not null || settings.DataRoot is null ||
+            !string.Equals(Absolute(settings.DataRoot), MissingDataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new IOException("启动配置已变化，未重置数据。请重新启动。");
+        if (DataDirectories.Exists(MissingDataRoot)) throw new IOException("原数据目录已恢复，未重置数据。请重新启动。");
+        token.ThrowIfCancellationRequested();
+        discardPluginDataState(MissingDataRoot);
+        discardPluginDataState(BootstrapRoot); // Its stale business data is also being discarded.
+        DataDirectories.Clear(BootstrapRoot, token);
+        token.ThrowIfCancellationRequested();
+        store.Save(new()); // Keep the old pointer until cleanup succeeds, so a failed reset can retry.
+        _dataResetCompleted = true;
+    }
+
     public void EnsureDataDirectories()
     {
+        if (MissingDataRoot is not null && !_dataResetCompleted)
+            throw new InvalidOperationException("数据重置尚未完成，不能启动数据写入。");
         foreach (var path in new[] { ConfigRoot, LogRoot, PackageRoot, Path.Combine(DataRoot, "Cache"), Path.Combine(DataRoot, "Data", "Plugins") })
             Directory.CreateDirectory(path);
     }

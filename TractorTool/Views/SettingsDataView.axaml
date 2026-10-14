@@ -20,7 +20,7 @@
   <ui:SettingRow Header="插件目录" Description="{Binding Paths.PluginRoot}" Icon="Tools">
     <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.PluginRoot}" />
   </ui:SettingRow>
-  <TextBlock Text="迁移在显式退出后的下次启动执行。原数据保留，插件程序位置不变；缓存与未完成下载不迁移。" Classes="caption" Margin="4,4" />
+  <TextBlock Text="迁移在显式退出后的下次启动执行。成功后清理旧业务数据；缓存与未完成下载不迁移。插件程序位置不变，默认位置仅保留启动定位信息。删除自定义数据目录后，下次启动将在默认位置重新初始化。" Classes="caption" Margin="4,4" />
   <ui:SettingRow Header="运行日志" Description="{Binding LogRetentionDescription}" Icon="Info">
     <Button Content="打开日志目录" Command="{Binding OpenDirectoryCommand}" CommandParameter="{Binding Paths.LogRoot}" />
   </ui:SettingRow>
@@ -32,7 +32,7 @@
       <SelectableTextBlock Text="{Binding Paths.BootstrapFile}" TextWrapping="Wrap" />
       <TextBlock Text="外部工具目录" Classes="caption" />
       <SelectableTextBlock Text="{Binding Paths.PackageRoot}" TextWrapping="Wrap" />
-      <TextBlock Text="上次迁移保留的原目录" Classes="caption" />
+      <TextBlock Text="上次迁移的原位置" Classes="caption" />
       <SelectableTextBlock Text="{Binding Migration.PreviousDataRoot, TargetNullValue='尚未迁移'}" TextWrapping="Wrap" />
     </StackPanel>
   </Expander>

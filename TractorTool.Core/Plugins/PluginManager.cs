@@ -48,10 +48,65 @@ public sealed class PluginManager : IDisposable
     }
 
     // Called only at startup, before PluginHost discovery or any plugin DLL is loaded.
-    internal void ValidateDataRootMigration(string source, AppPaths target, CancellationToken token) => RebindDataRoot(source, target, false, token);
-    internal void CompleteDataRootMigration(string source, AppPaths target, CancellationToken token) => RebindDataRoot(source, target, true, token);
+    internal void ValidateDataRootMigration(string source, AppPaths target, CancellationToken token) => RebindDataRoot(source, target, false, null, token);
+    internal void CompleteDataRootMigration(string source, AppPaths target, IReadOnlySet<string>? sourceFiles, CancellationToken token) =>
+        RebindDataRoot(source, target, true, sourceFiles, token);
 
-    private void RebindDataRoot(string source, AppPaths target, bool commit, CancellationToken token)
+    internal bool IsReboundRecoveryMetadata(string source, string target, string relative)
+    {
+        lock (_gate)
+        {
+            Check();
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            foreach (var item in _state.Plugins)
+            {
+                if (item.Recovery is not { } recovery || !string.Equals(recovery.DataRoot, target, comparison)) continue;
+                var metadata = Path.Combine("Data", ".plugin-backups", recovery.Token, "snapshot.json");
+                var backup = string.Equals(relative, metadata + ".bak", comparison);
+                if (!backup && !string.Equals(relative, metadata, comparison)) continue;
+                var before = new JsonFileStore<RecoveryMetadata>(PluginFiles.Under(source, relative)).Load();
+                var after = new JsonFileStore<RecoveryMetadata>(PluginFiles.Under(target, relative)).Load();
+                // Rebinding changes only DataRoot; .bak may still name an earlier migration root.
+                return before.Id == item.Id && before.Version == recovery.Version && before.HadData == recovery.HadData &&
+                    (backup || string.Equals(before.DataRoot, source, comparison)) &&
+                    (string.Equals(after.DataRoot, target, comparison) || backup && string.Equals(after.DataRoot, source, comparison)) &&
+                    (before with { DataRoot = after.DataRoot }) == after;
+            }
+            return false;
+        }
+    }
+
+    // The caller has confirmed this root is missing, before starting any plugin or data writer.
+    public void DiscardDataRootState(string dataRoot)
+    {
+        lock (_gate)
+        {
+            Check();
+            dataRoot = AppPaths.Absolute(dataRoot);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            foreach (var item in _state.Plugins.ToArray())
+            {
+                var recovery = item.Recovery is { } saved && string.Equals(AppPaths.Absolute(saved.DataRoot), dataRoot, comparison);
+                var pending = item.Pending is { } request &&
+                    (string.Equals(AppPaths.Absolute(request.DataRoot), dataRoot, comparison) ||
+                     recovery && request.Kind == PluginChangeKind.Rollback);
+                if (!pending && !recovery) continue;
+                if (pending && item.Pending?.Kind == PluginChangeKind.Activate)
+                    CleanPendingActivation(item);
+                // Uninstall may already have moved code to trash; data reset must not cancel its retry.
+                var uninstall = pending && item.Pending!.Kind == PluginChangeKind.Uninstall;
+                Save(item with
+                {
+                    Pending = pending && !uninstall ? null : item.Pending,
+                    Recovery = recovery ? null : item.Recovery,
+                    AwaitingLoad = false,
+                    Error = uninstall ? item.Error : ""
+                });
+            }
+        }
+    }
+
+    private void RebindDataRoot(string source, AppPaths target, bool commit, IReadOnlySet<string>? sourceFiles, CancellationToken token)
     {
         lock (_gate)
         {
@@ -60,17 +115,29 @@ public sealed class PluginManager : IDisposable
             if (DataMigrationBlockReason is { } blocked) throw new InvalidOperationException(blocked);
             if (target.AppRoot != _paths.AppRoot || target.BootstrapRoot != _paths.BootstrapRoot)
                 throw new InvalidDataException("迁移不能更换软件或启动配置位置。");
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             var next = _state.Plugins.ToArray();
             for (var i = 0; i < next.Length; i++)
             {
                 token.ThrowIfCancellationRequested();
                 var item = next[i];
-                if (item.Recovery is not { } recovery || (recovery.DataRoot != source && recovery.DataRoot != target.DataRoot)) continue;
+                if (item.Recovery is not { } recovery) continue;
+                var fromSource = string.Equals(recovery.DataRoot, source, comparison);
+                if (!fromSource && (!commit || !string.Equals(recovery.DataRoot, target.DataRoot, comparison))) continue;
                 var root = PluginFiles.Under(target.DataRoot, "Data", ".plugin-backups", recovery.Token);
                 var metadata = new JsonFileStore<RecoveryMetadata>(PluginFiles.Under(root, "snapshot.json"));
+                // Reused target paths can retain references to a deleted profile. The persisted
+                // source inventory distinguishes those from snapshots lost during finalization.
+                if (!fromSource && sourceFiles is not null && !sourceFiles.Contains(Path.GetRelativePath(target.DataRoot, metadata.FilePath)))
+                {
+                    next[i] = item with { Recovery = null };
+                    continue;
+                }
+                if (new FileInfo(metadata.FilePath).Attributes == (FileAttributes)(-1))
+                    throw new InvalidDataException($"迁移后的插件回退快照无效：{item.Id}，缺少快照文件：{metadata.FilePath}");
                 var saved = metadata.Load();
                 if (saved.Id != item.Id || saved.Version != recovery.Version || saved.HadData != recovery.HadData ||
-                    (saved.DataRoot != source && saved.DataRoot != target.DataRoot) ||
+                    (!string.Equals(saved.DataRoot, source, comparison) && !string.Equals(saved.DataRoot, target.DataRoot, comparison)) ||
                     PluginFiles.Digest(PluginFiles.Under(root, "saved"), token) != saved.Digest)
                     throw new InvalidDataException("迁移后的插件回退快照无效：" + item.Id);
                 token.ThrowIfCancellationRequested();
@@ -181,22 +248,39 @@ public sealed class PluginManager : IDisposable
             // Rollback/uninstall can already have moved data/code and must retain their recovery journal.
             if (item.Error.Length != 0 && item.Pending?.Kind != PluginChangeKind.Activate)
                 throw new InvalidOperationException("启动变更已尝试，需修复原因后重启重试，不能丢弃恢复记录。");
-            Save(item with { Pending = null, Error = "" });
             if (item.Pending?.Kind == PluginChangeKind.Activate)
-            {
-                try
-                {
-                    var staged = PluginFiles.Under(_root, "staging", item.Pending.Token);
-                    var target = VersionPath(item.Id, item.Pending.Version!);
-                    // Only delete a moved, unchanged package belonging to this activation request.
-                    if (!Directory.Exists(PluginFiles.Under(staged, item.Id, item.Pending.Version!)) && Directory.Exists(target) &&
-                        PluginFiles.Digest(target) == item.Pending.Digest)
-                        PluginFiles.Delete(_paths.PluginRoot, target);
-                    PluginFiles.Delete(_root, staged);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-                { throw new IOException("变更已取消，但暂存文件未能清理：" + ex.Message, ex); }
-            }
+                CleanPendingActivation(item);
+            Save(item with { Pending = null, Error = "" });
+        }
+    }
+
+    private void CleanPendingActivation(ManagedPlugin item)
+    {
+        var pending = item.Pending!;
+        var staged = PluginFiles.Under(_root, "staging", pending.Token);
+        var stagedVersion = PluginFiles.Under(staged, item.Id, pending.Version!);
+        var target = VersionPath(item.Id, pending.Version!);
+        _ = DirectoryPresent(staged);
+        var stagedVersionPresent = DirectoryPresent(stagedVersion);
+        if (DirectoryPresent(target))
+        {
+            if (item.ActiveVersion == pending.Version || stagedVersionPresent ||
+                PluginFiles.Digest(target) != pending.Digest)
+                throw new InvalidDataException("无法确认待安装代码的清理归属，代码与变更请求已保留。");
+            // Move back before deleting: interrupted deletion can retry in the same staging tree without a full digest.
+            Directory.CreateDirectory(Path.GetDirectoryName(stagedVersion)!);
+            Directory.Move(target, stagedVersion);
+        }
+        PluginFiles.Delete(_root, staged);
+
+        static bool DirectoryPresent(string path)
+        {
+            // Exists would mistake access failures for absence and allow the request to be lost.
+            var attributes = new DirectoryInfo(path).Attributes;
+            if (attributes == (FileAttributes)(-1)) return false;
+            if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
+                throw new InvalidDataException("待安装代码路径被文件或重解析点占用，变更请求已保留：" + path);
+            return true;
         }
     }
 
@@ -218,7 +302,9 @@ public sealed class PluginManager : IDisposable
     private ManagedPlugin Apply(ManagedPlugin item)
     {
         var pending = item.Pending!;
-        if (!string.Equals(pending.DataRoot, _paths.DataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        // Uninstall only mutates installation code; it must also finish after a data reset or a restored root.
+        if (pending.Kind != PluginChangeKind.Uninstall &&
+            !string.Equals(pending.DataRoot, _paths.DataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidOperationException("待处理变更属于另一个数据根目录，请使用安排变更时的配置启动。");
         switch (pending.Kind)
         {
