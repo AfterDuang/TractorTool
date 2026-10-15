@@ -233,6 +233,7 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 
 - **窗口/导航**：FAAppWindow 保留系统窗口按钮和命中测试，标题区行高与实际控件同源，显式标记原生拖动区；只放图标和名称。主导航为主页/插件页面，底部为日志/插件/设置，保留键盘、焦点及无障碍名称。
 - **页面切换**：[PageHost](../TractorTool.UI/Controls/PageHost.cs) 只承载当前页，不缓存历史或订阅窗口返回事件。工厂返回未挂载页面，替换前触发可取消的 NavigatingFromEvent；成功才提交选择并释放旧页，取消保留原页。同步挂载/脱离故障重建容器以显示错误页，不兜底插件任意异步或渲染异常。宿主阻止重入和退出后建页。
+- **主页面页头动效**：MainWindow 的宿主页头绑定当前 PageHost.Child 的 Opacity / RenderTransform，随正文同步更新；自带页头仍在插件页面内参与原动画。复用现有呈现器的状态，不增加动画时钟、插件接口或离页转发层；内层设置/日志页签保持自身导航范围。
 - **页面文字渲染**：PageHost 统一设置 `TextHintingMode.None` / `BaselinePixelAlignment.Unaligned`，减少位移动画中的文字整像素跳变；固定 `TextRenderingMode.Antialias`，使合成层内外均用灰度抗锯齿。设置沿渲染树继承，静止后不切换模式；范围不含侧栏、标题栏及独立窗口。
 - **页面淡入合成**：PageHost 设置 `RenderOptions.RequiresFullOpacityHandling=true`，由 Avalonia/Skia 临时合成后统一应用透明度，避免逐画刷取整导致末帧亮度变化。保留原过渡参数；不管理快照或页面缓存。该选项沿子树生效，半透明内容会增加合成开销。
 - **设置导航**：SettingsPage.Parent 表达层级，面包屑与分类沿父链派生；软件/插件分组独立折叠，无插件设置时隐藏整组，窄窗改顶部分类选择。内层复用 PageHost，向当前子页转发离页取消；折叠不结束右侧页面，无第二套历史栈。

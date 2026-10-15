@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 主页面动效 | [E112 · 宿主页头与正文同步（2026-10-15）](#evidence-page-header-motion) |
 | 框架审查修正 | [E111 · 配置/卸载故障边界与退出回归（2026-10-15）](#evidence-framework-failure-paths) |
 | 文档维护 | [E110 · 存储提交基线与当前文档精简（2026-10-15）](#evidence-storage-docs-consolidation) |
 | 重置恢复修复 | [E109 · 卸载根独立与待安装代码清理重试（2026-10-15）](#evidence-reset-transaction-retry) |
@@ -3082,3 +3083,15 @@ E104 的旧 Review 没有发现本次实测缺陷，不作为当前运行通过�
 验证：`dotnet build TractorTool.slnx -c Release -m:1 -nr:false --no-restore`，15 工程、36.55 秒、0 错误/0 警告；新增和更新用例仅编译，未运行。两名 gpt-6.1-sol / high 独立复核最终生产调用与测试，未发现新增确定缺陷或可直接删除的无用抽象。已同步架构、当前台账与交接；`git diff --check`、122 处当前文档本地文件链接、代码围栏和 E111 唯一锚点核对通过。
 
 未启动应用、检查程序或接管 UI，未操作真实数据。文件/目录占位夹具不替代 ACL、离线及原生退出运行验证；E99 EOF 缺口、切页闪动、E103/E94 插件待办及完整分发验证均保留。
+
+<a id="evidence-page-header-motion"></a>
+
+### E112 宿主页头与正文同步（2026-10-15）
+
+用户反馈侧栏切换时，部分页面整页参与动画，设置等页面只有正文参与、标题直接出现。源码确认 MainWindow 的宿主页头在 PageHost 外，自带页头的插件则把标题放在页面内。
+
+- MainWindow 页头直接绑定 `PagePresenter.Child.Opacity` / `RenderTransform`，沿用当前呈现器的值；不复制时长、缓动或另开动画。绑定路径包含 Child，容器恢复替换后仍随新呈现器；正常取消导航在 PageHost 重置动画之前返回，保留原页头状态。
+- PageHost、MainViewModel、插件接口与页面生命周期没有改动；保留 500ms、18 DIP、原淡入/位移和动画开关。设置内部分类/日志页签仍只切换自己的区域，不让整个主页面重复入场。
+- `dotnet build TractorTool/TractorTool.csproj -c Release -m:1 -nr:false --no-restore` 成功，宿主及关联工程共 4 个，7.66 秒，0 警告/0 错误；包括 XAML 绑定编译。`git diff --check`、139 处当前文档本地文件链接及 E112 唯一锚点核对通过。仅做静态检查及构建，未增加或运行镜像绑定实现的测试，未启动应用或操作真实用户数据。
+
+主页面标题/说明与正文的实际同步、快速切页、取消离页和动画开关效果待用户验证。此次修正动画覆盖范围，不声称解决既有边框末段闪动，也不将构建结果作为真实 UI 验收。
