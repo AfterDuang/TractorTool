@@ -76,7 +76,7 @@ Contracts 不包含控件类型；Avalonia 页面契约只在 UI 工程。宿主
 | 更新备份/回退 | 在旧进程退出、新版本加载前备份完整插件数据到 `<DataRoot>/Data/.plugin-backups/<Token>`；请求绑定原数据根。新版本失败保留旧代码与快照，安排下次启动回退；恢复前保留新版数据为 `before-rollback` |
 | 启用/禁用 | 保存待生效目标，未执行时可反向取消；不因切页或隐藏即时停掉运行实例 |
 | 卸载 | 下次启动将代码移入 `.management/removed/<Token>` 后删除，保留数据和快照；墓碑防止旧目录被重新发现，部分完成通过日志重试 |
-| 取消请求 | 未执行请求、失败的安装/更新可取消，只清理归属明确的暂存代码；已尝试的卸载/回退必须保留恢复日志 |
+| 取消请求 | 未执行请求、失败的安装/更新可取消，只清理归属明确且未激活的待安装代码；清理失败保留请求，已尝试的卸载/回退必须保留恢复日志 |
 
 重复请求、同版或较旧版本等状态冲突在管理锁内返回拒绝原因，保留既有请求，清理本次暂存；界面记录错误而不人为构造异常。损坏包、越界和真实 I/O 故障仍按异常处理。软件目录不可写时明确失败，不改装到 DataRoot。首版不热卸载、不在同进程内回退、不自动删除恢复快照。
 
@@ -158,7 +158,7 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 
 ### 5.1 固定启动位置与可迁移数据
 
-迁移成功后清理旧业务数据；默认位置保留必要的 bootstrap 与锁，继续定位自定义目录。确认自定义本地目录已删除时恢复默认根；具体启动顺序见 5.3。实现和验证记录见 [E104](PROJECT_HISTORY.md#evidence-data-migration-cleanup-reset)。
+迁移成功后清理旧业务数据；默认位置保留必要的 bootstrap 与锁，继续定位自定义目录。确认自定义本地目录已删除时恢复默认根；具体启动顺序见 5.3，当前实现与验收见[开发台账](DEVELOPMENT.md#current-status)。
 
 `AppRoot` 取实际应用目录，不能取工作目录；`PluginRoot` 固定在其下。默认 `DataRoot` 为 `%LOCALAPPDATA%/TractorTool`，用户可改为专用目录；`PackageRoot` 始终从 DataRoot 解析。
 
@@ -203,11 +203,11 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 
 ### 5.3 自定义数据目录删除后恢复默认
 
-[DataDirectories](../TractorTool.Core/Storage/DataDirectories.cs) 从卷根逐级读取属性，缺失时再枚举父目录，区分真实缺失、权限拒绝、离线及链接/文件占位；使用 FileSystemInfo.Attributes 的 -1 缺失值，不以抛出/捕获异常作为正常探测流程。网络目录不可用不授权重置。没有 Migration 且确认自定义本地目录缺失时，[AppPaths.Open](../TractorTool.Core/Storage/AppPaths.cs) 仅返回附带 MissingDataRoot 的默认根候选，不创建业务目录、不提交新指针。自定义数据根的 InstanceLease 只打开现有目录，避免检查后重新创建被删目录。
+[DataDirectories](../TractorTool.Core/Storage/DataDirectories.cs) 严格区分真实缺失与权限、离线、链接/文件占位，不用吞错的存在性判断授权重置。没有 Migration 且确认自定义本地目录缺失时，[AppPaths](../TractorTool.Core/Storage/AppPaths.cs) 仅返回默认根候选，不创建业务目录或提交指针；自定义根的实例锁只打开现有目录。网络目录不可用或未完迁移继续阻断，不触发恢复默认。
 
-启动在固定 bootstrap 锁及插件安装锁下调用 CompleteDataReset：再次确认旧根仍缺失并检查取消，再清除自定义旧根与默认根关联的数据事务、Recovery 和失效加载状态。Uninstall 只操作安装代码，完整保留 Pending 和错误状态，不提前重绑数据根；ApplyPending 仅对卸载免除数据根一致性约束，重置成功或失败后恢复旧根均可完成代码及 removed 暂存清理。其他根的数据事务不改，保留安装选择、启停及已完成卸载记录。
+启动持有 bootstrap 和插件安装锁，再次确认旧根仍缺失并检查取消；处理被丢弃的自定义根和默认根关联的数据事务、Recovery 及失效加载状态，清理默认残留业务目录，最后原子保存默认指针。其他根的数据事务、安装选择、启停及已完成卸载记录保留。完成后才创建业务目录、加载插件并记录恢复默认 Warning。目录已恢复、初始化/清理/保存失败均停止；指针提交前保留旧指针供重试。
 
-待安装代码与取消安装共用清理流程：先清理再移除 Pending。已从 staging 移入版本目录、尚未保存激活状态的代码，必须不是活动版本、暂存版本已不存在且摘要匹配，才能移回原 token 的 staging 后删除；不能确认归属或清理失败则保留代码与请求。移回后即使删除中断，也能从原 staging 重试，不依赖残缺目录的完整摘要。随后清默认根残留的五类业务目录，最后原子保存全新 bootstrap。完成后才创建业务目录和加载插件；日志以 Warning 提示恢复默认及需重新迁移。管理初始化、清理或保存失败均停止，旧指针在最终提交前保留以供重试；最终确认时目录已恢复则停止，管理回调不执行。有迁移记录时先遵循 5.2，不能将迁移中断误判为恢复出厂。此流程只涉及宿主/Core，不增加 Contracts 或插件业务接口。
+[PluginManager](../TractorTool.Core/Plugins/PluginManager.cs) 的安装清理与取消共用：先核对归属并清理未激活代码，成功后才清 Pending；移码目标回到原 token staging 后再删除，保证部分清理和状态保存失败可重试，访问故障不得视为目录缺失。Uninstall 只操作安装代码，完整保留原 Pending 和错误状态，且仅卸载免除 DataRoot 一致性约束，因此重置成功或失败后恢复旧根均可接续。此流程不增加 Contracts 或插件业务接口。
 
 <a id="ui"></a>
 
