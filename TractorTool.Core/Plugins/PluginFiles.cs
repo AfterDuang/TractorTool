@@ -155,11 +155,25 @@ internal static class PluginFiles
         if (Digest(source) != Digest(destination)) throw new IOException("插件数据备份校验失败。");
     }
 
+    internal static bool DirectoryPresent(string path)
+    {
+        // Exists would mistake access failures for absence and allow the request to be lost.
+        var attributes = new DirectoryInfo(path).Attributes;
+        if (attributes == (FileAttributes)(-1))
+        {
+            _ = DataDirectories.Exists(Path.GetDirectoryName(path)!);
+            return false;
+        }
+        if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
+            throw new InvalidDataException("插件目录被文件或重解析点占用，变更请求已保留：" + path);
+        return true;
+    }
+
     internal static void Delete(string boundary, string path)
     {
         path = Under(boundary, Path.GetRelativePath(boundary, path));
         if (path == AppPaths.Absolute(boundary)) throw new InvalidOperationException("不能删除管理根目录。");
-        if (!Directory.Exists(path)) return;
+        if (!DirectoryPresent(path)) return;
         _ = Files(path).ToArray(); // Reject all links before recursive deletion.
         Directory.Delete(path, true);
     }

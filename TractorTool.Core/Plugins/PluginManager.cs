@@ -260,9 +260,9 @@ public sealed class PluginManager : IDisposable
         var staged = PluginFiles.Under(_root, "staging", pending.Token);
         var stagedVersion = PluginFiles.Under(staged, item.Id, pending.Version!);
         var target = VersionPath(item.Id, pending.Version!);
-        _ = DirectoryPresent(staged);
-        var stagedVersionPresent = DirectoryPresent(stagedVersion);
-        if (DirectoryPresent(target))
+        _ = PluginFiles.DirectoryPresent(staged);
+        var stagedVersionPresent = PluginFiles.DirectoryPresent(stagedVersion);
+        if (PluginFiles.DirectoryPresent(target))
         {
             if (item.ActiveVersion == pending.Version || stagedVersionPresent ||
                 PluginFiles.Digest(target) != pending.Digest)
@@ -272,16 +272,6 @@ public sealed class PluginManager : IDisposable
             Directory.Move(target, stagedVersion);
         }
         PluginFiles.Delete(_root, staged);
-
-        static bool DirectoryPresent(string path)
-        {
-            // Exists would mistake access failures for absence and allow the request to be lost.
-            var attributes = new DirectoryInfo(path).Attributes;
-            if (attributes == (FileAttributes)(-1)) return false;
-            if ((attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != FileAttributes.Directory)
-                throw new InvalidDataException("待安装代码路径被文件或重解析点占用，变更请求已保留：" + path);
-            return true;
-        }
     }
 
     public void RecordLoadResults(IReadOnlyList<PluginRecord> records)
@@ -330,7 +320,7 @@ public sealed class PluginManager : IDisposable
             {
                 var source = PluginFiles.Under(_paths.PluginRoot, item.Id);
                 var trash = PluginFiles.Under(_root, "removed", pending.Token);
-                if (Directory.Exists(source))
+                if (PluginFiles.DirectoryPresent(source))
                 {
                     _ = PluginFiles.Files(source).ToArray();
                     Directory.CreateDirectory(Path.GetDirectoryName(trash)!);

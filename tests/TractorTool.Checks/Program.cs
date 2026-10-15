@@ -160,6 +160,26 @@ if (OperatingSystem.IsWindows()) Check("Failed reset pointer save leaves the old
 var file = Path.Combine(paths.ConfigRoot, "settings.json");
 var store = new JsonFileStore<HostSettings>(file, HostSettings.Validate);
 Check("Settings defaults", () => Assert(store.Load().Theme == "System"));
+Check("Missing settings parents return defaults without creating directories", () =>
+{
+    var missing = Path.Combine(root, "missing-settings", "nested", "settings.json");
+    Assert(new JsonFileStore<HostSettings>(missing, HostSettings.Validate).Load().Theme == "System");
+    Assert(!Directory.Exists(Path.Combine(root, "missing-settings")));
+});
+Check("Settings directory collision is rejected without modifying its contents", () =>
+{
+    var occupied = Path.Combine(paths.ConfigRoot, "directory.json");
+    Directory.CreateDirectory(occupied);
+    var marker = Path.Combine(occupied, "keep.txt"); File.WriteAllText(marker, "keep");
+    Throws<InvalidDataException>(() => new JsonFileStore<HostSettings>(occupied, HostSettings.Validate).Load());
+    Assert(File.ReadAllText(marker) == "keep");
+});
+Check("Settings below a file are rejected instead of returning defaults", () =>
+{
+    var parent = Path.Combine(paths.ConfigRoot, "blocked-parent"); File.WriteAllText(parent, "keep");
+    Throws<IOException>(() => new JsonFileStore<HostSettings>(Path.Combine(parent, "nested", "settings.json")).Load());
+    Assert(File.ReadAllText(parent) == "keep");
+});
 Check("Settings roundtrip", () => { store.Save(new() { Theme = "Dark", Accent = "#0F766E" }); Assert(store.Load().Theme == "Dark"); });
 Check("Atomic replacement keeps previous backup", () => { store.Save(new() { Theme = "Light" }); Assert(new JsonFileStore<HostSettings>(file + ".bak").Load().Theme == "Dark"); Assert(!Directory.GetFiles(paths.ConfigRoot, "*.tmp").Any()); });
 Check("Invalid settings rejected before overwrite", () => { var before = File.ReadAllText(file); Throws<InvalidDataException>(() => store.Save(new() { Theme = "no" })); Assert(before == File.ReadAllText(file)); });
@@ -170,7 +190,10 @@ Check("Write failure preserves original settings and cleans temporary file", () 
 {
     store.Save(new() { Theme = "Dark" });
     using (var locked = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        Throws<IOException>(() => store.Load());
         Throws<IOException>(() => store.Save(new() { Theme = "Light" }));
+    }
     Assert(store.Load().Theme == "Dark" && !Directory.GetFiles(paths.ConfigRoot, "*.tmp").Any());
 });
 Check("Corrupt bootstrap never resets the data pointer", () =>

@@ -527,7 +527,7 @@ ShutdownCase("Initialization completing during shutdown cannot register pages an
         Assert(registrations == 0 && !HasMarker(directory, "registered") && !HasMarker(directory, "background-started"));
         Assert(caseHost.Records.Single().State != PluginState.Loaded);
     });
-Check("Settings shutdown latch preserves the save task and prevents another write", () =>
+Check("Settings shutdown waits for the save and prevents another write", () =>
 {
     var casePaths = new AppPaths(Path.Combine(output, "settings-shutdown-app"), Path.Combine(output, "settings-shutdown-data"));
     casePaths.EnsureDataDirectories();
@@ -536,9 +536,9 @@ Check("Settings shutdown latch preserves the save task and prevents another writ
     settings.SelectedTheme = settings.Themes.Single(t => t.Id == "Dark");
     var execution = settings.SaveCompletion;
     var shutdown = settings.BeginShutdown();
-    Assert(ReferenceEquals(execution, shutdown) && !settings.RetrySaveCommand.CanExecute(null));
+    Assert(!settings.RetrySaveCommand.CanExecute(null));
     Pump(shutdown);
-    Assert(store.Load().Theme == "Dark");
+    Assert(execution.IsCompletedSuccessfully && store.Load().Theme == "Dark");
     var before = File.ReadAllBytes(store.FilePath);
     settings.SelectedTheme = settings.Themes.Single(t => t.Id == "Light");
     // Direct command invocation and property callbacks must respect the shutdown latch.

@@ -13,7 +13,13 @@ public sealed class JsonFileStore<T>(string path, Action<T>? validate = null)
     {
         lock (FileLocks.For(FilePath))
         {
-            var value = File.Exists(FilePath)
+            // Exists hides access errors and treats a directory as a missing configuration.
+            var attributes = new FileInfo(FilePath).Attributes;
+            if (attributes == (FileAttributes)(-1))
+                _ = DataDirectories.Exists(Path.GetDirectoryName(FilePath)!);
+            if (attributes != (FileAttributes)(-1) && (attributes & FileAttributes.Directory) != 0)
+                throw new InvalidDataException($"配置文件路径被目录占用：{FilePath}");
+            var value = attributes != (FileAttributes)(-1)
                 ? JsonSerializer.Deserialize<T>(File.ReadAllText(FilePath), JsonOptions.Value)
                     ?? throw new InvalidDataException($"配置为空：{FilePath}")
                 : new T();

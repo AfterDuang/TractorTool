@@ -624,6 +624,74 @@ internal static class PluginManagementChecks
             Assert(manager.Snapshot.Single().ActiveVersion is null && !Directory.Exists(Path.Combine(paths.PluginRoot, "Checks.Management")));
             Assert(File.ReadAllText(Path.Combine(data, "keep.txt")) == "user fixture");
         });
+        foreach (var occupied in new[] { "source", "trash", "trash parent" })
+            check("Management uninstall retains its request when " + occupied + " is occupied by a file", () =>
+        {
+            var paths = Paths();
+            ManagedPlugin queued;
+            string source, trash, blocked, saved;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths);
+                var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "user fixture");
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+                queued = manager.Snapshot.Single();
+                source = Path.Combine(paths.PluginRoot, queued.Id);
+                trash = Path.Combine(paths.PluginRoot, ".management", "removed", queued.Pending!.Token);
+                blocked = occupied switch { "source" => source, "trash" => trash, _ => Path.GetDirectoryName(trash)! };
+                saved = Path.Combine(paths.PluginRoot, ".management", "saved-" + queued.Pending.Token);
+                Directory.Move(source, saved);
+                Directory.CreateDirectory(Path.GetDirectoryName(blocked)!);
+                File.WriteAllText(blocked, "conflicting file");
+                manager.ApplyPending();
+                var failed = manager.Snapshot.Single();
+                Assert(failed.ActiveVersion == queued.ActiveVersion && failed.Pending == queued.Pending && failed.Error.Length != 0);
+                Assert(File.ReadAllText(blocked) == "conflicting file" && File.Exists(Path.Combine(saved, "1.0.0", "Fixture.dll")));
+                Assert(new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Load().Plugins.Single() == failed);
+            }
+            File.Delete(blocked);
+            var restored = occupied == "source" ? source : trash;
+            Directory.CreateDirectory(Path.GetDirectoryName(restored)!);
+            Directory.Move(saved, restored);
+            using var resumed = new PluginManager(paths, compatibility);
+            resumed.ApplyPending();
+            Assert(resumed.Snapshot.Single() is { ActiveVersion: null, Pending: null, Error: "" });
+            Assert(!Directory.Exists(source) && !Directory.Exists(trash));
+            Assert(File.ReadAllText(Path.Combine(paths.GetPluginDataDirectory(queued.Id), "keep.txt")) == "user fixture");
+        });
+        check("Management rejects a state directory and retains disabled selection after repair", () =>
+        {
+            var paths = Paths();
+            ManagedPlugin disabled;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null);
+                manager.ApplyPending();
+                disabled = manager.Snapshot.Single();
+                Assert(!disabled.Enabled && disabled.Pending is null);
+            }
+            var state = Path.Combine(paths.PluginRoot, ".management", "state.json");
+            var saved = state + "-saved";
+            File.Move(state, saved);
+            Directory.CreateDirectory(state);
+            try
+            {
+                Reject<InvalidDataException>(() => { using var rejected = new PluginManager(paths, compatibility); });
+                Assert(Directory.Exists(state) && File.Exists(saved));
+            }
+            finally
+            {
+                Directory.Delete(state);
+                File.Move(saved, state);
+            }
+            using var reopened = new PluginManager(paths, compatibility);
+            Assert(reopened.Snapshot.Single() == disabled);
+            var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot));
+            host.Discover([], reopened.Snapshot);
+            Assert(host.Records.Single().State == PluginState.Disabled);
+        });
         check("Management state write failure does not queue or redirect", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);

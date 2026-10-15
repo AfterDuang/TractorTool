@@ -5,8 +5,10 @@ using Avalonia.Styling;
 using FluentAvalonia.Core;
 using FluentAvalonia.Styling;
 using TractorTool.Core.Logging;
+using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
 using TractorTool.Services;
+using TractorTool.UI;
 using TractorTool.ViewModels;
 using TractorTool.Views;
 
@@ -49,11 +51,13 @@ internal static class AppearanceChecks
                     Require(Application.Current.Styles.OfType<FluentAvaloniaTheme>().Single().CustomAccentColor == Color.Parse("#0F766E"));
                     Require(!FAUISettings.AreAnimationsEnabled());
                     var shutdown = vm.BeginShutdown();
-                    Require(ReferenceEquals(completion, shutdown) && !shutdown.IsCompleted);
+                    Require(!completion.IsCompleted && !shutdown.IsCompleted);
+                    var repeatedShutdown = vm.BeginShutdown();
+                    Require(!repeatedShutdown.IsCompleted);
                     // A queued snapshot, rather than mutable bound controls, owns the exit write.
                     vm.SelectedTheme = vm.Themes.Single(t => t.Id == "Dark");
                     release.Set();
-                    pump(shutdown);
+                    pump(Task.WhenAll(shutdown, repeatedShutdown));
                     Require(writes == 2 && !vm.HasSaveError && !vm.IsSaving);
                     var saved = new JsonFileStore<HostSettings>(store.FilePath).Load();
                     Require(saved.Theme == "Light" && saved.Accent == "#0F766E" && !saved.EnableAnimations);
@@ -62,10 +66,37 @@ internal static class AppearanceChecks
                     ThemeService.Apply(saved);
                     var reopened = new SettingsViewModel(paths, store, saved, new AppLog(paths.LogRoot));
                     Require(reopened.SelectedTheme.Id == "Light" && !reopened.EnableAnimations && writes == 2);
+                    pump(vm.BeginShutdown());
+                    Require(writes == 2);
                 }
                 finally { release.Set(); pump(vm.BeginShutdown()); }
             });
         }
+
+        check("Settings exit waits for an open migration picker on repeated shutdown", () =>
+        {
+            var paths = Paths(output, "migration-exit");
+            using var manager = new PluginManager(paths,
+                new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion));
+            var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"));
+            var vm = new SettingsViewModel(paths, store, new(), new AppLog(paths.LogRoot), manager: manager);
+            var picker = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            vm.Migration.PickDirectoryAsync = () => picker.Task;
+            vm.Migration.ConfirmAsync = _ => Task.FromResult(true);
+            var choosing = vm.Migration.ChooseCommand.ExecuteAsync(null);
+            try
+            {
+                Require(vm.SaveCompletion.IsCompleted && vm.Migration.IsBusy && !choosing.IsCompleted);
+                var shutdown = vm.BeginShutdown();
+                var repeatedShutdown = vm.BeginShutdown();
+                Require(!shutdown.IsCompleted && !repeatedShutdown.IsCompleted);
+                picker.SetResult(null);
+                pump(Task.WhenAll(choosing, shutdown, repeatedShutdown));
+                Require(!vm.Migration.IsBusy && !vm.Migration.HasPending);
+                Require(new DataRootMigration(paths).Snapshot.Migration is null);
+            }
+            finally { picker.TrySetResult(null); pump(Task.WhenAll(choosing, vm.BeginShutdown())); }
+        });
 
         check("Appearance write failure preserves file and applied theme; retry persists latest", () =>
         {
@@ -126,7 +157,8 @@ internal static class AppearanceChecks
             var shutdown = vm.BeginShutdown();
             pump(shutdown);
             Require(writes == 2 && vm.HasSaveError && !vm.IsSaving);
-            Require(ReferenceEquals(shutdown, vm.BeginShutdown()));
+            pump(vm.BeginShutdown());
+            Require(writes == 2 && vm.HasSaveError && !vm.IsSaving);
             vm.RetrySaveCommand.Execute(null);
             Require(writes == 2 && !vm.RetrySaveCommand.CanExecute(null));
         });
