@@ -14,7 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
-| 主页面动效 | [E112 · 宿主页头与正文同步（2026-10-15）](#evidence-page-header-motion) |
+| 主页面动效 | [E113 · 退出时页头空值绑定（2026-10-15）](#evidence-header-null-binding)、[E112 · 宿主页头与正文同步（2026-10-15）](#evidence-page-header-motion) |
 | 框架审查修正 | [E111 · 配置/卸载故障边界与退出回归（2026-10-15）](#evidence-framework-failure-paths) |
 | 文档维护 | [E110 · 存储提交基线与当前文档精简（2026-10-15）](#evidence-storage-docs-consolidation) |
 | 重置恢复修复 | [E109 · 卸载根独立与待安装代码清理重试（2026-10-15）](#evidence-reset-transaction-retry) |
@@ -3095,3 +3095,16 @@ E104 的旧 Review 没有发现本次实测缺陷，不作为当前运行通过�
 - `dotnet build TractorTool/TractorTool.csproj -c Release -m:1 -nr:false --no-restore` 成功，宿主及关联工程共 4 个，7.66 秒，0 警告/0 错误；包括 XAML 绑定编译。`git diff --check`、139 处当前文档本地文件链接及 E112 唯一锚点核对通过。仅做静态检查及构建，未增加或运行镜像绑定实现的测试，未启动应用或操作真实用户数据。
 
 主页面标题/说明与正文的实际同步、快速切页、取消离页和动画开关效果待用户验证。此次修正动画覆盖范围，不声称解决既有边框末段闪动，也不将构建结果作为真实 UI 验收。
+
+<a id="evidence-header-null-binding"></a>
+
+### E113 退出时页头空值绑定（2026-10-15）
+
+用户截图中退出码为 0，但出现 Opacity / RenderTransform 绑定的 `Child: Value is null`。源码确认退出 Detach 调用 PageHost.Clear，ReplacePresenter 暂时将 Child 置空，E112 的页头绑定仍访问其属性；页面呈现失败恢复也使用此路径。
+
+- 按 [Avalonia 官方空条件绑定](https://docs.avaloniaui.net/docs/data-binding/data-binding-syntax#null-conditional-operator)，仅将两条绑定改为 `Child?.Opacity` / `Child?.RenderTransform`，透明度补 `TargetNullValue=1`。保持原 FallbackValue，不更改 DataContext、动画参数、PageHost 清理或异常传播，不增加转换器、订阅或公共接口。
+- NavigationChecks 使用真实 MainWindow XAML，捕获 Binding Warning/Error，检查清空、重新 Present、旧 Border 更新不再影响页头，以及导航回调失败后的容器恢复；恢复全局日志接收器和动画设置。用例仅编译，未运行。
+- `dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Release -m:1 -nr:false --no-restore` 成功：宿主及依赖/检查共 5 工程，10.53 秒，0 错误/0 警告，包含当前 12.1.2 编译绑定验证。
+- gpt-6.1-sol / high 子代理复审实际代码与回归用例，未发现需要修改的问题；确认测试覆盖绑定生命周期，不冒充完整退出流程或真实动效验收。
+
+未启动应用、检查程序或接管 UI，未访问真实用户数据。真实退出与动画同步仍待用户验证；原切页末段闪动保持未关闭。

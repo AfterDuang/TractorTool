@@ -4,9 +4,9 @@
 
 ## 1. 当前工作
 
-**当前在 M5，E112 已补齐主页面页头与正文同步动效，未推送。** 仅在 MainWindow 将页头绑定到当前正文呈现器的 Opacity / RenderTransform，复用既有动画，无插件接口或生命周期变更；宿主构建通过，实际观感待用户确认。E111 存储修复已提交为 `51f51db`，运行验证仍待用户执行；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
+**当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 
-接续先由用户确认宿主页头/自带页头互切、快速切页、离页取消与动画开关下的同步效果。存储验收继续核对隔离数据下的配置/祖先占位、卸载故障恢复和退出等待，再覆盖迁移收尾、默认初始化、重置失败后恢复旧根及安装移码重试。权限、离线或未完迁移不授权重置，目标冲突不能覆盖；不要改真实用户数据制造故障。E103 剪贴板 1.1.3 的原生回归入口见[开发操作](DEVELOPMENT.md#workflow)，其他插件业务继续暂缓。
+接续先由用户确认退出不再出现 Opacity / RenderTransform 的 Child 空值诊断，再验宿主页头/自带页头互切、快速切页、离页取消与动画开关下的同步效果。存储验收继续核对隔离数据下的配置/祖先占位、卸载故障恢复和退出等待，再覆盖迁移收尾、默认初始化、重置失败后恢复旧根及安装移码重试。权限、离线或未完迁移不授权重置，目标冲突不能覆盖；不要改真实用户数据制造故障。E103 剪贴板 1.1.3 的原生回归入口见[开发操作](DEVELOPMENT.md#workflow)，其他插件业务继续暂缓。
 
 切页末段闪动仍未解决，Avalonia 已回退至 12.1.2，E102 EXE/ZIP 只作历史产物；沿用原 VS Code 启动项。保留默认渲染、PageHost 缓动属性初始化及 500ms、18 DIP、淡入、RenderTransform，不恢复软件开关或布局位移候选。E103 与闪动没有同链证据；E99 EOF 回归及其他验收缺口见[下一步](DEVELOPMENT.md#next)。
 

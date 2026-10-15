@@ -51,8 +51,8 @@
         <Grid RowDefinitions="Auto,*,Auto">
           <!-- Shell headers follow the current presenter, including resets and cancelled navigation. -->
           <Grid Margin="28,26,28,20" IsVisible="{Binding ShowPageHeader}"
-                Opacity="{Binding #PagePresenter.Child.Opacity, FallbackValue=1}"
-                RenderTransform="{Binding #PagePresenter.Child.RenderTransform}">
+                Opacity="{Binding #PagePresenter.Child?.Opacity, FallbackValue=1, TargetNullValue=1}"
+                RenderTransform="{Binding #PagePresenter.Child?.RenderTransform}">
             <StackPanel Spacing="6">
               <TextBlock Text="{Binding PageTitle}" Classes="pageTitle" />
               <TextBlock Text="{Binding PageDescription}" Classes="muted" />

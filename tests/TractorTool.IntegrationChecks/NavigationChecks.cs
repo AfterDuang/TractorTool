@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
@@ -19,6 +20,52 @@ internal static class NavigationChecks
 {
     public static void Run(Action<string, Action> check, string output)
     {
+        check("Shell header bindings survive presenter clearing and failure recovery without errors", () =>
+        {
+            var originalMotion = FAUISettings.AreAnimationsEnabled();
+            var originalSink = Logger.Sink;
+            var logs = new BindingLog();
+            MainWindow? window = null;
+            Logger.Sink = logs;
+            try
+            {
+                Motion.Configure(Application.Current!, false);
+                window = new MainWindow();
+                window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
+                var host = window.FindControl<PageHost>("PagePresenter")!;
+                var header = ((Grid)host.Parent!).Children.OfType<Grid>().Single();
+                Require(host.Present(new Border()));
+                var retired = host.Child!;
+                retired.Opacity = 0.4;
+                retired.RenderTransform = new TranslateTransform(0, 9);
+                Require(header.Opacity == 0.4 && ReferenceEquals(header.RenderTransform, retired.RenderTransform));
+
+                // Clear follows the same presenter replacement path as shutdown.
+                host.Clear();
+                Require(header.Opacity == 1 && header.RenderTransform is null);
+                retired.Opacity = 0.2;
+                retired.RenderTransform = new TranslateTransform(0, 12);
+                Require(header.Opacity == 1 && header.RenderTransform is null);
+
+                var page = new Border();
+                Require(host.Present(page));
+                host.Child!.Opacity = 0.6;
+                host.Child.RenderTransform = new TranslateTransform(0, 6);
+                Require(header.Opacity == 0.6 && ReferenceEquals(header.RenderTransform, host.Child.RenderTransform));
+                page.AddHandler(PageHost.NavigatingFromEvent, (_, _) => throw new InvalidOperationException("fixture header recovery"));
+                ExpectFailure(() => host.Present(new Border()), "fixture header recovery");
+                Require(header.Opacity == 1 && header.RenderTransform is null);
+                Require(host.Present(new Border()));
+                host.Clear(); window.Close(); Dispatcher.UIThread.RunJobs();
+                if (logs.Messages.Count > 0) throw new InvalidOperationException(string.Join(Environment.NewLine, logs.Messages));
+            }
+            finally
+            {
+                try { window?.Close(); }
+                finally { Logger.Sink = originalSink; Motion.Configure(Application.Current!, originalMotion); }
+            }
+        });
+
         check("Detached nested page hosts and page models are collectible with their window still open", () =>
         {
             var originalMotion = FAUISettings.AreAnimationsEnabled();
@@ -318,5 +365,17 @@ internal static class NavigationChecks
     {
         public int LeaveCount { get; private set; }
         public void OnNavigatedFrom() => LeaveCount++;
+    }
+
+    private sealed class BindingLog : ILogSink
+    {
+        public List<string> Messages { get; } = [];
+        public bool IsEnabled(LogEventLevel level, string area) => area == LogArea.Binding && level >= LogEventLevel.Warning;
+        public void Log(LogEventLevel level, string area, object? source, string messageTemplate)
+            => Log(level, area, source, messageTemplate, []);
+        public void Log(LogEventLevel level, string area, object? source, string messageTemplate, params object?[] propertyValues)
+        {
+            if (IsEnabled(level, area)) Messages.Add(messageTemplate + " | " + string.Join(" | ", propertyValues));
+        }
     }
 }
