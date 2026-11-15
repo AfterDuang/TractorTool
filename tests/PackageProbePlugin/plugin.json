@@ -7,7 +7,7 @@
   "entryType": "PackageProbePlugin.ProbePlugin",
   "apiVersion": "1.7",
   "uiApiVersion": "1.1",
-  "avaloniaVersion": "12.1.2",
+  "avaloniaVersion": "12.1.6",
   "supportedPlatforms": [
     "win-x64"
   ],

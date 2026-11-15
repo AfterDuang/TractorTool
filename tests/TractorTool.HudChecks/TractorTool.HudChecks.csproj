@@ -3,7 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj" />
     <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" />
-    <PackageReference Include="Avalonia" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.6" />
   </ItemGroup>
 </Project>

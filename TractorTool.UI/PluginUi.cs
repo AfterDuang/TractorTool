@@ -3,7 +3,7 @@ namespace TractorTool.UI;
 public static class UiApi
 {
     public const string Version = "1.5";
-    public const string AvaloniaVersion = "12.1.2";
+    public const string AvaloniaVersion = "12.1.6";
 }
 public interface IPluginUiModule { void RegisterPages(IPluginPageRegistry registry); }
 public interface IPluginPageRegistry

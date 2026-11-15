@@ -1,6 +1,6 @@
 # 系统数据HUD 插件
 
-参考 zmd-charge-plus 的使用场景，在本项目 .NET 10 / Avalonia 12.1.2 环境下独立实现。入口为 [HudPlugin](../../Plugins/TractorTool.Plugins.SystemHud/HudPlugin.cs)，当前进度及证据只见 [开发台账](../DEVELOPMENT.md#current-status)。
+参考 zmd-charge-plus 的使用场景，在本项目 .NET 10 / Avalonia 环境下独立实现；当前 SDK 版本见[插件兼容规则](../PLUGIN_DEVELOPMENT.md#2-插件清单与兼容性)。入口为 [HudPlugin](../../Plugins/TractorTool.Plugins.SystemHud/HudPlugin.cs)，当前进度及证据只见 [开发台账](../DEVELOPMENT.md#current-status)。
 
 ## 范围与接入
 

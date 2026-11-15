@@ -75,12 +75,14 @@ TractorTool.Plugins.Example/
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
 | `apiVersion` | 当前 1.7，仍接受 1.0–1.6；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7 |
 | `uiApiVersion` | 当前为 1.5；宿主仍接受旧 1.0–1.4 页面注册与已有公开方法签名；使用托盘接口必须声明 1.5 |
-| `avaloniaVersion` | 精确匹配 12.1.2 |
+| `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可空，最多 32 个不重复的 id/三段 version；新依赖在 downloads 按 RID 提供 GitHub 安装资料。旧 id/version 清单仍可复用已装包；完整示例见下文 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。UI API 1.3 允许 PluginPageOptions.UsesCustomHeader=true，由插件自己提供标题和局部功能切换，宿主收起默认标题并让出整页视口；只对导航页生效，设置页仍由设置容器组织。默认 false 保留旧布局。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
+
+上述 API 兼容以 Avalonia 基线匹配为前提，包括补丁版本；共享程序集装载还会核对实际 AssemblyVersion。升级宿主 Avalonia 时，插件须同步编译引用和清单，引用新发布 SDK 重新打包，不能只修改旧 ZIP 的清单。向已有安装发布时增加插件自身版本，先启动新宿主，再安装匹配的新插件 ZIP 并显式退出重启；旧宿主拒绝新基线包，新宿主也拒绝旧基线包。宿主安装器保留原 Plugins，不自动替换已装插件；全新分发目录可直接附带匹配版本。当前升级产物见[开发入口](DEVELOPMENT.md#avalonia-1216-upgrade)。
 
 管理页已提供本地 ZIP 安装/更新、启用/禁用、卸载与可用时回退，重启生效。活动版本由安装目录的管理记录明确指定；未纳入管理的多个同 ID 候选仍报告冲突，不自动选最高版本。旧 `disabledPlugins` 只用于未管理插件，接管后的状态以管理记录为准。禁用、不兼容、损坏的插件只显示清单状态，不为了获取名称而执行入口。
 

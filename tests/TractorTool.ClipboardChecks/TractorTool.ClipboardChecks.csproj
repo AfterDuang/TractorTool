@@ -16,7 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Avalonia" Version="12.1.2" />
+    <PackageReference Include="Avalonia" Version="12.1.6" />
   </ItemGroup>
   <Target Name="RequireBuiltPlugin" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != '' Or '$(PluginBuildDir)' != ''">
     <Error Condition="'$(HostSdkDir)' == '' Or '$(PluginBuildDir)' == '' Or !Exists('$(PluginBuildDir)/TractorTool.Plugins.ClipboardHistory.dll') Or !Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"

@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 官方框架升级 | [E117 · Avalonia 12.1.6、插件兼容与完整 ZIP（2026-11-15）](#evidence-avalonia-1216-upgrade) |
+| 切页闪动精度诊断 | [E114–E116 · 原生采样、真实宿主对照与等待官方修复（2026-10-16）](#evidence-page-flicker-precision) |
 | 主页面动效 | [E113 · 退出时页头空值绑定（2026-10-15）](#evidence-header-null-binding)、[E112 · 宿主页头与正文同步（2026-10-15）](#evidence-page-header-motion) |
 | 框架审查修正 | [E111 · 配置/卸载故障边界与退出回归（2026-10-15）](#evidence-framework-failure-paths) |
 | 文档维护 | [E110 · 存储提交基线与当前文档精简（2026-10-15）](#evidence-storage-docs-consolidation) |
@@ -3108,3 +3110,68 @@ E104 的旧 Review 没有发现本次实测缺陷，不作为当前运行通过�
 - gpt-6.1-sol / high 子代理复审实际代码与回归用例，未发现需要修改的问题；确认测试覆盖绑定生命周期，不冒充完整退出流程或真实动效验收。
 
 未启动应用、检查程序或接管 UI，未访问真实用户数据。真实退出与动画同步仍待用户验证；原切页末段闪动保持未关闭。
+
+<a id="evidence-page-flicker-precision"></a>
+
+### E114–E116 切页闪动精度诊断与等待官方修复（2026-10-16）
+
+症状为淡入接近结束时卡片底色/边框短暂回暗，用户观感像抖动；关闭动画不闪。此前缓动初始化修正、布局位移及 Avalonia 12.1.4 升级未消除问题，软件渲染仅略好。E114 分离动效及延迟到 1 的对照中，用户确认淡入快结束时闪，稍后从 0.999 切到 1 不闪；因此不能仅用到达 1 时跳过透明度层解释。录屏与应用属性采样只用于定位，不作为显示器最终帧或底层格式的证明。
+
+#### 原因结论与证据边界
+
+当前证据将问题定位到 **Avalonia/Skia 渲染链中，透明内容与背景混合所在目标对精度请求敏感的路径**：Alpha 单调上升时，普通路径的输出 RGB 可短暂下降；整体混合层请求高精度后，样例回落及本机真实宿主闪动均消失。8 位中间量化/混合精度是与数据吻合的机制解释，但未直接测量实际纹理格式、shader 指令或具体量化步骤，不能进一步断言某个驱动、ANGLE/D3D 或 Avalonia 单一代码分支是唯一根因。
+
+| 证据 | 已观察结果 | 限制 |
+| --- | --- | --- |
+| E115 原生像素采样 | Schema4，共 969 条、四模式各三轮；Alpha 单调，Baseline、仅源层 F16、普通整体层均回暗，整体 F16 层 244 条中无通道下降；普通组末段可见 `(50,50,54)→(49,49,53)` | 读回 GPU 绘制面，说明该样例在录屏编码前已有回落；不是显示器最终帧。同步读回改变时序，样例没有真实控件树/位移 |
+| E116 真实宿主对照 | 同一产物启用根层作用域，普通/F16 仅改变 SaveLayer 的精度标志；用户反馈“高精度下确实解决了这个闪动问题”，随后确认“普通精度仍然闪” | 本机用户观感证据，无本轮逐帧数据、实际纹理格式、帧耗时/显存或跨 GPU/DPI 结论；不证明正式项目已修复 |
+
+E115 的 OuterDefault/OuterF16 共享外层、背景、原淡入层、裁剪及 Src 恢复；E116 使用真实根视觉树和原 SrcOver 恢复，开启 `CompositionOptions.UseSaveLayerRootClip`，在隔离的 Avalonia.Skia 12.1.2 `DrawingContextImpl.PushLayer` 中请求 `SKCanvasSaveLayerRecFlags.F16ColorType`。保留原 clip、PopLayer、500ms/18 DIP/0→1 动效及默认 GPU。候选不设置 Rec.Bounds；这是实验实现说明，不是正式接入方案。正式 PageHost 的 `RequiresFullOpacityHandling` 只提供整组透明度语义，本次并未因此消闪。
+
+#### 可追溯材料与清理
+
+本地材料位于 Git 忽略的 artifacts，以下为历史证据入口，克隆仓库不保证附带这些文件：
+
+- `artifacts/e115-opacity-probe/fourth-run.md` 及 `results/pixels-20261015-173021-bf7d8097693b4e6584ec07121a2d718f.json`：原始 JSON SHA256 `c4e1041af4a1bf81477e1c2f6f63fce50558fe0a5dd1248175892221e179f52d`，报告记载 OpenGL、GPU context=true、缩放 100%。各轮报告、源码文本快照、离线分析结果保留。
+- `artifacts/e116-host-precision/README.md`、`candidate.patch`、输入/产物哈希清单及构建日志：隔离后端构建 0 错误/0 警告，宿主与三个插件构建成功，插件有 NU1900 漏洞查询不可达警告；181 个产物哈希及程序集身份核对通过。以上是当时的候选构建证据，不覆盖当前正式项目。
+- 官方 12.1.2 源码 ZIP SHA256 `72044278b8f962d73b0e3f0582f8ba3959f442e7e38b6370f48893e44b0886af`。对应源码入口为 [根树绘制](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Avalonia.Base/Rendering/Composition/Server/ServerCompositionTarget.cs) 与 [Skia 绘制后端](https://github.com/AvaloniaUI/Avalonia/blob/12.1.2/src/Skia/Avalonia.Skia/DrawingContextImpl.cs)；这些是版本源码引用，不是已修复 Issue/PR。
+
+随后用户要求清理：8 个受管排查改动恢复到 `f088de3`，新增 PageOpacityTrace 及 E115/E116 临时工程、构建输出、VS Code 诊断入口删除，释放约 3 GB；正式源码、配置及回归测试无残留诊断引用，Git 差异为空。保留采样结果、候选补丁、`pre-cleanup.patch` 和用户隔离 profile。未提交候选；删除的应用产物及旧测试入口不能继续启动。
+
+#### 用户决定与后续条件
+
+用户明确不考虑自行编译官方源码或维护定制包。正式项目继续使用官方 Avalonia 12.1.2 和默认渲染，保留原动效；本问题列为**已知未修复，等待官方方案**，停止自有后端接入。后续出现针对同类混色问题的官方修复或受支持配置时，再评估官方包升级，复验原切页、快速/嵌套导航、主题/DPI、透明窗口及性能；不能仅凭版本更新关闭问题。本轮未创建上游 Issue，也不代表官方已确认或承诺修复版本。
+
+本次只恢复并整理上述证据及决定，同步架构、当前验收台账和交接；没有修改应用代码、依赖或构建配置，也未新运行构建、应用或检查程序。E113 退出绑定等独立验收项保持原状态，不借本次用户消闪反馈标通过。
+
+<a id="evidence-avalonia-1216-upgrade"></a>
+
+### E117 官方 Avalonia 12.1.6 与插件兼容（2026-11-15）
+
+用户授权升级官方包、同步插件兼容和文档，并要求子代理 Review，测试确认前不提交。
+
+- 10 个工程共 17 处 Avalonia 系列引用由 12.1.2 升至 12.1.6，覆盖宿主、公共 UI、三个正式插件、两个机制夹具及相关检查工程；独立发布的 DataGrid 保持 12.1.2，FluentAvaloniaUI 3.1.0、SkiaSharp 3.119.4 不变。没有 API 或业务代码适配，也未改 PageHost、默认 GPU、动效或引入定制包。
+- `UiApi.AvaloniaVersion` 与五份插件清单同步为 12.1.6；三个正式插件递增至 ClipboardHistory 1.1.4、SystemHud 0.4.18、VideoExport 0.5.6，使已安装版本能通过原管理流程升级。Contracts API 1.7 / UI API 1.5 及产品版本 1.0.0 不变；两个一次性机制夹具版本保持原值，不作为正式升级包。
+- 兼容检查继续精确匹配 Avalonia，加载时还核对共享程序集身份；旧 DLL 不能仅改清单复用。当前操作指引要求先启动新宿主，再安装匹配插件并显式重启；全新 ZIP 已配套三个插件，安装器仍保留现有 Plugins。没有修改实际安装、真实数据或 F5 配置。
+- NuGet 12.1.6 的官方仓库 commit 为 `cf8e564674700348947e93ab19105f27afe859a9`，同步 `packaging/licenses/sources.json`；官方许可正文与现有副本一致。更新框架/插件规范、当前台账与交接，历史版本记录保留。
+
+构建与静态证据位于 `artifacts/e117-avalonia-12.1.6`（Git 忽略，不保证随克隆附带）：
+
+| 检查 | 结果与证据 |
+| --- | --- |
+| `dotnet build TractorTool.slnx -c Release -m:1 -nr:false` | 15 工程成功，14.15 秒，0 警告/0 错误；`solution-build.log`。检查工程仅编译 |
+| `dotnet build TractorTool/TractorTool.csproj -c Debug -m:1 -nr:false` | 宿主及关联 4 工程成功，4.40 秒，0 警告/0 错误；`debug-build.log`。覆盖 Debug 开发工具依赖的编译，不代表 F5 实际启动通过 |
+| PowerShell 7.4+ 执行 `./scripts/Build-Distribution.ps1 -Output H:/ProjH/TractorTool/artifacts/e117-avalonia-12.1.6/distribution` | win-x64 自包含宿主、三个正式插件独立 ZIP 生成成功；三个插件引用刚发布的 SDK 构建，均 0 警告/0 错误，宿主文件哈希未变；`distribution-build.log` |
+| 分发脚本静态校验 | 379 文件、3 插件通过；`distribution/assets/release.json`、`SHA256SUMS`。当前 sourceDirty=true，未提交构建 |
+| 依赖与 PE 元数据核对 | 实际主 Avalonia 包全部 12.1.6；三个插件声明与共享引用均匹配发布宿主（Avalonia 程序集版本 12.1.6.0）；`dependency-verification.json`。仅读取元数据，没有加载/执行插件 |
+
+完整 ZIP：`distribution/assets/TractorTool-1.0.0-win-x64.zip`，SHA256 `01BD200F72ADCBD9C0FF9AF36C6727607E7D5C2EE20626C983F79C6F7B56BC27`。同目录包含三个插件包及完整哈希清单；用户测试路径和隔离 profile 方法见[开发入口](DEVELOPMENT.md#avalonia-1216-upgrade)。
+
+一名 gpt-6.1-sol / high 子代理只读复核版本覆盖、清单/程序集精确匹配、旧安装升级调用链、三份插件 ZIP、许可及文档，未发现代码或打包阻断问题；指出 P3 文档把逐文件清单归错位置，已修正为完整 ZIP 内 `files.json`。6 份涉及文档的 373 处本地链接、241 处锚点引用及代码围栏检查通过；`git diff --check` 通过。
+
+构建及 Review 阶段未生成安装器、运行应用/检查程序或操作 Windows UI，未暂存、提交或推送，保留既有工作区改动；不将官方版本升级记为消闪修复。
+
+2026-11-15 用户接手测试后反馈“目前升级好像没啥问题，可以提交”，授权本地提交，不推送。未逐项给出全部插件加载、退出、DPI 或闪动结论，保留专项验收缺口。期间报告的两项安装现象分别为：
+
+- 插件 ZIP 根清单缺失：三个正式插件 ZIP 根部均有 `plugin.json`，完整软件 ZIP 的清单位于其内部插件目录；安装入口已有异常捕获。用户表示可能选错包并自行核对，未确认具体 ZIP，未改校验规则或调试器设置。
+- FFmpeg 9.0.2 在下载、解压和版本验证后，`Directory.Move(staging, e.Directory)` 被 Windows 拒绝；失败日志已记录，随后用户重试成功。只读核对父目录 ACL 未见明显拒绝，暂存目录已清理；主代理及 gpt-6.1-sol / high 子代理未发现文件流、版本检查进程或管道未释放的源码证据。安装/进程代码不在此次升级差异中。没有失败瞬间的文件访问跟踪，不能断定占用者或归因 Avalonia，重试成功不等于修复；若再现再捕获目录移动前后的访问记录。

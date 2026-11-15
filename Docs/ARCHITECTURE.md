@@ -1,6 +1,6 @@
 # TractorTool 软件架构
 
-更新日期：2026-10-15。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
+更新日期：2026-10-16。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
 
 ## 1. 当前代码与目标结构
 
@@ -235,7 +235,7 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 - **页面切换**：[PageHost](../TractorTool.UI/Controls/PageHost.cs) 只承载当前页，不缓存历史或订阅窗口返回事件。工厂返回未挂载页面，替换前触发可取消的 NavigatingFromEvent；成功才提交选择并释放旧页，取消保留原页。同步挂载/脱离故障重建容器以显示错误页，不兜底插件任意异步或渲染异常。宿主阻止重入和退出后建页。
 - **主页面页头动效**：MainWindow 的宿主页头绑定当前 PageHost.Child 的 Opacity / RenderTransform，随正文同步更新；清理或恢复时 Child 可为空，绑定用 `?.` 短路，透明度回到 1、位移为空，重新建立呈现器后继续跟随。自带页头仍在插件页面内参与原动画。复用现有呈现器的状态，不增加动画时钟、插件接口或离页转发层；内层设置/日志页签保持自身导航范围。
 - **页面文字渲染**：PageHost 统一设置 `TextHintingMode.None` / `BaselinePixelAlignment.Unaligned`，减少位移动画中的文字整像素跳变；固定 `TextRenderingMode.Antialias`，使合成层内外均用灰度抗锯齿。设置沿渲染树继承，静止后不切换模式；范围不含侧栏、标题栏及独立窗口。
-- **页面淡入合成**：PageHost 设置 `RenderOptions.RequiresFullOpacityHandling=true`，由 Avalonia/Skia 临时合成后统一应用透明度，避免逐画刷取整导致末帧亮度变化。保留原过渡参数；不管理快照或页面缓存。该选项沿子树生效，半透明内容会增加合成开销。
+- **页面淡入合成**：PageHost 设置 `RenderOptions.RequiresFullOpacityHandling=true`，由 Avalonia/Skia 临时合成后统一应用子树透明度。该选项不提高最终混合目标精度，也未消除本次末段闪动；保留原过渡参数，不管理快照或页面缓存。该选项沿子树生效，半透明内容会增加合成开销。渲染依赖继续使用官方包，不维护自编译 Avalonia/Skia 后端或定制 NuGet；精度诊断及等待官方修复的状态见[开发台账](DEVELOPMENT.md#current-status)。
 - **设置导航**：SettingsPage.Parent 表达层级，面包屑与分类沿父链派生；软件/插件分组独立折叠，无插件设置时隐藏整组，窄窗改顶部分类选择。内层复用 PageHost，向当前子页转发离页取消；折叠不结束右侧页面，无第二套历史栈。
 - **设置保存**：UI 立即应用外观，单个后台保存任务串行写不可变快照，期间只保留最新选择；旧写入不回放旧主题。失败提供重试，退出封闭新变更并等待队列，最后失败最多再试一次，受公共退出期限约束。
 - **主页与列表**：复用已发现安装记录、页面注册和图标缓存，不重复扫描或提前建插件页面；普通入口取首个已注册页，无可用页转管理。加载完成更新数据但不强制切页；卡片原位更新，失败显式恢复状态，避免重建集合打断交互。
