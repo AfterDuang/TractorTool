@@ -1,8 +1,10 @@
 # TractorTool 开发上下文
 
-更新日期：2026-10-15。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-11-15。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
+
+**新增文档交接：** 用户拟开发面向普通用户的[文件夹版本历史插件](Plugins/FolderHistory.md)，本会话仅受托整理文档，后续由相关 Agent 接手开发。先区分用户已明确需求与自动保存、Kopia 等设计建议，核对凭据和大型历史库的框架边界；不得把文档当作开发/运行授权或自行扩展宿主。状态见[当前台账](DEVELOPMENT.md#current-status)，不替代原 M5 工作。
 
 **当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 

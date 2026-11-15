@@ -1,12 +1,14 @@
 # TractorTool 开发与验收
 
-更新日期：2026-10-15。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
+更新日期：2026-11-15。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
 入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
 
 <a id="current-status"></a>
 
 ## 1. 当前状态
+
+2026-11-15 新增[文件夹版本历史设计交接](Plugins/FolderHistory.md)：面向普通用户的目录历史、对比与恢复需求已整理；自动保存默认行为与 Kopia 选型属于建议，凭据传递、恢复事务及历史库与宿主迁移/升级回退的配合待验证。仅完成文档整理，未创建插件工程、安装依赖或执行构建/运行验收，不改变下述 M5 当前实现与未关闭事项。
 
 **当前处于 M5 可靠性收尾与发布准备。** 在存储基线 `0070fbd` 上完成 [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)：配置文件及父路径故障不再退回默认管理状态，卸载探测失败保留重试请求，退出回归改为验证等待和写入行为。当前代码与新增检查已编译，运行验收仍待完成；具体边界见[存储架构](ARCHITECTURE.md#storage)，迁移/默认重置及安装恢复过程见 [E104–E109 历史索引](PROJECT_HISTORY.md#记录索引)。未推送。
 
