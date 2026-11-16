@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史独立插件 | [E118 · 手动保存、比较与无覆盖另存（2026-11-16）](#evidence-folder-history-first) |
 | 官方框架升级 | [E117 · Avalonia 12.1.6、插件兼容与完整 ZIP（2026-11-15）](#evidence-avalonia-1216-upgrade) |
 | 切页闪动精度诊断 | [E114–E116 · 原生采样、真实宿主对照与等待官方修复（2026-10-16）](#evidence-page-flicker-precision) |
 | 主页面动效 | [E113 · 退出时页头空值绑定（2026-10-15）](#evidence-header-null-binding)、[E112 · 宿主页头与正文同步（2026-10-15）](#evidence-page-header-motion) |
@@ -133,6 +134,29 @@
 | M3（进行中） | [E24 · 外部包事务、租约与设置入口（2026-10-04）](#evidence-package-service) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
+
+<a id="evidence-folder-history-first"></a>
+
+## E118：文件夹版本历史第一阶段（2026-11-16）
+
+用户在整理无密码、工作目录内历史及现有接口边界后授权开始开发。新增 `Plugins/TractorTool.Plugins.FolderHistory` 与 `tests/TractorTool.FolderHistoryChecks`，加入根解决方案，未改宿主/Core/Contracts/公共 UI 或既有插件。
+
+本轮范围是手动闭环：关联/重新关联目录、说明与保存、历史列表、两版本路径和内容变化、重要标记、整版/选定路径另存、仅移除关联。引擎固定 Duplicati 官方 2.4.0.1 Windows x64 ZIP；宿主的三段依赖身份是 `Duplicati.CLI/1.0.0` 接入配方，并非上游工具版本。清单锁定真实 tag、附件、SHA256；首次准备走宿主确认，后台操作用公共任务及进程租约，不绑定页面生命周期。
+
+关键保护：只接受本机普通目录，拒绝软件/数据/管理目录重叠与链接，强制排除历史子树；库格式/身份错误不重建；保存前后工作树与原生文件表 SHA256 一致才记录可用版本；另存提取及输出都以选择版本的清单为基准，向新目录无覆盖发布。未登记卷不当作已保存版本；取消/失败不隐藏成成功。暂存清理失败是 Warning，不推翻已发布结果。
+
+三个显式 `gpt-6.1-sol / high` 子代理分别实现引擎、存储/检查与 UI，并交叉 Review。修正了空 JSON 被默认值接受、单库损坏隐藏全部目录、工作文件被占用时无法重连、未知/损坏原生字段异常类型、未登记版本重试不产生新卷、提取暂存基准漂移、晚清理误报失败、待执行操作退出等待及旧页面/选择状态。末次复核未报告剩余确定阻断；这不是运行验收。
+
+构建与静态记录：
+
+- `dotnet build tests/TractorTool.FolderHistoryChecks/TractorTool.FolderHistoryChecks.csproj -c Release -m:1 -nr:false`：插件、Contracts/UI 及检查工程编译；早期连接处有 lambda `_` 被当变量、检查入口参数类型两项编译错误，修正后 0 警告/0 错误。后续最终源码重新编译，未执行检查。
+- `dotnet build TractorTool.slnx -c Release -m:1 -nr:false`：17 工程构建成功，0 错误、4 条 NU1900（两个既有工程 restore/build 重复报告 `api.nuget.org` 漏洞数据查询失败）。未关闭审计、未把联网失败当安全审计通过。
+- `scripts/Build-Plugin.ps1` 使用 E117 的 `distribution/layout/TractorTool-1.0.0-win-x64` 发布 SDK，单独构建此插件；最终输出在 `artifacts/e118-folder-history/plugin-final`，未更改该发布 SDK。独立构建也有同类 NU1900 网络警告，没有编译错误。
+- 插件 ZIP 的 9 个条目中，根清单、入口 DLL、MVVM 和许可、依赖三段身份以及无宿主/共享 DLL 副本已静态核对；构建后的发布 Contracts/UI SHA256 与构建前一致。最终 ZIP SHA256 为 `B071EF9756F6CB056C237CE937CB251E996CC087DFA0C73D2A3C8C749A679D61`，旁边 `verification.json` 明确记录未运行测试。4 份日常文档的 114 处本地链接、代码围栏与 `git diff --check` 通过。
+
+纯文件和模拟进程检查覆盖中文/混合字节/空目录、强制排除、大小写更名、同大小哈希变化、路径越界、禁止覆盖、源暂存被修改、取消、元数据缺字段/未知格式、同 ID 迁移重连、写锁下关联、坏库隔离、拒绝依赖不入队、退出码 0 但无版本/错误字节不能成功等。**只编译，没有运行**，不将仿真清单视为真实引擎输出。
+
+没有启动宿主、检查程序、Duplicati 或 UI，没有安装插件或操作真实用户数据，也没有推送。真实附件解包/版本探测、CLI 参数效果、空目录、移动重连、失败/取消/重启、UI/DPI/性能仍待用户验证。上游默认使用统计及 15 秒探测冷启动风险已在插件说明中披露；不能声称完全离线。自动保护、原地恢复及其前置保护、逐行文本对比、可编辑排除和版本清理均未实现，仍保留在当前台账。
 
 ## M1：宿主基础与公共 UI
 

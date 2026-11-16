@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(HostSdkDir)' != ''">
+    <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(HostSdkDir)' == ''">
+    <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.6" IncludeAssets="compile;build;buildTransitive" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
+    <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="HostSdkDir 必须包含已发布的 Contracts/UI DLL；无效路径不会回退到源码引用。" />
+  </Target>
+</Project>

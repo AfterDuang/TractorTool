@@ -1,0 +1,40 @@
+using TractorTool.Contracts;
+using TractorTool.Plugins.FolderHistory.Services;
+using TractorTool.Plugins.FolderHistory.ViewModels;
+using TractorTool.Plugins.FolderHistory.Views;
+using TractorTool.UI;
+
+namespace TractorTool.Plugins.FolderHistory;
+
+public sealed class FolderHistoryPlugin : IPlugin, IPluginUiModule
+{
+    private FolderHistoryService? _service;
+    private FolderHistoryViewModel? _model;
+
+    public async ValueTask InitializeAsync(PluginContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _service = await Task.Run(() => new FolderHistoryService(context), cancellationToken);
+        _model = new FolderHistoryViewModel(_service, context.ApplicationStopping);
+    }
+
+    public void RegisterPages(IPluginPageRegistry registry)
+    {
+        var model = _model ?? throw new InvalidOperationException("插件未初始化。");
+        registry.AddNavigationPage("history", "文件夹版本历史", () => new FolderHistoryView { DataContext = model },
+            new(ToolIconKind.Folder, "手动保存文件夹的版本，比较变化并另存旧文件。"));
+    }
+
+    public async ValueTask StopAsync(CancellationToken cancellationToken)
+    {
+        if (_service is { } service) await service.StopAsync().ConfigureAwait(false);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _model = null;
+        _service?.Dispose();
+        _service = null;
+        return ValueTask.CompletedTask;
+    }
+}

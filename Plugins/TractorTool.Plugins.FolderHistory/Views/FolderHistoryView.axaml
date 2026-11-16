@@ -1,0 +1,157 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.Plugins.FolderHistory.ViewModels"
+             xmlns:models="using:TractorTool.Plugins.FolderHistory.Models"
+             x:Class="TractorTool.Plugins.FolderHistory.Views.FolderHistoryView" x:DataType="vm:FolderHistoryViewModel">
+  <UserControl.Styles>
+    <Style Selector="ListBox.history">
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+      <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
+    <Style Selector="ListBox.history ListBoxItem">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*" RowSpacing="12">
+    <StackPanel Spacing="6" Margin="0,0,24,0">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <TextBlock Classes="muted" VerticalAlignment="Center"
+                   Text="历史保存在文件夹内。整个文件夹或磁盘丢失时，无法用这里的历史找回。" />
+        <Button Grid.Column="1" Content="刷新" Command="{Binding RefreshCommand}" IsEnabled="{Binding !IsBusy}"
+                AutomationProperties.Name="刷新文件夹和版本" />
+      </Grid>
+      <StackPanel IsVisible="{Binding IsBusy}" Spacing="4">
+        <TextBlock Text="{Binding BusyMessage}" Classes="caption" />
+        <ProgressBar IsIndeterminate="True" Height="3" AutomationProperties.Name="操作进度" />
+      </StackPanel>
+      <SelectableTextBlock Text="{Binding Notice}" IsVisible="{Binding HasNotice}" TextWrapping="Wrap" />
+      <SelectableTextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Foreground="{DynamicResource AppLogErrorBrush}" />
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" Classes="pageScroll">
+      <StackPanel Classes="pageBody">
+        <Grid x:Name="Workspace" RowDefinitions="Auto,Auto" ColumnSpacing="14" RowSpacing="14" IsEnabled="{Binding !IsBusy}">
+          <Border Classes="card" Padding="16" VerticalAlignment="Top">
+            <StackPanel Spacing="12">
+              <TextBlock Classes="sectionTitle" Text="已关联的文件夹" />
+              <TextBlock Classes="muted" Text="还没有关联文件夹。添加后可手动保存版本。" IsVisible="{Binding !HasFolder}" />
+              <ListBox Classes="history" ItemsSource="{Binding Folders}" SelectedItem="{Binding SelectedFolder}"
+                       IsVisible="{Binding HasFolder}" MaxHeight="260" AutomationProperties.Name="已关联的文件夹">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="models:FolderInfo">
+                    <StackPanel Spacing="2" ToolTip.Tip="{Binding Root}">
+                      <TextBlock Text="{Binding Root}" MaxLines="2" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Status}" Classes="caption" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <Button Content="添加文件夹…" Click="AddFolder" HorizontalAlignment="Left" />
+            </StackPanel>
+          </Border>
+
+          <StackPanel x:Name="FolderDetails" Grid.Row="1" IsVisible="{Binding HasFolder}" Spacing="14">
+            <Border Classes="card" Padding="16">
+              <StackPanel Spacing="10">
+                <SelectableTextBlock Text="{Binding SelectedFolder?.Root}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding FolderSummary}" Classes="caption" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsEnabled="{Binding CanSave}">
+                  <TextBox Text="{Binding Note}" PlaceholderText="版本说明（可选）" MaxLength="500"
+                           AutomationProperties.Name="版本说明（可选）" />
+                  <Button Grid.Column="1" Content="立即保存" Command="{Binding SaveCommand}" Classes="accent" />
+                </Grid>
+                <TextBlock Text="保存前请先停止修改此文件夹里的文件。" Classes="caption" />
+              </StackPanel>
+            </Border>
+
+            <Border Classes="card" Padding="16" IsVisible="{Binding VersionsLoaded}">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="sectionTitle" Text="已保存的版本" />
+                <TextBlock Classes="muted" Text="还没有版本。点击“立即保存”创建第一份历史。" IsVisible="{Binding !HasVersion}" />
+                <ListBox Classes="history" ItemsSource="{Binding Versions}" SelectedItem="{Binding SelectedVersion}"
+                         IsVisible="{Binding HasVersion}" MaxHeight="232" AutomationProperties.Name="选择要查看或另存的版本">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:SavedVersion">
+                      <StackPanel Spacing="3" ToolTip.Tip="{Binding Note}">
+                        <WrapPanel ItemSpacing="10">
+                          <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                          <TextBlock Text="重要" IsVisible="{Binding Pinned}" FontWeight="SemiBold" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Note}" Classes="caption" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <WrapPanel IsVisible="{Binding HasVersion}" ItemSpacing="8" LineSpacing="8">
+                  <Button Content="{Binding PinAction}" Command="{Binding TogglePinnedCommand}" />
+                  <Button Content="另存整个版本…" Click="ExportAll" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+
+            <Expander Header="比较两个版本" IsVisible="{Binding HasVersion}" HorizontalContentAlignment="Stretch">
+              <StackPanel Spacing="10">
+                <TextBlock Text="至少保存两个版本后，才可比较文件和目录的变化。" Classes="muted"
+                           IsVisible="{Binding !CanChooseComparison}" />
+                <StackPanel Spacing="8" IsVisible="{Binding CanChooseComparison}">
+                  <TextBlock Text="选择一个基准版本，查看从基准到当前选中版本的变化。" Classes="muted" />
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <ComboBox ItemsSource="{Binding Versions}" SelectedItem="{Binding ComparisonBase}" HorizontalAlignment="Stretch"
+                              PlaceholderText="选择基准版本" AutomationProperties.Name="基准版本">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:SavedVersion">
+                          <TextBlock Text="{Binding Title}" />
+                        </DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="1" Content="比较" Command="{Binding CompareCommand}" IsEnabled="{Binding CanCompare}" />
+                  </Grid>
+                  <TextBlock Text="请选择两个不同的版本。" Classes="caption" IsVisible="{Binding !CanCompare}" />
+                  <TextBlock Text="{Binding ComparisonSummary}" IsVisible="{Binding HasComparison}" />
+                  <ListBox Classes="history" ItemsSource="{Binding Changes}" IsVisible="{Binding HasChanges}"
+                           MaxHeight="260" AutomationProperties.Name="两个版本的路径变化">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="models:HistoryChange">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" ToolTip.Tip="{Binding Path}">
+                          <TextBlock Text="{Binding Kind}" FontWeight="SemiBold" />
+                          <TextBlock Grid.Column="1" Text="{Binding Path}" TextWrapping="Wrap" />
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </StackPanel>
+              </StackPanel>
+            </Expander>
+
+            <Expander Header="浏览并另存单个文件或子文件夹" IsVisible="{Binding HasVersion}" HorizontalContentAlignment="Stretch">
+              <StackPanel Spacing="10">
+                <TextBlock Text="选择当前版本中的文件或子文件夹。另存会在所选位置下创建新文件夹。" Classes="muted" />
+                <TextBlock Text="这个版本没有可单独选择的文件或子文件夹。" IsVisible="{Binding !HasEntries}" Classes="caption" />
+                <ListBox Classes="history" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}"
+                         IsVisible="{Binding HasEntries}" MaxHeight="260" AutomationProperties.Name="当前版本中的文件和子文件夹">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:HistoryEntry">
+                      <Grid ColumnDefinitions="56,*" ColumnSpacing="8" ToolTip.Tip="{Binding Path}">
+                        <TextBlock Text="文件夹" IsVisible="{Binding IsDirectory}" Classes="caption" />
+                        <TextBlock Text="文件" IsVisible="{Binding !IsDirectory}" Classes="caption" />
+                        <TextBlock Grid.Column="1" Text="{Binding Path}" TextWrapping="Wrap" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Content="另存所选内容…" Click="ExportEntry" IsEnabled="{Binding HasSelectedEntry}"
+                        IsVisible="{Binding HasEntries}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Expander>
+
+            <Border Classes="card" Padding="16">
+              <StackPanel Spacing="8">
+                <TextBlock Classes="caption" Text="移除关联只从列表移走这个文件夹，磁盘上的文件和历史都保留。重新添加可查看原有历史。" />
+                <Button Content="移除关联" Command="{Binding RemoveFolderCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
