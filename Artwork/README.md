@@ -26,6 +26,8 @@
 
 系统数据HUD 使用 Microsoft [Fluent System Icons 的 Gauge 彩色仪表盘](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Gauge/SVG/ic_fluent_gauge_32_color.svg)，不是 Emoji。原始 [SVG](fluent-gauge-32-color.svg) 固定到提交 `883bef1e12d37343d0b2a64a1af43d0209de1128`；用已有 Sharp 将 32 DIP 图形按 8 倍栅格化为透明 256×256 PNG，未修改轮廓或配色。PNG 存放于 `Plugins/TractorTool.Plugins.SystemHud/Assets/icon.png`，MIT 许可随包附于 `Assets/LICENSE-FluentSystemIcons.txt`，见[插件声明](../Plugins/TractorTool.Plugins.SystemHud/NOTICE.md)。SVG SHA256：`9CEAD7CF604F99C61DF754AE9A79BA7BE62CA5ECE728E4BF2B4E7F1F0F3545B5`；PNG SHA256：`C7FC62570664A3A28743BE861A7D6502E55C5B5D5107BBB33EA34D87928CF62B`。不需要运行时联网或额外图标依赖。
 
+剪贴板历史使用同一固定提交的 Microsoft [Fluent System Icons Clipboard 彩色图标](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Clipboard/SVG/ic_fluent_clipboard_32_color.svg)。原始 [SVG](fluent-clipboard-32-color.svg) 用已有 Sharp 按 8 倍栅格化为透明 256×256 PNG，保留轮廓和配色；输出位于 `Plugins/TractorTool.Plugins.ClipboardHistory/Assets/icon.png`，许可见[插件声明](../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)及包内 `Assets/LICENSE-FluentSystemIcons.txt`。SVG SHA256：`8FBAAF6DC24443EE3EA550BCDE525785BE7D41A674CE3E12E94D36D7ADC51E6F`；PNG SHA256：`D4AA6243BDECEBC725FBBA13C25563B7FE9C657B662A734CFAF57F02AA69A70D`。通过现有 IconPath 共用于侧栏、主页和插件管理，不增加运行时依赖。
+
 ## 应用图标生成记录
 
 生成提示词（内置工具，透明背景开启）：

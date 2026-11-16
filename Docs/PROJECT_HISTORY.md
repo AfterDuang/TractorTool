@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 剪贴板图标 | [E119 · Fluent 彩色标识与独立更新（2026-11-16）](#evidence-clipboard-color-icon) |
 | 文件夹历史独立插件 | [E118 · 手动保存、比较与无覆盖另存（2026-11-16）](#evidence-folder-history-first) |
 | 官方框架升级 | [E117 · Avalonia 12.1.6、插件兼容与完整 ZIP（2026-11-15）](#evidence-avalonia-1216-upgrade) |
 | 切页闪动精度诊断 | [E114–E116 · 原生采样、真实宿主对照与等待官方修复（2026-10-16）](#evidence-page-flicker-precision) |
@@ -134,6 +135,16 @@
 | M3（进行中） | [E24 · 外部包事务、租约与设置入口（2026-10-04）](#evidence-package-service) |
 
 按需补充：[M1 人工回归清单](#m1-manual-checklist)、[M1 阶段出口](#m1-exit)、[早期文档整理](#early-docs)、[UI 参考源码调研](#ui-reference)、[图标参考调研](#icon-reference)。
+
+<a id="evidence-clipboard-color-icon"></a>
+
+## E119：剪贴板 Fluent 彩色标识与独立更新（2026-11-16）
+
+按用户要求选择与 HUD 相同的 Microsoft Fluent System Icons 彩色系列，使用固定提交 `883bef1e12d37343d0b2a64a1af43d0209de1128` 的 Clipboard 32 图形。原始 SVG 入库 Artwork，已有 Sharp 以 8 倍栅格化为透明 256×256 PNG，保留原图形与配色；来源/哈希见 [Artwork](../Artwork/README.md)，MIT 原文随插件 Assets 交付。
+
+ClipboardPlugin 通过现有 PluginPageOptions.IconPath 注册包内图片，宿主已将同一图片用于侧栏、主页和插件管理；原 ToolIconKind.Clipboard 保留为失败回退。工程复制 Assets，插件版本从 1.1.4 增至 1.1.5，API/Avalonia 基线不变；无新增依赖或宿主/Core/Contracts/公共 UI 修改。
+
+使用 E117 发布 SDK 独立构建，0 警告/0 错误；产物与静态证据在 `artifacts/e119-clipboard-icon`，更新包为 `plugin/TractorTool.ClipboardHistory-1.1.5.zip`，构建日志为 `build.log`。图标尺寸/透明通道、ZIP 资源/许可/版本与 380 个原宿主文件哈希核对通过，6 份相关文档的 282 处本地链接有效，记录于 `static-checks.json`；不重新构建旧完整分发。查看了源图标与 HUD 图标，但未运行应用、检查程序或安装更新，实际深浅主题/DPI 显示待用户确认。保留其他插件及 IDE 并行修改。
 
 <a id="evidence-folder-history-first"></a>
 

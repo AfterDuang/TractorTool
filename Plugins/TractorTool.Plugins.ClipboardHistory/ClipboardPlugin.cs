@@ -21,7 +21,7 @@ public sealed class ClipboardPlugin : IPlugin, IPluginUiModule
         registry.AddNavigationPage("history", "剪贴板历史",
             () => new ClipboardHistoryView { DataContext = new ClipboardHistoryViewModel(new WindowsClipboardHistory(), context.ApplicationStopping,
                 action => Dispatcher.UIThread.Post(action)) },
-            new PluginPageOptions(ToolIconKind.Clipboard, "找回复制过的内容，预览并再次使用。"));
+            new PluginPageOptions(ToolIconKind.Clipboard, "找回复制过的内容，预览并再次使用。") { IconPath = "Assets/icon.png" });
     }
     public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
     public ValueTask DisposeAsync() { _context = null; return ValueTask.CompletedTask; }
