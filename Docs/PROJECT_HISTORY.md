@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 视频图标 | [E120 · Fluent 彩色摄像机与独立更新（2026-11-16）](#evidence-video-color-icon) |
 | 剪贴板图标 | [E119 · Fluent 彩色标识与独立更新（2026-11-16）](#evidence-clipboard-color-icon) |
 | 文件夹历史独立插件 | [E118 · 手动保存、比较与无覆盖另存（2026-11-16）](#evidence-folder-history-first) |
 | 官方框架升级 | [E117 · Avalonia 12.1.6、插件兼容与完整 ZIP（2026-11-15）](#evidence-avalonia-1216-upgrade) |
@@ -145,6 +146,18 @@
 ClipboardPlugin 通过现有 PluginPageOptions.IconPath 注册包内图片，宿主已将同一图片用于侧栏、主页和插件管理；原 ToolIconKind.Clipboard 保留为失败回退。工程复制 Assets，插件版本从 1.1.4 增至 1.1.5，API/Avalonia 基线不变；无新增依赖或宿主/Core/Contracts/公共 UI 修改。
 
 使用 E117 发布 SDK 独立构建，0 警告/0 错误；产物与静态证据在 `artifacts/e119-clipboard-icon`，更新包为 `plugin/TractorTool.ClipboardHistory-1.1.5.zip`，构建日志为 `build.log`。图标尺寸/透明通道、ZIP 资源/许可/版本与 380 个原宿主文件哈希核对通过，6 份相关文档的 282 处本地链接有效，记录于 `static-checks.json`；不重新构建旧完整分发。查看了源图标与 HUD 图标，但未运行应用、检查程序或安装更新，实际深浅主题/DPI 显示待用户确认。保留其他插件及 IDE 并行修改。
+
+<a id="evidence-video-color-icon"></a>
+
+## E120：视频 Fluent 彩色摄像机与独立更新（2026-11-16）
+
+按用户要求沿用 HUD 的 Microsoft Fluent System Icons 彩色系列，采用提交 `883bef1e12d37343d0b2a64a1af43d0209de1128` 的 `assets/Video/SVG/ic_fluent_video_32_color.svg`。原 SVG 入库 Artwork，使用已有 Sharp、density 576、resize(256,256)、png() 转为透明 PNG，无重绘或改色；MIT 原文从同源 HUD 素材复制，来源链接写入插件 NOTICE。SVG SHA256 为 `240A557D95B8F80DA9DB8FCD3C0BC899A6815C295E4EA7B3C3AE0322F1DA8069`，PNG 为 `054D655C169D8D84087C611CB81D9F4C27EE791376704E8C07B79336FD9E86A6`。
+
+VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Assets，版本 0.5.6 → 0.5.7；保留单色回退与全部业务/API/依赖基线，不改宿主、Core、Contracts 或公共 UI。无新增运行依赖、转换脚本或业务测试。
+
+证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
+
+已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
 
 <a id="evidence-folder-history-first"></a>
 

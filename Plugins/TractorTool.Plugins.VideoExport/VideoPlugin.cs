@@ -16,9 +16,9 @@ public sealed class VideoPlugin : IPlugin, IPluginUiModule
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("video", "视频导出", () => new VideoView { DataContext = model },
-            new(ToolIconKind.Video, "多预设导出与视频信息提取。") { UsesCustomHeader = true });
+            new(ToolIconKind.Video, "多预设导出与视频信息提取。") { UsesCustomHeader = true, IconPath = "Assets/icon.png" });
         registry.AddSettingsPage("settings", "视频导出", () => new VideoSettingsView { DataContext = model },
-            new(ToolIconKind.Video, "GPU 加速与视频信息读取偏好。"));
+            new(ToolIconKind.Video, "GPU 加速与视频信息读取偏好。") { IconPath = "Assets/icon.png" });
     }
     public async ValueTask StopAsync(CancellationToken cancellationToken)
     {

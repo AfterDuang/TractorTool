@@ -4,6 +4,8 @@
 
 ## 1. 当前工作
 
+**E120 视频图标更新：** 0.5.7 通过现有 IconPath 将导航/设置改为与 HUD 同系列的 Fluent 彩色摄像机，未改框架或媒体逻辑；独立构建与包资源静态核对通过，实际 UI 由用户确认。[更新包与证据](DEVELOPMENT.md#video-icon-update)。
+
 **E119 剪贴板图标：** 1.1.5 使用与 HUD 同系列的 Fluent 彩色 Clipboard，通过现有 IconPath 接入；插件独立构建通过，未改框架。更新包与显示待验项见[台账入口](DEVELOPMENT.md#clipboard-icon-update)，E103 原生回归缺口继续保留。E117 整包仍为旧插件版本，用户安装更新后显式退出重启；保留工作区其他插件与 IDE 的并行修改。
 
 **E117：官方 Avalonia 12.1.6 已升级，用户测试后反馈暂未发现升级问题并授权本地提交，不推送。** 已同步宿主/公共 UI、三个正式插件与两个机制夹具的引用和清单；DataGrid 保持独立发布的 12.1.2，FluentAvaloniaUI 3.1.0、Contracts API 1.7 / UI API 1.5 不变。15 工程 Release 构建 0 警告/0 错误，三个正式插件用发布 SDK 独立打包，完整 ZIP 的 379 文件静态校验及共享程序集身份核对通过。用户测试时 FFmpeg 安装末尾曾拒绝移动目录，重试成功，未修改安装/进程代码，根因未定位。Agent 未启动应用或检查程序；测试入口、匹配插件版本及旧安装升级顺序统一见[升级指引](DEVELOPMENT.md#avalonia-1216-upgrade)，构建与用户反馈见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)。原动效与默认渲染未改，不宣称消闪。
