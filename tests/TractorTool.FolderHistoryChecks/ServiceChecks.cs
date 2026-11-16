@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using TractorTool.Contracts;
@@ -79,13 +80,47 @@ internal static class ServiceChecks
         await ThrowsAsync<IOException>(() => service.SaveAsync(moved, "fake success"));
         Assert(host.Queued == 1 && host.Processes == 1 && !host.Leased && (await service.GetVersionsAsync(moved)).Count == 0,
             "a successful process with no version was accepted or left a live lease");
+
+        host.ProcessResult = new(2, "diagnostic stdout", "diagnostic stderr", false, false);
+        var failure = await ThrowsAsync<IOException>(() => service.SaveAsync(moved, "diagnostic failure"));
+        Assert(!failure.Message.Contains("diagnostic stdout", StringComparison.Ordinal) &&
+            host.TaskError!.ToString().Contains("diagnostic stdout", StringComparison.Ordinal) &&
+            host.TaskError.ToString().Contains("diagnostic stderr", StringComparison.Ordinal) &&
+            host.TaskError.ToString().Contains("Command: backup", StringComparison.Ordinal),
+            "task summary exposed command output or task logging lost the full diagnostics");
+
+        var movedHistory = HistoryPaths.HistoryDirectory(moved);
+        var repository = Path.Combine(movedHistory, "repository");
+        const string goodId = "duplicati-20261007T120000Z.dlist.zip";
+        var badVolume = Path.Combine(repository, "duplicati-20261007T130000Z.dlist.zip");
+        var folder = new { type = "Folder", path = moved + Path.DirectorySeparatorChar };
+        var workFile = Path.Combine(moved, "file.txt");
+        EngineChecks.WriteVolume(Path.Combine(repository, goodId), true, "SHA256", folder,
+            new { type = "File", path = workFile, size = new FileInfo(workFile).Length, hash = Convert.ToBase64String(SHA256.HashData(await File.ReadAllBytesAsync(workFile))) });
+        var movedMetadata = Path.Combine(movedHistory, "history.json");
+        var committed = JsonNode.Parse(await File.ReadAllTextAsync(movedMetadata))!;
+        committed["versions"] = JsonSerializer.SerializeToNode(new[] { new { id = goodId, sourceRoot = moved, note = "registered", pinned = true } });
+        await File.WriteAllTextAsync(movedMetadata, committed.ToJsonString());
+        await File.WriteAllTextAsync(workFile, "changed work");
+        foreach (var malformed in new[] { true, false })
+        {
+            if (malformed) await File.WriteAllTextAsync(badVolume, "invalid unregistered zip");
+            else EngineChecks.WriteVolume(badVolume, true, "SHA256", folder, new { type = "Symlink", path = workFile });
+            var versions = await service.GetVersionsAsync(moved);
+            Assert(versions.Count == 1 && versions[0].Id == goodId && versions[0].Pinned &&
+                (await service.GetFoldersAsync()).Single().VersionCount == 1, "an unregistered bad volume hid the registered good version");
+            var processCount = host.Processes;
+            await ThrowsAsync<IOException>(() => service.SaveAsync(moved, "must refuse damaged repository"));
+            Assert(host.Processes == processCount && (await service.GetVersionsAsync(moved)).Count == 1 && File.Exists(badVolume),
+                "saving a damaged repository ran the engine, registered a version or removed the damaged volume");
+        }
         await service.StopAsync();
     }
 
-    private static async Task ThrowsAsync<T>(Func<Task> action) where T : Exception
+    private static async Task<T> ThrowsAsync<T>(Func<Task> action) where T : Exception
     {
         try { await action(); }
-        catch (T) { return; }
+        catch (T error) { return error; }
         throw new InvalidOperationException("Expected " + typeof(T).Name);
     }
 
@@ -101,6 +136,8 @@ internal static class ServiceChecks
         public bool Leased { get; private set; }
         public int Queued { get; private set; }
         public int Processes { get; private set; }
+        public ProcessResult ProcessResult { get; set; } = new(0, "", "", false, false);
+        public Exception? TaskError { get; private set; }
         public string AppRoot => Path.Combine(root, "app");
         public string DataRoot => Path.Combine(root, "data");
         public string PluginRoot => Path.Combine(AppRoot, "Plugins");
@@ -125,14 +162,15 @@ internal static class ServiceChecks
             Assert(Leased, "tool ran without a package lease");
             Assert(request.Arguments[0] == "backup", "unexpected tool command");
             Processes++;
-            return Task.FromResult(new ProcessResult(0, "", "", false, false));
+            EngineChecks.WriteOperationLog(request);
+            return Task.FromResult(ProcessResult);
         }
 
         public Task<IBackgroundTask> QueueAsync(BackgroundTaskRequest request, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Queued++;
-            return Task.FromResult<IBackgroundTask>(new TestTask(request));
+            return Task.FromResult<IBackgroundTask>(new TestTask(this, request));
         }
 
         public Task<IReadOnlyList<IBackgroundTask>> QueueBatchAsync(IReadOnlyList<BackgroundTaskRequest> requests, CancellationToken cancellationToken = default) =>
@@ -148,7 +186,7 @@ internal static class ServiceChecks
             public void Dispose() => host.Leased = false;
         }
 
-        private sealed class TestTask(BackgroundTaskRequest request) : IBackgroundTask
+        private sealed class TestTask(TestHost host, BackgroundTaskRequest request) : IBackgroundTask
         {
             private readonly CancellationTokenSource _stop = new();
             public Guid Id { get; } = Guid.NewGuid();
@@ -159,7 +197,11 @@ internal static class ServiceChecks
             {
                 try { return Result(BackgroundTaskState.Succeeded, await execute(new Progress<BackgroundTaskProgress>(), _stop.Token), null); }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return Result(BackgroundTaskState.Cancelled, null, null); }
-                catch (Exception ex) { return Result(BackgroundTaskState.Failed, null, ex.Message); }
+                catch (Exception ex)
+                {
+                    host.TaskError = ex;
+                    return Result(BackgroundTaskState.Failed, null, ex.GetBaseException().Message);
+                }
             }
 
             private BackgroundTaskSnapshot Result(BackgroundTaskState state, string? value, string? error) => new(Id,

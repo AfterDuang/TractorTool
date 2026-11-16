@@ -10,7 +10,7 @@
 
 **E117：官方 Avalonia 12.1.6 已升级，用户测试后反馈暂未发现升级问题并授权本地提交，不推送。** 已同步宿主/公共 UI、三个正式插件与两个机制夹具的引用和清单；DataGrid 保持独立发布的 12.1.2，FluentAvaloniaUI 3.1.0、Contracts API 1.7 / UI API 1.5 不变。15 工程 Release 构建 0 警告/0 错误，三个正式插件用发布 SDK 独立打包，完整 ZIP 的 379 文件静态校验及共享程序集身份核对通过。用户测试时 FFmpeg 安装末尾曾拒绝移动目录，重试成功，未修改安装/进程代码，根因未定位。Agent 未启动应用或检查程序；测试入口、匹配插件版本及旧安装升级顺序统一见[升级指引](DEVELOPMENT.md#avalonia-1216-upgrade)，构建与用户反馈见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)。原动效与默认渲染未改，不宣称消闪。
 
-**E118 文件夹历史 0.1.1：** 手动保存/比较/无覆盖另存已实现，历史随目录、无密码。安装探测报错已在用户指定的 `E:\CACHE\Test` 隔离复现：未指定 dbpath 导致 Duplicati 初始化默认 data 时拒绝继承权限。只补探测参数并升级配方 `Duplicati.CLI/1.0.1`，真实探测通过，公共框架未改；源码/包核对及子代理 Review 完成。宿主完整安装、保存/另存和 UI 尚待验收，检查仍仅编译；[包入口](DEVELOPMENT.md#folder-history-first)与[台账](DEVELOPMENT.md#current-status)。后续仍按原地恢复保护、自动保存、文本对比、清理推进；框架缺口先交架构侧，不自行扩展。代码实现子代理改用 gpt-6-astra / max，分析与 Review 仍 gpt-6.1-sol / high，详见根 AGENTS。
+**E121 文件夹历史 0.1.2：** Astra 已修正 SQLite 权限警告兼容、公共诊断和已登记版本读取，删除重复扫描；只改插件与检查，不改框架、权限或用户历史。独立 Review 发现并补齐 exit 0 仍含警告/错误的漏判与无普通文件版本的另存边界，最终复审无阻断。最终检查工程及独立包已编译、静态核对完成，沿用 `Duplicati.CLI/1.0.1`；使用 [plugin-final 交付入口](DEVELOPMENT.md#folder-history-first)，不要使用同轮首版候选。真实保存/另存与检查运行由用户接手，不把构建当验收。后续按原地恢复保护、自动保存、文本对比、清理推进；框架缺口先交架构侧。实现用 gpt-6-astra / max，独立 Review 用 gpt-6.1-sol / high。
 
 **当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 
@@ -23,7 +23,7 @@
 - **测试归用户**：E62 已反馈常规测试暂未发现问题，不外推专项通过；此前缓动修正及 12.1.4 升级未消闪，软件渲染仅略好。E117 的 12.1.6 已收到一般使用反馈，不视为闪动或所有专项回归通过。E94 两项 P2 继续暂缓。
 - **工作区与范围**：每次接续重新核对 Git 状态，不覆盖并行修改。存储修复已提交，不再把 E104–E109 当作未提交候选。M5 的框架可靠性缺口保留，既有插件的其他业务变更仍暂缓；文件夹历史按上文独立接续。CI/Release 尚未实跑。
 - **已确认的框架边界**：外部依赖只有 Packages/依赖来源，默认 GitHub，不恢复自有源；发布自动识别 Plugins 一级目录的清单与唯一工程，不恢复额外名单。细节见[架构](ARCHITECTURE.md#packages)及[脚本规则](../scripts/README.md#随包插件自动识别)。
-- **工作约定**：遵循根 [AGENTS.md](../AGENTS.md)，保留精干框架与独立插件边界；插件工作若需更改框架，先交架构侧分析。只改当前授权范围，不动真实用户数据、不推送；子代理显式使用 gpt-6.1-sol / high。
+- **工作约定**：遵循根 [AGENTS.md](../AGENTS.md)，保留精干框架与独立插件边界；插件工作若需更改框架，先交架构侧分析。只改当前授权范围，不动真实用户数据、不推送；代码实现用 gpt-6-astra / max，分析和 Review 用 gpt-6.1-sol / high，用户另有指定时从其最新要求。
 
 ## 3. 代码入口
 

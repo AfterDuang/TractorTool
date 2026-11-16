@@ -84,7 +84,7 @@ public sealed class FolderHistoryService : IDisposable
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         var state = Open(root);
-        var engine = new DuplicatiEngine(_context.Processes!, lease.Tools[DuplicatiEngine.ToolName]);
+        var engine = new DuplicatiEngine(_context.Processes!, lease.Tools[DuplicatiEngine.ToolName], _context.Log);
         var history = HistoryPaths.HistoryDirectory(root);
         await RunTaskAsync("保存文件夹版本 · " + Path.GetFileName(root), async (progress, cancellation) =>
         {
@@ -93,19 +93,16 @@ public sealed class FolderHistoryService : IDisposable
             var previous = ReadCommitted(root, state);
             if (previous.FirstOrDefault() is { } last && HistoryComparison.Equal(before, last.Version.Entries))
                 return "文件内容和目录结构没有变化，保留现有版本。";
-            var existing = DuplicatiEngine.ReadVersions(history).Select(version => version.Id).ToHashSet(StringComparer.Ordinal);
             progress.Report(new(null, "正在保存版本"));
-            await engine.BackupAsync(root, history, cancellation).ConfigureAwait(false);
+            var created = await engine.BackupAsync(root, history, cancellation).ConfigureAwait(false);
             progress.Report(new(null, "正在校验保存结果"));
             var after = await WorkingTree.ScanAsync(root, cancellation).ConfigureAwait(false);
-            var created = DuplicatiEngine.ReadVersions(history).Where(version => !existing.Contains(version.Id)).ToArray();
-            if (created.Length != 1 || !HistoryPaths.Comparer.Equals(created[0].SourceRoot, root) ||
-                !HistoryComparison.Equal(before, after) || !HistoryComparison.Equal(after, created[0].Entries))
+            if (!HistoryComparison.Equal(before, after) || !HistoryComparison.Equal(after, created.Entries))
                 throw new IOException("保存期间文件发生变化，或引擎结果不完整。本次未登记为可用版本，请停止编辑后重试。");
             cancellation.ThrowIfCancellationRequested();
-            state.Versions.Add(new(created[0].Id, root, note.Trim(), false));
+            state.Versions.Add(new(created.Id, root, note.Trim(), false));
             HistoryStore.Save(root, state);
-            return "已保存并核对文件清单：" + created[0].CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return "已保存并核对文件清单：" + created.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
         }, token).ConfigureAwait(false);
         return true;
     });
@@ -130,7 +127,7 @@ public sealed class FolderHistoryService : IDisposable
                 if (!saved.Version.Entries.Any(item => HistoryPaths.Comparer.Equals(item.Path, relativePath)))
                     throw new InvalidOperationException("这个路径在选定版本中不存在；请改选含有该文件的版本。");
             }
-            var engine = new DuplicatiEngine(_context.Processes!, lease.Tools[DuplicatiEngine.ToolName]);
+            var engine = new DuplicatiEngine(_context.Processes!, lease.Tools[DuplicatiEngine.ToolName], _context.Log);
             var history = HistoryPaths.HistoryDirectory(root);
             var staging = Path.Combine(history, "temp", "restore-" + Guid.NewGuid().ToString("N"));
             var destination = Path.Combine(parent, Path.GetFileName(root) + "-" + saved.Version.CreatedAt.ToLocalTime().ToString("yyyyMMdd-HHmmss") +
@@ -216,11 +213,11 @@ public sealed class FolderHistoryService : IDisposable
 
     private static IReadOnlyList<SavedVersion> ReadCommitted(string root, RepositoryState state)
     {
-        var all = DuplicatiEngine.ReadVersions(HistoryPaths.HistoryDirectory(root)).ToDictionary(version => version.Id, StringComparer.Ordinal);
         var result = new List<SavedVersion>();
         foreach (var receipt in state.Versions)
         {
-            if (!all.TryGetValue(receipt.Id, out var version) || !HistoryPaths.Comparer.Equals(receipt.SourceRoot, version.SourceRoot))
+            var version = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), receipt.Id);
+            if (version is null || !HistoryPaths.Comparer.Equals(receipt.SourceRoot, version.SourceRoot))
                 throw new InvalidDataException("已保存版本缺失或来源不符，请保留历史库并检查磁盘内容。");
             result.Add(new(version, receipt.Note, receipt.Pinned));
         }

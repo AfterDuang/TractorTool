@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史可靠性 | [E121 · 精确警告兼容、操作诊断与登记版隔离（2026-11-16）](#evidence-folder-history-reliability) |
 | 视频图标 | [E120 · Fluent 彩色摄像机与独立更新（2026-11-16）](#evidence-video-color-icon) |
 | 剪贴板图标 | [E119 · Fluent 彩色标识与独立更新（2026-11-16）](#evidence-clipboard-color-icon) |
 | 文件夹历史独立插件 | [E118 · 手动保存、比较与无覆盖另存（2026-11-16）](#evidence-folder-history-first) |
@@ -158,6 +159,32 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-reliability"></a>
+
+## E121：文件夹历史警告处理与可用版本隔离（2026-11-16）
+
+用户保存 `E:\CACHE\Test` 时收到“Duplicati 保存产生警告，未登记新版本”。此前只读诊断的原始结果为 `ExaminedFiles=2`、`FilesWithError=0`、`PartialBackup=false`、`ErrorsActualLength=0`，同时有 4 条 `SQLiteFilePermissionError`，指向库内 `index.sqlite` 的权限收紧。原生卷已生成，但插件因退出码 2 未登记。固定版 [SQLiteLoader](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/SQLiteHelper/SQLiteLoader.cs) 在设置文件权限失败时记录该警告；具体 Windows 所有者/DACL 操作失败尚未复现定位，不能简单认定需要管理员或改用户目录权限。
+
+用户批准方案后，由 gpt-6-astra / max 修改插件及对应检查，宿主/Core/Contracts/公共 UI 不改，清单版本 0.1.1 → 0.1.2，沿用 `Duplicati.CLI/1.0.1` 与固定官方工具：
+
+- backup/repair/restore 共用精确 `--suppress-warnings=NoFilesInBackup,SQLiteFilePermissionError`。前者支持只有空目录的完整版本，后者仍汇总为一条宿主 Warning；未知/混合警告、stderr、输出截断及不完整结果继续拒绝。另存根据已选清单，仅无普通文件时额外兼容 `NoFilesOrFoldersRestored`（仅根）或 `NoFilesRestored`（含子目录），依然核对完整暂存清单；普通文件版本不增加这两项。
+- 每次调用向库内 temp 写唯一操作日志。只额外包含完整 `Information-Duplicati.Library.SQLiteHelper.SQLiteLoader-SQLiteFilePermissionError` 标记，不解析本地化 stdout，也不读取私有 SQLite 表。保留原进程输出捕获上限，公共详情有界；失败/缺失/截断诊断保留文件并指出位置，正常 CLI 完成且必要详情已转存后只清理本次日志，清理失败不推翻结果。
+- 浏览只按 history.json 登记 ID 读取清单，不再让未登记坏卷隐藏正常旧版本。有变化的保存前核对全部原生版本文件名与完整版本清单，不声称已逐字节校验全部分块/索引；无变化仍提前返回。另存编号仍按全部原生卷排序，不删除或补登记失败卷，也不承诺引擎能从损坏库恢复。引擎直接返回本次完整版本，服务移除重复扫描，保留保存前后工作树/清单校验及原子登记。
+- 核对真实公共任务调用后发现摘要使用 `GetBaseException().Message`，因此详细诊断不能放在长消息的 InnerException 中；插件保持简短摘要，以异常 ToString 提供详细日志，避免把多行技术输出挤到页面，框架接口不变。
+
+独立 gpt-6.1-sol / high Review 发现首轮仍只依靠退出码拒绝未知警告：[固定版 Repair](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/CommandLine/CLI/Commands.cs#L667-L679) 不读取返回结果就返回 0；[Restore](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/CommandLine/CLI/Commands.cs#L756-L768) 只判断 Warnings。非致命索引处理错误可记录后继续，因此补充结构化日志头校验，只有空日志或精确权限 Information 条目及其续行可通过；新增 exit 0 + 未知/混合警告/错误检查，不把所有未知诊断都写成 Info。Review 同时核实 [RestoreHandler](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/Main/Operation/RestoreHandler.cs#L1009-L1016) 在没有普通文件时发出恢复警告，故将上述兼容严格限定为清单中的无文件版本，补空根/子目录/含文件边界。
+
+首轮检查工程构建 4 条 NU1900、0 错误，独立插件构建 2 条 NU1900、0 错误；`plugin/` 为独立 Review 修正前候选，不能作为最终交付或套用其证据。修正后独立代理复审完整调用链及增量，确认无阻断；补充本机时间分隔符、异常续行中的 ` - [旧稿]` 路径、读取不完整与未知警告摘要区分，并将操作日志/进程异常排在 stdout 前，避免重要诊断沉到宿主磁盘截断的尾部。没有为此新增通用框架或依赖。
+
+最终证据位于 `artifacts/e121-folder-history-reliability`：
+
+- `dotnet build tests/TractorTool.FolderHistoryChecks/TractorTool.FolderHistoryChecks.csproj -c Release -m:1 -nr:false`：4 条 NU1900、0 错误，11.31 秒，见 `checks-build-final.log`。只编译，无检查运行。
+- `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.FolderHistory/TractorTool.Plugins.FolderHistory.csproj -HostSdkDir artifacts/e117-avalonia-12.1.6/distribution/layout/TractorTool-1.0.0-win-x64 -Output artifacts/e121-folder-history-reliability/plugin-final`：独立引用发布 SDK，2 条 NU1900、0 错误，见 `plugin-build-final.log`。NU1900 均为 NuGet 漏洞源不可达，未关闭审计，也不记为审计通过。
+- 最终包 `plugin-final/TractorTool.FolderHistory-0.1.2.zip`，SHA256 `2E0D44383DE2FC1C5066CDB3F65E452669FF58641D153B39713F5D2C6690C806`。`static-checks-final.json` 记录 9 个 ZIP 条目、源码清单/依赖/许可、ZIP 与构建文件哈希、PE 共享程序集引用及 380 个发布 SDK 原文件未变；无共享 DLL 副本。
+- `git diff --check` 通过；4 份本轮文档的 128 处本地文件链接、代码围栏和 E121 锚点静态核对通过，见 `doc-checks.json`。未修改原有未跟踪 IDE 配置与临时 sln。
+
+新增检查覆盖警告白名单、exit 0 的 repair/restore/backup 未知或混合告警、stderr/截断/缺失/超限/不可读日志、短摘要/详细日志、取消、空根/仅目录/含文件、未登记坏卷不隐藏旧版但阻止继续写入等。未运行应用、检查程序、Duplicati 或 Windows UI，未更改用户真实历史、权限或已安装插件，未推送。实际接入行为由用户验收，不将模拟进程检查当作真实 CLI 结果；原 Windows ACL 收紧失败本身未被修改。
 
 <a id="evidence-folder-history-first"></a>
 
