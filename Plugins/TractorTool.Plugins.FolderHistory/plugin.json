@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.FolderHistory",
   "name": "文件夹版本历史",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entryAssembly": "TractorTool.Plugins.FolderHistory.dll",
   "entryType": "TractorTool.Plugins.FolderHistory.FolderHistoryPlugin",
   "apiVersion": "1.7",
@@ -14,7 +14,7 @@
   "dependencies": [
     {
       "id": "Duplicati.CLI",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "downloads": [
         {
           "rid": "win-x64",
@@ -28,7 +28,7 @@
           "tools": {
             "duplicati": {
               "path": "duplicati-2.4.0.1_stable_2026-10-07-win-x64-gui/Duplicati.CommandLine.exe",
-              "arguments": ["system-info", "--portable-mode=true", "--console-log-level=Error"],
+              "arguments": ["system-info", "--portable-mode=true", "--console-log-level=Error", "--dbpath=tractortool-probe.sqlite", "--no-local-db=true"],
               "versionPrefix": "Duplicati: Duplicati.CommandLine, Version="
             }
           }

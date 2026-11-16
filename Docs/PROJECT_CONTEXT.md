@@ -10,7 +10,7 @@
 
 **E117：官方 Avalonia 12.1.6 已升级，用户测试后反馈暂未发现升级问题并授权本地提交，不推送。** 已同步宿主/公共 UI、三个正式插件与两个机制夹具的引用和清单；DataGrid 保持独立发布的 12.1.2，FluentAvaloniaUI 3.1.0、Contracts API 1.7 / UI API 1.5 不变。15 工程 Release 构建 0 警告/0 错误，三个正式插件用发布 SDK 独立打包，完整 ZIP 的 379 文件静态校验及共享程序集身份核对通过。用户测试时 FFmpeg 安装末尾曾拒绝移动目录，重试成功，未修改安装/进程代码，根因未定位。Agent 未启动应用或检查程序；测试入口、匹配插件版本及旧安装升级顺序统一见[升级指引](DEVELOPMENT.md#avalonia-1216-upgrade)，构建与用户反馈见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)。原动效与默认渲染未改，不宣称消闪。
 
-**E118 文件夹历史 0.1.0：** 用户已授权开发，新独立插件已实现关联目录、手动保存/说明、两版本变化比较、重要标记、整版/单项另存和移除关联；无密码，历史随工作目录，宿主只保存列表。固定官方 Duplicati 2.4.0.1，现有公共接口未改；按完整清单/SHA256确认保存及另存，不凭退出码报成功。17 工程构建、独立 SDK 打包与交叉 Review 已完成；NuGet 漏洞源不可达有 NU1900，检查程序/CLI/UI 未运行。包与操作见[入口](DEVELOPMENT.md#folder-history-first)，证据与未完成项统一见[台账](DEVELOPMENT.md#current-status)。下一阶段是恢复前保护/原地恢复，再接自动保存、逐行文本对比及清理；本轮手动闭环不等于首版全部完成。若真实接入暴露框架缺口，仍先交架构侧，不自行扩展。
+**E118 文件夹历史 0.1.1：** 手动保存/比较/无覆盖另存已实现，历史随目录、无密码。安装探测报错已在用户指定的 `E:\CACHE\Test` 隔离复现：未指定 dbpath 导致 Duplicati 初始化默认 data 时拒绝继承权限。只补探测参数并升级配方 `Duplicati.CLI/1.0.1`，真实探测通过，公共框架未改；源码/包核对及子代理 Review 完成。宿主完整安装、保存/另存和 UI 尚待验收，检查仍仅编译；[包入口](DEVELOPMENT.md#folder-history-first)与[台账](DEVELOPMENT.md#current-status)。后续仍按原地恢复保护、自动保存、文本对比、清理推进；框架缺口先交架构侧，不自行扩展。代码实现子代理改用 gpt-6-astra / max，分析与 Review 仍 gpt-6.1-sol / high，详见根 AGENTS。
 
 **当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 

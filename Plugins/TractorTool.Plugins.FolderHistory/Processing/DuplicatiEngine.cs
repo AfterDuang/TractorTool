@@ -12,7 +12,7 @@ namespace TractorTool.Plugins.FolderHistory.Processing;
 public sealed class DuplicatiEngine(IProcessRunner processes, string executable)
 {
     public const string PackageId = "Duplicati.CLI";
-    public const string PackageVersion = "1.0.0";
+    public const string PackageVersion = "1.0.1";
     public const string ToolName = "duplicati";
 
     private const string FilePrefix = "duplicati-";

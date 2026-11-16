@@ -182,6 +182,20 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 没有启动宿主、检查程序、Duplicati 或 UI，没有安装插件或操作真实用户数据，也没有推送。真实附件解包/版本探测、CLI 参数效果、空目录、移动重连、失败/取消/重启、UI/DPI/性能仍待用户验证。上游默认使用统计及 15 秒探测冷启动风险已在插件说明中披露；不能声称完全离线。自动保护、原地恢复及其前置保护、逐行文本对比、可编辑排除和版本清理均未实现，仍保留在当前台账。
 
+<a id="evidence-folder-history-probe"></a>
+
+### E118 补充：0.1.1 依赖安装探测修正（2026-11-16）
+
+用户实际安装报告 `duplicati 版本检查失败`；调试会话已结束，原 host 日志未保留子进程结果。授权在 `E:\CACHE\Test` 诊断后，下载清单同一官方 ZIP，SHA256 与声明相符。隔离目录 `TractorTool-DuplicatiProbe-20261116` 保留附件、两次独立解压及原始 stdout/stderr/result；未操作用户历史库或启动宿主。
+
+原参数 `system-info --portable-mode=true --console-log-level=Error` 在 2.863 秒返回 exit 100、stdout 空、stderr 679 字符，错误为 `InsecureDataFolderPermissions`。固定版 [Controller](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/Main/Controller.cs#L847-L866) 在未给 dbpath 时进入默认数据库定位器，创建 portable/data 并校验其 ACL；继承父目录权限被拒绝。不是此前怀疑的程序集命名错误，也不是截图中宿主正常退出码 0 所能解释的结果。
+
+插件探测仅加 `--dbpath=tractortool-probe.sqlite --no-local-db=true`，跳过无关默认数据初始化；保留官方 ZIP/SHA256、原版本前缀、15 秒和 16384 字符限制，未加权限绕过。正式保存/修复/恢复已经显式指定库内 index.sqlite，无需修改。插件版本递增为 0.1.1、依赖配方及服务常量同步到 1.0.1，避免覆盖旧版本收据的探测定义；引擎仍为官方 2.4.0.1，公共框架未改。
+
+从新解压目录读取更新清单参数复验：exit 0、6.791 秒、stdout 7624 字符、stderr 空、前缀匹配；未生成 tractortool-probe.sqlite 或 portable/data。该证据不承诺任何已有同名数据库都不被访问，也不代表 CLI 无统计网络行为。独立插件构建成功，0 错误、2 条 NU1900（漏洞数据源不可达）；构建及打包记录在 `artifacts/e118-folder-history/probe-fix`，更新包入口见[开发文档](DEVELOPMENT.md#folder-history-first)。一名 gpt-6.1-sol / high 子代理只读核对固定源码、正式调用链、配方/收据兼容及最终 diff，未发现阻断问题。
+
+未安装更新插件，未跑宿主完整安装链、备份/恢复、UI 或检查程序；这些仍留在验收台账。用户将后续代码实现子代理改为 gpt-6-astra / max，分析与 Review 沿用 gpt-6.1-sol / high，已同步唯一根 AGENTS。
+
 ## M1：宿主基础与公共 UI
 
 <a id="evidence-baseline"></a>

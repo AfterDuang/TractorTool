@@ -97,7 +97,9 @@
 
 ### 固定版本接入
 
-[插件清单](../../Plugins/TractorTool.Plugins.FolderHistory/plugin.json)锁定官方 `v2.4.0.1_stable_2026-10-07` Windows x64 GUI ZIP 中的 CLI、附件 SHA256 和探测入口。宿主包标识 `Duplicati.CLI/1.0.0` 表示接入配方版本，显示名称注明真实工具版本 `2.4.0.1`；宿主当前只接受三段版本，未因此修改公共框架，也没有新增自有安装源。
+[插件清单](../../Plugins/TractorTool.Plugins.FolderHistory/plugin.json)锁定官方 `v2.4.0.1_stable_2026-10-07` Windows x64 GUI ZIP 中的 CLI、附件 SHA256 和探测入口。宿主包标识 `Duplicati.CLI/1.0.1` 表示接入配方版本，显示名称注明真实工具版本 `2.4.0.1`；宿主当前只接受三段版本，未因此修改公共框架，也没有新增自有安装源。
+
+安装探测使用 `system-info`，显式指定 `--dbpath=tractortool-probe.sqlite --no-local-db=true`，避免默认数据库定位器创建全局登记文件及对便携 `data` 目录做无关初始化。探测不生成数据库，仍检查真实程序集输出、退出码和截断；不使用 `--allow-insecure-datafolder` 绕过权限检查。保存/修复/恢复本身已显式指定库内索引；真实验收状态统一见[开发台账](../DEVELOPMENT.md#current-status)。
 
 - [引擎适配器](../../Plugins/TractorTool.Plugins.FolderHistory/Processing/DuplicatiEngine.cs)使用本地 `repository/`、显式 `index.sqlite` 和 `temp/`。无加密、SHA256、ZIP；固定版没有通用 JSON 查询接口，读取其原生 `.dlist.zip` 文件表，不解析本地化控制台文本、不另存一份内容数据库。
 - `history.json` 只记录库身份、格式、已确认版本 ID、原根、说明及重要标记。工作树保存前后与引擎清单一致才登记版本；失败或取消产生的未登记卷不显示为可用版本。正常无变化由插件跳过；引擎允许上传相同内容，以便中断后的重试生成可确认版本。
