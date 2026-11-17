@@ -42,6 +42,10 @@ internal static class EngineChecks
         ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, Path.GetFileName(revision)), "拒绝越界目录");
         WriteVolume(revision, true, "SHA256", folder, new { type = "Folder", path = HistoryPaths.HistoryDirectory(oldRoot) });
         ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, Path.GetFileName(revision)), "拒绝恢复库子树");
+        var nestedRoot = Path.Combine(oldRoot, "child");
+        WriteVolume(revision, true, "SHA256", folder, new { type = "Folder", path = nestedRoot },
+            new { type = "Folder", path = HistoryPaths.HistoryDirectory(nestedRoot) });
+        ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, Path.GetFileName(revision)), "拒绝旧或恶意清单中的任意层级历史库");
         WriteVolume(revision, true, "SHA256", folder, new { type = "Symlink", path = sourceFile });
         ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, Path.GetFileName(revision)), "拒绝不支持的链接清单");
 
@@ -98,6 +102,8 @@ internal static class EngineChecks
         var emptyVersion = await emptyBackup.BackupAsync(managed, history, CancellationToken.None);
         Check(emptyVersion.Entries.Count == 0, "只有源目录的完整版本可登记");
         await CheckDiagnosticsAsync(fixture.FullName, executable);
+        await CheckSelectionAsync(fixture.FullName, executable);
+        await CheckCleanupAsync(fixture.FullName, executable);
     }
 
     private static readonly ProcessResult Success = new(0, "", "", false, false);
@@ -106,6 +112,152 @@ internal static class EngineChecks
         "System.IO.IOException: E:\\项目 - [旧稿]\\样本\nexception detail without indentation\n";
     private const string OtherLog = "2026-11-16 10:00:00 +08 - [Warning-Duplicati.Library.Main.Controller-UnknownWarning]: other warning detail\n";
     private const string ErrorLog = "2026-11-16 10:00:00 +08 - [Error-Duplicati.Library.Main.Controller-UnknownError]: error detail\n";
+
+    private static async Task CheckSelectionAsync(string fixture, string executable)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "selection %WINDIR% [1]")).FullName;
+        var history = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(root)).FullName;
+        var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
+        var source = Path.Combine(fixture, "original root");
+        var folder = Path.Combine(source, "folder[1]");
+        var path = Path.Combine(folder, "%TEMP%.txt");
+        var bytes = new byte[] { 1, 3, 5 };
+        var hash = Convert.ToBase64String(SHA256.HashData(bytes));
+        var id = "duplicati-20261007T120000Z.dlist.zip";
+        WriteVolume(Path.Combine(repository, id), true, "SHA256",
+            new { type = "Folder", path = source + Path.DirectorySeparatorChar },
+            new { type = "Folder", path = folder + Path.DirectorySeparatorChar },
+            new { type = "File", path, size = bytes.Length, hash },
+            new { type = "File", path = Path.Combine(source, "huge.bin"), size = 1_000_000_000_000L, hash });
+        var selected = "folder[1]/%TEMP%.txt";
+        var version = DuplicatiEngine.ReadVersion(history, id)!;
+        var staging = Path.Combine(history, "temp", "selection");
+        var runner = new FakeRunner(request =>
+        {
+            var include = request.Arguments.Single(argument => argument.StartsWith("--include=[", StringComparison.Ordinal));
+            var expression = Environment.ExpandEnvironmentVariables(include[11..^1]);
+            Check(Regex.IsMatch(source + Path.DirectorySeparatorChar, expression) &&
+                Regex.IsMatch(folder + Path.DirectorySeparatorChar, expression) && Regex.IsMatch(path, expression) &&
+                !Regex.IsMatch(Path.Combine(source, "huge.bin"), expression) && request.Arguments.Contains("--exclude=*"),
+                "单项提取必须只包含原根、祖先和字面文件，不能提取其他大型内容");
+            Directory.CreateDirectory(Path.Combine(staging, "folder[1]"));
+            File.WriteAllBytes(Path.Combine(staging, "folder[1]", "%TEMP%.txt"), bytes);
+            return Success;
+        });
+        await new DuplicatiEngine(runner, executable, new FakeLog()).RestoreAsync(version, history, staging, CancellationToken.None, selected);
+        Check(DuplicatiEngine.SelectEntries(version, selected).Count == 2, "所选提取清单包含无关条目");
+        File.WriteAllBytes(Path.Combine(history, "index.sqlite"), []);
+        var backupRunner = new FakeRunner(_ => new ProcessResult(2, "", "", false, false));
+        var backup = new DuplicatiEngine(backupRunner, executable, new FakeLog());
+        await ExpectAsync<IOException>(() => backup.BackupAsync(root, history, CancellationToken.None, ["cache", "literal %TEMP%"]),
+            "替身退出失败应拒绝");
+        var filters = backupRunner.Requests.Single().Arguments.Where(argument => argument.StartsWith("--exclude=[", StringComparison.Ordinal)).ToArray();
+        Check(filters.Length == 3, "备份缺少强制历史排除或用户规则");
+        Check(Regex.IsMatch(Path.Combine(root, "child", HistoryPaths.DirectoryName, "repository", "file"),
+            Environment.ExpandEnvironmentVariables(filters[0][11..^1])), "引擎强制规则必须阻止嵌套历史内容进入备份");
+        foreach (var name in new[] { ".tractortool-history", "cache", "literal %TEMP%" })
+        {
+            var full = Path.Combine(root, name);
+            Check(filters.Any(filter => Regex.IsMatch(full, Environment.ExpandEnvironmentVariables(filter[11..^1])) &&
+                Regex.IsMatch(full + Path.DirectorySeparatorChar + "child.txt", Environment.ExpandEnvironmentVariables(filter[11..^1])) &&
+                !Regex.IsMatch(full + "sibling", Environment.ExpandEnvironmentVariables(filter[11..^1]))),
+                "排除规则必须与扫描器的精确路径及子树一致");
+        }
+    }
+
+    private static async Task CheckCleanupAsync(string fixture, string executable)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "cleanup")).FullName;
+        var history = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(root)).FullName;
+        var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
+        var ids = new[] { "duplicati-20261007T120000Z.dlist.zip", "duplicati-20261007T130000Z.dlist.zip", "duplicati-20261007T140000Z.dlist.zip" };
+        foreach (var id in ids) WriteVolume(Path.Combine(repository, id), true, "SHA256", new { type = "Folder", path = root + Path.DirectorySeparatorChar });
+        var partial = Path.Combine(repository, "duplicati-20261007T133000Z.dlist.zip");
+        WriteVolume(partial, false, "SHA256");
+        DuplicatiEngine.PreflightDelete(history, [ids[1]]);
+        ExpectInvalid(() => DuplicatiEngine.PreflightDelete(history, [Path.GetFileName(partial)]), "partial不能成为用户删除候选");
+        ExpectInvalid(() => DuplicatiEngine.PreflightDelete(history, ids, allowEmpty: true), "未确认partial存在时不能清空整个历史库");
+        Check(!File.Exists(Path.Combine(history, "cleanup.json")), "只读预检失败不能建立删除意图");
+        var deletionStarted = false;
+        var runner = new FakeRunner(request =>
+        {
+            var database = request.Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..];
+            if (request.Arguments[0] == "repair")
+            {
+                Check(!deletionStarted, "只读准备不能标记为已开始删除");
+                File.WriteAllText(database, "native index fixture");
+            }
+            else if (request.Arguments[0] == "delete")
+            {
+                Check(request.Arguments.Contains("--version=2") && request.Arguments.Contains("--keep-versions=0") &&
+                    request.Arguments.Contains("--keep-time=") && request.Arguments.Contains("--retention-policy=") &&
+                    request.Arguments.Contains("--allow-full-removal=false") && File.Exists(Path.Combine(history, "cleanup.json")) && deletionStarted,
+                    "删除编号必须包含partial，且先持久化原生索引计划再标记删除开始");
+                File.Delete(Path.Combine(repository, ids[1]));
+            }
+            return Success;
+        });
+        await new DuplicatiEngine(runner, executable, new FakeLog()).DeleteVersionsAsync(history, [ids[1]], CancellationToken.None,
+            deletionStarting: () => deletionStarted = true);
+        Check(runner.Requests.Select(request => request.Arguments[0]).SequenceEqual(new[] { "repair", "delete" }) &&
+            File.Exists(Path.Combine(repository, ids[0])) && File.Exists(Path.Combine(repository, ids[2])) && File.Exists(partial) &&
+            File.Exists(Path.Combine(history, "index.sqlite")) && !File.Exists(Path.Combine(history, "cleanup.json")),
+            "清理不应删除未选版本或遗失已重建索引");
+        var invalidPartial = Path.Combine(repository, "duplicati-20261007T134000Z.dlist.zip");
+        WriteVolume(invalidPartial, false, "SHA1");
+        ExpectInvalid(() => DuplicatiEngine.PreflightDelete(history, [ids[0]]), "partial仍必须完整校验算法与清单格式");
+        Check(!File.Exists(Path.Combine(history, "cleanup.json")), "损坏partial预检不应建立删除记录");
+        File.Delete(invalidPartial);
+        var beforeDeleteFailure = new FakeRunner(_ => new ProcessResult(2, "", "", false, false));
+        deletionStarted = false;
+        await ExpectAsync<IOException>(() => new DuplicatiEngine(beforeDeleteFailure, executable, new FakeLog())
+            .DeleteVersionsAsync(history, [ids[0]], CancellationToken.None, deletionStarting: () => deletionStarted = true),
+            "repair失败须在删除前返回");
+        Check(!deletionStarted && !File.Exists(Path.Combine(history, "cleanup.json")) && File.Exists(Path.Combine(repository, ids[0])),
+            "native删除未开始的失败必须可安全撤销服务pending");
+        var unchanged = new FakeRunner(request =>
+        {
+            if (request.Arguments[0] == "repair")
+                File.WriteAllText(request.Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..], "fixture");
+            return Success;
+        });
+        await ExpectAsync<InvalidDataException>(() => new DuplicatiEngine(unchanged, executable, new FakeLog())
+            .DeleteVersionsAsync(history, [ids[0]], CancellationToken.None), "退出0但未删除选定卷不能成功");
+        Check(File.Exists(Path.Combine(history, "cleanup.json")) && File.Exists(Path.Combine(repository, ids[0])), "清理结果异常必须留计划和原卷");
+
+        var fullRoot = Directory.CreateDirectory(Path.Combine(fixture, "cleanup-all-resume")).FullName;
+        var fullHistory = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(fullRoot)).FullName;
+        var fullRepository = Directory.CreateDirectory(Path.Combine(fullHistory, "repository")).FullName;
+        WriteVolume(Path.Combine(fullRepository, ids[0]), true, "SHA256", new { type = "Folder", path = fullRoot + Path.DirectorySeparatorChar });
+        var block = Path.Combine(fullRepository, "duplicati-b" + new string('a', 32) + ".dblock.zip");
+        File.WriteAllText(block, "owned native block fixture");
+        string? originalDatabase = null;
+        var interrupted = new FakeRunner(request =>
+        {
+            var db = request.Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..];
+            if (request.Arguments[0] == "repair") { originalDatabase = db; File.WriteAllText(db, "native delete state"); }
+            else
+            {
+                Check(request.Arguments.Contains("--allow-full-removal=true"), "全删必须明确开启官方最后版本删除");
+                File.Delete(Path.Combine(fullRepository, ids[0]));
+                throw new IOException("interrupted after fileset deletion");
+            }
+            return Success;
+        });
+        await ExpectAsync<IOException>(() => new DuplicatiEngine(interrupted, executable, new FakeLog())
+            .DeleteVersionsAsync(fullHistory, [ids[0]], CancellationToken.None, allowEmpty: true), "中断清理不得报成功");
+        var resumed = new FakeRunner(request =>
+        {
+            Check(request.Arguments[0] == "compact" && request.Arguments.Contains("--dbpath=" + originalDatabase),
+                "全删中断须复用持久化原生索引完成官方compact");
+            File.Delete(block);
+            return Success;
+        });
+        await new DuplicatiEngine(resumed, executable, new FakeLog()).DeleteVersionsAsync(fullHistory, [ids[0]], CancellationToken.None,
+            resume: true, allowEmpty: true);
+        Check(!Directory.EnumerateFileSystemEntries(fullRepository).Any() && !File.Exists(Path.Combine(fullHistory, "cleanup.json")),
+            "全删中断后未完成内容和记录核对");
+    }
 
     private static async Task CheckDiagnosticsAsync(string fixture, string executable)
     {

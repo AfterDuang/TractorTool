@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史完整流程 | [E122 · 自动保护、比较、恢复与清理（2026-11-17）](#evidence-folder-history-complete) |
 | 文件夹历史可靠性 | [E121 · 精确警告兼容、操作诊断与登记版隔离（2026-11-16）](#evidence-folder-history-reliability) |
 | 视频图标 | [E120 · Fluent 彩色摄像机与独立更新（2026-11-16）](#evidence-video-color-icon) |
 | 剪贴板图标 | [E119 · Fluent 彩色标识与独立更新（2026-11-16）](#evidence-clipboard-color-icon) |
@@ -159,6 +160,47 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-complete"></a>
+
+## E122：文件夹历史完整流程与数据安全收尾（2026-11-17）
+
+用户对 E121 基础测试反馈暂未发现问题，但认为操作别扭，授权补齐既定插件功能后统一测试。该反馈只作为 0.1.2 的基础使用反馈，不改写为 A28 全通过。本轮三路 gpt-6-astra / max 实现服务、引擎/恢复与 UI；两路 gpt-6.1-sol / high 独立审查调度/交互及数据安全，主代理整合与核对。仅修改 FolderHistory、专属检查和四份文档，不改 Host/Core/Contracts/公共 UI、真实目录、ACL 或已安装插件。
+
+### 实现与默认行为
+
+- 插件 0.2.0，依赖配方保持 `Duplicati.CLI/1.0.1`。复用已发布的 Avalonia 12.1.6 宿主 SDK 与现有 FluentAvalonia 对话框，没有新增公共接口或 NuGet 依赖。
+- 新目录准备时可先排除精确相对路径，显示扫描概览，确认后完整保存再启用。默认稳定窗口 5 秒、最小间隔 60 秒、全部保留。文件系统事件合并为一次到期等待；启动/溢出补查，后台只使用已安装工具。页面隐藏/切换不停止保护，退出取消并等待收尾。
+- 已有库可先关联浏览，不读取被占用的工作文件；发布关联前先持久暂停，避免重启意外继承自动清理。schema 1 只浏览不改格式，首次写入升级 schema 2，旧插件拒绝读写新版库。
+- 页面按目录、时间线、变化列表和单路径历史组织，默认比较前版；文本差异有字节/行数/计算量上限并保留编码和换行信息。文件夹设置、恢复和清理走按需对话框；选择和文本预览在后台刷新时保留。
+- 原位恢复固定预览，完整保存保护版并标重要，实际提取与字节校验后才改工作文件；单项只提取所选范围。冻结 `plan.json` 只写一次，`operation.json` 用固定大小的前进/撤销游标保存进度。原件无覆盖移入撤销区；未完成操作可继续或撤销，继续前重新验证保护版，撤销不依赖无关卷或引擎。成功校验后清理已核实的材料，保留操作记录；发生占位/后写冲突时保留双方数据。
+- 数量/天数均为 0 时不清理，同时启用时保留两条规则的并集；最新、重要与恢复保护版本不参与自动删除。原生 `repair`/`delete`/`compact` 负责删除和回收；有效 partial 卷仅保留并参与原生编号。“删除全部”遇未登记卷时预检拒绝，不扩大已确认范围。清理真正开始后保留可继续的记录和索引，未开始的失败不锁死正常库。
+
+### Review 修正
+
+1. 源文件在保存期间发生变化时，仅对明确的变化冲突延后重试；其他错误仍暂停。自动状态在核对事件代次后发布，清理后继续处理后续变化。目录查询与修改串行并持库锁，避免页面读取 ZIP 抢占 native delete。
+2. 全删确认携带明确意图并在锁内重验版本集合；移除关联先保存配置再停监听，配置失败保留保护。已有库关联不以全树扫描为前提，手动选择在发布关联前落盘。
+3. 保护版清单存在不等于内容可恢复，初次/继续原位恢复均实际提取。恢复中断可移走冲突文件再撤销；无关旧卷损坏不隐藏事务入口或阻止本地撤销。明确重新关联后按库 ID 重绑相对恢复计划，绝不写旧绝对根。
+4. 任意路径段的历史保留名都不能进入恢复清单；实际扫描到嵌套历史库明确拒绝，完整排除子树不深入。消除逐步骤重写全计划造成的平方级写入，按单项提取计算空间。
+5. 清理先只读预检，按实际所有原生卷编号，只删除确认的完整版本；合法 partial 校验后保留。清空在 dlist 已删除后的中断使用原先保存的原生索引继续，不手工删除内容块。
+
+最终两路复审未发现剩余阻断；这是源码审查结论，不代替真实中断、并发写入或 Windows UI 验收。固定版依据包括 [恢复编号](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/Main/Operation/RestoreHandler.cs)、[删除编号](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/Main/Database/Local/LocalDeleteDatabase.cs)与 [中断后 partial](https://github.com/duplicati/duplicati/blob/v2.4.0.1_stable_2026-10-07/Duplicati/Library/Main/Operation/Backup/UploadSyntheticFilelist.cs)。
+
+### 构建与静态证据
+
+目录 `artifacts/e122-folder-history-complete`（Git 忽略，不保证随克隆附带）：
+
+| 检查 | 结果 |
+| --- | --- |
+| `dotnet build tests/TractorTool.FolderHistoryChecks/TractorTool.FolderHistoryChecks.csproj -c Release -m:1 -nr:false` | 0 错误、2 条 NU1900，7.45 秒；`checks-build.log`。源变化/调度、清理确认、保护失败、中断/移动/嵌套库、文本解析等新增检查只编译 |
+| `pwsh -NoProfile -File ./scripts/Build-Plugin.ps1 -Project ./Plugins/TractorTool.Plugins.FolderHistory/TractorTool.Plugins.FolderHistory.csproj -HostSdkDir ./artifacts/e117-avalonia-12.1.6/distribution/layout/TractorTool-1.0.0-win-x64 -Output ./artifacts/e122-folder-history-complete/plugin-final` | 独立 SDK 构建 0 错误、2 条 NU1900，9.58 秒；`plugin-build.log` |
+| ZIP 与 SDK 静态核对 | 9 项 ZIP 内容，根清单/版本/依赖、MVVM 许可、无共享 SDK DLL 副本及 SHA256 侧文件核对通过；380 个 SDK 原文件哈希不变，`package-checks.json` / `sdk-before.json` |
+
+最终 ZIP：`plugin-final/TractorTool.FolderHistory-0.2.0.zip`，272,867 字节，SHA256 `A90AD004075661238A1FA548F0FDE54007F3A224A9929EB435FADFCE187C6F94`。NU1900 是 NuGet 漏洞信息源不可达，不是漏洞审计通过；没有关闭审计。
+
+四份本轮文档的 276 处本地链接、230 处锚点及代码围栏核对通过，`doc-checks.json` 无问题；`git diff --check` 通过。外部参考没有作为本地链接检查结果，保留未跟踪的 IDE 配置和临时 sln。
+
+本轮未启动宿主、Duplicati、检查程序或 UI，不修改真实历史/安装，不推送。大历史库读取/比较开销、真实取消/断点/清理、页面宽窄布局与键盘操作继续按 A28 集中验收；默认不清理，未登记材料不自动删除。应用包需用户安装后显式退出重启，不能将源码编译等同于安装生效。
 
 <a id="evidence-folder-history-reliability"></a>
 

@@ -8,7 +8,14 @@ public static class WorkingTree
     public static Task<IReadOnlyList<HistoryEntry>> ScanAsync(string root, CancellationToken token) =>
         ScanAsync(root, excludeHistory: true, token);
 
-    public static async Task<IReadOnlyList<HistoryEntry>> ScanAsync(string root, bool excludeHistory, CancellationToken token)
+    public static Task<IReadOnlyList<HistoryEntry>> ScanAsync(string root, IReadOnlyList<string> excludedRelativePaths,
+        CancellationToken token) => ScanAsync(root, true, token, HistoryExclusions.Normalize(excludedRelativePaths));
+
+    public static Task<IReadOnlyList<HistoryEntry>> ScanAsync(string root, bool excludeHistory, CancellationToken token) =>
+        ScanAsync(root, excludeHistory, token, []);
+
+    private static async Task<IReadOnlyList<HistoryEntry>> ScanAsync(string root, bool excludeHistory, CancellationToken token,
+        IReadOnlyList<string> exclusions)
     {
         token.ThrowIfCancellationRequested();
         root = HistoryPaths.Absolute(root);
@@ -24,7 +31,8 @@ public static class WorkingTree
             token.ThrowIfCancellationRequested();
             if (excludeHistory && HistoryPaths.IsHistoryPath(relative)) return;
             relative = HistoryPaths.NormalizeRelative(relative);
-            var attributes = HistoryPaths.Attributes(path) ?? throw new IOException("扫描时文件或目录消失：" + relative);
+            if (HistoryExclusions.IsExcluded(relative, exclusions)) return;
+            var attributes = HistoryPaths.Attributes(path) ?? throw new WorkingTreeChangedException("扫描时文件或目录消失：" + relative);
             var directory = attributes.HasFlag(FileAttributes.Directory);
             var item = directory ? new HistoryEntry(relative, true, 0, "") : await ReadFileAsync(path, relative, token).ConfigureAwait(false);
             if (!items.TryAdd(relative, item)) throw new InvalidDataException("文件名大小写冲突：" + relative);
@@ -49,7 +57,28 @@ public static class WorkingTree
         }
     }
 
-    private static async Task<HistoryEntry> ReadFileAsync(string path, string relative, CancellationToken token)
+    internal static async Task<HistoryEntry?> ReadEntryAsync(string root, string relative, CancellationToken token)
+    {
+        var path = HistoryPaths.Absolute(root);
+        var actual = new List<string>();
+        foreach (var part in HistoryPaths.NormalizeRelative(relative).Split('/'))
+        {
+            token.ThrowIfCancellationRequested();
+            HistoryPaths.RequireDirectory(path);
+            var match = Directory.EnumerateFileSystemEntries(path)
+                .SingleOrDefault(item => HistoryPaths.Comparer.Equals(Path.GetFileName(item), part));
+            if (match is null) return null;
+            path = match;
+            actual.Add(Path.GetFileName(path));
+        }
+        HistoryPaths.CheckPath(path);
+        var attributes = HistoryPaths.Attributes(path);
+        return attributes is null ? null : attributes.Value.HasFlag(FileAttributes.Directory)
+            ? new(string.Join('/', actual), true, 0, "")
+            : await ReadFileAsync(path, string.Join('/', actual), token).ConfigureAwait(false);
+    }
+
+    internal static async Task<HistoryEntry> ReadFileAsync(string path, string relative, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         using var input = OpenRead(path);
@@ -58,7 +87,7 @@ public static class WorkingTree
         var hash = await SHA256.HashDataAsync(input, token).ConfigureAwait(false);
         HistoryPaths.CheckPath(path);
         if (length != input.Position || length != input.Length || modified != File.GetLastWriteTimeUtc(input.SafeFileHandle))
-            throw new IOException("文件在读取期间发生变化：" + relative);
+            throw new WorkingTreeChangedException("文件在读取期间发生变化：" + relative);
         return new(relative, false, length, Convert.ToHexString(hash));
     }
 

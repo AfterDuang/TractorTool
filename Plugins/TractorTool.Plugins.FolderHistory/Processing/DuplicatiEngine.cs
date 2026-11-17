@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using TractorTool.Contracts;
 using TractorTool.Contracts.Processes;
@@ -31,7 +33,8 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         return ReadVersion(ParseVolume(Path.Combine(Repository(historyDirectory), versionId)));
     }
 
-    public async Task<HistoryVersion> BackupAsync(string root, string historyDirectory, CancellationToken token)
+    public async Task<HistoryVersion> BackupAsync(string root, string historyDirectory, CancellationToken token,
+        IReadOnlyList<string>? excludedRelativePaths = null)
     {
         root = HistoryPaths.Absolute(root);
         HistoryPaths.RequireDirectory(root);
@@ -47,13 +50,18 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         if (before.Count != 0 && HistoryPaths.Attributes(Index(historyDirectory)) is null)
             await RunAsync("repair", historyDirectory, [], token).ConfigureAwait(false);
 
-        // Duplicati expands environment variables before compiling bracket-delimited filters.
-        var excluded = Regex.Escape(historyDirectory + Path.DirectorySeparatorChar).Replace("%", @"\x25", StringComparison.Ordinal);
+        var exclusions = HistoryExclusions.Normalize(excludedRelativePaths ?? []);
+        var separator = Regex.Escape(Path.DirectorySeparatorChar.ToString());
+        var filters = new List<string>
+        {
+            $"--exclude=[^{EscapeFilter(root)}{separator}(?:.*{separator})?{Regex.Escape(HistoryPaths.DirectoryName)}(?:{separator}.*)?$]"
+        };
+        filters.AddRange(exclusions.Select(path => ExcludePath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)))));
         // A separator-only marker list disables the default without passing an invalid blank path.
         var ignoreMarkers = $"--ignore-filenames={Path.PathSeparator}";
         await RunAsync("backup", historyDirectory,
             [
-                root, $"--exclude=[^{excluded}$]", "--snapshot-policy=off", "--usn-policy=off",
+                root, .. filters, "--snapshot-policy=off", "--usn-policy=off",
                 "--disable-filetime-check=true", "--exclude-empty-folders=false", ignoreMarkers,
                 "--abort-if-source-missing=true", "--symlink-policy=store", "--enable-ads-backup=false",
                 "--upload-unchanged-backups=true", "--keep-versions=0", "--keep-time=", "--retention-policy=",
@@ -68,7 +76,8 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         return added[0];
     }
 
-    public async Task RestoreAsync(HistoryVersion version, string historyDirectory, string stagingDirectory, CancellationToken token)
+    public async Task RestoreAsync(HistoryVersion version, string historyDirectory, string stagingDirectory, CancellationToken token,
+        string? selection = null)
     {
         ArgumentNullException.ThrowIfNull(version);
         var volumes = ReadVolumes(historyDirectory);
@@ -87,31 +96,244 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         if (Directory.EnumerateFileSystemEntries(staging).Any())
             throw new IOException("恢复暂存目录已含内容。");
 
-        var emptyRestoreWarning = stored.Entries.All(entry => entry.IsDirectory)
-            ? stored.Entries.Count == 0 ? "NoFilesOrFoldersRestored" : "NoFilesRestored"
+        var selectedEntries = SelectEntries(stored, selection);
+        var filters = selection is null ? Array.Empty<string>() : RestoreFilters(stored, selection);
+        var emptyRestoreWarning = selectedEntries.All(entry => entry.IsDirectory)
+            ? selectedEntries.Count == 0 ? "NoFilesOrFoldersRestored" : "NoFilesRestored"
             : null;
         // Read the live repository's numbering, including incomplete versions, without trusting a stale local index.
         await RunAsync("restore", historyDirectory,
             [
-                $"--version={index.ToString(CultureInfo.InvariantCulture)}", $"--restore-path={staging}",
+                $"--version={index.ToString(CultureInfo.InvariantCulture)}", $"--restore-path={staging}", .. filters,
                 "--no-local-db=true", "--overwrite=false", "--dont-compress-restore-paths=false",
                 "--allow-restore-outside-target-directory=false", "--skip-metadata=true", "--disable-ads-restore=true"
             ], token, emptyRestoreWarning).ConfigureAwait(false);
 
         var restored = await WorkingTree.ScanAsync(staging, excludeHistory: false, token).ConfigureAwait(false);
-        if (!HistoryComparison.Equal(stored.Entries, restored))
+        if (!HistoryComparison.Equal(selectedEntries, restored))
             throw new InvalidDataException("提取内容与所选版本的目录清单或 SHA256 不符。");
     }
 
+    public static IReadOnlyList<HistoryEntry> SelectEntries(HistoryVersion version, string? selection)
+    {
+        if (selection is null) return version.Entries;
+        selection = HistoryPaths.NormalizeRelative(selection);
+        var selected = version.Entries.SingleOrDefault(item => HistoryPaths.Comparer.Equals(item.Path, selection))
+            ?? throw new InvalidDataException("历史版本没有所选项目：" + selection);
+        return version.Entries.Where(item => HistoryPaths.IsSameOrDescendant(selected.Path, item.Path) ||
+            item.IsDirectory && HistoryPaths.IsSameOrDescendant(item.Path, selected.Path)).ToArray();
+    }
+
+    public static void PreflightDelete(string historyDirectory, IReadOnlyList<string> versionIds, bool allowEmpty = false)
+    {
+        historyDirectory = HistoryPaths.Absolute(historyDirectory);
+        ValidateDeletionIds(historyDirectory, versionIds);
+        if (ReadCleanup(Path.Combine(historyDirectory, "cleanup.json")) is not null)
+            throw new InvalidDataException("存在未完成的清理记录，请先继续原操作。");
+        var before = ReadCleanupRepository(historyDirectory, out var fullVersions);
+        ValidateDeletionSelection(versionIds, before, fullVersions, resume: false, allowEmpty);
+    }
+
+    private static void ValidateDeletionIds(string historyDirectory, IReadOnlyList<string> versionIds)
+    {
+        if (versionIds.Count == 0 || versionIds.Any(string.IsNullOrWhiteSpace) ||
+            versionIds.Distinct(StringComparer.Ordinal).Count() != versionIds.Count)
+            throw new InvalidDataException("清理版本列表为空或含重复项。");
+        foreach (var id in versionIds)
+        {
+            if (Path.GetFileName(id) != id) throw new InvalidDataException("清理版本标识无效。");
+            _ = ParseVolume(Path.Combine(Repository(historyDirectory), id));
+        }
+    }
+
+    public async Task DeleteVersionsAsync(string historyDirectory, IReadOnlyList<string> versionIds, CancellationToken token,
+        bool resume = false, bool allowEmpty = false, Action? deletionStarting = null)
+    {
+        token.ThrowIfCancellationRequested();
+        historyDirectory = HistoryPaths.Absolute(historyDirectory);
+        ValidateDeletionIds(historyDirectory, versionIds);
+        var before = ReadCleanupRepository(historyDirectory, out var fullVersions);
+        var selected = versionIds.ToHashSet(StringComparer.Ordinal);
+        ValidateDeletionSelection(versionIds, before, fullVersions, resume, allowEmpty);
+        var retained = before.Where(pair => !selected.Contains(pair.Key)).ToDictionary(StringComparer.Ordinal);
+        var journalPath = Path.Combine(historyDirectory, "cleanup.json");
+        var pending = ReadCleanup(journalPath);
+        if (pending is not null)
+        {
+            if (!resume || pending.AllowEmpty != allowEmpty || !selected.SetEquals(pending.VersionIds))
+                throw new InvalidDataException("存在另一份未完成的清理记录，请先处理原操作。");
+            RequireSameRepository(pending.Retained, retained);
+        }
+        if (retained.Count == 0 && !allowEmpty)
+            throw new InvalidDataException("版本清理至少保留一个完整版本；删除整个历史请使用独立操作。");
+        if (before.Count == 0)
+        {
+            if (!resume || !allowEmpty)
+                throw new InvalidDataException("清理缺少可核对的完整版本，已停止。");
+            if (Directory.EnumerateFileSystemEntries(Repository(historyDirectory)).Any())
+            {
+                if (pending is null) throw new InvalidDataException("剩余内容块缺少原生清理索引，已保留材料。");
+                var previousDatabase = Path.Combine(TempDirectory(historyDirectory), pending.DatabaseName);
+                HistoryPaths.CheckPath(previousDatabase);
+                if (!File.Exists(previousDatabase)) throw new InvalidDataException("未完成清理的原生索引已丢失，已保留材料。");
+                deletionStarting?.Invoke();
+                await RunAsync("compact", historyDirectory, ["--auto-vacuum=false"], token, databasePath: previousDatabase).ConfigureAwait(false);
+            }
+            if (Directory.EnumerateFileSystemEntries(Repository(historyDirectory)).Any())
+                throw new InvalidDataException("引擎尚未回收全部内容块，已保留清理记录。");
+            RequireClosedDatabase(Index(historyDirectory));
+            File.Delete(Index(historyDirectory));
+            DeleteCleanupJournal(journalPath);
+            return;
+        }
+
+        // A fresh native index prevents stale local numbering from deleting a different version.
+        var temporary = TempDirectory(historyDirectory);
+        HistoryPaths.CheckPath(temporary);
+        Directory.CreateDirectory(temporary);
+        var database = Path.Combine(temporary, "cleanup-" + Guid.NewGuid().ToString("N") + ".sqlite");
+        await RunAsync("repair", historyDirectory, [], token, databasePath: database).ConfigureAwait(false);
+        RequireSameRepository(before, ReadCleanupRepository(historyDirectory, out _));
+        WriteCleanup(journalPath, new(versionIds.ToArray(), allowEmpty, retained, Path.GetFileName(database)));
+        deletionStarting?.Invoke();
+        var ordered = ReadVolumes(historyDirectory);
+        var indices = ordered.Select((volume, index) => (volume, index)).Where(item => selected.Contains(item.volume.Id))
+            .Select(item => item.index.ToString(CultureInfo.InvariantCulture)).ToArray();
+        if (indices.Length != 0)
+            await RunAsync("delete", historyDirectory,
+                [$"--version={string.Join(',', indices)}", "--keep-versions=0", "--keep-time=", "--retention-policy=",
+                    $"--allow-full-removal={allowEmpty.ToString().ToLowerInvariant()}", "--no-auto-compact=false", "--auto-vacuum=false"],
+                token, databasePath: database).ConfigureAwait(false);
+        else
+            await RunAsync("compact", historyDirectory, ["--auto-vacuum=false"], token, databasePath: database).ConfigureAwait(false);
+        RequireSameRepository(retained, ReadCleanupRepository(historyDirectory, out _));
+        if (retained.Count == 0 && Directory.EnumerateFileSystemEntries(Repository(historyDirectory)).Any())
+            throw new InvalidDataException("引擎未回收全部历史内容，已保留清理记录。");
+        token.ThrowIfCancellationRequested();
+        foreach (var path in new[] { database, Index(historyDirectory) }) RequireClosedDatabase(path);
+        File.Move(database, Index(historyDirectory), overwrite: true);
+        DeleteCleanupJournal(journalPath);
+    }
+
+    private sealed record CleanupJournal(
+        [property: JsonRequired] string[] VersionIds,
+        [property: JsonRequired] bool AllowEmpty,
+        [property: JsonRequired] Dictionary<string, string> Retained,
+        [property: JsonRequired] string DatabaseName,
+        [property: JsonRequired] int SchemaVersion = 1);
+
+    private static CleanupJournal? ReadCleanup(string path)
+    {
+        HistoryPaths.CheckPath(path);
+        if (HistoryPaths.Attributes(path) is null) return null;
+        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (input.Length > MetadataLimit) throw new InvalidDataException("清理记录超过读取限制。");
+        var value = JsonSerializer.Deserialize<CleanupJournal>(input, new JsonSerializerOptions
+            { AllowDuplicateProperties = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow });
+        if (value?.SchemaVersion != 1 || value.VersionIds is null || value.Retained is null || value.DatabaseName is null ||
+            !Regex.IsMatch(value.DatabaseName, @"^cleanup-[0-9a-f]{32}\.sqlite$", RegexOptions.CultureInvariant) ||
+            value.VersionIds.Length == 0 || value.VersionIds.Distinct(StringComparer.Ordinal).Count() != value.VersionIds.Length ||
+            value.Retained.Any(item => !Regex.IsMatch(item.Key, @"^duplicati-\d{8}T\d{6}Z\.dlist\.zip$", RegexOptions.CultureInvariant) ||
+                item.Value is null || !Regex.IsMatch(item.Value, "^[0-9A-F]{64}$", RegexOptions.CultureInvariant)))
+            throw new InvalidDataException("清理记录损坏或格式不兼容，已保留材料。");
+        return value;
+    }
+
+    private static void WriteCleanup(string path, CleanupJournal value)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(value);
+        if (bytes.Length > MetadataLimit) throw new InvalidDataException("清理记录超过容量限制。");
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            output.Write(bytes);
+            output.Flush(flushToDisk: true);
+        }
+        HistoryPaths.CheckPath(path);
+        File.Move(temporary, path, overwrite: true);
+    }
+
+    private static void DeleteCleanupJournal(string path)
+    {
+        HistoryPaths.CheckPath(path);
+        File.Delete(path);
+    }
+
+    private static void RequireClosedDatabase(string path)
+    {
+        HistoryPaths.CheckPath(path);
+        foreach (var suffix in new[] { "-wal", "-shm", "-journal" })
+            if (HistoryPaths.Attributes(path + suffix) is not null)
+                throw new IOException("清理索引尚有事务辅助文件，已保留材料并停止发布索引。");
+    }
+
+    private static void ValidateDeletionSelection(IReadOnlyList<string> selected, IReadOnlyDictionary<string, string> volumes,
+        IReadOnlySet<string> fullVersions, bool resume, bool allowEmpty)
+    {
+        if (selected.Any(id => volumes.ContainsKey(id) ? !fullVersions.Contains(id) : !resume))
+            throw new InvalidDataException("只能清理已确认的完整版本；预览版本已变化或包含不完整卷。");
+        if (allowEmpty && (fullVersions.Count != volumes.Count || fullVersions.Any(id => !selected.Contains(id))))
+            throw new InvalidDataException("库中存在未纳入确认范围的版本或不完整卷，不能扩大全部版本的删除范围。");
+        if (!allowEmpty && !fullVersions.Any(id => !selected.Contains(id)))
+            throw new InvalidDataException("版本清理至少保留一个完整版本；删除整个历史请使用独立操作。");
+    }
+
+    private static Dictionary<string, string> ReadCleanupRepository(string historyDirectory, out HashSet<string> fullVersions)
+    {
+        var volumes = ReadVolumes(historyDirectory);
+        foreach (var path in Directory.EnumerateFileSystemEntries(Repository(historyDirectory)))
+        {
+            HistoryPaths.CheckPath(path);
+            if (HistoryPaths.Attributes(path)?.HasFlag(FileAttributes.Directory) != false ||
+                !Regex.IsMatch(Path.GetFileName(path), @"^duplicati-(?:\d{8}T\d{6}Z\.dlist|b[0-9a-f]{32}\.dblock|i[0-9a-f]{32}\.dindex)\.zip$",
+                    RegexOptions.CultureInvariant))
+                throw new InvalidDataException("历史内容目录存在未知文件或目录，已停止清理。");
+        }
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        fullVersions = new(StringComparer.Ordinal);
+        foreach (var volume in volumes)
+        {
+            // Native version numbers include partial filesets; validate and retain them without exposing them as restorable versions.
+            if (ReadVersion(volume, validatePartial: true) is not null) fullVersions.Add(volume.Id);
+            using var input = new FileStream(volume.File, FileMode.Open, FileAccess.Read, FileShare.Read);
+            result.Add(volume.Id, Convert.ToHexString(SHA256.HashData(input)));
+        }
+        return result;
+    }
+
+    private static void RequireSameRepository(IReadOnlyDictionary<string, string> expected, IReadOnlyDictionary<string, string> actual)
+    {
+        if (expected.Count != actual.Count || expected.Any(pair => !actual.TryGetValue(pair.Key, out var hash) || hash != pair.Value))
+            throw new InvalidDataException("清理前后版本列表或保留版本内容不符，已停止并保留待处理记录。");
+    }
+
+    private static string ExcludePath(string path) => $"--exclude=[^{EscapeFilter(path)}(?:{Regex.Escape(Path.DirectorySeparatorChar.ToString())}.*)?$]";
+
+    private static string EscapeFilter(string value) => Regex.Escape(value).Replace("%", @"\x25", StringComparison.Ordinal);
+
+    private static string[] RestoreFilters(HistoryVersion version, string selection)
+    {
+        var entries = SelectEntries(version, selection);
+        var selected = entries.Single(item => HistoryPaths.Comparer.Equals(item.Path, HistoryPaths.NormalizeRelative(selection)));
+        var root = version.SourceRoot + Path.DirectorySeparatorChar;
+        // Include the stored root and ancestors so Duplicati keeps the same relative path mapping.
+        var exact = entries.Where(item => !HistoryPaths.IsSameOrDescendant(selected.Path, item.Path))
+            .Select(item => EscapeFilter(root + item.Path.Replace('/', Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar));
+        var selectedPath = EscapeFilter(root + selected.Path.Replace('/', Path.DirectorySeparatorChar)) +
+            (selected.IsDirectory ? Regex.Escape(Path.DirectorySeparatorChar.ToString()) + ".*" : "");
+        return [$"--include=[^(?:{string.Join('|', new[] { EscapeFilter(root) }.Concat(exact).Append(selectedPath))})$]", "--exclude=*"];
+    }
+
     private async Task RunAsync(string command, string historyDirectory, IReadOnlyList<string> arguments,
-        CancellationToken token, string? emptyRestoreWarning = null)
+        CancellationToken token, string? emptyRestoreWarning = null, string? databasePath = null)
     {
         HistoryPaths.RequireDirectory(historyDirectory);
         var repository = Repository(historyDirectory);
         HistoryPaths.RequireDirectory(repository);
         var temporary = TempDirectory(historyDirectory);
         HistoryPaths.CheckPath(temporary);
-        HistoryPaths.CheckPath(Index(historyDirectory));
+        var database = databasePath ?? Index(historyDirectory);
+        HistoryPaths.CheckPath(database);
         Directory.CreateDirectory(temporary);
         var logPath = Path.Combine(temporary, $"duplicati-{command}-{Guid.NewGuid():N}.log");
         ProcessResult? result = null;
@@ -120,7 +342,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         {
             result = await processes.RunAsync(new ProcessRequest(executable,
                 [
-                    command, LocalUri(repository), .. arguments, $"--dbpath={Index(historyDirectory)}", $"--tempdir={temporary}",
+                    command, LocalUri(repository), .. arguments, $"--dbpath={database}", $"--tempdir={temporary}",
                     "--portable-mode=true", "--no-encryption=true", "--compression-module=zip", "--file-hash-algorithm=SHA256",
                     "--disable-autocreate-folder=true", "--allowed-backend-modules=file", "--use-move-for-put=true",
                     "--suppress-warnings=NoFilesInBackup,SQLiteFilePermissionError" + (emptyRestoreWarning is null ? "" : "," + emptyRestoreWarning),
@@ -247,11 +469,13 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         return new(path, name, createdAt);
     }
 
-    private static HistoryVersion? ReadVersion(NativeVolume volume)
+    private static HistoryVersion? ReadVersion(NativeVolume volume) => ReadVersion(volume, validatePartial: false);
+
+    private static HistoryVersion? ReadVersion(NativeVolume volume, bool validatePartial)
     {
         try
         {
-            return ReadVolumeContents(volume);
+            return ReadVolumeContents(volume, validatePartial);
         }
         catch (Exception exception) when (exception is KeyNotFoundException or InvalidOperationException or FormatException)
         {
@@ -259,12 +483,13 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         }
     }
 
-    private static HistoryVersion? ReadVolumeContents(NativeVolume volume)
+    private static HistoryVersion? ReadVolumeContents(NativeVolume volume, bool validatePartial)
     {
         HistoryPaths.CheckPath(volume.File);
         using var archive = ZipFile.OpenRead(volume.File);
         using var fileset = ReadMetadata(archive, "fileset", 4096);
-        if (!fileset.RootElement.GetProperty("IsFullBackup").GetBoolean()) return null;
+        var full = fileset.RootElement.GetProperty("IsFullBackup").GetBoolean();
+        if (!full && !validatePartial) return null;
         using var manifest = ReadMetadata(archive, "manifest", 4096);
         if (manifest.RootElement.GetProperty("Version").GetInt32() != 2 ||
             manifest.RootElement.GetProperty("FileHash").GetString() != "SHA256")
@@ -278,6 +503,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             var type = item.GetProperty("type").GetString();
             var path = item.GetProperty("path").GetString() ?? throw new InvalidDataException("历史版本缺少项目路径。");
             var normalized = HistoryPaths.Absolute(path);
+            HistoryPaths.RejectHistoryContainer(normalized);
             if (!HistoryPaths.Comparer.Equals(normalized, path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
                 throw new InvalidDataException("历史清单包含非规范路径。");
             var entry = type switch
@@ -291,6 +517,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             if (entry.IsDirectory && (root is null || normalized.Length < root.Length)) root = normalized;
         }
 
+        if (!full) return null;
         if (root is null || Path.GetDirectoryName(root) is null)
             throw new InvalidDataException("历史清单缺少可识别的源目录。");
         var prefix = root + Path.DirectorySeparatorChar;

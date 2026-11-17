@@ -78,8 +78,10 @@ try
     Assert(renamed.Any(item => item.Path == originalName.Path && item.Kind == "删除") &&
         renamed.Any(item => item.Path == newName.Path && item.Kind == "新增"), "case-only rename did not expose both paths");
 
+    TextComparisonChecks.Run();
     await ServiceChecks.RunAsync(fixture);
     await EngineChecks.RunAsync(new DirectoryInfo(fixture));
+    await RestoreChecks.RunAsync(fixture);
     Console.WriteLine("Folder history file checks passed.");
 }
 finally

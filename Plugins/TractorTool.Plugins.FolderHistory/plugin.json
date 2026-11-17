@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.FolderHistory",
   "name": "文件夹版本历史",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "entryAssembly": "TractorTool.Plugins.FolderHistory.dll",
   "entryType": "TractorTool.Plugins.FolderHistory.FolderHistoryPlugin",
   "apiVersion": "1.7",
@@ -36,6 +36,6 @@
       ]
     }
   ],
-  "description": "手动保存本地文件夹的版本，比较变更并另存恢复。",
+  "description": "自动保存本地文件夹历史，比较变化、安全恢复并管理版本。",
   "author": "TractorTool"
 }

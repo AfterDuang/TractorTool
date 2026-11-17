@@ -1,6 +1,6 @@
 # TractorTool 开发上下文
 
-更新日期：2026-11-16。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-11-17。本页只保留接续工作所需信息；实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
 
@@ -10,7 +10,7 @@
 
 **E117：官方 Avalonia 12.1.6 已升级，用户测试后反馈暂未发现升级问题并授权本地提交，不推送。** 已同步宿主/公共 UI、三个正式插件与两个机制夹具的引用和清单；DataGrid 保持独立发布的 12.1.2，FluentAvaloniaUI 3.1.0、Contracts API 1.7 / UI API 1.5 不变。15 工程 Release 构建 0 警告/0 错误，三个正式插件用发布 SDK 独立打包，完整 ZIP 的 379 文件静态校验及共享程序集身份核对通过。用户测试时 FFmpeg 安装末尾曾拒绝移动目录，重试成功，未修改安装/进程代码，根因未定位。Agent 未启动应用或检查程序；测试入口、匹配插件版本及旧安装升级顺序统一见[升级指引](DEVELOPMENT.md#avalonia-1216-upgrade)，构建与用户反馈见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)。原动效与默认渲染未改，不宣称消闪。
 
-**E121 文件夹历史 0.1.2：** Astra 已修正 SQLite 权限警告兼容、公共诊断和已登记版本读取，删除重复扫描；只改插件与检查，不改框架、权限或用户历史。独立 Review 发现并补齐 exit 0 仍含警告/错误的漏判与无普通文件版本的另存边界，最终复审无阻断。最终检查工程及独立包已编译、静态核对完成，沿用 `Duplicati.CLI/1.0.1`；使用 [plugin-final 交付入口](DEVELOPMENT.md#folder-history-first)，不要使用同轮首版候选。真实保存/另存与检查运行由用户接手，不把构建当验收。后续按原地恢复保护、自动保存、文本对比、清理推进；框架缺口先交架构侧。实现用 gpt-6-astra / max，独立 Review 用 gpt-6.1-sol / high。
+**E122 文件夹历史 0.2.0：** 用户反馈 0.1.2 基础测试暂无问题，要求功能补齐后集中测试。自动保护、文本/路径历史、精确排除与保留、原位恢复/继续/撤销及清理已在插件内实现；沿用 `Duplicati.CLI/1.0.1`，没有框架修改。Astra / max 实现，两路 sol / high 独立 Review 的调度、确认竞态、恢复保护/断点及嵌套库问题已修正并复核。Release 检查工程和独立包构建 0 错误，各 2 条 NU1900；9 项 ZIP 静态核对、380 个 SDK 文件未变，未运行程序或检查。使用 [0.2.0 交付入口](DEVELOPMENT.md#folder-history-first)，等待用户集中验收，不再逐项催用户试候选。旧库关联保持暂停，首次写入升 schema 2 后旧插件无法读取；清理默认关闭，有未登记卷时清空不扩大确认范围。已知性能/故障验收缺口留在 A28；框架缺口仍须先交架构侧。
 
 **当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 

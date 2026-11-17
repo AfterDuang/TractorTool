@@ -2,6 +2,8 @@ namespace TractorTool.Plugins.FolderHistory.Models;
 
 public sealed record HistoryEntry(string Path, bool IsDirectory, long Length, string Hash);
 
+public sealed class WorkingTreeChangedException(string message) : IOException(message);
+
 public sealed record HistoryVersion(string Id, DateTimeOffset CreatedAt, string SourceRoot,
     IReadOnlyList<HistoryEntry> Entries);
 
@@ -9,10 +11,38 @@ public sealed record SavedVersion(HistoryVersion Version, string Note, bool Pinn
 {
     public string Id => Version.Id;
     public string Title => Version.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    public bool IsRestoreProtection { get; init; }
 }
 
 public sealed record FolderInfo(string Root, Guid Id, string Status, int VersionCount,
-    DateTimeOffset? LastSavedAt);
+    DateTimeOffset? LastSavedAt)
+{
+    public bool ProtectionEnabled { get; init; }
+    public bool HasPendingRestore { get; init; }
+    public bool HasPendingCleanup { get; init; }
+    public bool NeedsAttention { get; init; }
+    public long HistoryBytes { get; init; }
+}
+
+public sealed record FolderSettings
+{
+    public int StableSeconds { get; init; } = 5;
+    public int MinimumIntervalSeconds { get; init; } = 60;
+    public int KeepLatestVersions { get; init; }
+    public int KeepDays { get; init; }
+    public string[] ExcludedPaths { get; init; } = [];
+}
+
+public sealed record FolderPreparation(string Root, int FileCount, int DirectoryCount, long TotalBytes,
+    string HistoryDirectory, long? AvailableBytes, bool ExistingHistory)
+{
+    public bool WorkingTreeScanned { get; init; } = true;
+}
+
+public sealed record RestorePreview(Guid Id, string Root, string VersionId, string? RelativePath,
+    IReadOnlyList<HistoryChange> Changes);
+
+public sealed record PendingRestoreInfo(string TargetVersionId, string ProtectionVersionId, string Status);
 
 public sealed record HistoryChange(string Path, string Kind, long? BeforeLength, long? AfterLength);
 

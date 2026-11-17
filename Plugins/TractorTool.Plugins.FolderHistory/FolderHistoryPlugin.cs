@@ -6,7 +6,7 @@ using TractorTool.UI;
 
 namespace TractorTool.Plugins.FolderHistory;
 
-public sealed class FolderHistoryPlugin : IPlugin, IPluginUiModule
+public sealed class FolderHistoryPlugin : IPlugin, IPluginUiModule, IPluginBackgroundService
 {
     private FolderHistoryService? _service;
     private FolderHistoryViewModel? _model;
@@ -22,8 +22,11 @@ public sealed class FolderHistoryPlugin : IPlugin, IPluginUiModule
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("history", "文件夹版本历史", () => new FolderHistoryView { DataContext = model },
-            new(ToolIconKind.Folder, "手动保存文件夹的版本，比较变化并另存旧文件。"));
+            new(ToolIconKind.Folder, "自动保存文件夹历史，比较变化并安全找回旧文件。"));
     }
+
+    public Task RunAsync(CancellationToken stoppingToken) =>
+        (_service ?? throw new InvalidOperationException("插件未初始化。")).RunAsync(stoppingToken);
 
     public async ValueTask StopAsync(CancellationToken cancellationToken)
     {

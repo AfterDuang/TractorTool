@@ -34,6 +34,9 @@ public static class HistoryPaths
 
     internal static bool IsHistoryPath(string relative) => Comparer.Equals(relative.Split(Separators, 2)[0], DirectoryName);
 
+    internal static bool IsSameOrDescendant(string parent, string path) => Comparer.Equals(parent, path) ||
+        path.Length > parent.Length && path[parent.Length] == '/' && Comparer.Equals(parent, path[..parent.Length]);
+
     internal static void RejectHistoryContainer(string path)
     {
         if (path.Split(Separators).Contains(DirectoryName, Comparer))
@@ -51,7 +54,7 @@ public static class HistoryPaths
         ArgumentException.ThrowIfNullOrWhiteSpace(relative);
         var parts = relative.Split(Separators);
         foreach (var part in parts) ValidateName(part);
-        if (Comparer.Equals(parts[0], DirectoryName)) throw new InvalidDataException("不能使用受保护的历史库路径。");
+        if (parts.Contains(DirectoryName, Comparer)) throw new InvalidDataException("不能使用任何层级的历史库保留路径；当前不支持嵌套历史库。");
         return string.Join('/', parts);
     }
 
