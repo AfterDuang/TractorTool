@@ -179,22 +179,23 @@ public sealed partial class FolderHistoryService : IDisposable
         return true;
     });
 
-    public Task SaveAsync(string root, string note) => ExclusiveAsync(async token =>
+    public Task<bool> SaveAsync(string root, string note) => ExclusiveAsync(async token =>
     {
-        if (note.Length > 500) throw new ArgumentException("版本说明不能超过 500 个字符。", nameof(note));
+        note = NormalizeNote(note);
         _ = Open(root);
         using var lease = await RequestEngineAsync(token).ConfigureAwait(false);
         using var ownership = HistoryStore.Lock(root);
         var state = Open(root);
         RequireNoPendingOperation(root, state);
-        await CaptureAsync(root, state, Engine(lease), note.Trim(), false, token).ConfigureAwait(false);
+        var count = state.Versions.Count;
+        await CaptureAsync(root, state, Engine(lease), note, false, token, keepUnchanged: note.Length > 0).ConfigureAwait(false);
         ConfigureObservation(root, state, recheck: true);
         NotifyChanged();
-        return true;
+        return state.Versions.Count != count;
     });
 
     private async Task<SavedVersion> CaptureAsync(string root, RepositoryState state, DuplicatiEngine engine,
-        string note, bool protection, CancellationToken token, bool automatic = false)
+        string note, bool protection, CancellationToken token, bool automatic = false, bool keepUnchanged = false)
     {
         SavedVersion? saved = null;
         try
@@ -206,7 +207,7 @@ public sealed partial class FolderHistoryService : IDisposable
             var exclusions = protection ? Array.Empty<string>() : state.Settings.ExcludedPaths;
             var before = await WorkingTree.ScanAsync(root, exclusions, cancellation).ConfigureAwait(false);
             var previous = ReadCommitted(root, state);
-            if (previous.FirstOrDefault() is { } last && HistoryComparison.Equal(before, last.Version.Entries))
+            if (!keepUnchanged && previous.FirstOrDefault() is { } last && HistoryComparison.Equal(before, last.Version.Entries))
             {
                 if (protection)
                 {
@@ -255,6 +256,27 @@ public sealed partial class FolderHistoryService : IDisposable
         if (!automatic) SetRuntimeStatus(root, state.ProtectionEnabled ? "已保存" : "已暂停");
         return saved ?? throw new InvalidDataException("没有可确认的完整版本。");
     }
+
+    private static string NormalizeNote(string note) => note.Length <= 500 ? note.Trim() :
+        throw new ArgumentException("快照说明不能超过 500 个字符。", nameof(note));
+
+    public Task SetSnapshotNoteAsync(string root, string versionId, string originalNote, string note) => ExclusiveAsync(_ =>
+    {
+        note = NormalizeNote(note);
+        Open(root);
+        using var ownership = HistoryStore.Lock(root);
+        var state = Open(root);
+        var index = state.Versions.FindIndex(version => version.Id == versionId);
+        if (index < 0 || state.PendingDeleteIds.Contains(versionId))
+            throw new InvalidOperationException("这个快照已删除或正在清理。");
+        var receipt = state.Versions[index];
+        if (receipt.Note != originalNote)
+            throw new InvalidOperationException("快照说明已更改，请刷新后再编辑。");
+        state.Versions[index] = receipt with { Note = note };
+        HistoryStore.Save(root, state);
+        NotifyChanged();
+        return Task.FromResult(true);
+    });
 
     public Task SetPinnedAsync(string root, string versionId, bool pinned) => ExclusiveAsync(_ =>
     {

@@ -16,18 +16,19 @@ internal sealed partial class FolderHistoryViewModel
     private Action? _resumeBrowse;
     private (string Root, string? Before, string After, FileItem File)? _previewKey;
 
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsComparing))] private int _selectedTab;
     [ObservableProperty] private IReadOnlyList<TreeItem> _visibleTreeItems = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(ScopeTitle), nameof(IsSingleFile))]
     private IReadOnlyList<TreeItem> _selectedTreeItems = [];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVersions))] private IReadOnlyList<VersionItem> _versions = [];
+    [ObservableProperty] private IReadOnlyList<VersionItem> _versions = [];
     [ObservableProperty] private IReadOnlyList<VersionItem> _timelineVersions = [];
     [ObservableProperty] private string _emptyTimelineMessage = "正在读取历史…";
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanChooseComparison))] private IReadOnlyList<VersionItem> _comparisonBases = [];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVersion), nameof(AfterTitle), nameof(ComparisonDirection))]
+    [ObservableProperty] private IReadOnlyList<VersionItem> _comparisonBases = [];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVersion), nameof(AfterTitle))]
     private VersionItem? _selectedVersion;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(BeforeTitle), nameof(ComparisonDirection))] private VersionItem? _comparisonBase;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFiles))] private IReadOnlyList<FileItem> _files = [];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasSelectedFile), nameof(HasFileDetail), nameof(ShowChangeList),
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(BeforeTitle))] private VersionItem? _comparisonBase;
+    [ObservableProperty] private IReadOnlyList<FileItem> _files = [];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFileDetail), nameof(ShowChangeList),
         nameof(CanReturnToChanges), nameof(SelectedFileSummary), nameof(DetailPath), nameof(BeforeFileInfo), nameof(AfterFileInfo))]
     private FileItem? _selectedFile;
     [ObservableProperty] private string _comparisonSummary = "";
@@ -43,11 +44,8 @@ internal sealed partial class FolderHistoryViewModel
     public bool IsSingleFile => SelectedTreeItems is [{ Path.Length: > 0 } item] &&
         !(SelectedVersion?.Entries.GetValueOrDefault(item.Path)?.IsDirectory ??
           ComparisonBase?.Entries.GetValueOrDefault(item.Path)?.IsDirectory ?? item.IsDirectory);
-    public bool HasVersions => Versions.Count > 0;
+    public bool IsComparing => SelectedTab == 1;
     public bool HasVersion => SelectedVersion is not null;
-    public bool CanChooseComparison => ComparisonBases.Count != 0;
-    public bool HasFiles => Files.Count > 0;
-    public bool HasSelectedFile => SelectedFile is not null;
     public bool HasFileDetail => SelectedFile is not null;
     public bool ShowChangeList => HasVersion && !IsSingleFile && !HasFileDetail;
     public bool CanReturnToChanges => !IsSingleFile && HasFileDetail;
@@ -60,7 +58,6 @@ internal sealed partial class FolderHistoryViewModel
     public string AfterFileInfo => FileItem.Describe(SelectedFile?.After);
     public string BeforeTitle => ComparisonBase?.Title ?? "首次保存前";
     public string AfterTitle => SelectedVersion?.Title ?? "";
-    public string ComparisonDirection => HasVersion ? $"{BeforeTitle} → {AfterTitle}" : "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanGoToLastPresentVersion))]
     private VersionItem? _lastPresentVersion;
     public bool CanGoToLastPresentVersion => LastPresentVersion is not null;
@@ -167,10 +164,14 @@ internal sealed partial class FolderHistoryViewModel
         UpdateComparison(null);
     }
 
-    public void UsePreviousVersion() => ComparisonBase = ComparisonBases.FirstOrDefault();
+    partial void OnSelectedTabChanged(int value)
+    {
+        // A scope change clears the current row while its timeline loads. That read serves both tabs.
+        if (HasVersion) UpdateComparison(SelectedFile?.Path);
+    }
     partial void OnComparisonBaseChanged(VersionItem? value)
     {
-        if (!_settingSelection) UpdateComparison(SelectedFile?.Path);
+        if (!_settingSelection && IsComparing && HasVersion) UpdateComparison(SelectedFile?.Path);
     }
     partial void OnSelectedFileChanged(FileItem? value)
     {
@@ -181,7 +182,7 @@ internal sealed partial class FolderHistoryViewModel
     {
         CancelBrowse();
         var before = ComparisonBase;
-        if (SelectedVersion is not { } after) { ShowFiles([], null, ""); return; }
+        if (!IsComparing || SelectedVersion is not { } after) { ShowFiles([], null, ""); return; }
         if (IsSingleFile)
         {
             var file = FileItem.ForFile(SelectedTreeItems[0].Path, before, after);
@@ -273,12 +274,12 @@ internal sealed partial class FolderHistoryViewModel
         var before = ComparisonBase?.Id;
         var after = SelectedVersion?.Id;
         var root = SelectedFolder?.Root;
-        if (_attached && root is not null && after is not null && file is not null &&
+        if (_attached && IsComparing && root is not null && after is not null && file is not null &&
             _previewKey == (root, before, after, file)) return;
         CancelPreview();
         TextSummary = "";
         TextLines = [];
-        if (!_attached || file is null || root is null || after is null) return;
+        if (!_attached || !IsComparing || file is null || root is null || after is null) return;
         _previewKey = (root, before, after, file);
         if (file.Before?.IsDirectory == true && file.After?.IsDirectory == false ||
             file.Before?.IsDirectory == false && file.After?.IsDirectory == true)

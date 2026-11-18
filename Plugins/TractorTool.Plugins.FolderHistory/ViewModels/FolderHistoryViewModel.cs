@@ -22,7 +22,6 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     [ObservableProperty] private IReadOnlyList<FolderItem> _folders = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFolder), nameof(FolderSummary), nameof(CanSave), nameof(CanChangeProtection), nameof(ProtectionAction), nameof(HasPendingRestore), nameof(HasPendingCleanup))]
     private FolderItem? _selectedFolder;
-    [ObservableProperty] private string _note = "";
     [ObservableProperty] private string _busyMessage = "";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanSave))] private bool _versionsLoaded;
@@ -116,24 +115,16 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     public Task SaveSettingsAsync(string root, FolderSettings settings) => ChangeAsync("正在保存文件夹设置…", "无法保存设置", root,
         () => service.SaveSettingsAsync(root, settings), "已保存此文件夹的规则。排除仅影响后续保存，已有历史仍保留。");
 
-    [RelayCommand]
-    private Task SaveAsync()
-    {
-        if (!CanSave || SelectedFolder is not { } folder) return Task.CompletedTask;
-        var note = Note.Trim();
-        var latestId = Versions.FirstOrDefault()?.Id;
-        return RunAsync("正在保存版本…", "无法保存版本", async () =>
+    public Task CreateSnapshotAsync(string root, string note) =>
+        RunAsync("正在创建快照…", "无法创建快照", async () =>
         {
-            await service.SaveAsync(folder.Root, note);
-            Notice = "保存操作已完成。";
-            if (await RefreshAfterChangeAsync(folder.Root, selectLatest: true))
-            {
-                if (Versions.FirstOrDefault()?.Id == latestId)
-                    Notice = note.Length == 0 ? "内容没有变化，未新增版本。" : "内容没有变化，未新增版本；说明未写入历史。";
-                else { Note = ""; Notice = "已保存并校验新版本。"; }
-            }
+            var created = await service.SaveAsync(root, note);
+            await RefreshAfterChangeAsync(root, selectLatest: created);
+            Notice = created ? "已为整个文件夹创建快照。" : "文件没有变化，已保留现有快照。";
         });
-    }
+
+    public Task SetSnapshotNoteAsync(string root, string id, string originalNote, string note) =>
+        ChangeAsync("正在保存说明…", "无法保存说明", root, () => service.SetSnapshotNoteAsync(root, id, originalNote, note), "已保存快照说明。");
     public Task TogglePinnedAsync(VersionActionContext context) => ChangeAsync("正在更新重要标记…", "无法更新重要标记", context.Root,
         () => service.SetPinnedAsync(context.Root, context.VersionId, !context.Pinned), context.Pinned ? "已取消重要标记。" : "已标记为重要版本。");
 
@@ -278,7 +269,6 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     {
         _versionLoad?.Cancel();
         VersionsLoaded = false;
-        Note = "";
         _expanded.Clear();
         _expanded.Add("");
         ApplyWorkspace(null, false);

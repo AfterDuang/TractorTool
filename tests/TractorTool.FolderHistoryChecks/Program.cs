@@ -5,6 +5,12 @@ using TractorTool.Plugins.FolderHistory.Storage;
 var fixture = Directory.CreateTempSubdirectory("TractorTool.FolderHistoryChecks-").FullName;
 try
 {
+    if (args is ["--ui"])
+    {
+        InteractionChecks.Run(fixture);
+        Console.WriteLine("Folder history interaction checks passed.");
+        return;
+    }
     var work = NewDirectory("work");
     var app = NewDirectory("app");
     var data = NewDirectory("data");

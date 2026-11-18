@@ -2,4 +2,5 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../Plugins/TractorTool.Plugins.FolderHistory/TractorTool.Plugins.FolderHistory.csproj" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Avalonia.Headless" Version="12.1.6" /></ItemGroup>
 </Project>

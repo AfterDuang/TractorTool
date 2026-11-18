@@ -152,6 +152,14 @@ internal static class ServiceChecks
         var committed = JsonNode.Parse(await File.ReadAllTextAsync(movedMetadata))!;
         committed["versions"] = JsonSerializer.SerializeToNode(new[] { new { id = goodId, sourceRoot = moved, note = "registered", pinned = true, restoreProtection = false } });
         await File.WriteAllTextAsync(movedMetadata, committed.ToJsonString());
+        var processCountBeforeNotes = host.Processes;
+        await service.SetSnapshotNoteAsync(moved, goodId, "registered", "  可恢复的版本  ");
+        await ThrowsAsync<InvalidOperationException>(() => service.SetSnapshotNoteAsync(moved, goodId, "registered", "过期修改"));
+        await ThrowsAsync<ArgumentException>(() => service.SetSnapshotNoteAsync(moved, goodId, "可恢复的版本", new string('a', 501)));
+        var renamed = (await service.GetVersionsAsync(moved)).Single();
+        Assert(renamed.Id == goodId && renamed.Pinned && renamed.Note == "可恢复的版本", "editing a note changed the target or lost its metadata");
+        Assert(!await service.SaveAsync(moved, " ") && host.Processes == processCountBeforeNotes,
+            "editing a note or requesting an unchanged unnamed snapshot ran the engine");
         await File.WriteAllTextAsync(workFile, "changed work");
         foreach (var malformed in new[] { true, false })
         {
@@ -461,7 +469,7 @@ internal static class ServiceChecks
         if (!condition) throw new InvalidOperationException(message);
     }
 
-    private sealed class TestHost(string root) : IAppPaths, IPluginSettingsStore, IAppLog, IExternalPackageService, IProcessRunner, IBackgroundTaskService
+    internal sealed class TestHost(string root) : IAppPaths, IPluginSettingsStore, IAppLog, IExternalPackageService, IProcessRunner, IBackgroundTaskService
     {
         private IVersionedSettings? _settings;
         public bool AllowPackage { get; set; }
