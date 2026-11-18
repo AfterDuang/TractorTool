@@ -6,17 +6,22 @@ internal static class TextComparisonChecks
     public static void Run()
     {
         var changed = TextComparison.Compare(Bytes("甲\r\n乙\r\n丙"), Bytes("甲\r\n新增\r\n丙"));
-        Assert(changed.IsText && changed.Lines.Count(line => line.Kind == "删除") == 1 &&
-            changed.Lines.Count(line => line.Kind == "新增") == 1, "line replacement was not isolated");
-        Assert(changed.Lines.Where(line => line.Kind != "新增").Select(line => line.BeforeLine).SequenceEqual(new int?[] { 1, 2, 3 }),
+        Assert(changed.IsText && changed.Lines.Single(line => line.Kind == "修改") is
+            { BeforeLine: 2, AfterLine: 2, BeforeText: "乙", AfterText: "新增" }, "replacement not paired on a single row");
+        Assert(changed.Lines.Select(line => line.BeforeLine).SequenceEqual(new int?[] { 1, 2, 3 }),
             "original line numbers changed");
-        Assert(changed.Lines.Where(line => line.Kind != "删除").Select(line => line.AfterLine).SequenceEqual(new int?[] { 1, 2, 3 }),
+        Assert(changed.Lines.Select(line => line.AfterLine).SequenceEqual(new int?[] { 1, 2, 3 }),
             "new line numbers changed");
-        Assert(TextComparison.Compare(Bytes("a\r\n"), Bytes("a\n")).Lines.All(line => line.Kind != "相同"), "line endings ignored");
-        Assert(TextComparison.Compare(Bytes("a"), Bytes("a\n")).Lines.Count == 2, "final newline ignored");
+        var endings = TextComparison.Compare(Bytes("a\r\nb"), Bytes("a\nb\n"));
+        Assert(endings.Lines.All(line => line.Kind == "相同") && endings.Summary.Contains("换行"), "line endings must be reported separately");
+        var uneven = TextComparison.Compare(Bytes("a\nb\nc"), Bytes("x\nc"));
+        Assert(TextComparison.Compare(Bytes("old\r\n"), Bytes("new\n")).Summary.Contains("换行"),
+            "line endings changed on a replacement but were omitted");
+        Assert(uneven.Lines is [{ Kind: "修改" }, { Kind: "删除", BeforeText: "b", AfterText: null, AfterLine: null },
+            { Kind: "相同", BeforeLine: 3, AfterLine: 2 }], "unequal hunk shifted subsequent lines");
         Assert(TextComparison.Compare([], []).Lines.Count == 0, "empty content gained a line");
         var repeat = TextComparison.Compare(Bytes("a\nb\na\n"), Bytes("a\na\n"));
-        Assert(repeat.Lines.Single(line => line.Kind == "删除").Text == "b", "repeated lines lost their alignment");
+        Assert(repeat.Lines.Single(line => line.Kind == "删除").BeforeText == "b", "repeated lines lost their alignment");
         var unicode = Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes("中文\r\n")).ToArray();
         Assert(TextComparison.Compare(unicode, Bytes("中文\r\n")).Lines.All(line => line.Kind == "相同"), "BOM UTF-16 decoding failed");
         Assert(!TextComparison.Compare([0xff, 0x00], []).IsText, "invalid UTF-8 accepted");

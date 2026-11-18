@@ -426,7 +426,7 @@ internal static class ServiceChecks
             foreach (var area in new[] { "ready", "undo", "discard", "rollback" }) Directory.CreateDirectory(Path.Combine(operation, area));
             var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
             await File.WriteAllTextAsync(Path.Combine(operation, "plan.json"), JsonSerializer.Serialize(
-                new { schemaVersion = 1, id = operationId, plan, protectionVersionId = protectionId }, json));
+                new { schemaVersion = 2, id = operationId, plan, protectionVersionId = protectionId }, json));
             await File.WriteAllTextAsync(Path.Combine(operation, "operation.json"), JsonSerializer.Serialize(
                 new { schemaVersion = 1, id = operationId, status = "Applying", appliedCount = 0, stepStarted = true, rollbackNext = -1, rollbackStarted = false }, json));
             var undo = Path.Combine(operation, "undo", "0");

@@ -31,7 +31,7 @@ public sealed partial class FolderHistoryService : IDisposable
         _stopping = CancellationTokenSource.CreateLinkedTokenSource(context.ApplicationStopping);
     }
 
-    public Task<IReadOnlyList<FolderInfo>> GetFoldersAsync() => ExclusiveAsync<IReadOnlyList<FolderInfo>>(token =>
+    public Task<IReadOnlyList<FolderInfo>> GetFoldersAsync(CancellationToken cancellationToken = default) => ExclusiveAsync<IReadOnlyList<FolderInfo>>(token =>
     {
         var result = new List<FolderInfo>();
         foreach (var folder in _registry.Folders)
@@ -45,7 +45,7 @@ public sealed partial class FolderHistoryService : IDisposable
                 using var ownership = HistoryStore.Lock(folder.Root);
                 state = Open(folder.Root);
                 pendingRestore = InPlaceRestoreTransaction.ReadPending(folder.Root) is not null;
-                var versions = ReadCommitted(folder.Root, state);
+                var versions = ReadCommitted(folder.Root, state, token);
                 var status = pendingRestore ? "恢复未完成，自动保存已暂停" : state.PendingDeleteIds.Count > 0 ? "历史清理未完成，请检查后重试" :
                     RuntimeStatus(folder.Root) ?? (state.ProtectionEnabled ? "等待核对" : versions.Count == 0 ? "尚无完整版本" : "已暂停");
                 result.Add(new(folder.Root, folder.Id, status, versions.Count, versions.FirstOrDefault()?.Version.CreatedAt)
@@ -69,7 +69,7 @@ public sealed partial class FolderHistoryService : IDisposable
             }
         }
         return Task.FromResult<IReadOnlyList<FolderInfo>>(result);
-    });
+    }, cancellationToken);
 
     public Task<FolderPreparation> InspectFolderAsync(string root, FolderSettings? initialSettings = null)
     {
@@ -122,13 +122,13 @@ public sealed partial class FolderHistoryService : IDisposable
         });
     }
 
-    public Task<IReadOnlyList<SavedVersion>> GetVersionsAsync(string root) => ExclusiveAsync(token =>
+    public Task<IReadOnlyList<SavedVersion>> GetVersionsAsync(string root, CancellationToken cancellationToken = default) => ExclusiveAsync(token =>
     {
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         token.ThrowIfCancellationRequested();
-        return Task.FromResult(ReadCommitted(root, Open(root)));
-    });
+        return Task.FromResult(ReadCommitted(root, Open(root), token));
+    }, cancellationToken);
 
     public Task<FolderSettings> GetSettingsAsync(string root) => ExclusiveAsync(_ =>
     {
@@ -299,8 +299,10 @@ public sealed partial class FolderHistoryService : IDisposable
         _wake.Dispose();
     }
 
-    private Task<T> ExclusiveAsync<T>(Func<CancellationToken, Task<T>> action) => TrackAsync(async token =>
+    private Task<T> ExclusiveAsync<T>(Func<CancellationToken, Task<T>> action, CancellationToken cancellationToken = default) => TrackAsync(async token =>
     {
+        using var linked = cancellationToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(token, cancellationToken) : null;
+        token = linked?.Token ?? token;
         await _operation.WaitAsync(token).ConfigureAwait(false);
         try { token.ThrowIfCancellationRequested(); return await action(token).ConfigureAwait(false); }
         finally { _operation.Release(); }
@@ -333,19 +335,30 @@ public sealed partial class FolderHistoryService : IDisposable
         return state;
     }
 
-    private static IReadOnlyList<SavedVersion> ReadCommitted(string root, RepositoryState state)
+    private static IReadOnlyList<SavedVersion> ReadCommitted(string root, RepositoryState state, CancellationToken token = default)
     {
         var result = new List<SavedVersion>();
         foreach (var receipt in state.Versions)
         {
+            token.ThrowIfCancellationRequested();
             if (state.PendingDeleteIds.Contains(receipt.Id) &&
                 HistoryPaths.Attributes(Path.Combine(HistoryPaths.HistoryDirectory(root), "repository", receipt.Id)) is null) continue;
-            var version = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), receipt.Id);
-            if (version is null || !HistoryPaths.Comparer.Equals(receipt.SourceRoot, version.SourceRoot))
-                throw new InvalidDataException("已保存版本缺失或来源不符，请保留历史库并检查磁盘内容。");
+            var version = ReadCommittedVersion(root, receipt);
             result.Add(new(version, receipt.Note, receipt.Pinned) { IsRestoreProtection = receipt.RestoreProtection });
         }
         return result.OrderByDescending(item => item.Version.CreatedAt).ToArray();
+    }
+
+    private static HistoryVersion ReadCommittedVersion(string root, RepositoryState state, string id) =>
+        ReadCommittedVersion(root, state.Versions.SingleOrDefault(receipt => receipt.Id == id)
+            ?? throw new InvalidOperationException("选定版本不可用，请刷新历史列表。"));
+
+    private static HistoryVersion ReadCommittedVersion(string root, VersionReceipt receipt)
+    {
+        var version = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), receipt.Id);
+        if (version is null || !HistoryPaths.Comparer.Equals(receipt.SourceRoot, version.SourceRoot))
+            throw new InvalidDataException("已保存版本缺失或来源不符，请保留历史库并检查磁盘内容。");
+        return version;
     }
 
     private static void RequireNoPendingOperation(string root, RepositoryState state)
@@ -365,15 +378,15 @@ public sealed partial class FolderHistoryService : IDisposable
 
     private DuplicatiEngine Engine(IPackageLease lease) => new(_context.Processes!, lease.Tools[DuplicatiEngine.ToolName], _context.Log);
 
-    private async Task<IPackageLease> RequestEngineAsync(CancellationToken token, bool automatic = false)
+    private async Task<IPackageLease> RequestEngineAsync(CancellationToken token, bool allowInstall = true)
     {
         if (_context.Processes is null || _context.Packages is null || _context.Tasks is null)
             throw new InvalidOperationException("宿主缺少所需的依赖、进程或任务接口。");
         var package = new PackageReference(DuplicatiEngine.PackageId, DuplicatiEngine.PackageVersion);
-        if (automatic)
+        if (!allowInstall)
         {
             if (_context.Packages.GetStatus(package).Phase != PackagePhase.Ready)
-                throw new InvalidOperationException("历史工具尚未就绪，请手动重新开启保护以准备工具。");
+                throw new InvalidOperationException("历史工具尚未就绪，可在外部依赖中准备，或在保存、另存时安装。");
             return await _context.Packages.AcquireAsync(package, token).ConfigureAwait(false);
         }
         return await _context.Packages.TryRequestAsync(package, token).ConfigureAwait(false)
@@ -446,10 +459,13 @@ public sealed partial class FolderHistoryService : IDisposable
 
     private static void RemoveStaging(string directory, IReadOnlyList<HistoryEntry> entries)
     {
+        HistoryPaths.CheckPath(directory);
+        if (HistoryPaths.Attributes(directory) is null) return;
         HistoryPaths.RequireDirectory(directory);
         foreach (var entry in entries.OrderByDescending(item => item.Path.Length))
         {
             var path = HistoryPaths.ResolveWorkPath(directory, entry.Path);
+            if (HistoryPaths.Attributes(path) is null) continue;
             if (entry.IsDirectory) Directory.Delete(path, recursive: false);
             else File.Delete(path);
         }

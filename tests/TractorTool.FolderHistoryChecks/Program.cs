@@ -50,6 +50,14 @@ try
     Assert(!Directory.Exists(Path.Combine(output, "设计图", "空目录")), "selecting a file restored an unselected sibling");
     await ThrowsAsync<IOException>(() => RestoreTransaction.SaveAsAsync(staging, output, null, expected, CancellationToken.None));
     Assert((await File.ReadAllBytesAsync(Path.Combine(output, "设计图", "图.dat"))).SequenceEqual(bytes), "existing output changed");
+    var renamedOutput = Path.Combine(fixture, "自选文件名.bin");
+    await RestoreTransaction.SaveFileAsAsync(staging, renamedOutput, "设计图/图.dat", expected, CancellationToken.None);
+    Assert((await File.ReadAllBytesAsync(renamedOutput)).SequenceEqual(bytes), "single-file export lost bytes or ignored the chosen name");
+    await File.WriteAllTextAsync(renamedOutput, "existing destination");
+    await ThrowsAsync<IOException>(() => RestoreTransaction.SaveFileAsAsync(staging, renamedOutput, "设计图/图.dat", expected, CancellationToken.None));
+    Assert(await File.ReadAllTextAsync(renamedOutput) == "existing destination", "single-file export overwrote an occupied target");
+    await ThrowsAsync<InvalidDataException>(() => RestoreTransaction.SaveFileAsAsync(staging, Path.Combine(fixture, "not-file"),
+        "设计图", expected, CancellationToken.None));
 
     var fullOutput = Path.Combine(fixture, "full-export");
     await RestoreTransaction.SaveAsAsync(staging, fullOutput, null, expected, CancellationToken.None);
@@ -79,6 +87,7 @@ try
         renamed.Any(item => item.Path == newName.Path && item.Kind == "新增"), "case-only rename did not expose both paths");
 
     TextComparisonChecks.Run();
+    WorkspaceChecks.Run();
     await ServiceChecks.RunAsync(fixture);
     await EngineChecks.RunAsync(new DirectoryInfo(fixture));
     await RestoreChecks.RunAsync(fixture);

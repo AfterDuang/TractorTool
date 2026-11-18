@@ -38,10 +38,8 @@ internal static class RestoreChecks
 
         Write(root, "delete-only.txt", "new protected bytes");
         protection = await VersionAsync(root, root, "duplicati-20261007T140000Z.dlist.zip");
-        var deletion = await InPlaceRestoreTransaction.PreviewAsync(root, target, "delete-only.txt", rules, CancellationToken.None);
-        Check(deletion.Target.Count == 0 && deletion.Changes.Single().Kind == "删除", "单项恢复未支持目标版本不存在的当前文件");
-        await InPlaceRestoreTransaction.ApplyAsync(root, deletion, stage, protection.Id, CancellationToken.None);
-        Check(!File.Exists(Path.Combine(root, "delete-only.txt")), "单项删除没有生效");
+        await ExpectAsync<InvalidDataException>(() => InPlaceRestoreTransaction.PreviewSelectionAsync(root, target, ["delete-only.txt"], rules, CancellationToken.None));
+        Check(File.Exists(Path.Combine(root, "delete-only.txt")), "所选路径在目标版本缺失时，不能删除当前工作文件");
 
         var conflict = await InPlaceRestoreTransaction.PreviewAsync(root, protection, "replace.txt", rules, CancellationToken.None);
         Write(root, "replace.txt", "written after preview");
@@ -52,8 +50,47 @@ internal static class RestoreChecks
         foreach (var action in new[] { "resume-moved-original", "resume-installed", "rollback", "preserve-new-write",
                      "moved-resume", "moved-rollback", "moved-completed" })
             await CheckInterruptedAsync(fixture, action);
+        await CheckSelectionAsync(fixture);
         await CheckNestedHistoryAsync(fixture);
         await CheckProgressSizeAsync(fixture);
+    }
+
+    private static async Task CheckSelectionAsync(string fixture)
+    {
+        var root = CreateRoot(fixture, "restore-selection");
+        var stage = Directory.CreateDirectory(Path.Combine(HistoryPaths.HistoryDirectory(root), "temp", "selected")).FullName;
+        Write(root, "folder/keep.txt", "new");
+        Write(root, "folder/remove.txt", "remove within selected folder");
+        Write(root, "same-prefix.txt", "unchanged");
+        Write(root, "sibling.txt", "new sibling");
+        Write(root, "other.txt", "leave current bytes");
+        Write(stage, "folder/keep.txt", "old");
+        Write(stage, "sibling.txt", "old sibling");
+        Write(stage, "other.txt", "old unrelated version");
+        Write(stage, "new-parent/child.txt", "child");
+        var target = await VersionAsync(root, stage, "duplicati-20261007T120000Z.dlist.zip");
+        var previous = await VersionAsync(root, root, "duplicati-20261007T130000Z.dlist.zip");
+        var blocked = await InPlaceRestoreTransaction.PreviewSelectionAsync(root, target,
+            ["sibling.txt", "new-parent/child.txt"], [], CancellationToken.None);
+        Write(root, "new-parent", "created after preview");
+        await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.ApplyAsync(root, blocked, stage, previous.Id, CancellationToken.None));
+        Check(File.ReadAllText(Path.Combine(root, "sibling.txt")) == "new sibling" &&
+            InPlaceRestoreTransaction.ReadPending(root) is null, "预览后新增的上级占位文件必须在所有工作文件写入前拒绝");
+        foreach (string[] invalid in new string[][] { [], ["folder", "folder/remove.txt"], ["sibling.txt", "unknown"], ["", "unknown"] })
+            await ExpectAsync<InvalidDataException>(() => InPlaceRestoreTransaction.PreviewSelectionAsync(root, target, invalid, [], CancellationToken.None));
+        var plan = await InPlaceRestoreTransaction.PreviewSelectionAsync(root, target,
+            ["sibling.txt", "folder/keep.txt", "folder", "sibling.txt"], [], CancellationToken.None);
+        Check(plan.SelectedPaths.SequenceEqual(new[] { "folder", "sibling.txt" }) &&
+            plan.Changes.Select(item => item.Path).SequenceEqual(new[] { "folder/keep.txt", "folder/remove.txt", "sibling.txt" }),
+            "多项预览应合并父子和重复选择，并限于所选范围");
+        await InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, previous.Id, CancellationToken.None);
+        Check(File.ReadAllText(Path.Combine(root, "sibling.txt")) == "old sibling" &&
+            !File.Exists(Path.Combine(root, "folder", "remove.txt")) && File.ReadAllText(Path.Combine(root, "other.txt")) == "leave current bytes",
+            "多选未按同一计划处理全部目标或触及范围外文件");
+        var archived = Directory.EnumerateFiles(Path.Combine(HistoryPaths.HistoryDirectory(root), "restore-records"), "plan.json", SearchOption.AllDirectories).Single();
+        using var record = JsonDocument.Parse(File.ReadAllText(archived));
+        Check(record.RootElement.GetProperty("schemaVersion").GetInt32() == 2 &&
+            record.RootElement.GetProperty("plan").GetProperty("selections").GetArrayLength() == 2, "新记录应冻结所有范围并使旧版拒读");
     }
 
     private static async Task CheckInterruptedAsync(string fixture, string action)
@@ -66,6 +103,8 @@ internal static class RestoreChecks
         var version = await VersionAsync(root, stage, "duplicati-20261007T120000Z.dlist.zip");
         var protection = await VersionAsync(root, root, "duplicati-20261007T130000Z.dlist.zip");
         var plan = await InPlaceRestoreTransaction.PreviewAsync(root, version, "file.txt", [], CancellationToken.None);
+        // Exercise records written by 0.2.0 alongside the new frozen selection format.
+        if (action is "resume-moved-original" or "moved-rollback") plan = plan with { Selections = null };
         var active = Directory.CreateDirectory(Path.Combine(history, "restore-pending")).FullName;
         foreach (var area in new[] { "ready", "undo", "discard", "rollback" }) Directory.CreateDirectory(Path.Combine(active, area));
         File.Move(Path.Combine(root, "file.txt"), Path.Combine(active, "undo", "0"));
@@ -181,7 +220,7 @@ internal static class RestoreChecks
     private static void WriteTransactionFixture(string active, InPlaceRestoreState state, int appliedCount, bool stepStarted)
     {
         File.WriteAllText(Path.Combine(active, "plan.json"), JsonSerializer.Serialize(new
-        { schemaVersion = 1, state.Id, state.Plan, state.ProtectionVersionId }, Json));
+        { schemaVersion = state.Plan.Selections is null ? 1 : 2, state.Id, state.Plan, state.ProtectionVersionId }, Json));
         File.WriteAllText(Path.Combine(active, "operation.json"), JsonSerializer.Serialize(new
         { schemaVersion = 1, state.Id, state.Status, appliedCount, stepStarted, rollbackNext = -1, rollbackStarted = false }, Json));
     }

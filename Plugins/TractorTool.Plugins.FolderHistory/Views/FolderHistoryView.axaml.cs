@@ -2,9 +2,11 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using FluentAvalonia.UI.Controls;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Plugins.FolderHistory.ViewModels;
@@ -15,24 +17,98 @@ namespace TractorTool.Plugins.FolderHistory.Views;
 public partial class FolderHistoryView : UserControl, IPluginPageLifetime
 {
     private bool _interacting;
-    private bool _wide;
     private FAContentDialog? _dialog;
+    private ContextMenu? _menu;
 
     public FolderHistoryView()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { if (DataContext is FolderHistoryViewModel model) await model.InitializeAsync(); };
-        Unloaded += (_, _) => { _dialog?.Hide(); if (DataContext is FolderHistoryViewModel model) model.Detach(); };
-        Workspace.SizeChanged += (_, e) =>
+        InitializeTreeInput();
+        Loaded += async (_, _) =>
         {
-            var wide = e.NewSize.Width >= 820;
-            if (wide == _wide) return;
-            _wide = wide;
-            Workspace.ColumnDefinitions = new(wide ? "232,*" : "*");
-            Workspace.RowDefinitions = new(wide ? "Auto" : "Auto,Auto");
-            Grid.SetColumn(FolderDetails, wide ? 1 : 0);
-            Grid.SetRow(FolderDetails, wide ? 0 : 1);
+            if (DataContext is not FolderHistoryViewModel model) return;
+            BindTree(model);
+            await model.InitializeAsync();
         };
+        Unloaded += (_, _) => Disconnect();
+        SizeChanged += (_, e) => HistoryList.MaxHeight = Math.Clamp(e.NewSize.Height * 0.31, 56, 360);
+    }
+
+    private void ModeChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (ReferenceEquals(sender, e.Source) && sender is TabControl { SelectedIndex: 0 } &&
+            DataContext is FolderHistoryViewModel model) model.UsePreviousVersion();
+    }
+
+    private void BackToChanges(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is FolderHistoryViewModel model) model.SelectedFile = null;
+    }
+
+    private void FolderMenu(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || DataContext is not FolderHistoryViewModel { SelectedFolder: { } folder } model) return;
+        MenuItem Action(string label, EventHandler<RoutedEventArgs> click, bool enabled = true)
+        {
+            var item = new MenuItem { Header = label, IsEnabled = enabled };
+            item.Click += (s, args) => { if (Current(model) && model.SelectedFolder?.Root == folder.Root) click(s, args); };
+            return item;
+        }
+        OpenMenu(button, PlacementMode.Bottom,
+            Action("附说明保存…", SaveWithNote, model.CanSave), Action(model.ProtectionAction, ToggleProtection, model.CanChangeProtection),
+            new Separator(), Action("文件夹设置…", EditSettings), Action("管理历史…", ManageHistory),
+            Action("刷新", (_, _) => model.RefreshCommand.Execute(null)));
+    }
+
+    private async void SaveWithNote(object? sender, RoutedEventArgs e) => await InteractAsync(async model =>
+    {
+        if (model.SelectedFolder is not { } folder || !model.CanSave) return;
+        var note = new TextBox { Text = model.Note, MaxLength = 500, PlaceholderText = "例如：交付前的最终版" };
+        AutomationProperties.SetName(note, "版本说明");
+        if (await ShowAsync("附说明保存", Panel(PathText(folder.Root), note), "保存版本") != FAContentDialogResult.Primary ||
+            !Current(model) || model.SelectedFolder?.Root != folder.Root) return;
+        model.Note = note.Text ?? "";
+        await model.SaveCommand.ExecuteAsync(null);
+    });
+
+    private void HistoryContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (e.Source is not Visual source) return;
+        var row = source.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        var pointer = e.TryGetPosition(HistoryList, out _);
+        if (row is null && !pointer && HistoryList.SelectedItem is VersionItem selected)
+            row = HistoryList.ContainerFromItem(selected) as ListBoxItem;
+        if (row?.DataContext is not VersionItem version) return;
+        e.Handled = true;
+        OpenVersionMenu(row, version, pointer ? PlacementMode.Pointer : PlacementMode.Bottom);
+    }
+
+    private void VersionMenuClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { DataContext: VersionItem row } button) OpenVersionMenu(button, row, PlacementMode.Bottom);
+    }
+
+    private void OpenVersionMenu(Control anchor, VersionItem row, PlacementMode placement)
+    {
+        if (DataContext is not FolderHistoryViewModel model || model.IsBusy || model.CaptureVersionAction(row) is not { } target) return;
+        model.SelectedVersion = row;
+        var restore = new MenuItem { Header = "恢复到此版本…", IsEnabled = model.CanSave };
+        restore.Click += async (_, _) => await RestoreAsync(target);
+        var export = new MenuItem { Header = "另存一份…" };
+        export.Click += async (_, _) => await ExportAsync(target);
+        var pin = new MenuItem { Header = target.Pinned ? "取消重要标记" : "标为重要版本" };
+        pin.Click += async (_, _) => await InteractAsync(m => m.TogglePinnedAsync(target));
+        OpenMenu(anchor, placement, new MenuItem { Header = target.ScopeTitle + " · " + target.VersionTitle, IsEnabled = false },
+            restore, export, new Separator(), pin);
+    }
+
+    private void OpenMenu(Control anchor, PlacementMode placement, params Control[] items)
+    {
+        _menu?.Close();
+        var menu = new ContextMenu { ItemsSource = items, Placement = placement };
+        menu.Closed += (_, _) => { if (ReferenceEquals(_menu, menu)) _menu = null; };
+        _menu = menu;
+        menu.Open(anchor);
     }
 
     private async void AddFolder(object? sender, RoutedEventArgs e) => await InteractAsync(async model =>
@@ -127,7 +203,7 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
                 Content = Panel(Field("文件停止变化后等待（秒）", stable), Field("两次自动保存至少间隔（秒）", interval),
                     Text("持续编辑时会等待，不承诺记录每一次写入。后台无需重复确认安装工具。", true))
             });
-        if (await ShowAsync("文件夹设置", content, "保存规则") != FAContentDialogResult.Primary || !Current(model)) return;
+        if (await ShowAsync("文件夹设置", content, "保存规则", defaultButton: FAContentDialogButton.Primary) != FAContentDialogResult.Primary || !Current(model)) return;
         if (keepLatest.Value is null || keepDays.Value is null || stable.Value is null || interval.Value is null)
             throw new ArgumentException("数字设置不能为空，请重新填写。");
         if ((keepLatest.Value > 0 || keepDays.Value > 0) &&
@@ -140,35 +216,26 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
         });
     });
 
-    private async void ExportAll(object? sender, RoutedEventArgs e) => await ExportAsync(singleEntry: false);
-    private async void ExportEntry(object? sender, RoutedEventArgs e) => await ExportAsync(singleEntry: true);
-    private Task ExportAsync(bool singleEntry) => InteractAsync(async model =>
+    private Task ExportAsync(VersionActionContext target) => InteractAsync(async model =>
     {
-        if (model.SelectedFolder is not { } folder || model.SelectedVersion is not { } version) return;
-        var path = singleEntry ? model.SelectedFile?.Path : null;
-        if (singleEntry && (path is null || !model.CanExportFile)) return;
-        var parent = await PickFolderAsync("选择另存位置，将在其中创建新的独立文件夹");
-        if (parent is not null && Current(model)) await model.ExportAsync(folder.Root, version.Id, parent, path);
+        if (target.UnavailableReason is { } reason) { model.SetNotice(reason); return; }
+        var destination = target.SingleFilePath is { } file
+            ? await PickFileAsync(target.VersionTitle, Path.GetFileName(file))
+            : await PickFolderAsync($"选择另存位置 · {target.ScopeTitle} · {target.VersionTitle}");
+        if (destination is not null && Current(model)) await model.ExportAsync(target, destination);
     });
-    private async void RestoreAll(object? sender, RoutedEventArgs e) => await RestoreAsync(singleEntry: false);
-    private async void RestoreEntry(object? sender, RoutedEventArgs e) => await RestoreAsync(singleEntry: true);
-    private Task RestoreAsync(bool singleEntry) => InteractAsync(async model =>
+    private Task RestoreAsync(VersionActionContext target) => InteractAsync(async model =>
     {
-        if (model.SelectedFolder is not { } folder || model.SelectedVersion is not { } version) return;
-        var path = singleEntry ? model.SelectedFile?.Path : null;
-        if (singleEntry && (path is null || !model.CanExportFile)) return;
-        var preview = await model.PreviewRestoreAsync(folder.Root, version.Id, path);
+        if (target.UnavailableReason is { } reason) { model.SetNotice(reason); return; }
+        var preview = await model.PreviewRestoreAsync(target);
         if (preview is null || !Current(model)) return;
         if (preview.Changes.Count == 0) { model.SetNotice("选定范围已经与目标版本相同，无需恢复。"); return; }
-        var summary = RestoreSummary(preview.Changes);
         var body = Panel(
-            Text($"目标版本：{version.Title}"), PathText(folder.Root),
-            Text(path is null ? "范围：整个受保护文件夹" : "范围：" + path), Text(summary),
+            Text(target.VersionTitle + " · " + target.ScopeTitle), PathText(target.Root),
+            Text(RestoreSummary(preview.Changes)),
             Items(preview.Changes.Select(change => $"{(change.Kind == "修改" ? "覆盖" : change.Kind)}   {change.Path}")),
-            Text("只处理预览中的受保护范围。目标版本中没有的受保护新文件会删除；排除项、未保护文件和历史子目录不受影响。", true),
-            Text("开始前会完整保留受影响的当前内容作为恢复前版本；保护失败或预览后文件发生变化时停止。较新的历史不会因回退被删除。", true));
-        if (await ShowAsync("预览恢复到原位置", body, "下一步：确认恢复") != FAContentDialogResult.Primary || !Current(model)) return;
-        if (await ConfirmAsync("确认修改当前文件", $"将恢复到 {version.Title}。\n{summary}\n\n当前目录：{folder.Root}\n范围：{path ?? "整个受保护文件夹"}\n\n会先保留恢复前版本，再覆盖或删除预览中的当前文件。多文件操作不是一次性原子替换；中断后可从页面继续或撤销。", "保留当前版本并恢复") && Current(model))
+            Text("将先保存恢复前版本，再覆盖或删除上面列出的文件。中断后可以继续或撤销。", true));
+        if (await ShowAsync("恢复到原位置", body, "保留当前版本并恢复") == FAContentDialogResult.Primary && Current(model))
             await model.RestoreAsync(preview);
     });
 
@@ -236,9 +303,15 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
 
     public void OnNavigatedFrom()
     {
-        _dialog?.Hide();
-        if (DataContext is FolderHistoryViewModel model) model.Detach();
+        Disconnect();
         DataContext = null;
+    }
+    private void Disconnect()
+    {
+        _menu?.Close();
+        _dialog?.Hide();
+        UnbindTree();
+        if (DataContext is FolderHistoryViewModel model) model.Detach();
     }
     private bool Current(FolderHistoryViewModel model) => IsLoaded && ReferenceEquals(DataContext, model);
     private async Task InteractAsync(Func<FolderHistoryViewModel, Task> action)
@@ -259,18 +332,30 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
         try { return folders.Count == 0 ? null : folders[0].TryGetLocalPath() ?? throw new NotSupportedException("请选择本地文件夹。"); }
         finally { foreach (var folder in folders) folder.Dispose(); }
     }
+    private async Task<string?> PickFileAsync(string version, string name)
+    {
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storage?.CanSave != true) throw new NotSupportedException("当前窗口无法打开文件选择器。");
+        using var file = await storage.SaveFilePickerAsync(new()
+        {
+            Title = "另存为新文件 · " + version, SuggestedFileName = name, ShowOverwritePrompt = false
+        });
+        return file is null ? null : file.TryGetLocalPath() ?? throw new NotSupportedException("请选择本地文件。");
+    }
     private async Task<bool> ConfirmAsync(string title, string message, string accept) =>
         await ShowAsync(title, Text(message), accept) == FAContentDialogResult.Primary;
-    private async Task<FAContentDialogResult> ShowAsync(string title, Control content, string accept, string? alternative = null)
+    private async Task<FAContentDialogResult> ShowAsync(string title, Control content, string accept, string? alternative = null,
+        FAContentDialogButton defaultButton = FAContentDialogButton.None)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner || !IsLoaded) return FAContentDialogResult.None;
-        var scroll = new ScrollViewer { MaxHeight = Math.Clamp(owner.Bounds.Height - 260, 160, 500), Content = content };
+        var scroll = new ScrollViewer { MaxHeight = Math.Clamp(owner.Bounds.Height - 260, 160, 500),
+            MaxWidth = Math.Clamp(owner.Bounds.Width - 96, 200, 620), Content = content };
         var dialog = new FAContentDialog
         {
             Title = title,
             Content = scroll,
             PrimaryButtonText = accept, SecondaryButtonText = alternative ?? "", CloseButtonText = "取消",
-            DefaultButton = FAContentDialogButton.Close, MaxWidth = Math.Clamp(owner.Bounds.Width - 48, 240, 680)
+            DefaultButton = defaultButton
         };
         _dialog = dialog;
         try { return await dialog.ShowAsync(owner); }

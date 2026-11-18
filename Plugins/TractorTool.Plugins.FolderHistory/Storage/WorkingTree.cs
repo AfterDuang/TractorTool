@@ -91,6 +91,31 @@ public static class WorkingTree
         return new(relative, false, length, Convert.ToHexString(hash));
     }
 
+    internal static async Task MoveExpectedFileAsync(string source, string destination, HistoryEntry expected, CancellationToken token)
+    {
+        HistoryPaths.CheckPath(source);
+        HistoryPaths.CheckPath(destination);
+        // Keep writes denied across the rename; a new destination occupant is never overwritten.
+        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var hash = await SHA256.HashDataAsync(input, token).ConfigureAwait(false);
+        if (input.Length != expected.Length || input.Position != expected.Length || Convert.ToHexString(hash) != expected.Hash)
+            throw new IOException("文件在移动前发生变化，未覆盖目标：" + expected.Path);
+        token.ThrowIfCancellationRequested();
+        File.Move(source, destination, overwrite: false);
+        // Once published, finish verification even if cancellation arrived during the rename.
+        var moved = await ReadFileAsync(destination, expected.Path, CancellationToken.None).ConfigureAwait(false);
+        if (moved != expected)
+        {
+            if (HistoryPaths.Attributes(source) is null)
+            {
+                File.Move(destination, source, overwrite: false);
+                throw new IOException("移动中的文件发生变化，冲突内容已无覆盖地返还原位置：" + source);
+            }
+            throw new IOException("移动中的文件发生变化，原位置已有新内容；两份内容均已保留：" + destination);
+        }
+    }
+
     private static FileStream OpenRead(string path)
     {
         HistoryPaths.CheckPath(path);

@@ -40,7 +40,10 @@ public sealed record FolderPreparation(string Root, int FileCount, int Directory
 }
 
 public sealed record RestorePreview(Guid Id, string Root, string VersionId, string? RelativePath,
-    IReadOnlyList<HistoryChange> Changes);
+    IReadOnlyList<HistoryChange> Changes)
+{
+    public IReadOnlyList<string> RelativePaths { get; init; } = RelativePath is null ? [""] : [RelativePath];
+}
 
 public sealed record PendingRestoreInfo(string TargetVersionId, string ProtectionVersionId, string Status);
 

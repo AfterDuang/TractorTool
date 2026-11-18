@@ -2,7 +2,11 @@ using System.Text;
 
 namespace TractorTool.Plugins.FolderHistory.Processing;
 
-public sealed record TextDiffLine(string Kind, int? BeforeLine, int? AfterLine, string Text, string Ending);
+public sealed record TextDiffLine(string Kind, int? BeforeLine, int? AfterLine, string? BeforeText, string? AfterText)
+{
+    public bool BeforeChanged => BeforeLine.HasValue && Kind != "相同";
+    public bool AfterChanged => AfterLine.HasValue && Kind != "相同";
+}
 public sealed record TextComparisonResult(bool IsText, string Summary, IReadOnlyList<TextDiffLine> Lines);
 
 public static class TextComparison
@@ -29,39 +33,54 @@ public static class TextComparison
         var lengths = new int[oldLines.Length + 1, newLines.Length + 1];
         for (var i = oldLines.Length - 1; i >= 0; i--)
             for (var j = newLines.Length - 1; j >= 0; j--)
-                lengths[i, j] = oldLines[i] == newLines[j] ? lengths[i + 1, j + 1] + 1
+                lengths[i, j] = oldLines[i].Text == newLines[j].Text ? lengths[i + 1, j + 1] + 1
                     : Math.Max(lengths[i + 1, j], lengths[i, j + 1]);
 
         var result = new List<TextDiffLine>();
         var previous = 0;
         var current = 0;
+        var oldStart = 0;
+        var newStart = 0;
+        var differentEndings = false;
+        // Pair the unmatched lines between consecutive LCS anchors. An empty cell has no line number.
+        void AppendChanges()
+        {
+            for (var offset = 0; offset < Math.Max(previous - oldStart, current - newStart); offset++)
+            {
+                int? left = oldStart + offset < previous ? oldStart + offset : null;
+                int? right = newStart + offset < current ? newStart + offset : null;
+                if (left.HasValue && right.HasValue)
+                    differentEndings |= oldLines[left.Value].Ending != newLines[right.Value].Ending;
+                result.Add(new(left is null ? "新增" : right is null ? "删除" : "修改", left + 1, right + 1,
+                    left is int i ? oldLines[i].Text : null, right is int j ? newLines[j].Text : null));
+            }
+        }
         while (previous < oldLines.Length || current < newLines.Length)
         {
-            if (previous < oldLines.Length && current < newLines.Length && oldLines[previous] == newLines[current])
+            if (previous < oldLines.Length && current < newLines.Length && oldLines[previous].Text == newLines[current].Text)
             {
-                result.Add(new("相同", previous + 1, current + 1, oldLines[previous].Text, oldLines[previous].Ending));
-                previous++;
-                current++;
+                AppendChanges();
+                differentEndings |= oldLines[previous].Ending != newLines[current].Ending;
+                result.Add(new("相同", previous + 1, current + 1, oldLines[previous].Text, newLines[current].Text));
+                oldStart = ++previous;
+                newStart = ++current;
             }
             else if (previous < oldLines.Length &&
                 (current == newLines.Length || lengths[previous + 1, current] >= lengths[previous, current + 1]))
             {
-                result.Add(new("删除", previous + 1, null, oldLines[previous].Text, oldLines[previous].Ending));
                 previous++;
             }
             else
             {
-                result.Add(new("新增", null, current + 1, newLines[current].Text, newLines[current].Ending));
                 current++;
             }
         }
 
-        var added = result.Count(line => line.Kind == "新增");
-        var removed = result.Count(line => line.Kind == "删除");
-        var summary = $"新增 {added} 行 · 删除 {removed} 行 · {oldEncoding} → {newEncoding}";
-        if (added == 0 && removed == 0 && !before.AsSpan().SequenceEqual(after))
-            summary += " · 文本相同，原始编码或 BOM 不同";
-        return new(true, summary + "。仅供只读预览，恢复使用原始字节。", result);
+        AppendChanges();
+        var summary = $"新增 {result.Count(line => line.Kind == "新增")} 行 · 修改 {result.Count(line => line.Kind == "修改")} 行 · 删除 {result.Count(line => line.Kind == "删除")} 行";
+        if (differentEndings) summary += " · 换行方式有变化";
+        if (oldEncoding != newEncoding) summary += $" · {oldEncoding} → {newEncoding}";
+        return new(true, summary, result);
     }
 
     private static bool TryDecode(byte[] bytes, out string text, out string name)

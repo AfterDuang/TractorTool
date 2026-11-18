@@ -128,6 +128,7 @@ internal static class EngineChecks
             new { type = "Folder", path = source + Path.DirectorySeparatorChar },
             new { type = "Folder", path = folder + Path.DirectorySeparatorChar },
             new { type = "File", path, size = bytes.Length, hash },
+            new { type = "File", path = Path.Combine(source, "second.txt"), size = bytes.Length, hash },
             new { type = "File", path = Path.Combine(source, "huge.bin"), size = 1_000_000_000_000L, hash });
         var selected = "folder[1]/%TEMP%.txt";
         var version = DuplicatiEngine.ReadVersion(history, id)!;
@@ -146,6 +147,27 @@ internal static class EngineChecks
         });
         await new DuplicatiEngine(runner, executable, new FakeLog()).RestoreAsync(version, history, staging, CancellationToken.None, selected);
         Check(DuplicatiEngine.SelectEntries(version, selected).Count == 2, "所选提取清单包含无关条目");
+        var unionStaging = Path.Combine(history, "temp", "union");
+        string? parameterFile = null;
+        var union = new FakeRunner(request =>
+        {
+            var argument = request.Arguments.Single(value => value.StartsWith("--parameters-file=", StringComparison.Ordinal));
+            parameterFile = Path.Combine(request.WorkingDirectory!, argument["--parameters-file=".Length..]);
+            var filters = File.ReadAllLines(parameterFile);
+            var expression = Environment.ExpandEnvironmentVariables(filters[0][11..^1]);
+            Check(filters.Length == 2 && filters[1] == "--exclude=*" && !request.Arguments.Contains("--exclude=*") &&
+                Regex.IsMatch(folder + Path.DirectorySeparatorChar, expression) && Regex.IsMatch(path, expression) &&
+                Regex.IsMatch(Path.Combine(source, "second.txt"), expression) && !Regex.IsMatch(Path.Combine(source, "huge.bin"), expression),
+                "多选参数文件必须包含精确筛选和排除，不能扩大到整库");
+            Directory.CreateDirectory(Path.Combine(unionStaging, "folder[1]"));
+            File.WriteAllBytes(Path.Combine(unionStaging, "folder[1]", "%TEMP%.txt"), bytes);
+            File.WriteAllBytes(Path.Combine(unionStaging, "second.txt"), bytes);
+            return Success;
+        });
+        await new DuplicatiEngine(union, executable, new FakeLog()).RestoreSelectionAsync(version, history, unionStaging,
+            CancellationToken.None, ["folder[1]", selected, "second.txt"]);
+        Check(union.Requests.Count == 1 && parameterFile is not null && !File.Exists(parameterFile),
+            "多选应在一次提取中合并父子范围并清理参数文件");
         File.WriteAllBytes(Path.Combine(history, "index.sqlite"), []);
         var backupRunner = new FakeRunner(_ => new ProcessResult(2, "", "", false, false));
         var backup = new DuplicatiEngine(backupRunner, executable, new FakeLog());

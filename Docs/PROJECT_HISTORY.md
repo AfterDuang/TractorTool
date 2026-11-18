@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史工作区 | [E123 · 文件树、并排比较与按版本恢复（2026-11-18）](#evidence-folder-history-workbench) |
 | 文件夹历史完整流程 | [E122 · 自动保护、比较、恢复与清理（2026-11-17）](#evidence-folder-history-complete) |
 | 文件夹历史可靠性 | [E121 · 精确警告兼容、操作诊断与登记版隔离（2026-11-16）](#evidence-folder-history-reliability) |
 | 视频图标 | [E120 · Fluent 彩色摄像机与独立更新（2026-11-16）](#evidence-video-color-icon) |
@@ -160,6 +161,18 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-workbench"></a>
+
+## E123 文件夹历史工作区（2026-11-18）
+
+用户确认左侧按文件树选择范围，右侧看历史与内容对比，在具体版本行上恢复所选文件。核对发布 SDK 的页面注册、指针输入、菜单、路径选择器、公共进程与任务接口后，实施范围限定在 FolderHistory 及其检查工程。宿主无需升级。
+
+- 历史树合并已登记版本的相对路径。文本对齐两侧行号与内容，编码及行尾变化另行提示；二进制按清单中的大小与内容摘要比较。
+- 原位恢复和另存共用同一选区。旧单路径未完成记录可接续，新计划记录路径集合，多文件共用一次保护与恢复记录。长过滤参数通过固定版 CLI 的参数文件传递。
+- 使用 .NET SDK 10.0.401 构建 `tests/TractorTool.FolderHistoryChecks`。检查覆盖范围过滤、文本差异对齐、选择与恢复计划的读写兼容。运行验收及独立插件入口见[当前台账](DEVELOPMENT.md#folder-history-first)。
+- 独立审查发现并修正了预览后父路径被普通文件占用、刷新后 Ctrl 多选丢项、快速切库或离页的过期读取，以及仅改大小写时的差异展示。回归覆盖写入前的占位检测、历史路径重绑定和大小写变化。
+- Release 检查工程、对 Avalonia 12.1.6 发布 SDK 的独立插件构建均为 0 错误、2 条 NU1900。ZIP 内 9 项与输出文件逐一核对，确认依赖配方、清单、许可及没有宿主程序集副本。ZIP SHA256 为 `3220025E4C16367513971AF044F626389BF16376FFEFEE87F25FB55BA0B23096`。本轮未运行检查、真实 CLI 或 Windows 窗口。
 
 <a id="evidence-folder-history-complete"></a>
 

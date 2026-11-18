@@ -15,6 +15,12 @@ public sealed record InPlaceRestorePlan(
     [property: JsonRequired] IReadOnlyList<HistoryEntry> Baseline,
     [property: JsonRequired] IReadOnlyList<HistoryEntry> Target)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Selections { get; init; }
+
+    [JsonIgnore]
+    public IReadOnlyList<string> SelectedPaths => Selections ?? (Selection is null ? [HistorySelection.Root] : [Selection]);
+
     [JsonIgnore]
     public IReadOnlyList<HistoryChange> Changes => HistoryComparison.Compare(Baseline, Target);
 }
@@ -49,37 +55,36 @@ public static class InPlaceRestoreTransaction
         WriteIndented = true, AllowDuplicateProperties = false, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
-    public static async Task<InPlaceRestorePlan> PreviewAsync(string root, HistoryVersion version, string? selection,
+    public static Task<InPlaceRestorePlan> PreviewAsync(string root, HistoryVersion version, string? selection,
+        IReadOnlyList<string> exclusions, CancellationToken token) =>
+        PreviewSelectionAsync(root, version, [selection ?? HistorySelection.Root], exclusions, token);
+
+    public static async Task<InPlaceRestorePlan> PreviewSelectionAsync(string root, HistoryVersion version, IReadOnlyList<string> selections,
         IReadOnlyList<string> exclusions, CancellationToken token)
     {
         root = HistoryPaths.Absolute(root);
         HistoryPaths.RequireDirectory(root);
         if (ReadPending(root) is not null) throw new InvalidOperationException("请先处理未完成的恢复。");
-        selection = selection is null ? null : HistoryPaths.NormalizeRelative(selection);
         exclusions = HistoryExclusions.Normalize(exclusions);
-        if (selection is not null && HistoryExclusions.IsExcluded(selection, exclusions))
+        if (selections.Any(selection => selection != HistorySelection.Root && HistoryExclusions.IsExcluded(HistoryPaths.NormalizeRelative(selection), exclusions)))
             throw new InvalidDataException("所选路径已被排除，不会修改该路径。");
-        var current = await WorkingTree.ScanAsync(root, exclusions, token).ConfigureAwait(false);
-        if (selection is not null && current.Any(item => !item.IsDirectory &&
-                !HistoryPaths.Comparer.Equals(item.Path, selection) && HistoryPaths.IsSameOrDescendant(item.Path, selection)))
-            throw new IOException("所选项目的上级目前是文件，请选择该上级预览类型替换。");
-        var baseline = Scope(current, selection);
-        var target = Scope(version.Entries.Where(item => !HistoryExclusions.IsExcluded(item.Path, exclusions)).ToArray(), selection)
+        selections = HistorySelection.Resolve(version, selections);
+        var baseline = await ReadSelectedWorkAsync(root, selections, exclusions, token).ConfigureAwait(false);
+        var target = HistorySelection.Scope(version.Entries.Where(item => !HistoryExclusions.IsExcluded(item.Path, exclusions)).ToArray(), selections)
             .ToDictionary(item => item.Path, HistoryPaths.Comparer);
+        var selected = selections.ToHashSet(HistoryPaths.Comparer);
         foreach (var directory in baseline.Where(item => item.IsDirectory))
         {
-            var outsideSelection = selection is not null && !HistoryPaths.IsSameOrDescendant(selection, directory.Path);
+            var outsideSelection = !HistorySelection.Contains(selected, directory.Path);
             var containsExcluded = exclusions.Any(rule => HistoryPaths.IsSameOrDescendant(directory.Path, rule));
             if (!outsideSelection && !containsExcluded) continue;
             if (target.TryGetValue(directory.Path, out var replacement) && replacement != directory)
                 throw new IOException("恢复会改动所选范围外或排除项的上级目录，请调整恢复范围：" + directory.Path);
             target[directory.Path] = directory;
         }
-        if (selection is not null && !baseline.Any(item => HistoryPaths.IsSameOrDescendant(selection, item.Path)) &&
-            !target.Values.Any(item => HistoryPaths.IsSameOrDescendant(selection, item.Path)))
-            throw new InvalidDataException("当前目录和目标版本均没有所选项目。");
-        var plan = new InPlaceRestorePlan(root, HistoryStore.Read(root).Id, version.Id, selection, exclusions,
-            baseline, target.Values.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray());
+        var plan = new InPlaceRestorePlan(root, HistoryStore.Read(root).Id, version.Id,
+            selections.Count == 1 && selections[0] != HistorySelection.Root ? selections[0] : null, exclusions,
+            baseline, target.Values.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray()) { Selections = selections };
         ValidatePlan(root, plan);
         return plan;
     }
@@ -87,9 +92,19 @@ public static class InPlaceRestoreTransaction
     public static async Task EnsurePreviewCurrentAsync(string root, InPlaceRestorePlan plan, CancellationToken token)
     {
         ValidatePlan(root, plan);
-        var current = Scope(await WorkingTree.ScanAsync(root, plan.Exclusions, token).ConfigureAwait(false), plan.Selection);
+        var current = await ReadSelectedWorkAsync(root, plan.SelectedPaths, plan.Exclusions, token).ConfigureAwait(false);
         if (!HistoryComparison.Equal(plan.Baseline, current))
             throw new IOException("预览后工作文件发生变化，请重新预览；尚未修改工作文件。");
+    }
+
+    private static async Task<IReadOnlyList<HistoryEntry>> ReadSelectedWorkAsync(string root, IReadOnlyList<string> paths,
+        IReadOnlyList<string> exclusions, CancellationToken token)
+    {
+        var current = await WorkingTree.ScanAsync(root, exclusions, token).ConfigureAwait(false);
+        var ancestors = paths.SelectMany(HistorySelection.Ancestors).ToHashSet(HistoryPaths.Comparer);
+        if (current.Any(entry => !entry.IsDirectory && ancestors.Contains(entry.Path)))
+            throw new IOException("所选项目的上级目前是文件，请选择该上级预览类型替换。");
+        return HistorySelection.Scope(current, paths);
     }
 
     public static async Task<string?> ApplyAsync(string root, InPlaceRestorePlan plan, string staging,
@@ -195,7 +210,7 @@ public static class InPlaceRestoreTransaction
             state.RollbackStarted = false;
             Save(root, state);
         }
-        var current = Scope(await WorkingTree.ScanAsync(root, state.Plan.Exclusions, token).ConfigureAwait(false), state.Plan.Selection);
+        var current = HistorySelection.Scope(await WorkingTree.ScanAsync(root, state.Plan.Exclusions, token).ConfigureAwait(false), state.Plan.SelectedPaths);
         if (!HistoryComparison.Equal(current, state.Plan.Baseline))
             throw new IOException("撤销后仍存在预览之外的更改，已保留当前内容和恢复材料；请处理冲突后继续检查。");
         state.Status = "Reverted";
@@ -217,7 +232,7 @@ public static class InPlaceRestoreTransaction
             state.StepStarted = false;
             Save(root, state);
         }
-        var actual = Scope(await WorkingTree.ScanAsync(root, state.Plan.Exclusions, token).ConfigureAwait(false), state.Plan.Selection);
+        var actual = HistorySelection.Scope(await WorkingTree.ScanAsync(root, state.Plan.Exclusions, token).ConfigureAwait(false), state.Plan.SelectedPaths);
         if (!HistoryComparison.Equal(actual, state.Plan.Target))
             throw new IOException("恢复后的文件与冻结计划不符，可能有新写入；已保留恢复前版本和操作记录。");
         state.Status = "Completed";
@@ -237,7 +252,7 @@ public static class InPlaceRestoreTransaction
             {
                 await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
-                await MoveExpectedFileAsync(target, undo, entry, token).ConfigureAwait(false);
+                await WorkingTree.MoveExpectedFileAsync(target, undo, entry, token).ConfigureAwait(false);
             }
             // Validate after moving: a write between the preview/hash and rename is retained, never overwritten.
             await RequireMaterialAsync(root, "undo", index, entry, token).ConfigureAwait(false);
@@ -260,7 +275,7 @@ public static class InPlaceRestoreTransaction
             await RequireMaterialAsync(root, "ready", index, entry, token).ConfigureAwait(false);
             if (HistoryPaths.Attributes(target) is not null) throw Conflict(entry.Path);
             token.ThrowIfCancellationRequested();
-            await MoveExpectedFileAsync(ready, target, entry, token).ConfigureAwait(false);
+            await WorkingTree.MoveExpectedFileAsync(ready, target, entry, token).ConfigureAwait(false);
             await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
         }
         else
@@ -293,7 +308,7 @@ public static class InPlaceRestoreTransaction
                 if (HistoryPaths.Attributes(target) is null) return;
                 await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
-                await MoveExpectedFileAsync(target, discard, entry, token).ConfigureAwait(false);
+                await WorkingTree.MoveExpectedFileAsync(target, discard, entry, token).ConfigureAwait(false);
             }
             await RequireMaterialAsync(root, "discard", index, entry, token).ConfigureAwait(false);
             if (HistoryPaths.Attributes(target) is not null) throw Conflict(entry.Path);
@@ -316,7 +331,7 @@ public static class InPlaceRestoreTransaction
             await RequireMaterialAsync(root, "undo", index, entry, token).ConfigureAwait(false);
             if (HistoryPaths.Attributes(target) is not null) throw Conflict(entry.Path);
             token.ThrowIfCancellationRequested();
-            await MoveExpectedFileAsync(undo, target, entry, token).ConfigureAwait(false);
+            await WorkingTree.MoveExpectedFileAsync(undo, target, entry, token).ConfigureAwait(false);
             await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
         }
         else
@@ -342,30 +357,6 @@ public static class InPlaceRestoreTransaction
             throw Conflict(expected.Path);
     }
 
-    private static async Task MoveExpectedFileAsync(string source, string destination, HistoryEntry expected, CancellationToken token)
-    {
-        HistoryPaths.CheckPath(source);
-        HistoryPaths.CheckPath(destination);
-        // Keep writes denied across the rename; a new destination occupant is never overwritten.
-        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
-            64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(input, token).ConfigureAwait(false);
-        if (input.Length != expected.Length || input.Position != expected.Length || Convert.ToHexString(hash) != expected.Hash)
-            throw Conflict(expected.Path);
-        token.ThrowIfCancellationRequested();
-        File.Move(source, destination, overwrite: false);
-        var moved = await WorkingTree.ReadFileAsync(destination, expected.Path, token).ConfigureAwait(false);
-        if (moved != expected)
-        {
-            if (HistoryPaths.Attributes(source) is null)
-            {
-                File.Move(destination, source, overwrite: false);
-                throw new IOException("移动中的文件发生变化，冲突内容已无覆盖地返还原位置：" + source);
-            }
-            throw new IOException("移动中的文件发生变化，原位置已有新内容；两份内容均已保留：" + destination);
-        }
-    }
-
     private static async Task RequireMaterialAsync(string root, string area, int index, HistoryEntry expected, CancellationToken token)
     {
         var file = Material(root, area, index);
@@ -374,11 +365,6 @@ public static class InPlaceRestoreTransaction
     }
 
     private static IOException Conflict(string path) => new("恢复遇到预览后的更改或未知占位，不会覆盖；材料已保留：" + path);
-
-    private static IReadOnlyList<HistoryEntry> Scope(IReadOnlyList<HistoryEntry> entries, string? selection) =>
-        entries.Where(item => selection is null || HistoryPaths.IsSameOrDescendant(selection, item.Path) ||
-                item.IsDirectory && HistoryPaths.IsSameOrDescendant(item.Path, selection))
-            .OrderBy(item => item.Path, StringComparer.Ordinal).ToArray();
 
     private static List<InPlaceRestoreStep> BuildSteps(InPlaceRestorePlan plan)
     {
@@ -403,6 +389,15 @@ public static class InPlaceRestoreTransaction
             plan.Selection is not null && (plan.Selection != HistoryPaths.NormalizeRelative(plan.Selection) ||
                 HistoryExclusions.IsExcluded(plan.Selection, plan.Exclusions)))
             throw new InvalidDataException("恢复计划的目录身份、路径或排除规则无效。");
+        if (plan.Selections is { } selections)
+        {
+            var targetPaths = plan.Target.Select(entry => entry.Path).ToHashSet(StringComparer.Ordinal);
+            if (!selections.SequenceEqual(HistorySelection.Normalize(selections)) ||
+                plan.Selection != (selections.Count == 1 && selections[0] != HistorySelection.Root ? selections[0] : null) ||
+                selections.Any(selection => selection != HistorySelection.Root &&
+                    (HistoryExclusions.IsExcluded(selection, plan.Exclusions) || !targetPaths.Contains(selection))))
+                throw new InvalidDataException("恢复计划的联合选择范围无效。");
+        }
         foreach (var entries in new[] { plan.Baseline, plan.Target })
         {
             var paths = new Dictionary<string, HistoryEntry>(HistoryPaths.Comparer);
@@ -414,7 +409,7 @@ public static class InPlaceRestoreTransaction
                         entry.Hash.Any(c => !char.IsAsciiHexDigit(c))) || !paths.TryAdd(entry.Path, entry))
                     throw new InvalidDataException("恢复计划包含无效或冲突的工作路径。");
             }
-            if (!entries.SequenceEqual(Scope(entries, plan.Selection))) throw new InvalidDataException("恢复计划超出选择范围。");
+            if (!entries.SequenceEqual(HistorySelection.Scope(entries, plan.SelectedPaths))) throw new InvalidDataException("恢复计划超出选择范围。");
             foreach (var entry in entries)
             {
                 var separator = entry.Path.LastIndexOf('/');
@@ -433,7 +428,8 @@ public static class InPlaceRestoreTransaction
         HistoryPaths.RequireDirectory(directory);
         var frozen = ReadRecord<FrozenState>(Path.Combine(directory, PlanName), StateLimit);
         var progress = ReadRecord<ProgressState>(Path.Combine(directory, RecordName), ProgressLimit);
-        if (frozen.SchemaVersion != 1 || progress.SchemaVersion != 1 || frozen.Id == Guid.Empty || progress.Id != frozen.Id)
+        if (frozen.SchemaVersion is not (1 or 2) || progress.SchemaVersion != 1 || frozen.Id == Guid.Empty || progress.Id != frozen.Id ||
+            frozen.Plan is null || (frozen.SchemaVersion == 1) != (frozen.Plan.Selections is null))
             throw new InvalidDataException("恢复计划与进度标识不匹配或格式不兼容。");
         var state = new InPlaceRestoreState
         {
@@ -490,7 +486,7 @@ public static class InPlaceRestoreTransaction
         => SaveProgress(Active(root), state);
 
     private static void SaveFrozen(string directory, InPlaceRestoreState state) => WriteRecord(directory, PlanName,
-        new FrozenState(1, state.Id, state.Plan, state.ProtectionVersionId), StateLimit);
+        new FrozenState(state.Plan.Selections is null ? 1 : 2, state.Id, state.Plan, state.ProtectionVersionId), StateLimit);
 
     private static void SaveProgress(string directory, InPlaceRestoreState state) => WriteRecord(directory, RecordName,
         new ProgressState(1, state.Id, state.Status, state.AppliedCount, state.StepStarted, state.RollbackNext, state.RollbackStarted), ProgressLimit);

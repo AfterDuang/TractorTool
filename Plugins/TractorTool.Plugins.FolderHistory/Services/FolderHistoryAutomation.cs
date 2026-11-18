@@ -97,7 +97,7 @@ public sealed partial class FolderHistoryService
             var state = Open(root);
             if (!state.ProtectionEnabled) { ConfigureObservation(root, state, recheck: false); return false; }
             RequireNoPendingOperation(root, state);
-            using var lease = await RequestEngineAsync(token, automatic: true).ConfigureAwait(false);
+            using var lease = await RequestEngineAsync(token, allowInstall: false).ConfigureAwait(false);
             using var ownership = HistoryStore.Lock(root);
             state = Open(root);
             RequireNoPendingOperation(root, state);
