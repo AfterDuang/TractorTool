@@ -4,10 +4,30 @@ using TractorTool.Plugins.FolderHistory.Storage;
 
 namespace TractorTool.Plugins.FolderHistory.ViewModels;
 
+internal enum TreePresence { Recorded, Untracked, Historical, Excluded, Unavailable }
+
 internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDirectory, bool HasChildren,
-    bool IsHistoricalOnly, bool IsExpanded = false)
+    TreePresence Presence, bool IsExpanded = false)
 {
     public Thickness Indent => new(Depth * 16, 0, 0, 0);
+    public bool IsUntracked => Presence == TreePresence.Untracked;
+    public bool IsHistoricalOnly => Presence == TreePresence.Historical;
+    public string StatusText => Presence switch
+    {
+        TreePresence.Untracked => "未快照",
+        TreePresence.Historical => "仅历史",
+        TreePresence.Excluded => "已排除",
+        TreePresence.Unavailable => "无法读取",
+        _ => ""
+    };
+    public string StatusDescription => (Path.Length == 0 ? Name : Path) + (Presence switch
+    {
+        TreePresence.Untracked => "，尚未收录到最新快照",
+        TreePresence.Historical => "，仅在历史中存在",
+        TreePresence.Excluded => "，已从后续快照排除",
+        TreePresence.Unavailable => "，无法核对当前文件",
+        _ => ""
+    });
 
     public static TreeItem[] ResolveSelection(IEnumerable<TreeItem> selection, IReadOnlyDictionary<string, TreeItem> visible) =>
         selection.Select(item => visible.GetValueOrDefault(item.Path)).OfType<TreeItem>()
@@ -20,6 +40,9 @@ internal sealed record VersionItem(SavedVersion Saved, IReadOnlyList<HistoryChan
         Saved.Version.Entries.ToDictionary(entry => entry.Path, HistoryPaths.Comparer);
     public string Id => Saved.Id;
     public string Title => Saved.Title;
+    public string NumberLabel => Saved.NumberLabel;
+    public string SavedAt => Saved.SavedAt;
+    public string SelectionLabel => Note.Length == 0 ? NumberLabel : $"{NumberLabel} · {Note}";
     public string Note => Saved.Note;
     public bool Pinned => Saved.Pinned;
     public bool IsRestoreProtection => Saved.IsRestoreProtection;
@@ -81,8 +104,7 @@ internal sealed class HistoryWorkspace
 
     public HistoryWorkspace(string rootName, IReadOnlyList<SavedVersion> snapshot, CancellationToken token = default)
     {
-        var ordered = snapshot.OrderByDescending(item => item.Version.CreatedAt)
-            .ThenBy(item => item.Id, StringComparer.Ordinal).ToArray();
+        var ordered = snapshot.OrderByDescending(item => item.Number).ToArray();
         Versions = ordered.Select((saved, index) =>
         {
             token.ThrowIfCancellationRequested();
@@ -103,29 +125,65 @@ internal sealed class HistoryWorkspace
         }
         var parents = paths.Keys.Select(Parent).ToHashSet(HistoryPaths.Comparer);
         _children = paths.Select(pair => new TreeItem(pair.Key, pair.Key[(pair.Key.LastIndexOf('/') + 1)..],
-                1 + pair.Key.Count(c => c == '/'), pair.Value.Directory, parents.Contains(pair.Key), pair.Value.Historical))
+                1 + pair.Key.Count(c => c == '/'), pair.Value.Directory, parents.Contains(pair.Key),
+                pair.Value.Historical ? TreePresence.Historical : TreePresence.Recorded))
             .GroupBy(item => Parent(item.Path), HistoryPaths.Comparer)
             .ToDictionary(group => group.Key, group => group.OrderByDescending(item => item.IsDirectory)
                 .ThenBy(item => item.Name, HistoryPaths.Comparer).ToArray(), HistoryPaths.Comparer);
-        _root = new("", rootName, 0, true, _children.ContainsKey(""), false);
+        _root = new("", rootName, 0, true, _children.ContainsKey(""), TreePresence.Recorded);
     }
 
-    public IReadOnlyList<TreeItem> VisibleTree(IReadOnlySet<string> expanded)
+    public IReadOnlyList<TreeItem> VisibleTree(IReadOnlySet<string> expanded, WorkingDirectoryListing? disk = null,
+        CancellationToken token = default)
     {
         var visible = new List<TreeItem>();
         var pending = new Stack<TreeItem>();
-        pending.Push(_root);
+        pending.Push(_root with
+        {
+            HasChildren = _root.HasChildren || disk?.Children.GetValueOrDefault("") is { Length: > 0 },
+            Presence = disk?.Unreadable.Contains("") == true ? TreePresence.Unavailable : TreePresence.Recorded
+        });
         while (pending.TryPop(out var item))
         {
+            token.ThrowIfCancellationRequested();
             if (item.HasChildren && expanded.Contains(item.Path))
             {
                 item = item with { IsExpanded = true };
-                var children = _children[item.Path];
+                var children = _children.GetValueOrDefault(item.Path) ?? [];
+                if (disk is not null) children = MergeChildren(item, children, disk, token);
                 for (var index = children.Length - 1; index >= 0; index--) pending.Push(children[index]);
             }
             visible.Add(item);
         }
         return visible;
+    }
+
+    private TreeItem[] MergeChildren(TreeItem parent, TreeItem[] history, WorkingDirectoryListing disk, CancellationToken token)
+    {
+        var rows = new Dictionary<string, TreeItem>(HistoryPaths.Comparer);
+        var listed = disk.Children.TryGetValue(parent.Path, out var entries);
+        foreach (var row in history)
+        {
+            token.ThrowIfCancellationRequested();
+            var presence = HistoryExclusions.IsExcluded(row.Path, disk.Exclusions) ? TreePresence.Excluded :
+                parent.Presence == TreePresence.Unavailable || disk.Unreadable.Contains(parent.Path) ? TreePresence.Unavailable :
+                listed || parent.IsHistoricalOnly || !parent.IsDirectory ? TreePresence.Historical : TreePresence.Recorded;
+            rows.Add(row.Path, row with { Presence = presence });
+        }
+        foreach (var entry in entries ?? [])
+        {
+            token.ThrowIfCancellationRequested();
+            var path = entry.Path;
+            var recorded = Versions.FirstOrDefault()?.Entries.GetValueOrDefault(path);
+            var presence = HistoryExclusions.IsExcluded(path, disk.Exclusions) ? TreePresence.Excluded :
+                entry.Unavailable || disk.Unreadable.Contains(path) ? TreePresence.Unavailable :
+                recorded?.IsDirectory == entry.IsDirectory ? TreePresence.Recorded : TreePresence.Untracked;
+            var canExpand = _children.ContainsKey(path) || entry.IsDirectory &&
+                presence is not (TreePresence.Excluded or TreePresence.Unavailable) &&
+                (!disk.Children.TryGetValue(path, out var children) || children.Length > 0);
+            rows[path] = new(path, path[(path.LastIndexOf('/') + 1)..], parent.Depth + 1, entry.IsDirectory, canExpand, presence);
+        }
+        return rows.Values.OrderByDescending(item => item.IsDirectory).ThenBy(item => item.Name, HistoryPaths.Comparer).ToArray();
     }
 
     public IReadOnlyList<VersionItem> Timeline(IReadOnlySet<string> selected, CancellationToken token = default)

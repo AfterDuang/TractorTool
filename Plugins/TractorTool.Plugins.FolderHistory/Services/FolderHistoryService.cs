@@ -122,12 +122,17 @@ public sealed partial class FolderHistoryService : IDisposable
         });
     }
 
-    public Task<IReadOnlyList<SavedVersion>> GetVersionsAsync(string root, CancellationToken cancellationToken = default) => ExclusiveAsync(token =>
+    public async Task<IReadOnlyList<SavedVersion>> GetVersionsAsync(string root, CancellationToken cancellationToken = default) =>
+        (await GetBrowserDataAsync(root, cancellationToken).ConfigureAwait(false)).Versions;
+
+    internal Task<(IReadOnlyList<SavedVersion> Versions, string[] Exclusions)> GetBrowserDataAsync(
+        string root, CancellationToken cancellationToken) => ExclusiveAsync(token =>
     {
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         token.ThrowIfCancellationRequested();
-        return Task.FromResult(ReadCommitted(root, Open(root), token));
+        var state = Open(root);
+        return Task.FromResult((ReadCommitted(root, state, token), state.Settings.ExcludedPaths));
     }, cancellationToken);
 
     public Task<FolderSettings> GetSettingsAsync(string root) => ExclusiveAsync(_ =>
@@ -223,6 +228,7 @@ public sealed partial class FolderHistoryService : IDisposable
             var estimate = before.Where(entry => !entry.IsDirectory && (previousEntries is null ||
                 !previousEntries.TryGetValue(entry.Path, out var old) || old != entry)).Sum(entry => entry.Length);
             RequireSpace(root, estimate, "保存版本");
+            if (state.LastSnapshotNumber == long.MaxValue) throw new InvalidDataException("历史库的快照编号已用尽。");
             progress.Report(new(null, "正在保存版本"));
             var created = await engine.BackupAsync(root, HistoryPaths.HistoryDirectory(root), cancellation, exclusions).ConfigureAwait(false);
             progress.Report(new(null, "正在校验保存结果"));
@@ -232,10 +238,10 @@ public sealed partial class FolderHistoryService : IDisposable
             if (!HistoryComparison.Equal(after, created.Entries))
                 throw new IOException("引擎结果与完整工作文件清单不符，本次未登记为可用版本，请检查后重试。");
             cancellation.ThrowIfCancellationRequested();
-            state.Versions.Add(new(created.Id, root, note, protection, protection));
+            var receipt = state.AddVersion(created.Id, root, note, protection, protection);
             HistoryStore.Save(root, state);
-            saved = new(created, note, protection) { IsRestoreProtection = protection };
-            return "已保存并核对文件清单：" + created.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            saved = new(created, note, protection, receipt.Number) { IsRestoreProtection = protection };
+            return "已保存并核对文件清单：" + saved.Title;
         }, token).ConfigureAwait(false);
         }
         catch (WorkingTreeChangedException)
@@ -366,9 +372,10 @@ public sealed partial class FolderHistoryService : IDisposable
             if (state.PendingDeleteIds.Contains(receipt.Id) &&
                 HistoryPaths.Attributes(Path.Combine(HistoryPaths.HistoryDirectory(root), "repository", receipt.Id)) is null) continue;
             var version = ReadCommittedVersion(root, receipt);
-            result.Add(new(version, receipt.Note, receipt.Pinned) { IsRestoreProtection = receipt.RestoreProtection });
+            result.Add(new(version, receipt.Note, receipt.Pinned, receipt.Number) { IsRestoreProtection = receipt.RestoreProtection });
         }
-        return result.OrderByDescending(item => item.Version.CreatedAt).ToArray();
+        result.Reverse();
+        return result;
     }
 
     private static HistoryVersion ReadCommittedVersion(string root, RepositoryState state, string id) =>

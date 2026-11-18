@@ -25,19 +25,50 @@
     </Style>
     <Style Selector="TextBlock.line">
       <Setter Property="TextWrapping" Value="NoWrap" /><Setter Property="TextTrimming" Value="CharacterEllipsis" />
+      <Setter Property="MaxLines" Value="1" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="SelectableTextBlock.code">
-      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" /><Setter Property="FontSize" Value="13" />
-      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextBrush}" />
+      <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Microsoft YaHei UI" />
+      <Setter Property="FontSize" Value="13" /><Setter Property="LineHeight" Value="20" />
+      <Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="4,0,6,0" />
+    </Style>
+    <Style Selector="TextBlock.gutter">
+      <Setter Property="FontFamily" Value="Consolas" /><Setter Property="FontSize" Value="12" />
+      <Setter Property="TextAlignment" Value="Right" /><Setter Property="LineHeight" Value="20" />
+      <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" /><Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+    <Style Selector="Grid.diffAfter">
+      <Setter Property="Grid.Column" Value="1" />
+    </Style>
+    <Style Selector="ItemsControl#DiffLines ContentPresenter">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Grid#ComparisonPane.unified Grid.diffBefore, Grid#ComparisonPane.unified Grid.diffAfter">
+      <Setter Property="Grid.Column" Value="0" /><Setter Property="Grid.ColumnSpan" Value="2" />
+    </Style>
+    <Style Selector="Grid#ComparisonPane.unified Grid.diffAfter">
+      <Setter Property="Grid.Row" Value="1" />
+    </Style>
+    <Style Selector="Grid#ComparisonPane.unified Grid.diffBefore:not(.changed), Grid#ComparisonPane.unified Grid.diffAfter.missing">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Grid#ComparisonPane.unified Border.editorDivider">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="ListBox#FileTree.compact TextBlock.untrackedLabel">
+      <Setter Property="IsVisible" Value="False" />
     </Style>
   </UserControl.Styles>
   <UserControl.Resources>
+    <SolidColorBrush x:Key="DiffRemovedWordBrush" Color="#55C74E57" />
+    <SolidColorBrush x:Key="DiffAddedWordBrush" Color="#554BA463" />
     <DataTemplate x:Key="versionLabel" x:DataType="vm:VersionItem">
-      <TextBlock Classes="line" Text="{Binding Title}" />
+      <TextBlock Classes="line" Text="{Binding SelectionLabel}" ToolTip.Tip="{Binding Title}" />
     </DataTemplate>
   </UserControl.Resources>
-  <Grid Margin="0,0,6,10" RowDefinitions="Auto,*" RowSpacing="8">
+  <Grid x:Name="WorkspaceBody" Margin="0,0,0,28" RowDefinitions="Auto,*" RowSpacing="12">
     <StackPanel Spacing="5">
       <WrapPanel ItemSpacing="6" LineSpacing="4" IsEnabled="{Binding !IsBusy}">
         <ComboBox ItemsSource="{Binding Folders}" SelectedItem="{Binding SelectedFolder}" IsVisible="{Binding HasFolder}"
@@ -64,16 +95,23 @@
       <Button Content="继续未完成的清理…" Click="ResumeCleanup" IsVisible="{Binding HasPendingCleanup}" IsEnabled="{Binding !IsBusy}" />
     </StackPanel>
     <TextBlock Grid.Row="1" Classes="muted" Text="添加一个文件夹，开始保存它的版本。" IsVisible="{Binding !HasFolder}" />
-    <Border Grid.Row="1" Classes="card" Padding="0" ClipToBounds="True" IsVisible="{Binding HasFolder}" IsEnabled="{Binding !IsBusy}">
-      <Grid ColumnDefinitions="0.32*,5,*">
-        <Grid Margin="6" RowDefinitions="Auto,*" RowSpacing="4">
-          <TextBlock Text="文件树" FontWeight="SemiBold" Margin="5,4" ToolTip.Tip="历史中出现过的文件。按 Ctrl、Shift 或拖动鼠标可多选。" />
-          <Grid Grid.Row="1" x:Name="TreeArea" ClipToBounds="True">
-            <ListBox x:Name="FileTree" Classes="rows" SelectionMode="Multiple" AutomationProperties.Name="已记录的文件树"
+    <Border Grid.Row="1" x:Name="WorkspaceCard" Classes="card" Padding="0" ClipToBounds="True" IsVisible="{Binding HasFolder}" IsEnabled="{Binding !IsBusy}">
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="0.32*" MinWidth="172" MaxWidth="480" />
+          <ColumnDefinition Width="5" /><ColumnDefinition Width="*" MinWidth="220" />
+        </Grid.ColumnDefinitions>
+        <Grid Margin="8,12,4,8" RowDefinitions="Auto,Auto,*" RowSpacing="4">
+          <TextBlock Text="文件树" FontWeight="SemiBold" Margin="4,0,4,4" ToolTip.Tip="按 Ctrl、Shift 或拖动鼠标可多选。" />
+          <TextBlock Grid.Row="1" Margin="4,0" Classes="caption" Text="{Binding LiveTreeWarning}" IsVisible="{Binding HasLiveTreeWarning}" />
+          <Grid Grid.Row="2" x:Name="TreeArea" ClipToBounds="True">
+            <ListBox x:Name="FileTree" Classes="rows" SelectionMode="Multiple" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     AutomationProperties.Name="工作文件与快照文件树"
                      Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:TreeItem">
-                  <Grid Margin="{Binding Indent}" ColumnDefinitions="22,18,*" ColumnSpacing="3" ToolTip.Tip="{Binding Path}">
+                  <Grid Margin="{Binding Indent}" ColumnDefinitions="18,18,*" ColumnSpacing="3" ToolTip.Tip="{Binding StatusDescription}"
+                        AutomationProperties.Name="{Binding StatusDescription}">
                     <Button Classes="quiet small" Padding="0" MinWidth="18" MinHeight="22" IsVisible="{Binding HasChildren}"
                             Click="ToggleNode" AutomationProperties.Name="展开或折叠文件夹">
                       <Grid><TextBlock Text="▸" IsVisible="{Binding !IsExpanded}" /><TextBlock Text="▾" IsVisible="{Binding IsExpanded}" /></Grid>
@@ -83,10 +121,16 @@
                                 Data="M1,3 L6,3 L8,5 L15,5 L15,13 L1,13 Z" />
                       <PathIcon Width="12" Height="14" IsVisible="{Binding !IsDirectory}"
                                 Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M4.5,2.5 L4.5,13.5 L12.5,13.5 L12.5,6 L9,6 L9,2.5 Z" />
+                      <Border IsVisible="{Binding IsUntracked}" Background="{DynamicResource AppCardBrush}" CornerRadius="4"
+                              Width="9" Height="9" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <PathIcon Width="9" Height="9" Foreground="{DynamicResource AppLogInfoBrush}"
+                                  Data="M3.5,0 H5.5 V3.5 H9 V5.5 H5.5 V9 H3.5 V5.5 H0 V3.5 H3.5 Z" />
+                      </Border>
                     </Grid>
                     <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
                       <TextBlock Classes="line" Text="{Binding Name}" />
-                      <TextBlock Grid.Column="1" Classes="caption line" Text=" 旧" IsVisible="{Binding IsHistoricalOnly}" ToolTip.Tip="仅在以前的保存中出现" />
+                      <TextBlock Grid.Column="1" Classes="caption line" Classes.untrackedLabel="{Binding IsUntracked}"
+                                 Margin="4,0,0,0" Text="{Binding StatusText}" />
                     </Grid>
                   </Grid>
                 </DataTemplate>
@@ -99,33 +143,37 @@
             </Canvas>
           </Grid>
         </Grid>
-        <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch" Background="{DynamicResource AppBorderBrush}" />
-        <Grid Grid.Column="2" Margin="8,4" RowDefinitions="Auto,Auto,*" RowSpacing="4">
-          <TextBlock Classes="line" FontWeight="SemiBold" Text="{Binding ScopeTitle}" ToolTip.Tip="{Binding ScopeTitle}" />
-          <TabStrip x:Name="ModeTabs" Grid.Row="1" SelectedIndex="{Binding SelectedTab, Mode=TwoWay}"
-                    AutomationProperties.Name="查看方式" AutomationProperties.ControlTypeOverride="Tab">
-            <TabStripItem Content="历史记录" AutomationProperties.ControlTypeOverride="TabItem" />
-            <TabStripItem Content="内容对比" AutomationProperties.ControlTypeOverride="TabItem" />
-          </TabStrip>
-          <TextBlock Grid.Row="2" IsVisible="{Binding !HasVersion}" Classes="muted" Text="{Binding EmptyTimelineMessage}" Margin="4,8" />
-          <Grid Grid.Row="2" IsVisible="{Binding HasVersion}">
+        <Border Grid.Column="1" Width="1" Background="{DynamicResource AppBorderBrush}" />
+        <GridSplitter Grid.Column="1" ResizeDirection="Columns" HorizontalAlignment="Stretch" Background="Transparent" />
+        <Grid Grid.Column="2" Margin="12" RowDefinitions="Auto,*" RowSpacing="8">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <TabStrip x:Name="ModeTabs" SelectedIndex="{Binding SelectedTab, Mode=TwoWay}"
+                      AutomationProperties.Name="查看方式" AutomationProperties.ControlTypeOverride="Tab">
+              <TabStripItem Content="历史记录" FontSize="16" AutomationProperties.ControlTypeOverride="TabItem" />
+              <TabStripItem Content="内容对比" FontSize="16" AutomationProperties.ControlTypeOverride="TabItem" />
+            </TabStrip>
+            <TextBlock Grid.Column="1" HorizontalAlignment="Right" Classes="caption line" Text="{Binding ScopeTitle}" ToolTip.Tip="{Binding ScopeTitle}" />
+          </Grid>
+          <TextBlock Grid.Row="1" IsVisible="{Binding !HasVersion}" Classes="muted" Text="{Binding EmptyTimelineMessage}" Margin="4,8" />
+          <Grid Grid.Row="1" IsVisible="{Binding HasVersion}">
             <Grid x:Name="HistoryPane" RowDefinitions="Auto,*" IsVisible="{Binding !IsComparing}">
-              <Grid Margin="7,2" ColumnDefinitions="1.15*,1.15*,*,32" ColumnSpacing="5">
-                <TextBlock Text="保存时间" Classes="caption line" /><TextBlock Grid.Column="1" Text="说明" Classes="caption line" />
-                <TextBlock Grid.Column="2" Text="变化" Classes="caption line" />
+              <Grid Margin="6,4" ColumnDefinitions="0.65*,1.7*,1.45*,1*,28" ColumnSpacing="6">
+                <TextBlock Text="快照" Classes="caption line" /><TextBlock Grid.Column="1" Text="说明" Classes="caption line" />
+                <TextBlock Grid.Column="2" Text="保存时间" Classes="caption line" /><TextBlock Grid.Column="3" Text="变化" Classes="caption line" />
               </Grid>
               <ListBox x:Name="HistoryList" Grid.Row="1" Classes="rows" ItemsSource="{Binding TimelineVersions}"
                        SelectedItem="{Binding SelectedVersion}" AutomationProperties.Name="所选范围的历史记录">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:VersionItem">
-                    <Grid ColumnDefinitions="1.15*,1.15*,*,32" ColumnSpacing="5" Background="Transparent">
-                      <TextBlock Classes="line" Text="{Binding Title}" ToolTip.Tip="{Binding Title}" />
+                    <Grid ColumnDefinitions="0.65*,1.7*,1.45*,1*,28" ColumnSpacing="6" Background="Transparent">
+                      <TextBlock Classes="line" Text="{Binding NumberLabel}" FontWeight="SemiBold" ToolTip.Tip="{Binding Title}" />
                       <Grid Grid.Column="1" ColumnDefinitions="Auto,*">
                         <TextBlock Text="★ " IsVisible="{Binding Pinned}" Classes="line" ToolTip.Tip="重要版本" />
                         <TextBlock Classes="line" Grid.Column="1" Text="{Binding Note}" ToolTip.Tip="{Binding Note}" />
                       </Grid>
-                      <TextBlock Classes="line caption" Grid.Column="2" Text="{Binding Summary}" ToolTip.Tip="{Binding Summary}" />
-                      <Button Grid.Column="3" Content="⋯" Classes="quiet small" AutomationProperties.Name="此版本的操作">
+                      <TextBlock Classes="caption" Grid.Column="2" VerticalAlignment="Center" Text="{Binding SavedAt}" ToolTip.Tip="{Binding SavedAt}" />
+                      <TextBlock Classes="line caption" Grid.Column="3" Text="{Binding Summary}" ToolTip.Tip="{Binding Summary}" />
+                      <Button Grid.Column="4" Content="⋯" Classes="quiet small" AutomationProperties.Name="此版本的操作">
                         <Button.Flyout><fa:FAMenuFlyout Opening="MenuOpening" /></Button.Flyout>
                       </Button>
                     </Grid>
@@ -133,18 +181,31 @@
                 </ListBox.ItemTemplate>
               </ListBox>
             </Grid>
-            <Grid x:Name="ComparisonPane" RowDefinitions="Auto,*" IsVisible="{Binding IsComparing}" RowSpacing="5">
-              <WrapPanel ItemSpacing="6" LineSpacing="3">
-                <ComboBox ItemsSource="{Binding ComparisonBases}" SelectedItem="{Binding ComparisonBase}" ItemTemplate="{StaticResource versionLabel}"
-                          PlaceholderText="首次保存前" MaxWidth="200" AutomationProperties.Name="较早的保存时间" />
-                <TextBlock Classes="line" Text="→" />
-                <ComboBox ItemsSource="{Binding TimelineVersions}" SelectedItem="{Binding SelectedVersion}" ItemTemplate="{StaticResource versionLabel}"
-                          MaxWidth="200" AutomationProperties.Name="所看版本的保存时间" />
+            <Grid x:Name="ComparisonPane" RowDefinitions="Auto,Auto,*" IsVisible="{Binding IsComparing}">
+              <Border Padding="8" BorderThickness="0,1,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="较早快照" Classes="caption line" />
+                    <ComboBox x:Name="BeforeVersion" ItemsSource="{Binding ComparisonBases}" SelectedItem="{Binding ComparisonBase}"
+                              ItemTemplate="{StaticResource versionLabel}" PlaceholderText="首次保存前" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" AutomationProperties.Name="选择较早快照" />
+                    <TextBlock Classes="caption" Text="{Binding ComparisonBase?.SavedAt}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="3">
+                    <TextBlock Text="所选快照" Classes="caption line" />
+                    <ComboBox x:Name="AfterVersion" ItemsSource="{Binding TimelineVersions}" SelectedItem="{Binding SelectedVersion}"
+                              ItemTemplate="{StaticResource versionLabel}" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch" AutomationProperties.Name="选择所看快照" />
+                    <TextBlock Classes="caption" Text="{Binding SelectedVersion?.SavedAt}" />
+                  </StackPanel>
+                </Grid>
+              </Border>
+              <WrapPanel Grid.Row="1" ItemSpacing="4">
                 <Button Classes="quiet" Content="返回变化列表" Click="BackToChanges" IsVisible="{Binding CanReturnToChanges}" />
                 <Button Classes="quiet" Content="查看上次保存的版本" Command="{Binding GoToLastPresentVersionCommand}" IsVisible="{Binding CanGoToLastPresentVersion}" />
               </WrapPanel>
-              <Grid Grid.Row="1" RowDefinitions="Auto,*" IsVisible="{Binding ShowChangeList}">
-                <TextBlock Margin="4,2" Classes="caption" Text="{Binding ComparisonSummary}" />
+              <Grid Grid.Row="2" RowDefinitions="Auto,*" IsVisible="{Binding ShowChangeList}">
+                <TextBlock Margin="6,8" Classes="caption" Text="{Binding ComparisonSummary}" />
                 <ListBox Classes="rows" Grid.Row="1" ItemsSource="{Binding Files}" SelectedItem="{Binding SelectedFile}"
                          AutomationProperties.Name="发生变化的文件">
                   <ListBox.ItemTemplate>
@@ -158,35 +219,41 @@
                   </ListBox.ItemTemplate>
                 </ListBox>
               </Grid>
-              <Grid Grid.Row="1" IsVisible="{Binding HasFileDetail}" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="3">
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                  <TextBlock Classes="line" Text="{Binding DetailPath}" FontWeight="SemiBold" ToolTip.Tip="{Binding DetailPath}" />
-                  <TextBlock Grid.Column="1" Classes="caption line" Text="{Binding SelectedFileSummary}" />
-                </Grid>
-                <TextBlock Grid.Row="1" Classes="caption" Text="{Binding TextSummary}" IsVisible="{Binding HasTextPreview}" />
-                <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="8">
-                  <StackPanel Spacing="1"><TextBlock Classes="line" Text="{Binding BeforeTitle}" /><TextBlock Classes="caption" Text="{Binding BeforeFileInfo}" /></StackPanel>
-                  <StackPanel Grid.Column="1" Spacing="1"><TextBlock Classes="line" Text="{Binding AfterTitle}" /><TextBlock Classes="caption" Text="{Binding AfterFileInfo}" /></StackPanel>
-                </Grid>
-                <ListBox Grid.Row="3" Classes="rows" ItemsSource="{Binding TextLines}" AutomationProperties.Name="左右并排的文本内容">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="processing:TextDiffLine">
-                      <Grid ColumnDefinitions="*,1,*" ColumnSpacing="3">
-                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="5" MinHeight="20">
-                          <Border Grid.ColumnSpan="2" Background="{DynamicResource AppLogErrorBrush}" Opacity="0.16" IsVisible="{Binding BeforeChanged}" />
-                          <TextBlock Text="{Binding BeforeLine}" Classes="caption" MinWidth="22" TextAlignment="Right" />
-                          <SelectableTextBlock Grid.Column="1" Classes="code" Text="{Binding BeforeText}" />
+              <Grid Grid.Row="2" IsVisible="{Binding HasFileDetail}" RowDefinitions="Auto,*">
+                <StackPanel Spacing="2" Margin="8,6">
+                  <TextBlock Classes="line" Text="{Binding DetailPath}" FontWeight="SemiBold" ToolTip.Tip="{Binding DetailPath}" IsVisible="{Binding CanReturnToChanges}" />
+                  <WrapPanel ItemSpacing="8">
+                    <TextBlock Classes="caption" Text="{Binding SelectedFileSummary}" />
+                    <TextBlock Classes="caption" Text="{Binding SelectedFile?.SizeLabel}" />
+                  </WrapPanel>
+                  <TextBlock Classes="caption" Text="{Binding TextSummary}" IsVisible="{Binding HasTextPreview}" />
+                </StackPanel>
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              HorizontalContentAlignment="Stretch" Background="{DynamicResource AppBackgroundBrush}"
+                              IsVisible="{Binding HasTextLines}">
+                  <ItemsControl x:Name="DiffLines" ItemsSource="{Binding TextLines}" AutomationProperties.Name="文本差异">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="processing:TextDiffLine">
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" AutomationProperties.Name="{Binding Kind}">
+                          <Grid Classes="diffBefore" Classes.changed="{Binding BeforeChanged}" ColumnDefinitions="34,14,*" MinHeight="20">
+                            <Border Grid.ColumnSpan="3" Background="{DynamicResource AppLogErrorBrush}" Opacity="0.16" IsVisible="{Binding BeforeChanged}" />
+                            <TextBlock Classes="gutter" Text="{Binding BeforeLine}" />
+                            <TextBlock Grid.Column="1" Classes="gutter" Text="−" Foreground="{DynamicResource AppLogErrorBrush}" IsVisible="{Binding BeforeChanged}" />
+                            <SelectableTextBlock Grid.Column="2" Classes="code" AutomationProperties.Name="{Binding BeforeText}"><Run Text="{Binding Before.Prefix}" /><Run Text="{Binding Before.Changed}" Background="{StaticResource DiffRemovedWordBrush}" /><Run Text="{Binding Before.Suffix}" /></SelectableTextBlock>
+                          </Grid>
+                          <Grid Classes="diffAfter" Classes.missing="{Binding MissingAfter}" ColumnDefinitions="34,14,*" MinHeight="20">
+                            <Border Grid.ColumnSpan="3" Background="{DynamicResource AppLogInfoBrush}" Opacity="0.16" IsVisible="{Binding AfterChanged}" />
+                            <TextBlock Classes="gutter" Text="{Binding AfterLine}" />
+                            <TextBlock Grid.Column="1" Classes="gutter" Text="+" Foreground="{DynamicResource AppLogInfoBrush}" IsVisible="{Binding AfterChanged}" />
+                            <SelectableTextBlock Grid.Column="2" Classes="code" AutomationProperties.Name="{Binding AfterText}"><Run Text="{Binding After.Prefix}" /><Run Text="{Binding After.Changed}" Background="{StaticResource DiffAddedWordBrush}" /><Run Text="{Binding After.Suffix}" /></SelectableTextBlock>
+                          </Grid>
+                          <Border Grid.Column="1" Classes="editorDivider" Width="1" HorizontalAlignment="Left" Background="{DynamicResource AppBorderBrush}" />
                         </Grid>
-                        <Border Grid.Column="1" Background="{DynamicResource AppBorderBrush}" />
-                        <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="5">
-                          <Border Grid.ColumnSpan="2" Background="{DynamicResource AppLogInfoBrush}" Opacity="0.16" IsVisible="{Binding AfterChanged}" />
-                          <TextBlock Text="{Binding AfterLine}" Classes="caption" MinWidth="22" TextAlignment="Right" />
-                          <SelectableTextBlock Grid.Column="1" Classes="code" Text="{Binding AfterText}" />
-                        </Grid>
-                      </Grid>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
               </Grid>
             </Grid>
           </Grid>

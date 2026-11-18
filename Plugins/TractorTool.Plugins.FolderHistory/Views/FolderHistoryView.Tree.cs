@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using TractorTool.Plugins.FolderHistory.Storage;
 using TractorTool.Plugins.FolderHistory.ViewModels;
 
 namespace TractorTool.Plugins.FolderHistory.Views;
@@ -15,7 +16,7 @@ public partial class FolderHistoryView
     private bool _syncingTree;
     private TreePress? _press;
 
-    private sealed record TreePress(IPointer Pointer, Point Origin, TreeItem[] Initial, bool Additive)
+    private sealed record TreePress(IPointer Pointer, Point Origin, TreeItem[] Initial, bool Additive, FolderItem Folder)
     {
         public bool Dragging { get; set; }
     }
@@ -25,15 +26,17 @@ public partial class FolderHistoryView
         FileTree.SelectionChanged += (_, _) => { if (!_syncingTree && _press is null) CommitTreeSelection(); };
         TreeArea.AddHandler(PointerPressedEvent, TreePressed, RoutingStrategies.Tunnel);
         TreeArea.AddHandler(PointerMovedEvent, TreeMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
-        TreeArea.AddHandler(PointerReleasedEvent, TreeReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        TreeArea.AddHandler(PointerReleasedEvent, TreeReleased, RoutingStrategies.Bubble, handledEventsToo: true);
         TreeArea.AddHandler(KeyDownEvent, TreeKeyDown, RoutingStrategies.Tunnel);
         TreeArea.PointerCaptureLost += (_, e) =>
         {
             if (ReferenceEquals(e.Source, TreeArea) && _press?.Dragging == true) EndTreePress(cancel: true);
         };
-        TreeArea.PointerExited += (_, _) =>
+        TreeArea.PointerExited += (_, e) =>
         {
-            if (_press is { Dragging: false }) EndTreePress(cancel: false);
+            // A captured row can raise an exit when the pointer moves to another row inside the tree.
+            if (_press is { Dragging: false } && !new Rect(TreeArea.Bounds.Size).Contains(e.GetPosition(TreeArea)))
+                EndTreePress(cancel: false);
         };
         TreeArea.AddHandler(PointerWheelChangedEvent, (_, _) => EndTreePress(cancel: true), RoutingStrategies.Tunnel);
     }
@@ -55,21 +58,23 @@ public partial class FolderHistoryView
 
     private void TreePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(FolderHistoryViewModel.SelectedFolder) && _press is { } press &&
+            (_treeModel?.SelectedFolder is not { } folder || press.Folder.Info.Id != folder.Info.Id ||
+             !HistoryPaths.Comparer.Equals(press.Folder.Root, folder.Root)))
+            EndTreePress(cancel: true);
         if (e.PropertyName is nameof(FolderHistoryViewModel.VisibleTreeItems) or nameof(FolderHistoryViewModel.SelectedTreeItems))
             SynchronizeTree();
     }
 
     private void SynchronizeTree()
     {
-        if (_treeModel is not { } model) return;
+        // A live update may arrive between pointer-down and release. Keep the hit-tested rows in place.
+        if (_press is not null || _treeModel is not { } model) return;
         _syncingTree = true;
         try
         {
             if (!ReferenceEquals(FileTree.ItemsSource, model.VisibleTreeItems))
-            {
-                EndTreePress(cancel: true);
                 FileTree.ItemsSource = model.VisibleTreeItems;
-            }
             UpdateTreeSelection(model.SelectedTreeItems);
         }
         finally { _syncingTree = false; }
@@ -97,12 +102,12 @@ public partial class FolderHistoryView
 
     private void TreePressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_treeModel is null || e.Pointer.Type != PointerType.Mouse || _press is not null ||
+        if (_treeModel?.SelectedFolder is not { } folder || e.Pointer.Type != PointerType.Mouse || _press is not null ||
             e.GetCurrentPoint(TreeArea).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed ||
             e.Source is not Visual source || source.FindAncestorOfType<Button>(includeSelf: true) is not null ||
             source.FindAncestorOfType<ScrollBar>(includeSelf: true) is not null) return;
         _press = new(e.Pointer, e.GetPosition(TreeArea), _treeModel.SelectedTreeItems.ToArray(),
-            e.KeyModifiers.HasFlag(KeyModifiers.Control));
+            e.KeyModifiers.HasFlag(KeyModifiers.Control), folder);
     }
 
     private void TreeMoved(object? sender, PointerEventArgs e)
@@ -155,14 +160,8 @@ public partial class FolderHistoryView
         _press = null;
         SelectionBox.IsVisible = false;
         if (ReferenceEquals(press.Pointer.Captured, TreeArea)) press.Pointer.Capture(null);
-        if (cancel)
-        {
-            var syncing = _syncingTree;
-            _syncingTree = true;
-            try { UpdateTreeSelection(press.Initial); }
-            finally { _syncingTree = syncing; }
-        }
-        else if (!_syncingTree) CommitTreeSelection();
+        if (!cancel) CommitTreeSelection();
+        SynchronizeTree();
     }
 
     private void UpdateTreeSelection(IReadOnlyCollection<TreeItem> items)

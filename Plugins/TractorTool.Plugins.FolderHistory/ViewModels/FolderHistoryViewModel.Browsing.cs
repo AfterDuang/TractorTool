@@ -24,16 +24,16 @@ internal sealed partial class FolderHistoryViewModel
     [ObservableProperty] private IReadOnlyList<VersionItem> _timelineVersions = [];
     [ObservableProperty] private string _emptyTimelineMessage = "正在读取历史…";
     [ObservableProperty] private IReadOnlyList<VersionItem> _comparisonBases = [];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVersion), nameof(AfterTitle))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasVersion))]
     private VersionItem? _selectedVersion;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(BeforeTitle))] private VersionItem? _comparisonBase;
+    [ObservableProperty] private VersionItem? _comparisonBase;
     [ObservableProperty] private IReadOnlyList<FileItem> _files = [];
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasFileDetail), nameof(ShowChangeList),
-        nameof(CanReturnToChanges), nameof(SelectedFileSummary), nameof(DetailPath), nameof(BeforeFileInfo), nameof(AfterFileInfo))]
+        nameof(CanReturnToChanges), nameof(SelectedFileSummary), nameof(DetailPath))]
     private FileItem? _selectedFile;
     [ObservableProperty] private string _comparisonSummary = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextPreview))] private string _textSummary = "";
-    [ObservableProperty] private IReadOnlyList<TextDiffLine> _textLines = [];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextLines))] private IReadOnlyList<TextDiffLine> _textLines = [];
 
     public string ScopeTitle => SelectedTreeItems.Count switch
     {
@@ -50,14 +50,11 @@ internal sealed partial class FolderHistoryViewModel
     public bool ShowChangeList => HasVersion && !IsSingleFile && !HasFileDetail;
     public bool CanReturnToChanges => !IsSingleFile && HasFileDetail;
     public bool HasTextPreview => TextSummary.Length != 0;
+    public bool HasTextLines => TextLines.Count > 0;
     public string DetailPath => SelectedFile?.Path ?? "";
     public string SelectedFileSummary => SelectedFile is not { } file ? "" :
         file.Before is { IsDirectory: false } old && file.After is { IsDirectory: false } next &&
         old.Length == next.Length && old.Hash != next.Hash ? "内容已修改，文件大小相同" : file.Kind;
-    public string BeforeFileInfo => FileItem.Describe(SelectedFile?.Before);
-    public string AfterFileInfo => FileItem.Describe(SelectedFile?.After);
-    public string BeforeTitle => ComparisonBase?.Title ?? "首次保存前";
-    public string AfterTitle => SelectedVersion?.Title ?? "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanGoToLastPresentVersion))]
     private VersionItem? _lastPresentVersion;
     public bool CanGoToLastPresentVersion => LastPresentVersion is not null;
@@ -89,6 +86,7 @@ internal sealed partial class FolderHistoryViewModel
     {
         if (_settingSelection || !item.HasChildren || _workspace is null) return;
         if (!_expanded.Add(item.Path)) _expanded.Remove(item.Path);
+        _directoryUpdates?.Writer.TryWrite(true);
         _settingSelection = true;
         var oldScope = _scope;
         try { RebuildTree(); }
@@ -96,9 +94,10 @@ internal sealed partial class FolderHistoryViewModel
         if (!oldScope.SetEquals(_scope)) UpdateTimeline(SelectedVersion?.Id, null, null);
     }
 
-    private void RebuildTree()
+    private void RebuildTree(IReadOnlyList<TreeItem>? visible = null)
     {
-        VisibleTreeItems = _workspace?.VisibleTree(_expanded) ?? [];
+        visible ??= _workspace?.VisibleTree(_expanded, _directoryListing) ?? [];
+        if (!VisibleTreeItems.SequenceEqual(visible)) VisibleTreeItems = visible;
         _visibleByPath = VisibleTreeItems.ToDictionary(item => item.Path, HistoryPaths.Comparer);
         SelectedTreeItems = VisibleTreeItems.Where(item => _scope.Contains(item.Path)).ToArray();
         _scope = SelectedTreeItems.Select(item => item.Path).ToHashSet(HistoryPaths.Comparer);

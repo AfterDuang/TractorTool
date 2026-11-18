@@ -7,7 +7,7 @@ public static class HistoryPaths
     private static readonly StringComparison Comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     private static readonly char[] Separators = ['/', '\\'];
     private static readonly char[] InvalidNameCharacters = Path.GetInvalidFileNameChars();
-    private const FileAttributes Unsupported = FileAttributes.ReparsePoint | FileAttributes.Device | FileAttributes.Offline;
+    internal const FileAttributes UnsupportedAttributes = FileAttributes.ReparsePoint | FileAttributes.Device | FileAttributes.Offline;
 
     public static string NormalizeRoot(string path, string appRoot, string dataRoot)
     {
@@ -85,7 +85,7 @@ public static class HistoryPaths
     {
         var attributes = new FileInfo(path).Attributes;
         if (attributes == (FileAttributes)(-1)) return null;
-        if ((attributes & Unsupported) != 0) throw new InvalidDataException("路径包含链接、设备或离线文件：" + path);
+        if ((attributes & UnsupportedAttributes) != 0) throw new InvalidDataException("路径包含链接、设备或离线文件：" + path);
         return attributes;
     }
 

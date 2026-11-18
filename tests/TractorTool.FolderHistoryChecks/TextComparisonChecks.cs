@@ -12,6 +12,12 @@ internal static class TextComparisonChecks
             "original line numbers changed");
         Assert(changed.Lines.Select(line => line.AfterLine).SequenceEqual(new int?[] { 1, 2, 3 }),
             "new line numbers changed");
+        var fragment = TextComparison.Compare(Bytes("前👨‍💻后"), Bytes("前👨‍🔬后")).Lines.Single();
+        Assert(fragment.Before == new DiffText("前", "👨‍💻", "后") && fragment.After == new DiffText("前", "👨‍🔬", "后"),
+            "intraline highlight split a grapheme or colored unchanged text");
+        var insertion = TextComparison.Compare(Bytes("ab"), Bytes("a中b")).Lines.Single();
+        Assert(insertion.Before == new DiffText("a", "", "b") && insertion.After == new DiffText("a", "中", "b"),
+            "an insertion inside a line must preserve both edges on both sides");
         var endings = TextComparison.Compare(Bytes("a\r\nb"), Bytes("a\nb\n"));
         Assert(endings.Lines.All(line => line.Kind == "相同") && endings.Summary.Contains("换行"), "line endings must be reported separately");
         var uneven = TextComparison.Compare(Bytes("a\nb\nc"), Bytes("x\nc"));

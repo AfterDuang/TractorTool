@@ -30,7 +30,7 @@ internal static class ServiceChecks
         Assert(await File.ReadAllTextAsync(metadata) == "{}" && Directory.GetFileSystemEntries(history).Length == 1,
             "missing fields caused a broken repository to be rewritten");
 
-        var future = JsonSerializer.Serialize(new { schemaVersion = 3, id = Guid.NewGuid(), engine = "Duplicati", versions = Array.Empty<object>() });
+        var future = JsonSerializer.Serialize(new { schemaVersion = 4, id = Guid.NewGuid(), engine = "Duplicati", versions = Array.Empty<object>() });
         await File.WriteAllTextAsync(metadata, future);
         await ThrowsAsync<InvalidDataException>(() => service.AddFolderAsync(broken));
         Assert(await File.ReadAllTextAsync(metadata) == future && Directory.GetFileSystemEntries(history).Length == 1,
@@ -58,7 +58,7 @@ internal static class ServiceChecks
         readRules.ExcludedPaths[0] = "changed-return-value";
         Assert((await service.GetSettingsAsync(legacy)).ExcludedPaths.SequenceEqual(new[] { "cache" }), "returned settings changed persisted rules");
         var upgraded = JsonNode.Parse(await File.ReadAllTextAsync(legacyMetadata))!;
-        Assert(upgraded["schemaVersion"]!.GetValue<int>() == 2 && !upgraded["protectionEnabled"]!.GetValue<bool>(), "legacy write failed to upgrade safely");
+        Assert(upgraded["schemaVersion"]!.GetValue<int>() == 3 && !upgraded["protectionEnabled"]!.GetValue<bool>(), "legacy write failed to upgrade safely");
         upgraded["schemaVersion"] = 1;
         await File.WriteAllTextAsync(legacyMetadata, upgraded.ToJsonString());
         await ThrowsAsync<InvalidDataException>(() => service.GetSettingsAsync(legacy));
@@ -148,10 +148,9 @@ internal static class ServiceChecks
         var workFile = Path.Combine(moved, "file.txt");
         EngineChecks.WriteVolume(Path.Combine(repository, goodId), true, "SHA256", folder,
             new { type = "File", path = workFile, size = new FileInfo(workFile).Length, hash = Convert.ToBase64String(SHA256.HashData(await File.ReadAllBytesAsync(workFile))) });
-        var movedMetadata = Path.Combine(movedHistory, "history.json");
-        var committed = JsonNode.Parse(await File.ReadAllTextAsync(movedMetadata))!;
-        committed["versions"] = JsonSerializer.SerializeToNode(new[] { new { id = goodId, sourceRoot = moved, note = "registered", pinned = true, restoreProtection = false } });
-        await File.WriteAllTextAsync(movedMetadata, committed.ToJsonString());
+        var committed = HistoryStore.Read(moved);
+        committed.AddVersion(goodId, moved, "registered", true);
+        HistoryStore.Save(moved, committed);
         var processCountBeforeNotes = host.Processes;
         await service.SetSnapshotNoteAsync(moved, goodId, "registered", "  可恢复的版本  ");
         await ThrowsAsync<InvalidOperationException>(() => service.SetSnapshotNoteAsync(moved, goodId, "registered", "过期修改"));
@@ -180,9 +179,9 @@ internal static class ServiceChecks
         await service.SetPinnedAsync(moved, goodId, false);
         const string addedAfterPreview = "duplicati-20261007T140000Z.dlist.zip";
         EngineChecks.WriteVolume(Path.Combine(repository, addedAfterPreview), true, "SHA256", folder);
-        committed = JsonNode.Parse(await File.ReadAllTextAsync(movedMetadata))!;
-        committed["versions"]!.AsArray().Add(JsonSerializer.SerializeToNode(new { id = addedAfterPreview, sourceRoot = moved, note = "after confirmation", pinned = false, restoreProtection = false }));
-        await File.WriteAllTextAsync(movedMetadata, committed.ToJsonString());
+        committed = HistoryStore.Read(moved);
+        committed.AddVersion(addedAfterPreview, moved, "after confirmation", false);
+        HistoryStore.Save(moved, committed);
         await ThrowsAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(moved, new[] { goodId }, deleteAll: true));
         Assert(host.Processes == beforeDeletionRequests && File.Exists(Path.Combine(repository, goodId)) && File.Exists(Path.Combine(repository, addedAfterPreview)),
             "delete-all confirmation silently changed scope after a new version appeared");
@@ -221,11 +220,11 @@ internal static class ServiceChecks
         const string id = "duplicati-20261007T120000Z.dlist.zip";
         EngineChecks.WriteVolume(Path.Combine(repository, id), true, "SHA256", new { type = "Folder", path = work + Path.DirectorySeparatorChar });
         var metadata = Path.Combine(history, "history.json");
-        var state = JsonNode.Parse(await File.ReadAllTextAsync(metadata))!;
-        state["versions"] = JsonSerializer.SerializeToNode(new[] { new { id, sourceRoot = work, note = "prior complete version", pinned = false, restoreProtection = false } });
-        state["protectionEnabled"] = true;
-        state["settings"]!["keepLatestVersions"] = 1;
-        await File.WriteAllTextAsync(metadata, state.ToJsonString());
+        var state = HistoryStore.Read(work);
+        state.AddVersion(id, work, "prior complete version", false);
+        state.ProtectionEnabled = true;
+        state.Settings = state.Settings with { KeepLatestVersions = 1 };
+        HistoryStore.Save(work, state);
         try
         {
             host.FailSettingsSave = true;
@@ -234,8 +233,8 @@ internal static class ServiceChecks
                 (await service.GetFoldersAsync()).Count == 0 && File.Exists(Path.Combine(repository, id)),
                 "failed association publication left persisted automatic capture or cleanup enabled");
             host.FailSettingsSave = false;
-            state["protectionEnabled"] = true;
-            await File.WriteAllTextAsync(metadata, state.ToJsonString());
+            state.ProtectionEnabled = true;
+            HistoryStore.Save(work, state);
             await service.AddFolderAsync(work);
             Assert(!(await service.GetFoldersAsync()).Single().ProtectionEnabled &&
                 !JsonNode.Parse(await File.ReadAllTextAsync(metadata))!["protectionEnabled"]!.GetValue<bool>() && host.PackageRequests == 0 && host.Queued == 0,
@@ -256,11 +255,10 @@ internal static class ServiceChecks
         var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
         const string id = "duplicati-20261007T120000Z.dlist.zip";
         EngineChecks.WriteVolume(Path.Combine(repository, id), true, "SHA256", new { type = "Folder", path = work + Path.DirectorySeparatorChar });
-        var metadata = Path.Combine(history, "history.json");
-        var state = JsonNode.Parse(await File.ReadAllTextAsync(metadata))!;
-        state["versions"] = JsonSerializer.SerializeToNode(new[] { new { id, sourceRoot = work, note = "prior complete version", pinned = false, restoreProtection = false } });
-        state["protectionEnabled"] = true;
-        await File.WriteAllTextAsync(metadata, state.ToJsonString());
+        var state = HistoryStore.Read(work);
+        state.AddVersion(id, work, "prior complete version", false);
+        state.ProtectionEnabled = true;
+        HistoryStore.Save(work, state);
         var run = service.RunAsync(CancellationToken.None);
         try
         {
@@ -292,9 +290,9 @@ internal static class ServiceChecks
         schedule.Defer(start.AddSeconds(80));
         Assert(schedule.Pending && schedule.DueAt(settings) == start.AddSeconds(140), "a changing source was faulted or retried before the minimum interval");
 
-        SavedVersion Version(string id, int age, bool pinned = false, bool protection = false) =>
-            new(new(id, start.AddDays(-age), "root", []), "", pinned) { IsRestoreProtection = protection };
-        SavedVersion[] versions = [Version("latest", 1), Version("recent", 2), Version("old", 30), Version("important", 40, true), Version("recovery", 50, false, true)];
+        SavedVersion Version(int number, string id, int age, bool pinned = false, bool protection = false) =>
+            new(new(id, start.AddDays(-age), "root", []), "", pinned, number) { IsRestoreProtection = protection };
+        SavedVersion[] versions = [Version(5, "latest", 1), Version(4, "recent", 2), Version(3, "old", 30), Version(2, "important", 40, true), Version(1, "recovery", 50, false, true)];
         Assert(HistoryRetention.Candidates(versions, settings, start).Count == 0, "default retention deleted history");
         Assert(HistoryRetention.Candidates(versions, settings with { KeepLatestVersions = 1 }, start).Select(v => v.Id).SequenceEqual(new[] { "recent", "old" }),
             "retention did not protect latest, important and recovery versions");
@@ -314,11 +312,10 @@ internal static class ServiceChecks
         var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
         string[] ids = ["duplicati-20261007T120000Z.dlist.zip", "duplicati-20261007T130000Z.dlist.zip"];
         foreach (var id in ids) EngineChecks.WriteVolume(Path.Combine(repository, id), true, "SHA256", new { type = "Folder", path = work + Path.DirectorySeparatorChar });
-        var metadata = Path.Combine(history, "history.json");
-        var state = JsonNode.Parse(await File.ReadAllTextAsync(metadata))!;
-        state["versions"] = JsonSerializer.SerializeToNode(ids.Select(id => new { id, sourceRoot = work, note = "prior complete", pinned = false, restoreProtection = false }));
-        state["protectionEnabled"] = true;
-        await File.WriteAllTextAsync(metadata, state.ToJsonString());
+        var state = HistoryStore.Read(work);
+        foreach (var id in ids) state.AddVersion(id, work, "prior complete", false);
+        state.ProtectionEnabled = true;
+        HistoryStore.Save(work, state);
         var enteredDelete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseDelete = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var nextBackup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -400,11 +397,10 @@ internal static class ServiceChecks
         foreach (var item in new[] { (Id: targetId, Bytes: old), (Id: protectionId, Bytes: current) })
             EngineChecks.WriteVolume(Path.Combine(repository, item.Id), true, "SHA256", folder,
                 new { type = "File", path = workFile, size = item.Bytes.Length, hash = Convert.ToBase64String(SHA256.HashData(item.Bytes)) });
-        var metadata = Path.Combine(history, "history.json");
-        var state = JsonNode.Parse(await File.ReadAllTextAsync(metadata))!;
-        state["versions"] = JsonSerializer.SerializeToNode(new[] { targetId, protectionId }.Select(id =>
-            new { id, sourceRoot = work, note = "manifest readable", pinned = false, restoreProtection = false }));
-        await File.WriteAllTextAsync(metadata, state.ToJsonString());
+        var state = HistoryStore.Read(work);
+        state.AddVersion(targetId, work, "manifest readable", false);
+        state.AddVersion(protectionId, work, "manifest readable", false);
+        HistoryStore.Save(work, state);
         var protectionReads = 0;
         var targetReads = 0;
         host.ProcessHandler = async (request, cancellation) =>
@@ -441,9 +437,9 @@ internal static class ServiceChecks
             File.Move(workFile, undo);
             const string unrelated = "duplicati-20261007T110000Z.dlist.zip";
             await File.WriteAllTextAsync(Path.Combine(repository, unrelated), "damaged unrelated older manifest");
-            state = JsonNode.Parse(await File.ReadAllTextAsync(metadata))!;
-            state["versions"]!.AsArray().Add(JsonSerializer.SerializeToNode(new { id = unrelated, sourceRoot = work, note = "unrelated", pinned = false, restoreProtection = false }));
-            await File.WriteAllTextAsync(metadata, state.ToJsonString());
+            state = HistoryStore.Read(work);
+            state.AddVersion(unrelated, work, "unrelated", false);
+            HistoryStore.Save(work, state);
             Assert((await service.GetFoldersAsync()).Single().HasPendingRestore, "timeline damage hid a validated recovery action");
             await ThrowsAsync<IOException>(() => service.ResumeRestoreAsync(work));
             Assert(protectionReads == 2 && File.Exists(undo) && !File.Exists(workFile) && InPlaceRestoreTransaction.ReadPending(work) is not null,

@@ -7,10 +7,12 @@ public sealed class WorkingTreeChangedException(string message) : IOException(me
 public sealed record HistoryVersion(string Id, DateTimeOffset CreatedAt, string SourceRoot,
     IReadOnlyList<HistoryEntry> Entries);
 
-public sealed record SavedVersion(HistoryVersion Version, string Note, bool Pinned)
+public sealed record SavedVersion(HistoryVersion Version, string Note, bool Pinned, long Number)
 {
     public string Id => Version.Id;
-    public string Title => Version.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    public string NumberLabel => $"#{Number}";
+    public string SavedAt => Version.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    public string Title => $"{NumberLabel} · {SavedAt}";
     public bool IsRestoreProtection { get; init; }
 }
 

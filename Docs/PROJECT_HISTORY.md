@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史工作区 | [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
 | 文件夹历史交互修复 | [E124 · 菜单、快照说明与按需对比（2026-11-18）](#evidence-folder-history-snapshot) |
 | 文件夹历史工作区 | [E123 · 文件树、并排比较与按版本恢复（2026-11-18）](#evidence-folder-history-workbench) |
 | 文件夹历史完整流程 | [E122 · 自动保护、比较、恢复与清理（2026-11-17）](#evidence-folder-history-complete) |
@@ -162,6 +163,22 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-live-tree"></a>
+
+## E125 实时文件树、快照号及自适应对比（2026-11-18）
+
+宿主的普通插件页已提供左右各 28 DIP。工作区沿用这两条对齐线，并在底部留出相同的空间。布局参考对齐、分组及窗口尺寸变化的指导。[Apple HIG 布局](https://developer.apple.com/design/human-interface-guidelines/layout)
+
+内容对比根据右侧实际宽度选择并排或行内布局。保留两侧行号，组合符号、背景色及行内文字强调，便于区分新增、删除和修改。[VS Code 差异编辑器](https://code.visualstudio.com/docs/sourcecontrol/staging-commits#_review-changes-with-the-diff-editor)
+
+Release 检查工程构建通过，0 错误、2 条 NU1900（NuGet 漏洞数据源不可达）。运行 `TractorTool.FolderHistoryChecks.dll --workspace artifacts/e125-folder-history-workspace/preview` 通过。检查使用临时目录、模拟引擎和 Avalonia.Headless。离屏宿主沿用应用主题资源及左右留白，关闭动画以记录稳定画面。
+
+- 实际文件系统事件覆盖暂停自动保存时新建、重命名、删除文件，首次快照前浏览，切换目录，根目录移走、同路径换库和原库移回。拖框中插入排序更靠前的文件，松开后仍选中原来的两条路径。
+- 旧格式 1/2 只读浏览不会改写库。首次写入、删除后重开、清空后再保存、系统时钟回拨均保持快照号语义。接近旧格式 8 MiB 上限的元数据可升级，接近新格式容量上限时仍可登记待清理范围。
+- 历史行同时显示编号和完整日期。离屏验证了鼠标和键盘菜单、编辑说明、宽窄两种布局的实际行坐标、浅深色主题及工作区左、右、底三边留白。稳定画面在同一产物目录的 `preview/`。真实 Windows 客户端和真实 Duplicati 恢复留待 A28。
+
+通过 `scripts/Build-Plugin.ps1` 对 Avalonia 12.1.6 已发布宿主 SDK 独立构建，0 错误、2 条 NU1900。包为 `artifacts/e125-folder-history-workspace/plugin/TractorTool.FolderHistory-0.4.0.zip`，312026 字节，SHA256 为 `FF3B6A81D6E3E77893A4C0AD63100D7461DBE756D4184D2C39B8A91EAE776084`。ZIP 的 9 个文件均与构建输出逐项校验一致。
 
 <a id="evidence-folder-history-snapshot"></a>
 

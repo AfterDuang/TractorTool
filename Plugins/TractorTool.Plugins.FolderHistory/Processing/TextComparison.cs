@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace TractorTool.Plugins.FolderHistory.Processing;
@@ -6,7 +7,11 @@ public sealed record TextDiffLine(string Kind, int? BeforeLine, int? AfterLine, 
 {
     public bool BeforeChanged => BeforeLine.HasValue && Kind != "相同";
     public bool AfterChanged => AfterLine.HasValue && Kind != "相同";
+    public bool MissingAfter => AfterLine is null;
+    public DiffText Before { get; init; } = new(BeforeText ?? "", "", "");
+    public DiffText After { get; init; } = new(AfterText ?? "", "", "");
 }
+public sealed record DiffText(string Prefix, string Changed, string Suffix);
 public sealed record TextComparisonResult(bool IsText, string Summary, IReadOnlyList<TextDiffLine> Lines);
 
 public static class TextComparison
@@ -51,8 +56,14 @@ public static class TextComparison
                 int? right = newStart + offset < current ? newStart + offset : null;
                 if (left.HasValue && right.HasValue)
                     differentEndings |= oldLines[left.Value].Ending != newLines[right.Value].Ending;
-                result.Add(new(left is null ? "新增" : right is null ? "删除" : "修改", left + 1, right + 1,
-                    left is int i ? oldLines[i].Text : null, right is int j ? newLines[j].Text : null));
+                var line = new TextDiffLine(left is null ? "新增" : right is null ? "删除" : "修改", left + 1, right + 1,
+                    left is int i ? oldLines[i].Text : null, right is int j ? newLines[j].Text : null);
+                if (line.BeforeText is { } oldLine && line.AfterText is { } newLine)
+                {
+                    var (oldParts, newParts) = HighlightChange(oldLine, newLine);
+                    line = line with { Before = oldParts, After = newParts };
+                }
+                result.Add(line);
             }
         }
         while (previous < oldLines.Length || current < newLines.Length)
@@ -81,6 +92,30 @@ public static class TextComparison
         if (differentEndings) summary += " · 换行方式有变化";
         if (oldEncoding != newEncoding) summary += $" · {oldEncoding} → {newEncoding}";
         return new(true, summary, result);
+    }
+
+    private static (DiffText, DiffText) HighlightChange(string before, string after)
+    {
+        // Highlight one span between matching ends. Text elements keep accents and emoji together.
+        var left = StringInfo.ParseCombiningCharacters(before);
+        var right = StringInfo.ParseCombiningCharacters(after);
+        var commonLength = Math.Min(left.Length, right.Length);
+        var prefix = 0;
+        while (prefix < commonLength && Equal(prefix, prefix)) prefix++;
+        var suffix = 0;
+        while (suffix < commonLength - prefix && Equal(left.Length - suffix - 1, right.Length - suffix - 1)) suffix++;
+        return (Split(before, left), Split(after, right));
+
+        bool Equal(int i, int j) =>
+            before.AsSpan(left[i], Boundary(before, left, i + 1) - left[i]).SequenceEqual(
+                after.AsSpan(right[j], Boundary(after, right, j + 1) - right[j]));
+        DiffText Split(string text, int[] starts)
+        {
+            var start = Boundary(text, starts, prefix);
+            var end = Boundary(text, starts, starts.Length - suffix);
+            return new(text[..start], text[start..end], text[end..]);
+        }
+        static int Boundary(string text, int[] starts, int index) => index < starts.Length ? starts[index] : text.Length;
     }
 
     private static bool TryDecode(byte[] bytes, out string text, out string name)

@@ -22,6 +22,8 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
     public FolderHistoryView()
     {
         InitializeComponent();
+        ComparisonPane.SizeChanged += (_, e) => ComparisonPane.Classes.Set("unified", e.NewSize.Width < 560);
+        FileTree.SizeChanged += (_, e) => FileTree.Classes.Set("compact", e.NewSize.Width < 200);
         InitializeTreeInput();
         Loaded += async (_, _) =>
         {

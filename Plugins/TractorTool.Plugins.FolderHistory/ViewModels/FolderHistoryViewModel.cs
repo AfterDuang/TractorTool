@@ -57,6 +57,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
         service.Changed -= ServiceChanged;
         _folderLoad?.Cancel();
         _versionLoad?.Cancel();
+        StopDirectoryTracking();
         CancelBrowse(keepForReattach: true);
         CancelPreview();
     }
@@ -79,7 +80,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     }
     partial void OnSelectedFolderChanged(FolderItem? oldValue, FolderItem? newValue)
     {
-        if (_settingSelection || HistoryPaths.Comparer.Equals(oldValue?.Root, newValue?.Root)) return;
+        if (_settingSelection || oldValue?.Info.Id == newValue?.Info.Id && HistoryPaths.Comparer.Equals(oldValue?.Root, newValue?.Root)) return;
         _folderLoad?.Cancel();
         Notice = Error = "";
         ResetFolderDetails();
@@ -206,6 +207,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
             var snapshot = await service.GetFoldersAsync(request.Token);
             request.Token.ThrowIfCancellationRequested();
             var currentRoot = SelectedFolder?.Root;
+            var currentId = SelectedFolder?.Info.Id;
             var wanted = preferredRoot ?? currentRoot;
             var folders = snapshot.OrderBy(folder => folder.Root, HistoryPaths.Comparer).Select(folder => new FolderItem(folder)).ToArray();
             _settingSelection = true;
@@ -215,7 +217,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
                 SelectedFolder = Folders.FirstOrDefault(folder => HistoryPaths.Comparer.Equals(folder.Root, wanted)) ?? Folders.FirstOrDefault();
             }
             finally { _settingSelection = false; }
-            if (!HistoryPaths.Comparer.Equals(SelectedFolder?.Root, currentRoot))
+            if (SelectedFolder?.Info.Id != currentId || !HistoryPaths.Comparer.Equals(SelectedFolder?.Root, currentRoot))
             {
                 Notice = Error = "";
                 ResetFolderDetails();
@@ -234,7 +236,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
         _versionLoad = request;
         try
         {
-            var snapshot = await service.GetVersionsAsync(folder.Root, request.Token);
+            var (snapshot, exclusions) = await service.GetBrowserDataAsync(folder.Root, request.Token);
             request.Token.ThrowIfCancellationRequested();
             var previous = _workspace;
             var workspace = await Task.Run(() =>
@@ -243,7 +245,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
                 var byId = snapshot.ToDictionary(item => item.Id, StringComparer.Ordinal);
                 if (previous is not null && previous.Versions.Length == snapshot.Count &&
                     previous.Versions.All(row => byId.TryGetValue(row.Id, out var saved) &&
-                        saved.Note == row.Note && saved.Pinned == row.Pinned && saved.IsRestoreProtection == row.IsRestoreProtection &&
+                        saved.Number == row.Saved.Number && saved.Note == row.Note && saved.Pinned == row.Pinned && saved.IsRestoreProtection == row.IsRestoreProtection &&
                         saved.Version.CreatedAt == row.Saved.Version.CreatedAt && saved.Version.SourceRoot == row.Saved.Version.SourceRoot &&
                         !request.IsCancellationRequested && saved.Version.Entries.SequenceEqual(row.Saved.Version.Entries))) return previous;
                 return new HistoryWorkspace(folder.Name, snapshot, request.Token);
@@ -251,6 +253,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
             request.Token.ThrowIfCancellationRequested();
             if (!ReferenceEquals(previous, workspace) || selectLatest)
                 ApplyWorkspace(workspace, selectLatest);
+            TrackDirectory(folder, exclusions);
             VersionsLoaded = true;
             return true;
         }
@@ -268,6 +271,8 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     private void ResetFolderDetails()
     {
         _versionLoad?.Cancel();
+        StopDirectoryTracking();
+        _directoryListing = null;
         VersionsLoaded = false;
         _expanded.Clear();
         _expanded.Add("");

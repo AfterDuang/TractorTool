@@ -10,7 +10,7 @@ public static class HistoryRetention
     public static IReadOnlyList<SavedVersion> Candidates(IReadOnlyList<SavedVersion> versions, FolderSettings settings, DateTimeOffset now)
     {
         if (settings.KeepLatestVersions == 0 && settings.KeepDays == 0) return [];
-        return versions.OrderByDescending(version => version.Version.CreatedAt).Select((version, index) => (version, index))
+        return versions.OrderByDescending(version => version.Number).Select((version, index) => (version, index))
             .Where(item => item.index > 0 && !item.version.Pinned && !item.version.IsRestoreProtection &&
                 (settings.KeepLatestVersions == 0 || item.index >= settings.KeepLatestVersions) &&
                 (settings.KeepDays == 0 || item.version.Version.CreatedAt < now.AddDays(-settings.KeepDays)))

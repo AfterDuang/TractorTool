@@ -5,6 +5,15 @@ using TractorTool.Plugins.FolderHistory.Storage;
 var fixture = Directory.CreateTempSubdirectory("TractorTool.FolderHistoryChecks-").FullName;
 try
 {
+    if (args is ["--workspace"] or ["--workspace", _])
+    {
+        SnapshotNumberChecks.Run(fixture);
+        WorkspaceChecks.Run(fixture);
+        TextComparisonChecks.Run();
+        InteractionChecks.Run(fixture, args.Length == 2 ? Path.GetFullPath(args[1]) : null);
+        Console.WriteLine("Snapshot numbers, live file tree and comparison layout checks passed.");
+        return;
+    }
     if (args is ["--ui"])
     {
         InteractionChecks.Run(fixture);
@@ -93,7 +102,8 @@ try
         renamed.Any(item => item.Path == newName.Path && item.Kind == "新增"), "case-only rename did not expose both paths");
 
     TextComparisonChecks.Run();
-    WorkspaceChecks.Run();
+    SnapshotNumberChecks.Run(fixture);
+    WorkspaceChecks.Run(fixture);
     await ServiceChecks.RunAsync(fixture);
     await EngineChecks.RunAsync(new DirectoryInfo(fixture));
     await RestoreChecks.RunAsync(fixture);
