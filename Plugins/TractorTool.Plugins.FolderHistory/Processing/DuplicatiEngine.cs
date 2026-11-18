@@ -33,14 +33,45 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         return ReadVersion(ParseVolume(Path.Combine(Repository(historyDirectory), versionId)));
     }
 
-    public async Task<HistoryVersion> BackupAsync(string root, string historyDirectory, CancellationToken token,
+    public Task<HistoryVersion> BackupAsync(string root, string historyDirectory, CancellationToken token,
         IReadOnlyList<string>? excludedRelativePaths = null)
     {
         root = HistoryPaths.Absolute(root);
         HistoryPaths.RequireDirectory(root);
         if (!HistoryPaths.Comparer.Equals(HistoryPaths.HistoryDirectory(root), HistoryPaths.Absolute(historyDirectory)))
             throw new InvalidDataException("历史库路径和工作目录不匹配。");
+        return BackupCoreAsync(root, historyDirectory, token, excludedRelativePaths);
+    }
 
+    internal Task<HistoryVersion> BackupStagedAsync(string source, string historyDirectory, CancellationToken token)
+    {
+        source = HistoryPaths.Absolute(source);
+        HistoryPaths.RequireLocalVolume(source);
+        if (!HistoryPaths.Comparer.Equals(PublishSourceHistoryDirectory(source), HistoryPaths.Absolute(historyDirectory)))
+            throw new InvalidDataException("发布只能备份当前历史库内专用的暂存源目录。");
+        return BackupCoreAsync(source, historyDirectory, token, []);
+    }
+
+    private static string? PublishSourceHistoryDirectory(string source)
+    {
+        var name = Path.GetFileName(source);
+        var temporary = Path.GetDirectoryName(source);
+        var history = temporary is null ? null : Path.GetDirectoryName(temporary);
+        var owner = history is null ? null : Path.GetDirectoryName(history);
+        if (!Regex.IsMatch(name, "^publish-source-[0-9a-f]{32}$", RegexOptions.CultureInvariant) ||
+            !HistoryPaths.Comparer.Equals(Path.GetFileName(temporary), "temp") ||
+            !HistoryPaths.Comparer.Equals(Path.GetFileName(history), HistoryPaths.DirectoryName) ||
+            owner is null || Path.GetDirectoryName(owner) is null)
+            return null;
+        // Stored source roots may no longer exist after a folder move; validate their shape without touching that old location.
+        HistoryPaths.RejectHistoryContainer(owner);
+        return history;
+    }
+
+    private async Task<HistoryVersion> BackupCoreAsync(string root, string historyDirectory, CancellationToken token,
+        IReadOnlyList<string>? excludedRelativePaths)
+    {
+        HistoryPaths.RequireDirectory(root);
         historyDirectory = HistoryPaths.Absolute(historyDirectory);
         var volumes = ReadVolumes(historyDirectory);
         foreach (var volume in volumes) _ = ReadVersion(volume);
@@ -537,7 +568,6 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             var type = item.GetProperty("type").GetString();
             var path = item.GetProperty("path").GetString() ?? throw new InvalidDataException("历史版本缺少项目路径。");
             var normalized = HistoryPaths.Absolute(path);
-            HistoryPaths.RejectHistoryContainer(normalized);
             if (!HistoryPaths.Comparer.Equals(normalized, path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))
                 throw new InvalidDataException("历史清单包含非规范路径。");
             var entry = type switch
@@ -551,20 +581,25 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             if (entry.IsDirectory && (root is null || normalized.Length < root.Length)) root = normalized;
         }
 
-        if (!full) return null;
+        if (!full && root is null)
+        {
+            foreach (var item in entries.Values) HistoryPaths.RejectHistoryContainer(item.Path);
+            return null;
+        }
         if (root is null || Path.GetDirectoryName(root) is null)
             throw new InvalidDataException("历史清单缺少可识别的源目录。");
+        if (PublishSourceHistoryDirectory(root) is null) HistoryPaths.RejectHistoryContainer(root);
         var prefix = root + Path.DirectorySeparatorChar;
         var relative = new List<HistoryEntry>(entries.Count - 1);
         foreach (var item in entries.Values)
         {
             if (HistoryPaths.Comparer.Equals(item.Path, root)) continue;
             if (!item.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
-                !entries.TryGetValue(Path.GetDirectoryName(item.Path)!, out var parent) || !parent.IsDirectory)
+                full && (!entries.TryGetValue(Path.GetDirectoryName(item.Path)!, out var parent) || !parent.IsDirectory))
                 throw new InvalidDataException("历史清单包含越界或缺少父目录的路径。");
             relative.Add(item with { Path = HistoryPaths.NormalizeRelative(item.Path[prefix.Length..]) });
         }
-        return new(volume.Id, volume.CreatedAt, root, relative.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray());
+        return full ? new(volume.Id, volume.CreatedAt, root, relative.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray()) : null;
     }
 
     private static string ReadHash(JsonElement item)

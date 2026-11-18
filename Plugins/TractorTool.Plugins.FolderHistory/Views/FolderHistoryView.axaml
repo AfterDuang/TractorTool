@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.Plugins.FolderHistory.ViewModels"
              xmlns:processing="using:TractorTool.Plugins.FolderHistory.Processing"
+             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:fa="using:FluentAvalonia.UI.Controls"
              x:Class="TractorTool.Plugins.FolderHistory.Views.FolderHistoryView" x:DataType="vm:FolderHistoryViewModel">
   <UserControl.Styles>
@@ -51,7 +52,7 @@
     <Style Selector="Grid#ComparisonPane.unified Grid.diffAfter">
       <Setter Property="Grid.Row" Value="1" />
     </Style>
-    <Style Selector="Grid#ComparisonPane.unified Grid.diffBefore:not(.changed), Grid#ComparisonPane.unified Grid.diffAfter.missing">
+    <Style Selector="Grid#ComparisonPane.unified Grid.diffBefore:not(.changed), Grid#ComparisonPane.unified Grid.diffAfter.missing, Grid.gap Grid.diffBefore, Grid.gap Grid.diffAfter, Grid.gap Border.editorDivider">
       <Setter Property="IsVisible" Value="False" />
     </Style>
     <Style Selector="Grid#ComparisonPane.unified Border.editorDivider">
@@ -172,7 +173,11 @@
                         <TextBlock Classes="line" Grid.Column="1" Text="{Binding Note}" ToolTip.Tip="{Binding Note}" />
                       </Grid>
                       <TextBlock Classes="caption" Grid.Column="2" VerticalAlignment="Center" Text="{Binding SavedAt}" ToolTip.Tip="{Binding SavedAt}" />
-                      <TextBlock Classes="line caption" Grid.Column="3" Text="{Binding Summary}" ToolTip.Tip="{Binding Summary}" />
+                      <WrapPanel Grid.Column="3" ItemSpacing="5" VerticalAlignment="Center">
+                        <TextBlock Classes="line caption" Text="正在使用" FontWeight="SemiBold" Foreground="{DynamicResource AppLogInfoBrush}"
+                                   IsVisible="{Binding IsCurrentFile}" ToolTip.Tip="磁盘上的文件内容与这次修订相同" />
+                        <TextBlock Classes="line caption" Text="{Binding Summary}" ToolTip.Tip="{Binding Summary}" />
+                      </WrapPanel>
                       <Button Grid.Column="4" Content="⋯" Classes="quiet small" AutomationProperties.Name="此版本的操作">
                         <Button.Flyout><fa:FAMenuFlyout Opening="MenuOpening" /></Button.Flyout>
                       </Button>
@@ -227,28 +232,39 @@
                     <TextBlock Classes="caption" Text="{Binding SelectedFile?.SizeLabel}" />
                   </WrapPanel>
                   <TextBlock Classes="caption" Text="{Binding TextSummary}" IsVisible="{Binding HasTextPreview}" />
+                  <WrapPanel IsVisible="{Binding HasTextPages}" ItemSpacing="6">
+                    <Button Classes="quiet small" Content="上一页" Command="{Binding PreviousTextPageCommand}" IsEnabled="{Binding CanPreviousTextPage}" />
+                    <TextBlock Classes="caption line" Text="{Binding TextPageSummary}" />
+                    <Button Classes="quiet small" Content="下一页" Command="{Binding NextTextPageCommand}" IsEnabled="{Binding CanNextTextPage}" />
+                  </WrapPanel>
                 </StackPanel>
-                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                <ScrollViewer x:Name="DiffScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                               HorizontalContentAlignment="Stretch" Background="{DynamicResource AppBackgroundBrush}"
                               IsVisible="{Binding HasTextLines}">
                   <ItemsControl x:Name="DiffLines" ItemsSource="{Binding TextLines}" AutomationProperties.Name="文本差异">
                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="processing:TextDiffLine">
-                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" AutomationProperties.Name="{Binding Kind}">
-                          <Grid Classes="diffBefore" Classes.changed="{Binding BeforeChanged}" ColumnDefinitions="34,14,*" MinHeight="20">
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" Classes.gap="{Binding IsGap}" AutomationProperties.Name="{Binding Kind}">
+                          <Grid Classes="diffBefore" Classes.changed="{Binding BeforeChanged}" ColumnDefinitions="34,14,*" RowDefinitions="Auto,Auto" MinHeight="20">
                             <Border Grid.ColumnSpan="3" Background="{DynamicResource AppLogErrorBrush}" Opacity="0.16" IsVisible="{Binding BeforeChanged}" />
                             <TextBlock Classes="gutter" Text="{Binding BeforeLine}" />
                             <TextBlock Grid.Column="1" Classes="gutter" Text="−" Foreground="{DynamicResource AppLogErrorBrush}" IsVisible="{Binding BeforeChanged}" />
                             <SelectableTextBlock Grid.Column="2" Classes="code" AutomationProperties.Name="{Binding BeforeText}"><Run Text="{Binding Before.Prefix}" /><Run Text="{Binding Before.Changed}" Background="{StaticResource DiffRemovedWordBrush}" /><Run Text="{Binding Before.Suffix}" /></SelectableTextBlock>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Classes="caption line" Margin="4,0" Text="{Binding BeforeNote}"
+                                       IsVisible="{Binding BeforeNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
                           </Grid>
-                          <Grid Classes="diffAfter" Classes.missing="{Binding MissingAfter}" ColumnDefinitions="34,14,*" MinHeight="20">
+                          <Grid Classes="diffAfter" Classes.missing="{Binding MissingAfter}" ColumnDefinitions="34,14,*" RowDefinitions="Auto,Auto" MinHeight="20">
                             <Border Grid.ColumnSpan="3" Background="{DynamicResource AppLogInfoBrush}" Opacity="0.16" IsVisible="{Binding AfterChanged}" />
                             <TextBlock Classes="gutter" Text="{Binding AfterLine}" />
                             <TextBlock Grid.Column="1" Classes="gutter" Text="+" Foreground="{DynamicResource AppLogInfoBrush}" IsVisible="{Binding AfterChanged}" />
                             <SelectableTextBlock Grid.Column="2" Classes="code" AutomationProperties.Name="{Binding AfterText}"><Run Text="{Binding After.Prefix}" /><Run Text="{Binding After.Changed}" Background="{StaticResource DiffAddedWordBrush}" /><Run Text="{Binding After.Suffix}" /></SelectableTextBlock>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Classes="caption line" Margin="4,0" Text="{Binding AfterNote}"
+                                       IsVisible="{Binding AfterNote, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
                           </Grid>
                           <Border Grid.Column="1" Classes="editorDivider" Width="1" HorizontalAlignment="Left" Background="{DynamicResource AppBorderBrush}" />
+                          <TextBlock Grid.ColumnSpan="2" Classes="caption line" Text="{Binding GapSummary}" ToolTip.Tip="{Binding GapSummary}"
+                                     Margin="8,2" IsVisible="{Binding IsGap}" />
                         </Grid>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>

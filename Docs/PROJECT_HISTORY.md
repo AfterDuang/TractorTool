@@ -14,7 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
-| 文件夹历史工作区 | [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
+| 文件夹历史工作区 | [E126 · 工作版本、按选区提交及大文本对比（2026-11-19）](#evidence-folder-history-revisions) · [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
 | 文件夹历史交互修复 | [E124 · 菜单、快照说明与按需对比（2026-11-18）](#evidence-folder-history-snapshot) |
 | 文件夹历史工作区 | [E123 · 文件树、并排比较与按版本恢复（2026-11-18）](#evidence-folder-history-workbench) |
 | 文件夹历史完整流程 | [E122 · 自动保护、比较、恢复与清理（2026-11-17）](#evidence-folder-history-complete) |
@@ -163,6 +163,20 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-revisions"></a>
+
+## E126 工作版本、按选区提交及大文本对比（2026-11-19）
+
+普通原位恢复以前会写一份“恢复前完整保护”快照。0.5.0 通过恢复事务保留原件，复核即将覆盖的文件，普通恢复不会增加快照号。工作树以长度及 SHA256 匹配文件最近一次实际变更的快照。单击历史行只改变浏览选区。显式提交历史选区才登记新快照，范围外沿用最近保存的字节。
+
+在临时目录和离屏窗口中实际点击恢复与提交，核对了同长度、同时间戳的改动，独立草稿，以及历史行“正在使用”与选中行分离。9,500 行 Markdown 的第 500 和 9,000 行分别被修改，截图中两处均可见；大段新增可分页并从新页首行阅读。重复行开头插入与尾部改写另有算法夹具。
+
+离屏图位于 `artifacts/e126-folder-history-revisions/preview`。真实 Windows 宿主和正式 Duplicati 的接续保存、恢复及实际吞吐量由 A28 跟踪。
+
+Release 检查工程构建 0 警告、0 错误。`TractorTool.FolderHistoryChecks.dll --transactions` 与 `--workspace artifacts/e126-folder-history-revisions/preview` 均通过。前者使用模拟 CLI 及临时文件核对库内发布源、选区外文件保留、后续普通保存、坏卷及中断后的继续或撤销，同时覆盖旧事务和库移动。旧版取回只改磁盘，发布不读取工作区未提交编辑。首次运行暴露的夹具问题包括 Windows 原生清单路径、重复的原件副本目标和旧行长断言，已修正并复跑。
+
+独立使用 12.1.6 已发布宿主 SDK 构建 0.5.0 ZIP，0 错误、2 条 NU1900（NuGet 漏洞数据源不可达）。包内 9 个文件逐项 SHA256 与打包输出一致。ZIP 大小 336655 字节，SHA256 为 `1845BD552170163BCDF6077E186933B15334E331340D2FBF23F33646806263E5`。
 
 <a id="evidence-folder-history-live-tree"></a>
 

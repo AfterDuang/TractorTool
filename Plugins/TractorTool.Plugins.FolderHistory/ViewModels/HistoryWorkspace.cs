@@ -1,20 +1,25 @@
 using Avalonia;
+using CommunityToolkit.Mvvm.ComponentModel;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Plugins.FolderHistory.Storage;
 
 namespace TractorTool.Plugins.FolderHistory.ViewModels;
 
-internal enum TreePresence { Recorded, Untracked, Historical, Excluded, Unavailable }
+internal enum TreePresence { Recorded, Untracked, Modified, OlderRevision, Historical, Excluded, Unavailable }
 
 internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDirectory, bool HasChildren,
     TreePresence Presence, bool IsExpanded = false)
 {
+    public string? CurrentVersionId { get; init; }
+    public long? CurrentVersionNumber { get; init; }
     public Thickness Indent => new(Depth * 16, 0, 0, 0);
     public bool IsUntracked => Presence == TreePresence.Untracked;
     public bool IsHistoricalOnly => Presence == TreePresence.Historical;
     public string StatusText => Presence switch
     {
         TreePresence.Untracked => "未快照",
+        TreePresence.Modified => "已修改 · 未快照",
+        TreePresence.OlderRevision => $"旧版 #{CurrentVersionNumber}",
         TreePresence.Historical => "仅历史",
         TreePresence.Excluded => "已排除",
         TreePresence.Unavailable => "无法读取",
@@ -23,6 +28,8 @@ internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDire
     public string StatusDescription => (Path.Length == 0 ? Name : Path) + (Presence switch
     {
         TreePresence.Untracked => "，尚未收录到最新快照",
+        TreePresence.Modified => "，当前内容已修改，尚未收录到任何现存快照",
+        TreePresence.OlderRevision => $"，当前内容与旧版 #{CurrentVersionNumber} 相同",
         TreePresence.Historical => "，仅在历史中存在",
         TreePresence.Excluded => "，已从后续快照排除",
         TreePresence.Unavailable => "，无法核对当前文件",
@@ -34,10 +41,20 @@ internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDire
             .DistinctBy(item => item.Path, HistoryPaths.Comparer).ToArray();
 }
 
-internal sealed record VersionItem(SavedVersion Saved, IReadOnlyList<HistoryChange> Changes, string Summary)
+internal sealed class VersionItem(SavedVersion saved, IReadOnlyList<HistoryChange> changes, string summary,
+    IReadOnlyDictionary<string, HistoryEntry>? entries = null) : ObservableObject
 {
+    public SavedVersion Saved { get; } = saved;
+    public IReadOnlyList<HistoryChange> Changes { get; } = changes;
+    public string Summary { get; } = summary;
+    private bool _isCurrentFile;
+    public bool IsCurrentFile
+    {
+        get => _isCurrentFile;
+        set => SetProperty(ref _isCurrentFile, value);
+    }
     public IReadOnlyDictionary<string, HistoryEntry> Entries { get; } =
-        Saved.Version.Entries.ToDictionary(entry => entry.Path, HistoryPaths.Comparer);
+        entries ?? saved.Version.Entries.ToDictionary(entry => entry.Path, HistoryPaths.Comparer);
     public string Id => Saved.Id;
     public string Title => Saved.Title;
     public string NumberLabel => Saved.NumberLabel;
@@ -99,8 +116,10 @@ internal sealed record VersionActionContext(string Root, string VersionId, strin
 internal sealed class HistoryWorkspace
 {
     private readonly Dictionary<string, TreeItem[]> _children;
+    private readonly Dictionary<string, Dictionary<(long Length, string Hash), VersionItem>> _fileRevisions = new(HistoryPaths.Comparer);
     private readonly TreeItem _root;
     public VersionItem[] Versions { get; }
+    public IReadOnlySet<string> TrackedFiles { get; }
 
     public HistoryWorkspace(string rootName, IReadOnlyList<SavedVersion> snapshot, CancellationToken token = default)
     {
@@ -112,6 +131,17 @@ internal sealed class HistoryWorkspace
                 saved.Version.Entries);
             return new VersionItem(saved, changes, Summarize(changes));
         }).ToArray();
+        foreach (var version in Versions)
+        {
+            foreach (var change in version.Changes)
+            {
+                token.ThrowIfCancellationRequested();
+                if (change.Kind == "删除" || version.Entries.GetValueOrDefault(change.Path) is not { IsDirectory: false } entry) continue;
+                if (!_fileRevisions.TryGetValue(entry.Path, out var revisions)) _fileRevisions.Add(entry.Path, revisions = []);
+                revisions.TryAdd((entry.Length, entry.Hash), version);
+            }
+        }
+        TrackedFiles = _fileRevisions.Keys.ToHashSet(HistoryPaths.Comparer);
 
         var paths = new Dictionary<string, (bool Directory, bool Historical)>(HistoryPaths.Comparer);
         for (var index = 0; index < ordered.Length; index++)
@@ -175,13 +205,23 @@ internal sealed class HistoryWorkspace
             token.ThrowIfCancellationRequested();
             var path = entry.Path;
             var recorded = Versions.FirstOrDefault()?.Entries.GetValueOrDefault(path);
+            var matched = entry.Content is { } content && _fileRevisions.TryGetValue(path, out var revisions)
+                ? revisions.GetValueOrDefault((content.Length, content.Hash))
+                : null;
             var presence = HistoryExclusions.IsExcluded(path, disk.Exclusions) ? TreePresence.Excluded :
                 entry.Unavailable || disk.Unreadable.Contains(path) ? TreePresence.Unavailable :
                 recorded?.IsDirectory == entry.IsDirectory ? TreePresence.Recorded : TreePresence.Untracked;
+            if (entry.Content is { } current && presence is not (TreePresence.Excluded or TreePresence.Unavailable))
+                presence = recorded is { IsDirectory: false } && recorded.Length == current.Length && recorded.Hash == current.Hash
+                    ? TreePresence.Recorded : matched is not null ? TreePresence.OlderRevision : TreePresence.Modified;
             var canExpand = _children.ContainsKey(path) || entry.IsDirectory &&
                 presence is not (TreePresence.Excluded or TreePresence.Unavailable) &&
                 (!disk.Children.TryGetValue(path, out var children) || children.Length > 0);
-            rows[path] = new(path, path[(path.LastIndexOf('/') + 1)..], parent.Depth + 1, entry.IsDirectory, canExpand, presence);
+            rows[path] = new(path, path[(path.LastIndexOf('/') + 1)..], parent.Depth + 1, entry.IsDirectory, canExpand, presence)
+            {
+                CurrentVersionId = presence is TreePresence.Recorded or TreePresence.OlderRevision ? matched?.Id : null,
+                CurrentVersionNumber = presence is TreePresence.Recorded or TreePresence.OlderRevision ? matched?.Saved.Number : null
+            };
         }
         return rows.Values.OrderByDescending(item => item.IsDirectory).ThenBy(item => item.Name, HistoryPaths.Comparer).ToArray();
     }
@@ -200,9 +240,15 @@ internal sealed class HistoryWorkspace
                 return HistorySelection.Contains(selected, change.Path);
             }).ToArray();
             if (changes.Length > 0)
-                result.Add(version with { Summary = changes.Length == 1 ? changes[0].Kind : Summarize(changes) });
+                result.Add(new(version.Saved, version.Changes, changes.Length == 1 ? changes[0].Kind : Summarize(changes), version.Entries));
         }
         return result;
+    }
+
+    public static void MarkCurrentFile(IEnumerable<VersionItem> rows, IReadOnlyList<TreeItem> selected)
+    {
+        var current = selected is [{ IsDirectory: false } file] ? file.CurrentVersionId : null;
+        foreach (var row in rows) row.IsCurrentFile = row.Id == current;
     }
 
     internal static string Summarize(IReadOnlyList<HistoryChange> changes) => changes.Count == 0 ? "没有变化"

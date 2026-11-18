@@ -76,7 +76,7 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     private void StartPendingRefresh()
     {
         if (_attached && _reloadRequested && !IsBusy && !_refreshing && _interactionDepth == 0 && !stopping.IsCancellationRequested)
-            _ = RefreshAsync();
+            _ = RefreshHistoryAsync();
     }
     partial void OnSelectedFolderChanged(FolderItem? oldValue, FolderItem? newValue)
     {
@@ -87,7 +87,12 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
         if (newValue is not null) _ = LoadVersionsAsync(newValue);
     }
     [RelayCommand]
-    public async Task RefreshAsync()
+    public Task RefreshAsync()
+    {
+        _workingFiles?.Invalidate();
+        return RefreshHistoryAsync();
+    }
+    private async Task RefreshHistoryAsync()
     {
         if (_refreshing) { _reloadRequested = true; return; }
         _refreshing = true;
@@ -140,11 +145,27 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     public Task<RestorePreview?> PreviewRestoreAsync(VersionActionContext context) =>
         ReadAsync("正在核对恢复范围…", "无法准备恢复", () =>
             service.PreviewRestoreSelectionAsync(context.Root, context.VersionId, context.RelativePaths));
-    public Task RestoreAsync(RestorePreview preview) => ChangeAsync("正在保护当前内容并恢复…", "恢复未完成", preview.Root,
-        () => service.RestoreInPlaceAsync(preview), "已校验并恢复到原位置；恢复前版本和较新历史仍保留。");
+    public Task RestoreAsync(RestorePreview preview) =>
+        RestoreWorkingFilesAsync(preview.Root, "正在恢复工作文件…", () => service.RestoreInPlaceAsync(preview));
+    public Task ResumeRestoreAsync(string root) =>
+        RestoreWorkingFilesAsync(root, "正在继续恢复并校验…", () => service.ResumeRestoreAsync(root));
+    private Task RestoreWorkingFilesAsync(string root, string progress, Func<Task<string?>> restore) => RunAsync(progress, "恢复未完成", async () =>
+    {
+        string? originals;
+        try { originals = await restore(); }
+        finally { await RefreshAfterChangeAsync(root); }
+        Notice = "工作文件已恢复。快照历史保持原样，自动保存已暂停。" +
+            (originals is null ? "" : "\n恢复前的本地文件保存在 " + originals);
+    });
+    public Task PublishSelectionAsync(VersionActionContext target, string note) =>
+        RunAsync("正在提交所选历史内容…", "提交未完成", async () =>
+        {
+            var created = false;
+            try { created = await service.PublishSelectionAsync(target.Root, target.VersionId, target.RelativePaths, note); }
+            finally { await RefreshAfterChangeAsync(target.Root, selectLatest: created); }
+            Notice = created ? "所选历史内容已提交为最新快照。自动保存已暂停。" : "所选内容已与最新快照相同。";
+        });
     public Task<PendingRestoreInfo?> GetPendingRestoreAsync(string root) => ReadAsync("正在检查未完成恢复…", "无法读取恢复记录", () => service.GetPendingRestoreAsync(root));
-    public Task ResumeRestoreAsync(string root) => ChangeAsync("正在继续恢复并校验…", "恢复仍未完成", root,
-        () => service.ResumeRestoreAsync(root), "已完成恢复并校验。自动保存状态请查看目录概览。");
     public Task AbandonRestoreAsync(string root) => ChangeAsync("正在撤销本次恢复…", "无法撤销恢复", root,
         () => service.AbandonRestoreAsync(root), "已撤销本次恢复；当前文件处理结果见任务记录，自动保存仍暂停。");
     public Task<IReadOnlyList<SavedVersion>?> GetCleanupPreviewAsync(string root, bool all) => ReadAsync(

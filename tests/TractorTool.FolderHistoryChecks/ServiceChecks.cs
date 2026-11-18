@@ -204,6 +204,8 @@ internal static class ServiceChecks
         await CheckAutomaticCleanupContinuesAsync(fixture);
         await CheckReassociationStartsPausedAsync(fixture);
         await CheckRestoreRequiresReadableProtectionAsync(fixture);
+        await CheckCheckoutAndPublishingAsync(fixture);
+        await CheckResumeReportsOriginalsAsync(fixture);
     }
 
     private static async Task CheckReassociationStartsPausedAsync(string fixture)
@@ -423,6 +425,8 @@ internal static class ServiceChecks
             Assert(protectionReads == 1 && targetReads == 0 && (await File.ReadAllBytesAsync(workFile)).SequenceEqual(current) &&
                 InPlaceRestoreTransaction.ReadPending(work) is null,
                 "an unreadable protection snapshot allowed target restoration or modified current bytes");
+            Assert(HistoryStore.Read(work).Versions.Count == 2 && HistoryStore.Read(work).Versions.All(version => !version.RestoreProtection && !version.Pinned),
+                "restoration preparation created a snapshot or changed an existing snapshot's protection flags");
 
             var plan = await InPlaceRestoreTransaction.PreviewAsync(work, DuplicatiEngine.ReadVersion(history, targetId)!, null, [], CancellationToken.None);
             var operationId = Guid.NewGuid();
@@ -438,6 +442,8 @@ internal static class ServiceChecks
             const string unrelated = "duplicati-20261007T110000Z.dlist.zip";
             await File.WriteAllTextAsync(Path.Combine(repository, unrelated), "damaged unrelated older manifest");
             state = HistoryStore.Read(work);
+            var protectionIndex = state.Versions.FindIndex(version => version.Id == protectionId);
+            state.Versions[protectionIndex] = state.Versions[protectionIndex] with { RestoreProtection = true, Pinned = true };
             state.AddVersion(unrelated, work, "unrelated", false);
             HistoryStore.Save(work, state);
             Assert((await service.GetFoldersAsync()).Single().HasPendingRestore, "timeline damage hid a validated recovery action");
@@ -449,6 +455,214 @@ internal static class ServiceChecks
             await service.AbandonRestoreAsync(work);
             Assert(InPlaceRestoreTransaction.ReadPending(work) is null && (await File.ReadAllBytesAsync(workFile)).SequenceEqual(current) && host.PackageRequests == packageRequests,
                 "an unrelated damaged version or unavailable engine blocked undoing recovery from preserved originals");
+        }
+        finally { await service.StopAsync(); }
+    }
+
+    private static async Task CheckCheckoutAndPublishingAsync(string fixture)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "checkout-and-publish")).FullName;
+        var host = new TestHost(root) { AllowPackage = true };
+        using var service = new FolderHistoryService(new("checks", host, host, host, CancellationToken.None)
+        { Packages = host, Processes = host, Tasks = host });
+        var work = Directory.CreateDirectory(Path.Combine(root, "work")).FullName;
+        Directory.CreateDirectory(Path.Combine(work, "chosen"));
+        await File.WriteAllTextAsync(Path.Combine(work, "chosen", "a.txt"), "unsaved original");
+        await File.WriteAllTextAsync(Path.Combine(work, "outside.txt"), "unsaved unrelated edit");
+        await File.WriteAllTextAsync(Path.Combine(work, "work-only.txt"), "not in any snapshot");
+        await service.AddFolderAsync(work);
+        var history = HistoryPaths.HistoryDirectory(work);
+        var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
+        const string oldId = "duplicati-20261007T120000Z.dlist.zip";
+        const string latestId = "duplicati-20261007T130000Z.dlist.zip";
+        Dictionary<string, string> older = new()
+        {
+            ["chosen/a.txt"] = "old selected", ["chosen/old-only.txt"] = "old only", ["outside.txt"] = "old outside",
+            ["blocked/child.txt"] = "old child"
+        };
+        Dictionary<string, string> latest = new()
+        {
+            ["chosen/a.txt"] = "latest selected", ["chosen/new-only.txt"] = "new only", ["outside.txt"] = "latest outside",
+            ["saved-only.txt"] = "preserve saved outside scope", ["blocked"] = "latest parent is a file"
+        };
+        var contents = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
+        WriteMockVersion(oldId, work, older);
+        WriteMockVersion(latestId, work, latest, ["untouched-empty"]);
+        var state = HistoryStore.Read(work);
+        state.AddVersion(oldId, work, "old", false);
+        state.AddVersion(latestId, work, "latest", false);
+        state.ProtectionEnabled = true;
+        HistoryStore.Save(work, state);
+        var backups = 0;
+        var corruptBackup = false;
+        host.ProcessHandler = async (request, cancellation) =>
+        {
+            if (request.Arguments[0] == "restore")
+            {
+                var volumes = Directory.GetFiles(repository, "*.dlist.zip").OrderByDescending(path => path, StringComparer.Ordinal).ToArray();
+                var index = int.Parse(request.Arguments.Single(argument => argument.StartsWith("--version=", StringComparison.Ordinal))[10..]);
+                var version = Path.GetFileName(volumes[index]);
+                var files = contents[version];
+                var storedRoot = DuplicatiEngine.ReadVersion(history, version)!.SourceRoot;
+                var parameter = request.Arguments.SingleOrDefault(argument => argument.StartsWith("--parameters-file=", StringComparison.Ordinal));
+                var options = parameter is null ? request.Arguments : File.ReadAllLines(Path.Combine(request.WorkingDirectory!, parameter[18..]));
+                var include = options.SingleOrDefault(argument => argument.StartsWith("--include=[", StringComparison.Ordinal));
+                var expression = include is null ? null : new System.Text.RegularExpressions.Regex(include[11..^1]);
+                var selectedFiles = files.Where(pair => expression is null || expression.IsMatch(Path.Combine(storedRoot, pair.Key.Replace('/', Path.DirectorySeparatorChar)))).ToArray();
+                if (version == latestId)
+                    Assert(parameter is not null && selectedFiles.All(pair => !pair.Key.StartsWith("chosen/", StringComparison.Ordinal)),
+                        "publishing a historical selection extracted the replaced latest files instead of only retained outside files");
+                var staging = request.Arguments.Single(argument => argument.StartsWith("--restore-path=", StringComparison.Ordinal))[15..];
+                foreach (var pair in selectedFiles)
+                {
+                    var file = Path.Combine(staging, pair.Key.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                    await File.WriteAllTextAsync(file, pair.Value, cancellation);
+                }
+            }
+            else if (request.Arguments[0] == "repair")
+                await File.WriteAllTextAsync(request.Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..], "fixture index", cancellation);
+            else if (request.Arguments[0] == "backup")
+            {
+                backups++;
+                var source = request.Arguments[2];
+                var ordinary = HistoryPaths.Comparer.Equals(source, work);
+                Assert(ordinary || HistoryPaths.Comparer.Equals(Path.GetDirectoryName(source), Path.Combine(history, "temp")) &&
+                    System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(source), "^publish-source-[0-9a-f]{32}$"),
+                    "historical publication backed up a source outside its history library");
+                if (ordinary)
+                    Assert(request.Arguments.Where(argument => argument.StartsWith("--exclude=[", StringComparison.Ordinal)).Any(argument =>
+                        System.Text.RegularExpressions.Regex.IsMatch(Path.Combine(work, "ignored.txt"), argument[11..^1])),
+                        "ordinary backup after publishing lost the working root exclusion rules");
+                var scanned = await WorkingTree.ScanAsync(source, ordinary ? ["ignored.txt"] : [], cancellation);
+                var files = scanned.Where(entry => !entry.IsDirectory)
+                    .ToDictionary(entry => entry.Path, entry => File.ReadAllText(Path.Combine(source, entry.Path.Replace('/', Path.DirectorySeparatorChar))));
+                if (corruptBackup) files["chosen/a.txt"] = "bad native result";
+                WriteMockVersion($"duplicati-20261007T{13 + backups:D2}0000Z.dlist.zip", source, files,
+                    scanned.Where(entry => entry.IsDirectory).Select(entry => entry.Path).ToArray());
+            }
+            else if (request.Arguments[0] == "delete")
+            {
+                var volumes = Directory.GetFiles(repository, "*.dlist.zip").OrderByDescending(path => path, StringComparer.Ordinal).ToArray();
+                foreach (var index in request.Arguments.Single(argument => argument.StartsWith("--version=", StringComparison.Ordinal))[10..].Split(',').Select(int.Parse))
+                    File.Delete(volumes[index]);
+            }
+            else throw new InvalidOperationException("unexpected publication command");
+            return new(0, "", "", false, false);
+        };
+        try
+        {
+            var preview = await service.PreviewRestoreSelectionAsync(work, oldId, ["chosen"]);
+            var retained = await service.RestoreInPlaceAsync(preview);
+            Assert(backups == 0 && HistoryStore.Read(work).Versions.Count == 2 && HistoryStore.Read(work).LastSnapshotNumber == 2 &&
+                HistoryStore.Read(work).Versions.All(version => !version.Pinned && !version.RestoreProtection),
+                "checking out a historical selection created or changed snapshot metadata");
+            Assert(retained is not null && Path.GetFileName(retained) == "original" &&
+                await File.ReadAllTextAsync(Path.Combine(retained, "chosen", "a.txt")) == "unsaved original" &&
+                await File.ReadAllTextAsync(Path.Combine(work, "chosen", "a.txt")) == "old selected" &&
+                await File.ReadAllTextAsync(Path.Combine(work, "outside.txt")) == "unsaved unrelated edit" &&
+                !(await service.GetFoldersAsync()).Single().ProtectionEnabled,
+                "checkout lost unsaved originals, changed unrelated files, or left automatic capture enabled");
+
+            state = HistoryStore.Read(work);
+            state.ProtectionEnabled = true;
+            HistoryStore.Save(work, state);
+            var processes = host.Processes;
+            Assert(!await service.PublishSelectionAsync(work, latestId, ["chosen"], "no change") &&
+                HistoryStore.Read(work).ProtectionEnabled && host.Processes == processes,
+                "equal selection publication created a snapshot, ran the engine or changed automatic protection");
+            await ThrowsAsync<InvalidOperationException>(() => service.PublishSelectionAsync(work, oldId, ["blocked/child.txt"], "invalid parent"));
+            Assert(HistoryStore.Read(work).ProtectionEnabled && host.Processes == processes, "conflicting selection affected the repository");
+            using (var locked = new FileStream(Path.Combine(work, "outside.txt"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                Assert(await service.PublishSelectionAsync(work, oldId, ["chosen"], "publish chosen"), "changed historical selection was not published");
+            var published = (await service.GetVersionsAsync(work))[0];
+            Assert(backups == 1 && published.Number == 3 && published.Note == "publish chosen" &&
+                published.Version.Entries.Single(entry => entry.Path == "outside.txt").Hash == Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("latest outside"))) &&
+                published.Version.Entries.Any(entry => entry.Path == "saved-only.txt") &&
+                published.Version.Entries.Any(entry => entry.Path == "untouched-empty" && entry.IsDirectory) &&
+                published.Version.Entries.All(entry => entry.Path is not ("chosen/new-only.txt" or "work-only.txt")) &&
+                !Directory.Exists(published.Version.SourceRoot) && !HistoryStore.Read(work).ProtectionEnabled &&
+                await File.ReadAllTextAsync(Path.Combine(work, "outside.txt")) == "unsaved unrelated edit",
+                "publication included unrelated unsaved edits, changed the work tree or failed to retain the latest saved outside scope");
+            Assert(!await service.PublishSelectionAsync(work, oldId, ["chosen"], "unchanged") && backups == 1,
+                "identical historical selection created a duplicate snapshot");
+            Assert(!Directory.EnumerateDirectories(Path.Combine(history, "temp"), "publish-*").Any(),
+                "publication did not clean its actual extracted ranges or left extra source copies");
+            await File.WriteAllTextAsync(Path.Combine(work, "ignored.txt"), "must remain excluded from ordinary saves");
+            await service.SaveSettingsAsync(work, new FolderSettings { ExcludedPaths = ["ignored.txt"] });
+            Assert(await service.SaveAsync(work, "ordinary save after publish"), "ordinary save after publishing was not recorded");
+            var ordinaryVersion = (await service.GetVersionsAsync(work))[0];
+            Assert(backups == 2 && ordinaryVersion.Number == 4 && ordinaryVersion.Version.SourceRoot == work &&
+                ordinaryVersion.Version.Entries.Any(entry => entry.Path == "work-only.txt") && ordinaryVersion.Version.Entries.All(entry => entry.Path != "ignored.txt"),
+                "ordinary save failed to switch back to the working root or apply exclusions");
+            var publishedBytes = await service.ReadFileAsync(work, published.Id, "outside.txt");
+            Assert(System.Text.Encoding.UTF8.GetString(publishedBytes) == "latest outside", "alternating source roots broke published-version restoration");
+            await service.DeleteVersionsAsync(work, [published.Id]);
+            Assert(!File.Exists(Path.Combine(repository, published.Id)) && File.Exists(Path.Combine(repository, ordinaryVersion.Id)) &&
+                (await service.GetVersionsAsync(work))[0].Id == ordinaryVersion.Id, "deletion after alternating source roots removed a different snapshot");
+            corruptBackup = true;
+            await ThrowsAsync<IOException>(() => service.PublishSelectionAsync(work, oldId, [HistorySelection.Root], "bad backup"));
+            Assert(HistoryStore.Read(work).Versions.Count == 3 && !HistoryStore.Read(work).ProtectionEnabled &&
+                await File.ReadAllTextAsync(Path.Combine(work, "work-only.txt")) == "not in any snapshot",
+                "invalid publication was registered or modified working files");
+        }
+        finally { await service.StopAsync(); }
+
+        void WriteMockVersion(string id, string source, IReadOnlyDictionary<string, string> files, IReadOnlyList<string>? directories = null)
+        {
+            contents[id] = new Dictionary<string, string>(files);
+            var entries = new List<object> { new { type = "Folder", path = source + Path.DirectorySeparatorChar } };
+            foreach (var directory in files.Keys.SelectMany(HistorySelection.Ancestors).Concat(directories ?? []).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+                entries.Add(new { type = "Folder", path = Path.Combine(source, directory.Replace('/', Path.DirectorySeparatorChar)) + Path.DirectorySeparatorChar });
+            foreach (var pair in files)
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(pair.Value);
+                var size = id == latestId && pair.Key == "chosen/a.txt" ? long.MaxValue / 4 : bytes.Length;
+                entries.Add(new { type = "File", path = Path.Combine(source, pair.Key.Replace('/', Path.DirectorySeparatorChar)), size, hash = Convert.ToBase64String(SHA256.HashData(bytes)) });
+            }
+            EngineChecks.WriteVolume(Path.Combine(repository, id), true, "SHA256", entries.ToArray());
+        }
+    }
+
+    private static async Task CheckResumeReportsOriginalsAsync(string fixture)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "resume-original-path")).FullName;
+        var host = new TestHost(root);
+        using var service = new FolderHistoryService(new("checks", host, host, host, CancellationToken.None)
+        { Packages = host, Processes = host, Tasks = host });
+        var work = Directory.CreateDirectory(Path.Combine(root, "work")).FullName;
+        var file = Path.Combine(work, "file.txt");
+        await File.WriteAllTextAsync(file, "unsaved before interruption");
+        await service.AddFolderAsync(work);
+        var history = HistoryPaths.HistoryDirectory(work);
+        Directory.CreateDirectory(Path.Combine(history, "repository"));
+        const string versionId = "duplicati-20261007T120000Z.dlist.zip";
+        var bytes = System.Text.Encoding.UTF8.GetBytes("target after resume");
+        EngineChecks.WriteVolume(Path.Combine(history, "repository", versionId), true, "SHA256",
+            new { type = "Folder", path = work + Path.DirectorySeparatorChar },
+            new { type = "File", path = file, size = bytes.Length, hash = Convert.ToBase64String(SHA256.HashData(bytes)) });
+        var state = HistoryStore.Read(work);
+        state.AddVersion(versionId, work, "target", false);
+        HistoryStore.Save(work, state);
+        var plan = await InPlaceRestoreTransaction.PreviewAsync(work, DuplicatiEngine.ReadVersion(history, versionId)!, "file.txt", [], CancellationToken.None);
+        var operation = Directory.CreateDirectory(Path.Combine(history, "restore-pending")).FullName;
+        foreach (var area in new[] { "ready", "undo", "discard", "rollback", "original" }) Directory.CreateDirectory(Path.Combine(operation, area));
+        File.Move(file, Path.Combine(operation, "original", "file.txt"));
+        await File.WriteAllBytesAsync(Path.Combine(operation, "ready", "1"), bytes);
+        var id = Guid.NewGuid();
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        await File.WriteAllTextAsync(Path.Combine(operation, "plan.json"), JsonSerializer.Serialize(new
+            { schemaVersion = 3, id, plan, protectionVersionId = "", retainedOriginalPaths = new[] { "file.txt" } }, json));
+        await File.WriteAllTextAsync(Path.Combine(operation, "operation.json"), JsonSerializer.Serialize(new
+            { schemaVersion = 1, id, status = "Applying", appliedCount = 0, stepStarted = true, rollbackNext = -1, rollbackStarted = false }, json));
+        try
+        {
+            var originals = await service.ResumeRestoreAsync(work);
+            Assert(originals is not null && originals == Path.Combine(history, "restore-records", id.ToString("N"), "original") &&
+                await File.ReadAllTextAsync(Path.Combine(originals, "file.txt")) == "unsaved before interruption" &&
+                (await File.ReadAllBytesAsync(file)).SequenceEqual(bytes) && host.PackageRequests == 0 && host.Processes == 0 &&
+                HistoryStore.Read(work).Versions.Count == 1 && !HistoryStore.Read(work).ProtectionEnabled,
+                "resuming a local undo transaction did not expose retained originals directly or unexpectedly created a snapshot");
         }
         finally { await service.StopAsync(); }
     }

@@ -104,7 +104,7 @@ public sealed partial class FolderHistoryService
             if (!state.ProtectionEnabled) { ConfigureObservation(root, state, recheck: false); return false; }
             var engine = Engine(lease);
             // Startup and overflow use the same full scan as a change event.
-            await CaptureAsync(root, state, engine, "自动保存", false, token, automatic: true).ConfigureAwait(false);
+            await CaptureAsync(root, state, engine, "自动保存", token, automatic: true).ConfigureAwait(false);
             lock (_observers)
                 if (_observations.TryGetValue(root, out var observation))
                 {

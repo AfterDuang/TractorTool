@@ -34,6 +34,33 @@ internal sealed partial class FolderHistoryViewModel
     [ObservableProperty] private string _comparisonSummary = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextPreview))] private string _textSummary = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextLines))] private IReadOnlyList<TextDiffLine> _textLines = [];
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(TextPageSummary), nameof(HasTextPages), nameof(CanPreviousTextPage), nameof(CanNextTextPage)),
+        NotifyCanExecuteChangedFor(nameof(PreviousTextPageCommand), nameof(NextTextPageCommand))]
+    private TextComparisonResult? _textPage;
+
+    public string TextPageSummary => TextPage is { PageCount: > 1 } page ? $"第 {page.PageIndex + 1} / {page.PageCount} 页" : "";
+    public bool HasTextPages => TextPage?.PageCount > 1;
+    public bool CanPreviousTextPage => TextPage?.PageIndex > 0;
+    public bool CanNextTextPage => TextPage is { } page && page.PageIndex + 1 < page.PageCount;
+
+    [RelayCommand(CanExecute = nameof(CanPreviousTextPage))]
+    private void PreviousTextPage()
+    {
+        if (_attached && !stopping.IsCancellationRequested && TextPage is { } page) ShowTextPage(page.GetPage(page.PageIndex - 1));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanNextTextPage))]
+    private void NextTextPage()
+    {
+        if (_attached && !stopping.IsCancellationRequested && TextPage is { } page) ShowTextPage(page.GetPage(page.PageIndex + 1));
+    }
+
+    private void ShowTextPage(TextComparisonResult page)
+    {
+        TextPage = page;
+        TextSummary = page.Summary;
+        TextLines = page.Lines;
+    }
 
     public string ScopeTitle => SelectedTreeItems.Count switch
     {
@@ -135,6 +162,7 @@ internal sealed partial class FolderHistoryViewModel
             try
             {
                 TimelineVersions = rows;
+                RefreshCurrentFileMarker();
                 SelectedVersion = rows.FirstOrDefault(row => row.Id == selectedId) ?? rows.FirstOrDefault();
                 SelectComparisonBase(SelectedVersion?.Id == selectedId ? baseId : null);
             }
@@ -142,6 +170,8 @@ internal sealed partial class FolderHistoryViewModel
             UpdateComparison(detailPath);
         }
     }
+
+    private void RefreshCurrentFileMarker() => HistoryWorkspace.MarkCurrentFile(TimelineVersions, SelectedTreeItems);
 
     private void SelectComparisonBase(string? preferred)
     {
@@ -265,6 +295,7 @@ internal sealed partial class FolderHistoryViewModel
         _preview?.Cancel();
         _preview = null;
         _previewKey = null;
+        TextPage = null;
     }
 
     private void UpdateFileDetail()
@@ -285,7 +316,7 @@ internal sealed partial class FolderHistoryViewModel
         { TextSummary = "项目类型发生变化。"; return; }
         if (file.IsDirectory || file.Before is null && file.After is null) return;
         if (file.Before?.Length > TextComparison.MaxBytes || file.After?.Length > TextComparison.MaxBytes)
-        { TextSummary = "文件超过 256 KiB，可另存一份查看。"; return; }
+        { TextSummary = "文件超过 4 MiB 文本预览上限，可另存一份查看。"; return; }
         var request = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         _preview = request;
         TextSummary = "正在读取内容…";
@@ -298,11 +329,10 @@ internal sealed partial class FolderHistoryViewModel
                 var oldBytes = file.Before is null ? [] : await service.ReadFileAsync(root, before!, file.Before.Path, cancellationToken: request.Token);
                 var newBytes = file.After is null ? [] : file.Before?.Hash == file.After.Hash ? oldBytes :
                     await service.ReadFileAsync(root, after, file.After.Path, cancellationToken: request.Token);
-                var result = await Task.Run(() => TextComparison.Compare(oldBytes, newBytes), request.Token);
+                var result = await Task.Run(() => TextComparison.Compare(oldBytes, newBytes, request.Token), request.Token);
                 if (!request.IsCancellationRequested)
                 {
-                    TextSummary = result.Summary;
-                    TextLines = result.Lines;
+                    ShowTextPage(result);
                 }
             }
             catch (OperationCanceledException) when (request.IsCancellationRequested) { }

@@ -21,7 +21,7 @@ using TractorTool.Plugins.FolderHistory.Storage;
 using TractorTool.Plugins.FolderHistory.ViewModels;
 using TractorTool.Plugins.FolderHistory.Views;
 
-internal static class InteractionChecks
+internal static partial class InteractionChecks
 {
     private const string Earlier = "duplicati-20261007T120000Z.dlist.zip";
     private const string Later = "duplicati-20261007T130000Z.dlist.zip";
@@ -226,6 +226,8 @@ internal static class InteractionChecks
             Require(notes.Count == 3 && notes[NewSnapshot] == "交付版本" && notes[Later] == "" && notes[Earlier] == "交付前",
                 "creating a named snapshot with unchanged files altered previous receipts");
 
+            CheckRevisionActions(host, model, view, window, root, repository, original, revised, SavePreview);
+
             var other = Directory.CreateDirectory(Path.Combine(fixture, "second-work")).FullName;
             File.WriteAllText(Path.Combine(other, "首次快照前.txt"), "draft");
             var switching = model.AddFolderAsync(other, enableProtection: false);
@@ -238,6 +240,7 @@ internal static class InteractionChecks
             Require(FindPath("旧目录.txt") is null && FindPath("sample.txt") is null && model.TimelineVersions.Count == 0,
                 "the previous library's files or history leaked into the empty library");
             WorkspaceChecks.CheckLiveRepositoryMove(other, model, Until);
+            CheckLargePreview(host, model, view, other, SavePreview);
 
             ListBoxItem Row(string id) => (ListBoxItem)history.ContainerFromItem(model.TimelineVersions.Single(row => row.Id == id))!;
             void SavePreview(string name)

@@ -34,7 +34,7 @@ public sealed partial class FolderHistoryService
         });
     }
 
-    public Task RestoreInPlaceAsync(RestorePreview preview) => ExclusiveAsync(async token =>
+    public Task<string?> RestoreInPlaceAsync(RestorePreview preview) => ExclusiveAsync(async token =>
     {
         if (!_restorePreviews.TryGetValue(preview.Id, out var prepared) || prepared.Preview != preview)
             throw new InvalidOperationException("恢复预览已失效，请重新预览。");
@@ -49,39 +49,47 @@ public sealed partial class FolderHistoryService
             throw new InvalidOperationException("排除规则已变化，请重新预览恢复范围。");
         var target = ReadCommittedVersion(root, state, prepared.Preview.VersionId);
         var extractedEntries = DuplicatiEngine.SelectEntriesForSelection(target, plan.SelectedPaths);
+        var latest = state.Versions.LastOrDefault() is { } receipt ? ReadCommittedVersion(root, receipt) : null;
+        var targetEntries = plan.Target.ToHashSet();
+        var replaced = plan.Baseline.Where(entry => !entry.IsDirectory && !targetEntries.Contains(entry)).ToArray();
+        var savedEntries = latest?.Entries.ToHashSet() ?? [];
+        var savedOriginalPaths = replaced.Where(savedEntries.Contains).Select(entry => entry.Path).ToArray();
+        var retainedOriginalPaths = replaced.Where(entry => !savedEntries.Contains(entry)).Select(entry => entry.Path).ToArray();
         await InPlaceRestoreTransaction.EnsurePreviewCurrentAsync(root, plan, token).ConfigureAwait(false);
         var engine = Engine(lease);
         state.ProtectionEnabled = false;
         HistoryStore.Save(root, state);
         ConfigureObservation(root, state, recheck: false);
-        var protection = await CaptureAsync(root, state, engine, "恢复前完整保护", true, token).ConfigureAwait(false);
-        if (!protection.Version.Entries.ToHashSet().IsSupersetOf(plan.Baseline))
-            throw new IOException("恢复前版本未包含预览中的当前内容，未覆盖工作文件。请重新预览。");
-        await InPlaceRestoreTransaction.EnsurePreviewCurrentAsync(root, plan, token).ConfigureAwait(false);
         var history = HistoryPaths.HistoryDirectory(root);
         var staging = Path.Combine(history, "temp", "in-place-" + Guid.NewGuid().ToString("N"));
         var targetBytes = checked(extractedEntries.Sum(entry => entry.Length) * 2);
-        RequireSpace(root, Math.Max(protection.Version.Entries.Sum(entry => entry.Length), targetBytes), "验证恢复前保护并准备暂存");
+        RequireSpace(root, targetBytes, "准备恢复内容与事务暂存");
+        string? originalsDirectory = null;
         try
         {
             await RunTaskAsync("恢复到原位置 · " + Path.GetFileName(root), async (progress, cancellation) =>
             {
                 SetRuntimeStatus(root, "正在恢复；自动保护已暂停");
-                progress.Report(new(null, "正在实际提取并校验恢复前完整版本"));
-                await VerifyProtectionAsync(root, protection.Version, engine, cancellation).ConfigureAwait(false);
+                if (savedOriginalPaths.Length > 0)
+                {
+                    progress.Report(new(null, "正在校验已保存的原件；未保存原件将单独保留"));
+                    await VerifyProtectionAsync(root, latest!, engine, cancellation, savedOriginalPaths).ConfigureAwait(false);
+                }
                 await InPlaceRestoreTransaction.EnsurePreviewCurrentAsync(root, plan, cancellation).ConfigureAwait(false);
                 RequireSpace(root, targetBytes, "准备恢复目标与事务暂存");
                 progress.Report(new(null, "正在提取并校验恢复内容"));
                 await engine.RestoreSelectionAsync(target, history, staging, cancellation, plan.SelectedPaths).ConfigureAwait(false);
                 await InPlaceRestoreTransaction.EnsurePreviewCurrentAsync(root, plan, cancellation).ConfigureAwait(false);
                 progress.Report(new(null, "正在按已确认的范围恢复工作文件"));
-                var warning = await InPlaceRestoreTransaction.ApplyAsync(root, plan, staging, protection.Id, cancellation).ConfigureAwait(false);
-                if (warning is not null) _context.Log.Write(AppLogLevel.Warning, _context.PluginId, warning);
-                return "恢复完成，恢复前完整版本已保留；可重新开启自动保护。";
+                var result = await InPlaceRestoreTransaction.ApplyAsync(root, plan, staging, retainedOriginalPaths, cancellation).ConfigureAwait(false);
+                originalsDirectory = result.OriginalsDirectory;
+                if (result.Warning is not null) _context.Log.Write(AppLogLevel.Warning, _context.PluginId, result.Warning);
+                return "恢复完成，未创建快照；自动保护已暂停。" +
+                    (originalsDirectory is null ? "" : " 未保存原件按原路径保留于：" + originalsDirectory);
             }, token).ConfigureAwait(false);
             _restorePreviews.Remove(preview.Id);
             CleanupStaging(staging, extractedEntries);
-            SetRuntimeStatus(root, "已恢复，自动保护已暂停");
+            SetRuntimeStatus(root, "已恢复，未创建快照；自动保护已暂停");
         }
         catch
         {
@@ -91,7 +99,7 @@ public sealed partial class FolderHistoryService
             throw;
         }
         NotifyChanged();
-        return true;
+        return originalsDirectory;
     });
 
     public Task<PendingRestoreInfo?> GetPendingRestoreAsync(string root) => ExclusiveAsync(token =>
@@ -102,57 +110,71 @@ public sealed partial class FolderHistoryService
         return Task.FromResult(pending is null ? null : new PendingRestoreInfo(pending.Plan.TargetVersionId, pending.ProtectionVersionId, pending.Status));
     });
 
-    public Task ResumeRestoreAsync(string root) => FinishRestoreAsync(root, rollback: false);
+    public Task<string?> ResumeRestoreAsync(string root) => FinishRestoreAsync(root, rollback: false);
     public Task AbandonRestoreAsync(string root) => FinishRestoreAsync(root, rollback: true);
 
-    private Task FinishRestoreAsync(string root, bool rollback) => ExclusiveAsync(async token =>
+    private Task<string?> FinishRestoreAsync(string root, bool rollback) => ExclusiveAsync(async token =>
     {
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         var state = Open(root);
         var pending = InPlaceRestoreTransaction.ReadPending(root) ?? throw new InvalidOperationException("没有未完成恢复。");
-        var receipt = state.Versions.SingleOrDefault(version => version.Id == pending.ProtectionVersionId);
-        if (receipt is not { RestoreProtection: true, Pinned: true })
-            throw new InvalidDataException("恢复前保护版本缺失或标记损坏，已停止自动处理，请保留历史库。");
         HistoryVersion? protection = null;
-        if (!rollback)
+        if (pending.ProtectionVersionId.Length != 0)
         {
-            protection = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), receipt.Id);
-            if (protection is null || !HistoryPaths.Comparer.Equals(protection.SourceRoot, receipt.SourceRoot) ||
-                !protection.Entries.ToHashSet().IsSupersetOf(pending.Plan.Baseline))
-                throw new InvalidDataException("本次恢复前保护版本无法核对，已保留恢复材料。");
+            var receipt = state.Versions.SingleOrDefault(version => version.Id == pending.ProtectionVersionId);
+            if (receipt is not { RestoreProtection: true, Pinned: true })
+                throw new InvalidDataException("恢复前保护版本缺失或标记损坏，已停止自动处理，请保留历史库。");
+            if (!rollback)
+            {
+                protection = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), receipt.Id);
+                if (protection is null || !HistoryPaths.Comparer.Equals(protection.SourceRoot, receipt.SourceRoot) ||
+                    !protection.Entries.ToHashSet().IsSupersetOf(pending.Plan.Baseline))
+                    throw new InvalidDataException("本次恢复前保护版本无法核对，已保留恢复材料。");
+            }
         }
-        using var lease = rollback ? null : await RequestEngineAsync(token).ConfigureAwait(false);
+        using var lease = protection is null ? null : await RequestEngineAsync(token).ConfigureAwait(false);
         state.ProtectionEnabled = false;
         HistoryStore.Save(root, state);
         ConfigureObservation(root, state, recheck: false);
+        string? originalsDirectory = null;
         await RunTaskAsync((rollback ? "撤销未完成恢复 · " : "继续未完成恢复 · ") + Path.GetFileName(root), async (progress, cancellation) =>
         {
-            if (!rollback)
+            if (protection is not null)
             {
                 progress.Report(new(null, "正在重新提取并校验恢复前完整版本"));
                 await VerifyProtectionAsync(root, protection!, Engine(lease!), cancellation).ConfigureAwait(false);
             }
             progress.Report(new(null, "正在核对工作文件与恢复记录"));
-            var warning = rollback ? await InPlaceRestoreTransaction.RollbackAsync(root, cancellation).ConfigureAwait(false)
-                : await InPlaceRestoreTransaction.ResumeAsync(root, cancellation).ConfigureAwait(false);
+            string? warning;
+            if (rollback) warning = await InPlaceRestoreTransaction.RollbackAsync(root, cancellation).ConfigureAwait(false);
+            else
+            {
+                var result = await InPlaceRestoreTransaction.ResumeAsync(root, cancellation).ConfigureAwait(false);
+                warning = result.Warning;
+                originalsDirectory = result.OriginalsDirectory;
+            }
             if (warning is not null) _context.Log.Write(AppLogLevel.Warning, _context.PluginId, warning);
             return rollback ? pending.Status == "Preparing" ? "已取消尚未执行的恢复，当前工作文件未改动；自动保护仍暂停。"
-                : "已撤销本次恢复并校验原状态，自动保护仍暂停。" : "已完成恢复并校验结果，自动保护仍暂停。";
+                : "已撤销本次恢复并校验原状态，自动保护仍暂停。" : "已完成恢复并校验结果，自动保护仍暂停。" +
+                    (originalsDirectory is null ? "" : " 未保存原件按原路径保留于：" + originalsDirectory);
         }, token).ConfigureAwait(false);
         ConfigureObservation(root, state, recheck: false);
         SetRuntimeStatus(root, rollback ? "恢复已撤销，自动保护已暂停" : "已恢复，自动保护已暂停");
         NotifyChanged();
-        return true;
+        return originalsDirectory;
     });
 
-    private async Task VerifyProtectionAsync(string root, HistoryVersion protection, DuplicatiEngine engine, CancellationToken token)
+    private async Task VerifyProtectionAsync(string root, HistoryVersion protection, DuplicatiEngine engine, CancellationToken token,
+        IReadOnlyList<string>? selections = null)
     {
-        RequireSpace(root, protection.Entries.Sum(entry => entry.Length), "提取并校验恢复前保护");
+        selections ??= [HistorySelection.Root];
+        var entries = DuplicatiEngine.SelectEntriesForSelection(protection, selections);
+        RequireSpace(root, entries.Sum(entry => entry.Length), "提取并校验已保存的原件");
         var history = HistoryPaths.HistoryDirectory(root);
         var staging = Path.Combine(history, "temp", "verify-protection-" + Guid.NewGuid().ToString("N"));
-        await engine.RestoreAsync(protection, history, staging, token).ConfigureAwait(false);
-        CleanupStaging(staging, protection.Entries);
+        await engine.RestoreSelectionAsync(protection, history, staging, token, selections).ConfigureAwait(false);
+        CleanupStaging(staging, entries);
     }
 
     public Task<string> ExportAsync(string root, string versionId, string parentDirectory, string? relativePath = null) =>
@@ -206,10 +228,10 @@ public sealed partial class FolderHistoryService
             return destination;
         });
 
-    public Task<byte[]> ReadFileAsync(string root, string versionId, string relativePath, int maxBytes = 256 * 1024,
+    public Task<byte[]> ReadFileAsync(string root, string versionId, string relativePath, int maxBytes = TextComparison.MaxBytes,
         CancellationToken cancellationToken = default) => ExclusiveAsync(async token =>
     {
-        if (maxBytes is < 1 or > 256 * 1024) throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        if (maxBytes is < 1 or > TextComparison.MaxBytes) throw new ArgumentOutOfRangeException(nameof(maxBytes));
         relativePath = HistoryPaths.NormalizeRelative(relativePath);
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);

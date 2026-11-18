@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using TractorTool.Plugins.FolderHistory.Models;
-using TractorTool.Plugins.FolderHistory.Processing;
 
 namespace TractorTool.Plugins.FolderHistory.Storage;
 
@@ -27,9 +26,12 @@ public sealed record InPlaceRestorePlan(
 
 public sealed class InPlaceRestoreState
 {
+    internal int SchemaVersion { get; set; } = 3;
     public Guid Id { get; set; } = Guid.NewGuid();
     public InPlaceRestorePlan Plan { get; set; } = null!;
     public string ProtectionVersionId { get; set; } = "";
+    public IReadOnlyList<string> RetainedOriginalPaths { get; set; } = [];
+    internal HashSet<string> RetainedOriginalSet { get; set; } = new(StringComparer.Ordinal);
     public string Status { get; set; } = "Preparing";
     internal List<InPlaceRestoreStep> Steps { get; set; } = [];
     internal int AppliedCount { get; set; }
@@ -107,25 +109,21 @@ public static class InPlaceRestoreTransaction
         return HistorySelection.Scope(current, paths);
     }
 
-    public static async Task<string?> ApplyAsync(string root, InPlaceRestorePlan plan, string staging,
-        string protectionVersionId, CancellationToken token)
+    public static async Task<(string? Warning, string? OriginalsDirectory)> ApplyAsync(string root, InPlaceRestorePlan plan, string staging,
+        IReadOnlyList<string> retainedOriginalPaths, CancellationToken token)
     {
         ValidatePlan(root, plan);
         if (ReadPending(root) is not null) throw new InvalidOperationException("请先处理未完成的恢复。");
         ArchiveTerminal(root);
         await EnsurePreviewCurrentAsync(root, plan, token).ConfigureAwait(false);
-        var protection = DuplicatiEngine.ReadVersion(HistoryPaths.HistoryDirectory(root), protectionVersionId)
-            ?? throw new InvalidDataException("恢复前版本不完整。");
-        var protectedEntries = protection.Entries.ToDictionary(item => item.Path, StringComparer.Ordinal);
-        if (plan.Baseline.Any(item => !protectedEntries.TryGetValue(item.Path, out var saved) || saved != item))
-            throw new InvalidDataException("恢复前版本未完整保护即将被修改的当前文件。");
         var extracted = (await WorkingTree.ScanAsync(staging, excludeHistory: false, token).ConfigureAwait(false))
             .ToDictionary(item => item.Path, StringComparer.Ordinal);
         var steps = BuildSteps(plan);
         foreach (var step in steps.Where(step => step.Kind == "CreateFile"))
             if (!extracted.TryGetValue(step.Entry.Path, out var item) || item != step.Entry)
                 throw new InvalidDataException("恢复暂存区缺少已校验的目标文件：" + step.Entry.Path);
-        var state = new InPlaceRestoreState { Plan = plan, ProtectionVersionId = protectionVersionId, Steps = steps };
+        var state = new InPlaceRestoreState { Plan = plan, RetainedOriginalPaths = retainedOriginalPaths.ToArray(), Steps = steps };
+        ValidateRetainedOriginals(state);
         var directory = Active(root);
         HistoryPaths.CheckPath(directory);
         if (HistoryPaths.Attributes(directory) is not null) throw new IOException("恢复事务目录已被占用。");
@@ -152,7 +150,8 @@ public static class InPlaceRestoreTransaction
         await EnsurePreviewCurrentAsync(root, plan, token).ConfigureAwait(false);
         state.Status = "Applying";
         Save(root, state);
-        return await ContinueAsync(root, state, token).ConfigureAwait(false);
+        var warning = await ContinueAsync(root, state, token).ConfigureAwait(false);
+        return (warning, OriginalsDirectory(root, state));
     }
 
     public static InPlaceRestoreState? ReadPending(string root)
@@ -174,12 +173,13 @@ public static class InPlaceRestoreTransaction
         if (state.Status is "Completed" or "Reverted") ArchiveTerminal(root);
     }
 
-    public static async Task<string?> ResumeAsync(string root, CancellationToken token)
+    public static async Task<(string? Warning, string? OriginalsDirectory)> ResumeAsync(string root, CancellationToken token)
     {
         var state = ReadPending(root) ?? throw new InvalidOperationException("没有未完成的恢复。");
         if (state.Status != "Applying")
             throw new InvalidOperationException(state.Status == "Preparing" ? "恢复材料尚未准备完整，请先撤销本次恢复。" : "本次恢复已开始撤销，请继续撤销。");
-        return await ContinueAsync(root, state, token).ConfigureAwait(false);
+        var warning = await ContinueAsync(root, state, token).ConfigureAwait(false);
+        return (warning, OriginalsDirectory(root, state));
     }
 
     public static async Task<string?> RollbackAsync(string root, CancellationToken token)
@@ -205,7 +205,7 @@ public static class InPlaceRestoreTransaction
             var previousStatus = state.RollbackStarted ? "Reverting" : index < state.AppliedCount ? "Applied" : "Started";
             state.RollbackStarted = true;
             Save(root, state);
-            await UndoStepAsync(root, step, index, previousStatus, token).ConfigureAwait(false);
+            await UndoStepAsync(root, state, step, index, previousStatus, token).ConfigureAwait(false);
             state.RollbackNext--;
             state.RollbackStarted = false;
             Save(root, state);
@@ -227,35 +227,36 @@ public static class InPlaceRestoreTransaction
             var step = state.Steps[index] with { Status = state.StepStarted ? "Started" : "Pending" };
             state.StepStarted = true;
             Save(root, state);
-            await ApplyStepAsync(root, step, index, token).ConfigureAwait(false);
+            await ApplyStepAsync(root, state, step, index, token).ConfigureAwait(false);
             state.AppliedCount++;
             state.StepStarted = false;
             Save(root, state);
         }
         var actual = HistorySelection.Scope(await WorkingTree.ScanAsync(root, state.Plan.Exclusions, token).ConfigureAwait(false), state.Plan.SelectedPaths);
         if (!HistoryComparison.Equal(actual, state.Plan.Target))
-            throw new IOException("恢复后的文件与冻结计划不符，可能有新写入；已保留恢复前版本和操作记录。");
+            throw new IOException("恢复后的文件与冻结计划不符，可能有新写入；已保留恢复原件和操作记录。");
         state.Status = "Completed";
         Save(root, state);
         return await FinishAsync(root, state).ConfigureAwait(false);
     }
 
-    private static async Task ApplyStepAsync(string root, InPlaceRestoreStep step, int index, CancellationToken token)
+    private static async Task ApplyStepAsync(string root, InPlaceRestoreState state, InPlaceRestoreStep step, int index, CancellationToken token)
     {
         var entry = step.Entry;
         var target = HistoryPaths.ResolveWorkPath(root, entry.Path);
         var ready = Material(root, "ready", index);
-        var undo = Material(root, "undo", index);
+        var undo = UndoMaterial(root, state, index);
         if (step.Kind == "RemoveFile")
         {
             if (HistoryPaths.Attributes(undo) is null)
             {
                 await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
+                Directory.CreateDirectory(Path.GetDirectoryName(undo)!);
                 await WorkingTree.MoveExpectedFileAsync(target, undo, entry, token).ConfigureAwait(false);
             }
             // Validate after moving: a write between the preview/hash and rename is retained, never overwritten.
-            await RequireMaterialAsync(root, "undo", index, entry, token).ConfigureAwait(false);
+            await RequireMaterialAsync(undo, entry, token).ConfigureAwait(false);
             if (HistoryPaths.Attributes(target) is not null) throw Conflict(entry.Path);
         }
         else if (step.Kind == "RemoveDirectory")
@@ -293,11 +294,11 @@ public static class InPlaceRestoreTransaction
         }
     }
 
-    private static async Task UndoStepAsync(string root, InPlaceRestoreStep step, int index, string previousStatus, CancellationToken token)
+    private static async Task UndoStepAsync(string root, InPlaceRestoreState state, InPlaceRestoreStep step, int index, string previousStatus, CancellationToken token)
     {
         var entry = step.Entry;
         var target = HistoryPaths.ResolveWorkPath(root, entry.Path);
-        var undo = Material(root, "undo", index);
+        var undo = UndoMaterial(root, state, index);
         var ready = Material(root, "ready", index);
         var discard = Material(root, "discard", index);
         if (step.Kind == "CreateFile")
@@ -328,7 +329,7 @@ public static class InPlaceRestoreTransaction
                 await RequireCurrentAsync(root, entry, token).ConfigureAwait(false);
                 return;
             }
-            await RequireMaterialAsync(root, "undo", index, entry, token).ConfigureAwait(false);
+            await RequireMaterialAsync(undo, entry, token).ConfigureAwait(false);
             if (HistoryPaths.Attributes(target) is not null) throw Conflict(entry.Path);
             token.ThrowIfCancellationRequested();
             await WorkingTree.MoveExpectedFileAsync(undo, target, entry, token).ConfigureAwait(false);
@@ -357,9 +358,11 @@ public static class InPlaceRestoreTransaction
             throw Conflict(expected.Path);
     }
 
-    private static async Task RequireMaterialAsync(string root, string area, int index, HistoryEntry expected, CancellationToken token)
+    private static Task RequireMaterialAsync(string root, string area, int index, HistoryEntry expected, CancellationToken token) =>
+        RequireMaterialAsync(Material(root, area, index), expected, token);
+
+    private static async Task RequireMaterialAsync(string file, HistoryEntry expected, CancellationToken token)
     {
-        var file = Material(root, area, index);
         var actual = await WorkingTree.ReadFileAsync(file, expected.Path, token).ConfigureAwait(false);
         if (actual != expected) throw new IOException("恢复材料发生变化，原件和新内容均已保留，请检查：" + file);
     }
@@ -428,12 +431,14 @@ public static class InPlaceRestoreTransaction
         HistoryPaths.RequireDirectory(directory);
         var frozen = ReadRecord<FrozenState>(Path.Combine(directory, PlanName), StateLimit);
         var progress = ReadRecord<ProgressState>(Path.Combine(directory, RecordName), ProgressLimit);
-        if (frozen.SchemaVersion is not (1 or 2) || progress.SchemaVersion != 1 || frozen.Id == Guid.Empty || progress.Id != frozen.Id ||
-            frozen.Plan is null || (frozen.SchemaVersion == 1) != (frozen.Plan.Selections is null))
+        if (frozen.SchemaVersion is not (1 or 2 or 3) || progress.SchemaVersion != 1 || frozen.Id == Guid.Empty || progress.Id != frozen.Id ||
+            frozen.Plan is null || (frozen.SchemaVersion == 1) != (frozen.Plan.Selections is null) ||
+            (frozen.SchemaVersion == 3) != (frozen.RetainedOriginalPaths is not null))
             throw new InvalidDataException("恢复计划与进度标识不匹配或格式不兼容。");
         var state = new InPlaceRestoreState
         {
-            Id = frozen.Id, Plan = frozen.Plan, ProtectionVersionId = frozen.ProtectionVersionId, Status = progress.Status,
+            SchemaVersion = frozen.SchemaVersion, Id = frozen.Id, Plan = frozen.Plan, ProtectionVersionId = frozen.ProtectionVersionId,
+            RetainedOriginalPaths = frozen.RetainedOriginalPaths ?? [], Status = progress.Status,
             AppliedCount = progress.AppliedCount, StepStarted = progress.StepStarted,
             RollbackNext = progress.RollbackNext, RollbackStarted = progress.RollbackStarted
         };
@@ -445,9 +450,10 @@ public static class InPlaceRestoreTransaction
         }
         else ValidatePlan(root, state.Plan);
         state.Steps = BuildSteps(state.Plan);
+        ValidateRetainedOriginals(state);
         var attempted = state.AppliedCount + (state.StepStarted ? 1 : 0);
-        if (string.IsNullOrWhiteSpace(state.ProtectionVersionId) ||
-            Path.GetFileName(state.ProtectionVersionId) != state.ProtectionVersionId ||
+        if ((state.SchemaVersion == 3 ? state.ProtectionVersionId != "" : string.IsNullOrWhiteSpace(state.ProtectionVersionId) ||
+            Path.GetFileName(state.ProtectionVersionId) != state.ProtectionVersionId) ||
             state.Status is not ("Preparing" or "Applying" or "Reverting" or "Completed" or "Reverted") ||
             state.AppliedCount < 0 || state.AppliedCount > state.Steps.Count || attempted > state.Steps.Count ||
             state.RollbackNext < -1 || state.RollbackNext >= attempted || state.RollbackStarted && state.RollbackNext < 0 ||
@@ -463,7 +469,17 @@ public static class InPlaceRestoreTransaction
         [property: JsonRequired] int SchemaVersion,
         [property: JsonRequired] Guid Id,
         [property: JsonRequired] InPlaceRestorePlan Plan,
-        [property: JsonRequired] string ProtectionVersionId);
+        [property: JsonRequired] string ProtectionVersionId,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? RetainedOriginalPaths = null);
+
+    private static void ValidateRetainedOriginals(InPlaceRestoreState state)
+    {
+        var removed = state.Steps.Where(step => step.Kind == "RemoveFile").Select(step => step.Entry.Path).ToHashSet(StringComparer.Ordinal);
+        if (state.RetainedOriginalPaths is null || state.RetainedOriginalPaths.Distinct(HistoryPaths.Comparer).Count() != state.RetainedOriginalPaths.Count ||
+            state.RetainedOriginalPaths.Any(path => !removed.Contains(path)))
+            throw new InvalidDataException("恢复原件保留范围与计划不符。");
+        state.RetainedOriginalSet = state.RetainedOriginalPaths.ToHashSet(StringComparer.Ordinal);
+    }
 
     private sealed record ProgressState(
         [property: JsonRequired] int SchemaVersion,
@@ -486,7 +502,8 @@ public static class InPlaceRestoreTransaction
         => SaveProgress(Active(root), state);
 
     private static void SaveFrozen(string directory, InPlaceRestoreState state) => WriteRecord(directory, PlanName,
-        new FrozenState(state.Plan.Selections is null ? 1 : 2, state.Id, state.Plan, state.ProtectionVersionId), StateLimit);
+        new FrozenState(state.SchemaVersion, state.Id, state.Plan, state.ProtectionVersionId,
+            state.SchemaVersion == 3 ? state.RetainedOriginalPaths : null), StateLimit);
 
     private static void SaveProgress(string directory, InPlaceRestoreState state) => WriteRecord(directory, RecordName,
         new ProgressState(1, state.Id, state.Status, state.AppliedCount, state.StepStarted, state.RollbackNext, state.RollbackStarted), ProgressLimit);
@@ -515,9 +532,11 @@ public static class InPlaceRestoreTransaction
         {
             try
             {
-                var material = Material(root, area, index);
+                var material = area == "undo" ? UndoMaterial(root, state, index) : Material(root, area, index);
                 var attributes = HistoryPaths.Attributes(material);
                 if (attributes is null) continue;
+                if (area == "undo" && state.Status == "Completed" && state.RetainedOriginalSet.Contains(state.Steps[index].Entry.Path))
+                    continue;
                 if (attributes.Value.HasFlag(FileAttributes.Directory)) Directory.Delete(material, recursive: false);
                 else
                 {
@@ -564,6 +583,15 @@ public static class InPlaceRestoreTransaction
     }
 
     private static string Active(string root) => Path.Combine(HistoryPaths.HistoryDirectory(HistoryPaths.Absolute(root)), ActiveName);
+
+    private static string? OriginalsDirectory(string root, InPlaceRestoreState state) => state.RetainedOriginalSet.Count == 0 ? null :
+        HistoryPaths.Attributes(Active(root)) is not null ? Path.Combine(Active(root), "original") :
+            Path.Combine(HistoryPaths.HistoryDirectory(root), "restore-records", state.Id.ToString("N"), "original");
+
+    private static string UndoMaterial(string root, InPlaceRestoreState state, int index) =>
+        state.Steps[index].Kind == "RemoveFile" && state.RetainedOriginalSet.Contains(state.Steps[index].Entry.Path)
+            ? HistoryPaths.ResolveWorkPath(Path.Combine(Active(root), "original"), state.Steps[index].Entry.Path)
+            : Material(root, "undo", index);
 
     private static string Material(string root, string area, int index)
     {

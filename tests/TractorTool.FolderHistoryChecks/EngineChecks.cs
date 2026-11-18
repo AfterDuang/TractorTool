@@ -103,6 +103,7 @@ internal static class EngineChecks
         Check(emptyVersion.Entries.Count == 0, "只有源目录的完整版本可登记");
         await CheckDiagnosticsAsync(fixture.FullName, executable);
         await CheckSelectionAsync(fixture.FullName, executable);
+        await CheckPublicationSourcesAsync(fixture.FullName, executable);
         await CheckCleanupAsync(fixture.FullName, executable);
     }
 
@@ -185,6 +186,90 @@ internal static class EngineChecks
                 !Regex.IsMatch(full + "sibling", Environment.ExpandEnvironmentVariables(filter[11..^1]))),
                 "排除规则必须与扫描器的精确路径及子树一致");
         }
+    }
+
+    private static async Task CheckPublicationSourcesAsync(string fixture, string executable)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "publish-source-boundary")).FullName;
+        var history = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(root)).FullName;
+        var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
+        var source = Path.Combine(history, "temp", "publish-source-" + Guid.NewGuid().ToString("N"));
+        var bytes = new byte[] { 1, 4, 9 };
+        var hash = Convert.ToBase64String(SHA256.HashData(bytes));
+        const string normalId = "duplicati-20261007T120000Z.dlist.zip";
+        const string publishedId = "duplicati-20261007T130000Z.dlist.zip";
+        const string candidateId = "duplicati-20261007T140000Z.dlist.zip";
+        var candidate = Path.Combine(repository, candidateId);
+        WriteVolume(Path.Combine(repository, normalId), true, "SHA256", new { type = "Folder", path = root + Path.DirectorySeparatorChar });
+        var sourceFolder = new { type = "Folder", path = source + Path.DirectorySeparatorChar };
+        var sourceFile = new { type = "File", path = Path.Combine(source, "content.bin"), size = bytes.Length, hash };
+        WriteVolume(candidate, true, "SHA256", sourceFolder, sourceFile);
+        var parsed = DuplicatiEngine.ReadVersion(history, candidateId)!;
+        Check(parsed.SourceRoot == source && parsed.Entries.Single().Path == "content.bin", "精确的库内发布源根应能按相对路径读取");
+        foreach (var invalidRoot in new[]
+        {
+            history, Path.Combine(history, "temp"), source + "-extra", Path.Combine(source, "deeper"),
+            Path.Combine(history, "other", Path.GetFileName(source)),
+            Path.Combine(history, "temp", "publish-source-not-a-guid"),
+            Path.Combine(source, HistoryPaths.DirectoryName, "temp", Path.GetFileName(source)),
+            source + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + "escape"
+        })
+        {
+            foreach (var full in new[] { true, false })
+            {
+                WriteVolume(candidate, full, "SHA256", new { type = "Folder", path = invalidRoot + Path.DirectorySeparatorChar });
+                if (full) ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, candidateId), "拒绝发布源的伪前缀、错层、嵌套库或穿越");
+                else ExpectInvalid(() => DuplicatiEngine.PreflightDelete(history, [normalId]), "strict partial 必须同样拒绝非法发布源根");
+            }
+        }
+        foreach (var full in new[] { true, false })
+        {
+            WriteVolume(candidate, full, "SHA256", sourceFolder,
+                new { type = "Folder", path = Path.Combine(source, "nested") + Path.DirectorySeparatorChar },
+                new { type = "Folder", path = Path.Combine(source, "nested", HistoryPaths.DirectoryName) + Path.DirectorySeparatorChar });
+            if (full) ExpectInvalid(() => DuplicatiEngine.ReadVersion(history, candidateId), "合法发布源中的相对条目仍不能包含历史库保留名");
+            else ExpectInvalid(() => DuplicatiEngine.PreflightDelete(history, [normalId]), "strict partial 中相对保留名仍被拒绝");
+        }
+        File.Delete(candidate);
+        var untouched = new FakeRunner(_ => Success);
+        var engine = new DuplicatiEngine(untouched, executable, new FakeLog());
+        foreach (var invalidSource in new[] { Path.Combine(root, "elsewhere"), source + "-extra", Path.Combine(source, "child") })
+            await ExpectAsync<InvalidDataException>(() => engine.BackupStagedAsync(invalidSource, history, CancellationToken.None),
+                "发布备份必须拒绝不精确的当前库暂存源");
+        await ExpectAsync<InvalidDataException>(() => engine.BackupStagedAsync(source, HistoryPaths.HistoryDirectory(Path.Combine(fixture, "other-owner")), CancellationToken.None),
+            "不能把一个库中的发布材料备份到另一库");
+        Check(untouched.Requests.Count == 0, "非法发布暂存源触发了外部工具");
+        Directory.CreateDirectory(source);
+        File.WriteAllBytes(Path.Combine(source, "content.bin"), bytes);
+        File.WriteAllBytes(Path.Combine(history, "index.sqlite"), []);
+        var backup = new FakeRunner(request =>
+        {
+            Check(request.Arguments[0] == "backup" && request.Arguments[2] == source, "发布备份未使用当前库内的精确暂存源");
+            WriteVolume(Path.Combine(repository, publishedId), true, "SHA256", sourceFolder, sourceFile);
+            return Success;
+        });
+        var published = await new DuplicatiEngine(backup, executable, new FakeLog()).BackupStagedAsync(source, history, CancellationToken.None);
+        WriteVolume(candidate, false, "SHA256", sourceFolder, sourceFile);
+        DuplicatiEngine.PreflightDelete(history, [normalId]);
+        File.Delete(candidate);
+        var moved = root + "-moved";
+        Directory.Move(root, moved);
+        var movedHistory = HistoryPaths.HistoryDirectory(moved);
+        var reopened = DuplicatiEngine.ReadVersion(movedHistory, publishedId)!;
+        Check(reopened.SourceRoot == published.SourceRoot && reopened.Entries.SequenceEqual(published.Entries) && !Directory.Exists(root),
+            "移动后的发布版本应仅解析原源根字符串，不能读取或重建旧位置");
+        var staging = Path.Combine(movedHistory, "temp", "after-move");
+        var restore = new FakeRunner(request =>
+        {
+            var expression = request.Arguments.Single(argument => argument.StartsWith("--include=[", StringComparison.Ordinal))[11..^1];
+            Check(request.Arguments[0] == "restore" && Regex.IsMatch(Path.Combine(source, "content.bin"), expression),
+                "发布版本移动后应按原生 SourceRoot 筛选并映射到新暂存区");
+            File.WriteAllBytes(Path.Combine(staging, "content.bin"), bytes);
+            return Success;
+        });
+        await new DuplicatiEngine(restore, executable, new FakeLog()).RestoreSelectionAsync(reopened, movedHistory, staging, CancellationToken.None, ["content.bin"]);
+        Check(File.ReadAllBytes(Path.Combine(staging, "content.bin")).SequenceEqual(bytes) && !Directory.Exists(root),
+            "发布版本恢复未正确映射字节或触及旧根");
     }
 
     private static async Task CheckCleanupAsync(string fixture, string executable)

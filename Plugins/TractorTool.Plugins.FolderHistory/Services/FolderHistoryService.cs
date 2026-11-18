@@ -167,7 +167,7 @@ public sealed partial class FolderHistoryService : IDisposable
             using var ownership = HistoryStore.Lock(root);
             var state = Open(root);
             RequireNoPendingOperation(root, state);
-            await CaptureAsync(root, state, Engine(lease), "开启保护", false, token).ConfigureAwait(false);
+            await CaptureAsync(root, state, Engine(lease), "开启保护", token).ConfigureAwait(false);
             state.ProtectionEnabled = true;
             HistoryStore.Save(root, state);
             ConfigureObservation(root, state, recheck: true);
@@ -193,35 +193,28 @@ public sealed partial class FolderHistoryService : IDisposable
         var state = Open(root);
         RequireNoPendingOperation(root, state);
         var count = state.Versions.Count;
-        await CaptureAsync(root, state, Engine(lease), note, false, token, keepUnchanged: note.Length > 0).ConfigureAwait(false);
+        await CaptureAsync(root, state, Engine(lease), note, token, keepUnchanged: note.Length > 0).ConfigureAwait(false);
         ConfigureObservation(root, state, recheck: true);
         NotifyChanged();
         return state.Versions.Count != count;
     });
 
     private async Task<SavedVersion> CaptureAsync(string root, RepositoryState state, DuplicatiEngine engine,
-        string note, bool protection, CancellationToken token, bool automatic = false, bool keepUnchanged = false)
+        string note, CancellationToken token, bool automatic = false, bool keepUnchanged = false)
     {
         SavedVersion? saved = null;
         try
         {
-        await RunTaskAsync((protection ? "保留恢复前版本 · " : "保存文件夹版本 · ") + Path.GetFileName(root), async (progress, cancellation) =>
+        await RunTaskAsync("保存文件夹版本 · " + Path.GetFileName(root), async (progress, cancellation) =>
         {
             SetRuntimeStatus(root, "正在保存");
             progress.Report(new(null, "正在核对工作文件"));
-            var exclusions = protection ? Array.Empty<string>() : state.Settings.ExcludedPaths;
+            var exclusions = state.Settings.ExcludedPaths;
             var before = await WorkingTree.ScanAsync(root, exclusions, cancellation).ConfigureAwait(false);
             var previous = ReadCommitted(root, state);
             if (!keepUnchanged && previous.FirstOrDefault() is { } last && HistoryComparison.Equal(before, last.Version.Entries))
             {
-                if (protection)
-                {
-                    var index = state.Versions.FindIndex(item => item.Id == last.Id);
-                    state.Versions[index] = state.Versions[index] with { Pinned = true, RestoreProtection = true };
-                    HistoryStore.Save(root, state);
-                    saved = last with { Pinned = true, IsRestoreProtection = true };
-                }
-                else saved = last;
+                saved = last;
                 return "文件内容和目录结构没有变化，保留现有版本。";
             }
             var previousEntries = previous.FirstOrDefault()?.Version.Entries.ToDictionary(entry => entry.Path, HistoryPaths.Comparer);
@@ -238,9 +231,9 @@ public sealed partial class FolderHistoryService : IDisposable
             if (!HistoryComparison.Equal(after, created.Entries))
                 throw new IOException("引擎结果与完整工作文件清单不符，本次未登记为可用版本，请检查后重试。");
             cancellation.ThrowIfCancellationRequested();
-            var receipt = state.AddVersion(created.Id, root, note, protection, protection);
+            var receipt = state.AddVersion(created.Id, root, note, false);
             HistoryStore.Save(root, state);
-            saved = new(created, note, protection, receipt.Number) { IsRestoreProtection = protection };
+            saved = new(created, note, false, receipt.Number);
             return "已保存并核对文件清单：" + saved.Title;
         }, token).ConfigureAwait(false);
         }

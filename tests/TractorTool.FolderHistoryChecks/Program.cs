@@ -5,6 +5,14 @@ using TractorTool.Plugins.FolderHistory.Storage;
 var fixture = Directory.CreateTempSubdirectory("TractorTool.FolderHistoryChecks-").FullName;
 try
 {
+    if (args is ["--transactions"])
+    {
+        await EngineChecks.RunAsync(new DirectoryInfo(fixture));
+        await ServiceChecks.RunAsync(fixture);
+        await RestoreChecks.RunAsync(fixture);
+        Console.WriteLine("Isolated service, publish and restore transaction checks passed.");
+        return;
+    }
     if (args is ["--workspace"] or ["--workspace", _])
     {
         SnapshotNumberChecks.Run(fixture);

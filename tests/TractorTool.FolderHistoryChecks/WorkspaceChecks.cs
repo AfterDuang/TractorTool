@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Plugins.FolderHistory.Storage;
 using TractorTool.Plugins.FolderHistory.ViewModels;
@@ -14,6 +15,7 @@ internal static class WorkspaceChecks
         var after = Version(3, folder, other with { Hash = "b" });
         var workspace = new HistoryWorkspace("测试", [after, before, update]);
         CheckWorkingDirectory(fixture, workspace);
+        CheckCurrentFileStates(fixture);
         var tree = workspace.VisibleTree(new HashSet<string> { "", "doc" });
         Assert(tree.Select(row => row.Path).SequenceEqual(["", "doc", "doc/draft", "docs"]), "wrong tree order or hierarchy");
         Assert(tree.Single(row => row.Path == draft.Path) is { IsHistoricalOnly: true, Depth: 2 }, "deleted path missing from history");
@@ -65,6 +67,92 @@ internal static class WorkspaceChecks
 
         string[] Ids(params string[] paths) => workspace.Timeline(paths.ToHashSet(StringComparer.Ordinal))
             .Select(row => row.Id).ToArray();
+    }
+
+    private static void CheckCurrentFileStates(string fixture)
+    {
+        var root = Directory.CreateDirectory(Path.Combine(fixture, "tree-content")).FullName;
+        var repositoryId = HistoryStore.Create(root).Id;
+        var path = Path.Combine(root, "sample.bin");
+        byte[] original = [1, 2, 3, 4];
+        byte[] latest = [4, 3, 2, 1];
+        byte[] unsaved = [4, 2, 3, 1];
+        var oldFile = Entry(original);
+        var newFile = Entry(latest);
+        var other = new HistoryEntry("other", false, 1, "first");
+        var workspace = new HistoryWorkspace("内容", [Version(1, oldFile, other),
+            Version(2, oldFile, other with { Hash = "second" }), Version(3, newFile, other),
+            Version(4, newFile, other with { Hash = "fourth" })]);
+        var expanded = new HashSet<string>(HistoryPaths.Comparer) { "" };
+        var cache = new WorkingFileCache();
+        File.WriteAllBytes(path, latest);
+        var initial = Read();
+        var initialTree = Tree(initial);
+        Assert(initialTree is { Presence: TreePresence.Recorded, CurrentVersionId: "3", CurrentVersionNumber: 3 },
+            "unchanged snapshots replaced the file's actual revision");
+        var second = Read();
+        Assert(ReferenceEquals(initial.Children[""][0].Content, second.Children[""][0].Content),
+            "an unchanged visible file was hashed again");
+        var rows = workspace.Timeline(new HashSet<string> { "sample.bin" });
+        HistoryWorkspace.MarkCurrentFile(rows, [initialTree]);
+        Assert(rows.Single(row => row.IsCurrentFile).Id == "3", "latest content marker selected an unrelated snapshot");
+        var notified = 0;
+        rows[0].PropertyChanged += (_, e) => { if (e.PropertyName == nameof(VersionItem.IsCurrentFile)) notified++; };
+
+        var unchangedTimestamp = File.GetLastWriteTimeUtc(path);
+        File.WriteAllBytes(path, original);
+        File.SetLastWriteTimeUtc(path, unchangedTimestamp);
+        cache.Invalidate("sample.bin");
+        var older = Tree(Read());
+        Assert(older is { Presence: TreePresence.OlderRevision, CurrentVersionId: "1", StatusText: "旧版 #1" },
+            "same-length same-time content change was not matched to its historical file revision");
+        HistoryWorkspace.MarkCurrentFile(rows, [older]);
+        Assert(rows.Single(row => row.IsCurrentFile).Id == "1" && notified == 1,
+            "current marker was not notified on the existing row object");
+
+        File.WriteAllBytes(path, unsaved);
+        File.SetLastWriteTimeUtc(path, unchangedTimestamp);
+        cache.Invalidate();
+        var modified = Tree(Read());
+        Assert(modified is { Presence: TreePresence.Modified, CurrentVersionId: null, StatusText: "已修改 · 未快照" },
+            "a watcher gap retained a stale cached match or labeled new content as a saved revision");
+        HistoryWorkspace.MarkCurrentFile(rows, [modified]);
+        Assert(rows.All(row => !row.IsCurrentFile), "unsaved content kept a historical current marker");
+
+        File.WriteAllBytes(path, original);
+        cache.Invalidate();
+        var returning = new HistoryWorkspace("内容", workspace.Versions.Select(row => row.Saved)
+            .Append(Version(5, oldFile, other)).Append(Version(6, oldFile, other with { Hash = "sixth" })).ToArray());
+        var repeated = returning.VisibleTree(expanded, Read()).Single(item => item.Path == "sample.bin");
+        Assert(repeated is { Presence: TreePresence.Recorded, CurrentVersionId: "5" },
+            "matching repeated content did not choose its most recent actual revision");
+
+        if (OperatingSystem.IsWindows())
+        {
+            using var locked = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.None);
+            var blocked = Read();
+            Assert(Tree(blocked) is { Presence: TreePresence.Unavailable, CurrentVersionId: null } && blocked.Warning.Length != 0,
+                "a cached match hid an unreadable working file");
+        }
+        var excluded = WorkingDirectoryListing.Read(root, repositoryId, expanded, ["sample.bin"], CancellationToken.None,
+            trackedFiles: workspace.TrackedFiles, cache: cache);
+        Assert(Tree(excluded) is { Presence: TreePresence.Excluded, CurrentVersionId: null }, "excluded content was marked as current");
+        HistoryWorkspace.MarkCurrentFile(rows, [older, modified with { Path = "other" }]);
+        Assert(rows.All(row => !row.IsCurrentFile), "multiple files shared a misleading current-file marker");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        try
+        {
+            WorkingDirectoryListing.Read(root, repositoryId, expanded, [], cancelled.Token,
+                trackedFiles: workspace.TrackedFiles, cache: cache);
+            throw new InvalidOperationException("content scan ignored cancellation");
+        }
+        catch (OperationCanceledException error) when (error.CancellationToken == cancelled.Token) { }
+
+        HistoryEntry Entry(byte[] bytes) => new("sample.bin", false, bytes.Length, Convert.ToHexString(SHA256.HashData(bytes)));
+        WorkingDirectoryListing Read() => WorkingDirectoryListing.Read(root, repositoryId, expanded, [], CancellationToken.None,
+            trackedFiles: workspace.TrackedFiles, cache: cache);
+        TreeItem Tree(WorkingDirectoryListing listing) => workspace.VisibleTree(expanded, listing).Single(item => item.Path == "sample.bin");
     }
 
     private static void CheckWorkingDirectory(string fixture, HistoryWorkspace workspace)

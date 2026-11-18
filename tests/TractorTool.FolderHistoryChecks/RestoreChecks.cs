@@ -29,7 +29,7 @@ internal static class RestoreChecks
         Check(!HistoryExclusions.IsExcluded("keep/excluded.bin2", rules), "排除规则错误匹配同前缀兄弟");
         var plan = await InPlaceRestoreTransaction.PreviewAsync(root, target, null, rules, CancellationToken.None);
         Check(plan.Changes.Any(item => item.Path == "new.txt" && item.Kind == "删除"), "整目录预览缺少新文件删除");
-        await InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, protection.Id, CancellationToken.None);
+        await InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, [], CancellationToken.None);
         Check(HistoryComparison.Equal(plan.Target, await WorkingTree.ScanAsync(root, rules, CancellationToken.None)), "原位恢复的字节、目录、类型或大小写与预览不符");
         Check(File.ReadAllText(Path.Combine(root, "keep", "excluded.bin")) == "never change or delete this", "恢复修改了排除项");
         Check(InPlaceRestoreTransaction.ReadPending(root) is null, "成功恢复仍有未完成标记");
@@ -43,13 +43,16 @@ internal static class RestoreChecks
 
         var conflict = await InPlaceRestoreTransaction.PreviewAsync(root, protection, "replace.txt", rules, CancellationToken.None);
         Write(root, "replace.txt", "written after preview");
-        await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.ApplyAsync(root, conflict, stage, protection.Id, CancellationToken.None));
+        await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.ApplyAsync(root, conflict, stage, [], CancellationToken.None));
         Check(File.ReadAllText(Path.Combine(root, "replace.txt")) == "written after preview" && InPlaceRestoreTransaction.ReadPending(root) is null,
             "预览后更改被覆盖或错误进入事务");
 
         foreach (var action in new[] { "resume-moved-original", "resume-installed", "rollback", "preserve-new-write",
                      "moved-resume", "moved-rollback", "moved-completed" })
+        {
             await CheckInterruptedAsync(fixture, action);
+            await CheckInterruptedAsync(fixture, action, localUndo: true);
+        }
         await CheckSelectionAsync(fixture);
         await CheckNestedHistoryAsync(fixture);
         await CheckProgressSizeAsync(fixture);
@@ -73,7 +76,7 @@ internal static class RestoreChecks
         var blocked = await InPlaceRestoreTransaction.PreviewSelectionAsync(root, target,
             ["sibling.txt", "new-parent/child.txt"], [], CancellationToken.None);
         Write(root, "new-parent", "created after preview");
-        await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.ApplyAsync(root, blocked, stage, previous.Id, CancellationToken.None));
+        await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.ApplyAsync(root, blocked, stage, [], CancellationToken.None));
         Check(File.ReadAllText(Path.Combine(root, "sibling.txt")) == "new sibling" &&
             InPlaceRestoreTransaction.ReadPending(root) is null, "预览后新增的上级占位文件必须在所有工作文件写入前拒绝");
         foreach (string[] invalid in new string[][] { [], ["folder", "folder/remove.txt"], ["sibling.txt", "unknown"], ["", "unknown"] })
@@ -83,34 +86,43 @@ internal static class RestoreChecks
         Check(plan.SelectedPaths.SequenceEqual(new[] { "folder", "sibling.txt" }) &&
             plan.Changes.Select(item => item.Path).SequenceEqual(new[] { "folder/keep.txt", "folder/remove.txt", "sibling.txt" }),
             "多项预览应合并父子和重复选择，并限于所选范围");
-        await InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, previous.Id, CancellationToken.None);
+        using (var cancelled = new CancellationTokenSource())
+        {
+            cancelled.Cancel();
+            await ExpectAsync<OperationCanceledException>(() => InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, [], cancelled.Token));
+            Check(InPlaceRestoreTransaction.ReadPending(root) is null && File.ReadAllText(Path.Combine(root, "sibling.txt")) == "new sibling",
+                "取消的恢复不能进入事务或改动工作文件");
+        }
+        await InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, [], CancellationToken.None);
         Check(File.ReadAllText(Path.Combine(root, "sibling.txt")) == "old sibling" &&
             !File.Exists(Path.Combine(root, "folder", "remove.txt")) && File.ReadAllText(Path.Combine(root, "other.txt")) == "leave current bytes",
             "多选未按同一计划处理全部目标或触及范围外文件");
         var archived = Directory.EnumerateFiles(Path.Combine(HistoryPaths.HistoryDirectory(root), "restore-records"), "plan.json", SearchOption.AllDirectories).Single();
         using var record = JsonDocument.Parse(File.ReadAllText(archived));
-        Check(record.RootElement.GetProperty("schemaVersion").GetInt32() == 2 &&
+        Check(record.RootElement.GetProperty("schemaVersion").GetInt32() == 3 &&
+            record.RootElement.GetProperty("protectionVersionId").GetString() == "" &&
             record.RootElement.GetProperty("plan").GetProperty("selections").GetArrayLength() == 2, "新记录应冻结所有范围并使旧版拒读");
     }
 
-    private static async Task CheckInterruptedAsync(string fixture, string action)
+    private static async Task CheckInterruptedAsync(string fixture, string action, bool localUndo = false)
     {
-        var root = CreateRoot(fixture, action);
+        var root = CreateRoot(fixture, (localUndo ? "local-undo-" : "") + action);
         Write(root, "file.txt", "before restore");
         var history = HistoryPaths.HistoryDirectory(root);
         var stage = Directory.CreateDirectory(Path.Combine(history, "temp", "stage")).FullName;
         Write(stage, "file.txt", "target bytes");
         var version = await VersionAsync(root, stage, "duplicati-20261007T120000Z.dlist.zip");
-        var protection = await VersionAsync(root, root, "duplicati-20261007T130000Z.dlist.zip");
+        var protection = localUndo ? null : await VersionAsync(root, root, "duplicati-20261007T130000Z.dlist.zip");
         var plan = await InPlaceRestoreTransaction.PreviewAsync(root, version, "file.txt", [], CancellationToken.None);
         // Exercise records written by 0.2.0 alongside the new frozen selection format.
-        if (action is "resume-moved-original" or "moved-rollback") plan = plan with { Selections = null };
+        if (!localUndo && action is ("resume-moved-original" or "moved-rollback")) plan = plan with { Selections = null };
         var active = Directory.CreateDirectory(Path.Combine(history, "restore-pending")).FullName;
-        foreach (var area in new[] { "ready", "undo", "discard", "rollback" }) Directory.CreateDirectory(Path.Combine(active, area));
-        File.Move(Path.Combine(root, "file.txt"), Path.Combine(active, "undo", "0"));
+        foreach (var area in new[] { "ready", "undo", "discard", "rollback", "original" }) Directory.CreateDirectory(Path.Combine(active, area));
+        File.Move(Path.Combine(root, "file.txt"), Path.Combine(active, localUndo ? "original" : "undo", localUndo ? "file.txt" : "0"));
         var state = new InPlaceRestoreState
         {
-            Plan = plan, ProtectionVersionId = protection.Id, Status = action == "moved-completed" ? "Completed" : "Applying"
+            Plan = plan, ProtectionVersionId = protection?.Id ?? "", RetainedOriginalPaths = localUndo ? ["file.txt"] : [],
+            Status = action == "moved-completed" ? "Completed" : "Applying"
         };
         if (action == "resume-moved-original")
         {
@@ -141,18 +153,20 @@ internal static class RestoreChecks
             {
                 Check(InPlaceRestoreTransaction.ReadPending(root) is null && !Directory.Exists(active), "移动后的已完成记录未能归档");
                 Check(File.ReadAllText(Path.Combine(previousRoot, "file.txt")) == "unrelated old location", "归档写入了旧根");
+                if (localUndo) Check(File.ReadAllText(Path.Combine(history, "restore-records", state.Id.ToString("N"), "original", "file.txt")) == "before restore",
+                    "完成记录归档前中断后，未保存原件必须仍按原路径可找到");
                 return;
             }
         }
-        Check(InPlaceRestoreTransaction.ReadPending(root)?.ProtectionVersionId == protection.Id, "重启没有找到恢复前版本引用");
+        Check(InPlaceRestoreTransaction.ReadPending(root)?.ProtectionVersionId == (protection?.Id ?? ""), "重启没有找到恢复记录");
         if (action == "preserve-new-write")
         {
             Write(root, "file.txt", "user wrote after interruption");
             await ExpectAsync<IOException>(() => InPlaceRestoreTransaction.RollbackAsync(root, CancellationToken.None));
             Check(File.ReadAllText(Path.Combine(root, "file.txt")) == "user wrote after interruption" &&
-                File.ReadAllText(Path.Combine(active, "undo", "0")) == "before restore" && InPlaceRestoreTransaction.ReadPending(root) is not null,
+                File.ReadAllText(Path.Combine(active, localUndo ? "original" : "undo", localUndo ? "file.txt" : "0")) == "before restore" && InPlaceRestoreTransaction.ReadPending(root) is not null,
                 "撤销覆盖了后写内容或清除了原件");
-            var userCopy = Path.Combine(fixture, "user-copy-after-interruption.txt");
+            var userCopy = root + "-user-copy-after-interruption.txt";
             File.Move(Path.Combine(root, "file.txt"), userCopy);
             await InPlaceRestoreTransaction.RollbackAsync(root, CancellationToken.None);
             Check(File.ReadAllText(Path.Combine(root, "file.txt")) == "before restore" &&
@@ -165,10 +179,15 @@ internal static class RestoreChecks
         }
         else
         {
-            await InPlaceRestoreTransaction.ResumeAsync(root, CancellationToken.None);
+            var resumed = await InPlaceRestoreTransaction.ResumeAsync(root, CancellationToken.None);
             Check(File.ReadAllText(Path.Combine(root, "file.txt")) == "target bytes", "跨move/journal中断后未按事实继续");
+            Check(resumed.OriginalsDirectory == (localUndo ? Path.Combine(history, "restore-records", state.Id.ToString("N"), "original") : null),
+                "继续恢复必须直接公开保留原件目录，旧快照保护事务不伪造原件目录");
         }
         Check(InPlaceRestoreTransaction.ReadPending(root) is null, "完成中断处理后仍有pending");
+        if (localUndo && action is not ("rollback" or "moved-rollback" or "preserve-new-write"))
+            Check(File.ReadAllText(Path.Combine(history, "restore-records", state.Id.ToString("N"), "original", "file.txt")) == "before restore",
+                "没有历史快照的原件必须按原路径保留，不能在成功恢复后删除");
         if (previousRoot is not null)
             Check(File.ReadAllText(Path.Combine(previousRoot, "file.txt")) == "unrelated old location", "移动后的继续或撤销写入了旧根");
     }
@@ -187,7 +206,7 @@ internal static class RestoreChecks
         var childState = File.ReadAllBytes(Path.Combine(HistoryPaths.HistoryDirectory(child), "history.json"));
         await ExpectAsync<InvalidDataException>(() => WorkingTree.ScanAsync(root, CancellationToken.None));
         await ExpectAsync<InvalidDataException>(() => InPlaceRestoreTransaction.PreviewAsync(root, parent, null, [], CancellationToken.None));
-        await ExpectAsync<InvalidDataException>(() => InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, parent.Id, CancellationToken.None));
+        await ExpectAsync<InvalidDataException>(() => InPlaceRestoreTransaction.ApplyAsync(root, plan, stage, [], CancellationToken.None));
         Check(parentState.SequenceEqual(File.ReadAllBytes(Path.Combine(HistoryPaths.HistoryDirectory(root), "history.json"))) &&
             childState.SequenceEqual(File.ReadAllBytes(Path.Combine(HistoryPaths.HistoryDirectory(child), "history.json"))) &&
             File.ReadAllText(Path.Combine(child, "child.txt")) == "child bytes", "父目录回退触及了移入的子库或工作内容");
@@ -219,8 +238,9 @@ internal static class RestoreChecks
 
     private static void WriteTransactionFixture(string active, InPlaceRestoreState state, int appliedCount, bool stepStarted)
     {
-        File.WriteAllText(Path.Combine(active, "plan.json"), JsonSerializer.Serialize(new
-        { schemaVersion = state.Plan.Selections is null ? 1 : 2, state.Id, state.Plan, state.ProtectionVersionId }, Json));
+        File.WriteAllText(Path.Combine(active, "plan.json"), state.ProtectionVersionId.Length == 0
+            ? JsonSerializer.Serialize(new { schemaVersion = 3, state.Id, state.Plan, state.ProtectionVersionId, state.RetainedOriginalPaths }, Json)
+            : JsonSerializer.Serialize(new { schemaVersion = state.Plan.Selections is null ? 1 : 2, state.Id, state.Plan, state.ProtectionVersionId }, Json));
         File.WriteAllText(Path.Combine(active, "operation.json"), JsonSerializer.Serialize(new
         { schemaVersion = 1, state.Id, state.Status, appliedCount, stepStarted, rollbackNext = -1, rollbackStarted = false }, Json));
     }

@@ -11,6 +11,7 @@ internal sealed partial class FolderHistoryViewModel
     private FolderRegistration? _watchedFolder;
     private CancellationTokenSource? _directoryTracking;
     private Channel<bool>? _directoryUpdates;
+    private WorkingFileCache? _workingFiles;
     private string[] _treeExclusions = [];
     private bool _watchFailed;
 
@@ -23,6 +24,7 @@ internal sealed partial class FolderHistoryViewModel
         _watchedFolder = null;
         _directoryTracking = null;
         _directoryUpdates = null;
+        _workingFiles = null;
         LiveTreeWarning = "";
     }
 
@@ -43,10 +45,12 @@ internal sealed partial class FolderHistoryViewModel
         _directoryTracking = request;
         _watchedFolder = new(folder.Root, folder.Info.Id);
         _directoryUpdates = updates;
-        _ = ObserveDirectoryAsync(folder.Root, folder.Info.Id, exclusions, updates, request);
+        _workingFiles = new();
+        _ = ObserveDirectoryAsync(folder.Root, folder.Info.Id, exclusions, updates, _workingFiles, request);
     }
 
-    private async Task ObserveDirectoryAsync(string root, Guid repositoryId, string[] exclusions, Channel<bool> updates, CancellationTokenSource request)
+    private async Task ObserveDirectoryAsync(string root, Guid repositoryId, string[] exclusions, Channel<bool> updates,
+        WorkingFileCache cache, CancellationTokenSource request)
     {
         using var watcher = new FileSystemWatcher();
         var token = request.Token;
@@ -60,6 +64,7 @@ internal sealed partial class FolderHistoryViewModel
         Exception? watchError = null;
         void Rebind()
         {
+            cache.Invalidate();
             Interlocked.Increment(ref generation);
             updates.Writer.TryWrite(true);
         }
@@ -67,29 +72,35 @@ internal sealed partial class FolderHistoryViewModel
         {
             if (HistoryPaths.Comparer.Equals(name, rootName)) Rebind();
         }
-        void Signal(string? name)
+        void Signal(string? name, bool includeDescendants = false)
         {
-            if (name is null) return;
+            if (name is null) { cache.Invalidate(); updates.Writer.TryWrite(true); return; }
             var relative = name.Replace(Path.DirectorySeparatorChar, '/');
             var split = relative.LastIndexOf('/');
             var parent = split < 0 ? "" : relative[..split];
+            if (!HistoryPaths.IsHistoryPath(relative)) cache.Invalidate(relative, includeDescendants);
             // Atomic replacement of the identity file also recovers a directory restored in stages.
             if (HistoryPaths.Comparer.Equals(relative, HistoryPaths.DirectoryName) ||
-                HistoryPaths.Comparer.Equals(relative, HistoryPaths.DirectoryName + "/" + HistoryStore.StateName) ||
-                !HistoryPaths.IsHistoryPath(relative) && Volatile.Read(ref visibleParents).ContainsKey(parent))
+                HistoryPaths.Comparer.Equals(relative, HistoryPaths.DirectoryName + "/" + HistoryStore.StateName))
+            {
+                updates.Writer.TryWrite(true);
+            }
+            else if (!HistoryPaths.IsHistoryPath(relative) && Volatile.Read(ref visibleParents).ContainsKey(parent))
                 updates.Writer.TryWrite(true);
         }
 
         try
         {
             watcher.IncludeSubdirectories = true;
-            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Attributes;
+            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.Attributes |
+                NotifyFilters.Size | NotifyFilters.LastWrite;
             watcher.Created += (_, e) => Signal(e.Name);
-            watcher.Deleted += (_, e) => Signal(e.Name);
+            watcher.Deleted += (_, e) => Signal(e.Name, includeDescendants: true);
             watcher.Changed += (_, e) => Signal(e.Name);
-            watcher.Renamed += (_, e) => { Signal(e.OldName); Signal(e.Name); };
+            watcher.Renamed += (_, e) => { Signal(e.OldName, includeDescendants: true); Signal(e.Name, includeDescendants: true); };
             watcher.Error += (_, e) =>
             {
+                cache.Invalidate();
                 if (e.GetException() is not InternalBufferOverflowException)
                     Interlocked.Exchange(ref watchError, e.GetException());
                 updates.Writer.TryWrite(true);
@@ -140,7 +151,7 @@ internal sealed partial class FolderHistoryViewModel
                 var (listing, visible) = await Task.Run(() =>
                 {
                     var disk = WorkingDirectoryListing.Read(root, repositoryId, expanded, exclusions, token,
-                        directory => reading.TryAdd(directory, 0));
+                        directory => reading.TryAdd(directory, 0), workspace?.TrackedFiles, cache);
                     return (disk, workspace?.VisibleTree(expanded, disk, token));
                 }, token);
                 token.ThrowIfCancellationRequested();
@@ -154,6 +165,7 @@ internal sealed partial class FolderHistoryViewModel
                 try { RebuildTree(visible); }
                 finally { _settingSelection = false; }
                 if (!previous.SetEquals(_scope)) UpdateTimeline(SelectedVersion?.Id, null, null);
+                else RefreshCurrentFileMarker();
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }

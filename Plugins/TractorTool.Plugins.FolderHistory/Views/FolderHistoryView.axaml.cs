@@ -22,6 +22,10 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
     public FolderHistoryView()
     {
         InitializeComponent();
+        DiffLines.PropertyChanged += (_, change) =>
+        {
+            if (change.Property == ItemsControl.ItemsSourceProperty) DiffScroll.Offset = default;
+        };
         ComparisonPane.SizeChanged += (_, e) => ComparisonPane.Classes.Set("unified", e.NewSize.Width < 560);
         FileTree.SizeChanged += (_, e) => FileTree.Classes.Set("compact", e.NewSize.Width < 200);
         InitializeTreeInput();
@@ -99,6 +103,8 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
             var note = row.Note;
             menu.ItemsSource = new Control[] {
                 Action("恢复到此版本…", async (_, _) => await RestoreAsync(target), model.CanSave),
+                Action("将此版本提交为最新…", async (_, _) => await PublishAsync(target),
+                    model.CanSave && target.UnavailableReason is null && target.VersionId != model.Versions.FirstOrDefault()?.Id),
                 Action("另存一份…", async (_, _) => await ExportAsync(target)),
                 new FAMenuFlyoutSeparator(),
                 Action(note.Length == 0 ? "添加说明…" : "编辑说明…", async (_, _) => await EditSnapshotNoteAsync(target, note)),
@@ -251,9 +257,21 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
             Text(target.VersionTitle + " · " + target.ScopeTitle), PathText(target.Root),
             Text(RestoreSummary(preview.Changes)),
             Items(preview.Changes.Select(change => $"{(change.Kind == "修改" ? "覆盖" : change.Kind)}   {change.Path}")),
-            Text("将先保存恢复前版本，再覆盖或删除上面列出的文件。中断后可以继续或撤销。", true));
-        if (await ShowAsync("恢复到原位置", body, "保留当前版本并恢复") == FAContentDialogResult.Primary && Current(model))
+            Text("将替换上面列出的工作文件并暂停自动保存。此操作不会创建快照，中断后可继续或撤销。", true));
+        if (await ShowAsync("恢复到原位置", body, "恢复工作文件") == FAContentDialogResult.Primary && Current(model))
             await model.RestoreAsync(preview);
+    });
+
+    private Task PublishAsync(VersionActionContext target) => InteractAsync(async model =>
+    {
+        var folder = model.SelectedFolder;
+        if (folder is null || !HistoryPaths.Comparer.Equals(folder.Root, target.Root)) return;
+        var note = await AskSnapshotNoteAsync("将此版本提交为最新",
+            $"{target.ScopeTitle} · {target.VersionTitle}\n新快照采用这份历史中的所选内容，其余文件沿用最新快照。磁盘上的文件保持原样，提交后自动保存会暂停。",
+            "", "提交为最新");
+        if (note is not null && Current(model) && model.SelectedFolder?.Info.Id == folder.Info.Id &&
+            HistoryPaths.Comparer.Equals(model.SelectedFolder.Root, target.Root))
+            await model.PublishSelectionAsync(target, note);
     });
 
     private async void HandlePendingRestore(object? sender, RoutedEventArgs e) => await InteractAsync(async model =>
@@ -262,15 +280,16 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
         var pending = await model.GetPendingRestoreAsync(folder.Root);
         if (pending is null || !Current(model)) return;
         var target = model.Versions.FirstOrDefault(version => version.Id == pending.TargetVersionId)?.Title ?? "记录中的目标版本";
-        var protection = model.Versions.FirstOrDefault(version => version.Id == pending.ProtectionVersionId)?.Title ?? "恢复前保护版本";
+        var protection = model.Versions.FirstOrDefault(version => version.Id == pending.ProtectionVersionId)?.Title;
         var preparing = pending.Status == "Preparing";
         var reverting = pending.Status == "Reverting";
         var rollback = preparing ? "恢复准备尚未完成，未开始覆盖工作文件。撤销只结束这次准备，保留当前文件及之后的修改。"
             : "撤销会回到本次操作前的内容，并核对恢复之后的新修改；发现冲突时停止，不会直接覆盖。";
         var choice = await ShowAsync("处理未完成恢复", Panel(
-            PathText(folder.Root), Text("目标：" + target), Text("恢复前保护：" + protection),
+            PathText(folder.Root), Text("目标：" + target),
+            Text(protection is null ? "恢复前的文件保存在此次操作的撤销记录中。" : "恢复前保护快照：" + protection),
             Text(preparing ? rollback : reverting ? "本次恢复的撤销尚未完成，请继续撤销。" : "继续恢复会核对已完成步骤后继续原计划。" + rollback),
-            Text("处理期间自动保存和历史清理继续暂停。可先关闭此窗口，从时间线另存恢复前版本查看。", true)),
+            Text("处理期间自动保存和历史清理继续暂停。", true)),
             preparing || reverting ? "" : "继续本次恢复", reverting ? "继续撤销" : "撤销本次恢复");
         if (!Current(model)) return;
         if (choice == FAContentDialogResult.Primary)
