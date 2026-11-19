@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史图标 | [E129 · Fluent 彩色文件夹（2026-11-19）](#evidence-folder-history-icon) |
 | 文件夹历史代码审查 | [E128 · 文件名大小写、恢复确认与长行分段（2026-11-19）](#evidence-folder-history-review) |
 | 文件夹历史工作区 | [E126 · 工作版本、按选区提交及大文本对比（2026-11-19）](#evidence-folder-history-revisions) · [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
 | 文件树状态角标 | [E127 · 六种特殊状态与窄栏展示（2026-11-19）](#evidence-folder-history-badges) |
@@ -165,6 +166,16 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-icon"></a>
+
+## E129 文件夹历史彩色图标（2026-11-19）
+
+0.5.3 通过导航页的 `IconPath` 加载包内 PNG，保留 Folder 符号回退。浅、深背景的 28 像素预览位于 `artifacts/e129-folder-history-icon/sidebar-sizes.png`，正式宿主显示待实机确认。[图标来源与许可](../Plugins/TractorTool.Plugins.FolderHistory/NOTICE.md#导航图标)
+
+Astra 终审核实了图标来源、许可和宿主调用路径，并发现同一目录的两种写法可能各保留一份有效的恢复确认。登记确认时改用恢复计划已规范化的目录。回归用例使用带尾部分隔符的路径重新预览，再移除并重加目录，检查过期确认在请求引擎前被拒绝。此项修复已由 Astra 复审，Release 检查工程构建通过。
+
+使用 E117 发布 SDK 独立构建，0 错误，NuGet 漏洞数据源不可达产生 2 条 NU1900 警告。ZIP 内 11 个文件均与最终构建输出逐项核对，较 0.5.2 新增彩色图标和 MIT 许可。最终 ZIP SHA256 为 `411F14DA9C7C77A7B6DD8F44B5198921A9EAACD4581AC1E84DDE46D842D19939`。
 
 <a id="evidence-folder-history-review"></a>
 

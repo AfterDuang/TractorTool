@@ -22,7 +22,7 @@ public sealed class FolderHistoryPlugin : IPlugin, IPluginUiModule, IPluginBackg
     {
         var model = _model ?? throw new InvalidOperationException("插件未初始化。");
         registry.AddNavigationPage("history", "文件夹版本历史", () => new FolderHistoryView { DataContext = model },
-            new(ToolIconKind.Folder, "自动保存文件夹历史，比较变化并安全找回旧文件。"));
+            new(ToolIconKind.Folder, "自动保存文件夹历史，比较变化并安全找回旧文件。") { IconPath = "Assets/icon.png" });
     }
 
     public Task RunAsync(CancellationToken stoppingToken) =>

@@ -242,7 +242,7 @@ internal static class ServiceChecks
                 !JsonNode.Parse(await File.ReadAllTextAsync(metadata))!["protectionEnabled"]!.GetValue<bool>() && host.PackageRequests == 0 && host.Queued == 0,
                 "an association published before the optional enable step could resume unattended protection");
             var superseded = await service.PreviewRestoreAsync(work, id);
-            var latest = await service.PreviewRestoreAsync(work, id);
+            var latest = await service.PreviewRestoreAsync(work + Path.DirectorySeparatorChar, id);
             await ThrowsAsync<InvalidOperationException>(() => service.RestoreInPlaceAsync(superseded));
             await service.RemoveFolderAsync(work);
             await service.AddFolderAsync(work);

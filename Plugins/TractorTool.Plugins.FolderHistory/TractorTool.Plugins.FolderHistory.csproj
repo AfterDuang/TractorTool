@@ -19,6 +19,7 @@
     <InternalsVisibleTo Include="TractorTool.FolderHistoryChecks" />
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
     <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"

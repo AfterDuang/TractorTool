@@ -28,10 +28,10 @@ public sealed partial class FolderHistoryService
             var saved = ReadCommittedVersion(root, state, versionId);
             var plan = await InPlaceRestoreTransaction.PreviewSelectionAsync(root, saved, paths,
                 state.Settings.ExcludedPaths.ToArray(), token).ConfigureAwait(false);
-            var preview = new RestorePreview(Guid.NewGuid(), root, versionId, plan.Selection, plan.Changes)
+            var preview = new RestorePreview(Guid.NewGuid(), plan.Root, versionId, plan.Selection, plan.Changes)
                 { RelativePaths = Array.AsReadOnly(plan.SelectedPaths.ToArray()) };
             _restorePlans.Add(preview, plan);
-            _latestRestorePreview[root] = preview.Id;
+            _latestRestorePreview[preview.Root] = preview.Id;
             return preview;
         });
     }

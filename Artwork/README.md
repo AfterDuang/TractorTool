@@ -28,6 +28,8 @@
 
 剪贴板历史使用同一固定提交的 Microsoft [Fluent System Icons Clipboard 彩色图标](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Clipboard/SVG/ic_fluent_clipboard_32_color.svg)。原始 [SVG](fluent-clipboard-32-color.svg) 用已有 Sharp 按 8 倍栅格化为透明 256×256 PNG，保留轮廓和配色；输出位于 `Plugins/TractorTool.Plugins.ClipboardHistory/Assets/icon.png`，许可见[插件声明](../Plugins/TractorTool.Plugins.ClipboardHistory/NOTICE.md)及包内 `Assets/LICENSE-FluentSystemIcons.txt`。SVG SHA256：`8FBAAF6DC24443EE3EA550BCDE525785BE7D41A674CE3E12E94D36D7ADC51E6F`；PNG SHA256：`D4AA6243BDECEBC725FBBA13C25563B7FE9C657B662A734CFAF57F02AA69A70D`。通过现有 IconPath 共用于侧栏、主页和插件管理，不增加运行时依赖。
 
+文件夹版本历史使用同系列的 [Document Folder 24 原图](fluent-document-folder-24-color.svg)。用 Sharp 以 768 DPI 导出透明 256×256 PNG。上游固定版本和随包许可见[插件声明](../Plugins/TractorTool.Plugins.FolderHistory/NOTICE.md)。
+
 ## 应用图标生成记录
 
 生成提示词（内置工具，透明背景开启）：

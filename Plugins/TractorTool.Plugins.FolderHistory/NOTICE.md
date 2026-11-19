@@ -2,6 +2,10 @@
 
 插件使用 Duplicati CLI 保存并提取本地未加密历史。Avalonia 和 TractorTool SDK 由宿主共享，Duplicati 由宿主包管理器按需下载。
 
+## 导航图标
+
+彩色文件夹图标来自 Microsoft Fluent System Icons 的 Document Folder。插件随附透明 PNG 和 [MIT 许可](Assets/LICENSE-FluentSystemIcons.txt)。[固定版本的原始 SVG](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Document%20Folder/SVG/ic_fluent_document_folder_24_color.svg)
+
 ## 外部工具来源
 
 - Duplicati 项目许可证为 MIT。附件中原有的第三方许可保留。 [Duplicati 2.4.0.1](https://github.com/duplicati/duplicati/releases/tag/v2.4.0.1_stable_2026-10-07)
