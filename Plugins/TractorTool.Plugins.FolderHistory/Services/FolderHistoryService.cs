@@ -84,8 +84,7 @@ public sealed partial class FolderHistoryService : IDisposable
             return new FolderPreparation(root, 0, 0, 0, HistoryPaths.HistoryDirectory(root), AvailableBytes(root), true)
                 { WorkingTreeScanned = false };
         }
-        var settings = initialSettings;
-        var entries = await WorkingTree.ScanAsync(root, settings.ExcludedPaths, token).ConfigureAwait(false);
+        var entries = await WorkingTree.ScanAsync(root, initialSettings.ExcludedPaths, token).ConfigureAwait(false);
         return new FolderPreparation(root, entries.Count(entry => !entry.IsDirectory), entries.Count(entry => entry.IsDirectory),
             entries.Sum(entry => entry.Length), HistoryPaths.HistoryDirectory(root), AvailableBytes(root), existing);
         });
@@ -99,15 +98,14 @@ public sealed partial class FolderHistoryService : IDisposable
         root = HistoryPaths.NormalizeRoot(root, _context.Paths.AppRoot, _context.Paths.DataRoot);
         if (_registry.Folders.Any(folder => HistoryPaths.Overlaps(folder.Root, root)))
             throw new InvalidOperationException("该目录已关联，或与另一个关联目录互相包含。");
-        RepositoryState state;
         if (HistoryPaths.Attributes(HistoryPaths.HistoryDirectory(root)) is null)
         {
             await WorkingTree.ScanAsync(root, initialSettings.ExcludedPaths, token).ConfigureAwait(false);
-            state = HistoryStore.Create(root, initialSettings);
+            HistoryStore.Create(root, initialSettings);
         }
-        else state = HistoryStore.Read(root);
+        else _ = HistoryStore.Read(root); // Validate ownership before creating operation.lock in an existing directory.
         using var ownership = HistoryStore.Lock(root);
-        state = HistoryStore.Read(root);
+        var state = HistoryStore.Read(root);
         if (_registry.Folders.Any(folder => folder.Id == state.Id))
             throw new InvalidOperationException("已有相同身份的历史库。移动目录后请先移除旧关联，再添加新位置。");
         if (state.ProtectionEnabled)
@@ -211,7 +209,7 @@ public sealed partial class FolderHistoryService : IDisposable
             progress.Report(new(null, "正在核对工作文件"));
             var exclusions = state.Settings.ExcludedPaths;
             var before = await WorkingTree.ScanAsync(root, exclusions, cancellation).ConfigureAwait(false);
-            var previous = ReadCommitted(root, state);
+            var previous = ReadCommitted(root, state, cancellation);
             if (!keepUnchanged && previous.FirstOrDefault() is { } last && HistoryComparison.Equal(before, last.Version.Entries))
             {
                 saved = last;
@@ -295,9 +293,11 @@ public sealed partial class FolderHistoryService : IDisposable
 
     public Task RemoveFolderAsync(string root) => ExclusiveAsync(_ =>
     {
+        root = HistoryPaths.Absolute(root);
         // Disassociation never removes the work directory or its history.
         SaveRegistry(_registry.Folders.Where(folder => !HistoryPaths.Comparer.Equals(folder.Root, root)).ToList());
         _latestRestorePreview.Remove(root);
+        _latestCleanupPreview.Remove(root);
         RemoveObservation(root);
         NotifyChanged();
         return Task.FromResult(true);

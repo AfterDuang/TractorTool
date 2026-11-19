@@ -13,10 +13,12 @@ public sealed class CaptureSchedule
     public DateTimeOffset? LastCompleted { get; private set; }
 
     public void Signal(DateTimeOffset now) { Pending = true; LastChange = now; Generation++; }
-    public DateTimeOffset DueAt(FolderSettings settings)
+    public DateTimeOffset DueAt(FolderSettings settings, DateTimeOffset now)
     {
-        var stable = LastChange.AddSeconds(settings.StableSeconds);
-        var interval = LastCompleted?.AddSeconds(settings.MinimumIntervalSeconds) ?? DateTimeOffset.MinValue;
+        // A clock correction or a snapshot from another machine must not stall every watched folder.
+        var stable = LastChange > now ? now : LastChange.AddSeconds(settings.StableSeconds);
+        var interval = LastCompleted is { } completed && completed <= now
+            ? completed.AddSeconds(settings.MinimumIntervalSeconds) : DateTimeOffset.MinValue;
         return stable > interval ? stable : interval;
     }
     public void Complete(long capturedGeneration, DateTimeOffset now)
@@ -67,14 +69,21 @@ public sealed partial class FolderHistoryService
             while (!_stopping.IsCancellationRequested)
             {
                 string? nextRoot = null;
+                DateTimeOffset now;
                 var nextDue = DateTimeOffset.MaxValue;
                 lock (_observers)
+                {
+                    now = DateTimeOffset.UtcNow;
                     foreach (var pair in _observations)
-                        if (pair.Value.Enabled && !pair.Value.Faulted && pair.Value.Schedule.Pending &&
-                            pair.Value.Schedule.DueAt(pair.Value.Settings) < nextDue)
-                        { nextRoot = pair.Key; nextDue = pair.Value.Schedule.DueAt(pair.Value.Settings); }
+                    {
+                        var observation = pair.Value;
+                        if (!observation.Enabled || observation.Faulted || !observation.Schedule.Pending) continue;
+                        var due = observation.Schedule.DueAt(observation.Settings, now);
+                        if (due < nextDue) { nextRoot = pair.Key; nextDue = due; }
+                    }
+                }
                 if (nextRoot is null) { await _wake.WaitAsync(_stopping.Token).ConfigureAwait(false); continue; }
-                var delay = nextDue - DateTimeOffset.UtcNow;
+                var delay = nextDue - now;
                 if (delay > TimeSpan.Zero) { await _wake.WaitAsync(delay, _stopping.Token).ConfigureAwait(false); continue; }
                 await CaptureAutomaticallyAsync(nextRoot).ConfigureAwait(false);
             }
@@ -88,8 +97,9 @@ public sealed partial class FolderHistoryService
         long generation;
         lock (_observers)
         {
+            var now = DateTimeOffset.UtcNow;
             if (!_observations.TryGetValue(root, out var observation) || !observation.Enabled || observation.Faulted ||
-                !observation.Schedule.Pending || observation.Schedule.DueAt(observation.Settings) > DateTimeOffset.UtcNow) return false;
+                !observation.Schedule.Pending || observation.Schedule.DueAt(observation.Settings, now) > now) return false;
             generation = observation.Schedule.Generation;
         }
         try

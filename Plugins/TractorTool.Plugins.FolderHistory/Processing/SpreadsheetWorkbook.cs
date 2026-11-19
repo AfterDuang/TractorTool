@@ -10,8 +10,8 @@ internal static partial class SpreadsheetWorkbook
 {
     private const int MaxCells = 100_000;
     private const int MaxCharacters = 4 * 1024 * 1024;
-    private const int LastColumn = 16_384;
-    private const int LastRow = 1_048_576;
+    internal const int LastColumn = 16_384;
+    internal const int LastRow = 1_048_576;
 
     internal static Dictionary<string, List<SheetRow>> Read(byte[]? bytes, CancellationToken token)
     {
@@ -84,7 +84,7 @@ internal static partial class SpreadsheetWorkbook
     private static void ReadSheet(WorksheetPart part, List<SheetRow> rows, List<string> strings, ref int cellCount,
         ref int characters, CancellationToken token)
     {
-        var sharedFormulas = new Dictionary<uint, string>();
+        var sharedFormulas = new Dictionary<uint, SharedSpreadsheetFormula>();
         var cells = new List<SheetCell>();
         var row = 0;
         var column = 0;
@@ -121,7 +121,7 @@ internal static partial class SpreadsheetWorkbook
                 var next = reference is null ? column + 1 : ReadColumn(reference, row);
                 if (row < 1 || next <= column || next > LastColumn) throw new InvalidDataException("工作表单元格位置无效或顺序异常。");
                 column = next;
-                var value = ReadCell(cell, row, column, strings, sharedFormulas);
+                var value = ReadCell(cell, row, column, strings, sharedFormulas, MaxCharacters - characters, token);
                 if (value is null) continue;
                 var length = (value.Value?.Length ?? 0) + (value.Formula?.Length ?? 0);
                 if (length > MaxCharacters - characters) throw new InvalidDataException("工作簿的单元格文本与公式超过 4 Mi 字符的预览上限。");
@@ -147,7 +147,8 @@ internal static partial class SpreadsheetWorkbook
         return column;
     }
 
-    private static SheetCell? ReadCell(Cell cell, int row, int column, List<string> strings, Dictionary<uint, string> sharedFormulas)
+    private static SheetCell? ReadCell(Cell cell, int row, int column, List<string> strings,
+        Dictionary<uint, SharedSpreadsheetFormula> sharedFormulas, int remainingCharacters, CancellationToken token)
     {
         var formula = cell.CellFormula;
         var type = cell.DataType?.InnerText ?? "n";
@@ -199,15 +200,17 @@ internal static partial class SpreadsheetWorkbook
             case null or "normal": break;
             case "shared":
                 var id = formula.SharedIndex?.Value ?? throw new InvalidDataException("共享公式缺少索引。");
-                if (!string.IsNullOrEmpty(formula.Reference?.Value))
+                var range = formula.Reference?.Value;
+                if (!string.IsNullOrEmpty(range))
                 {
                     if (formula.Text.Length == 0) throw new InvalidDataException("共享公式基准缺少表达式。");
-                    if (!sharedFormulas.TryAdd(id, $"共享公式（基准 {SpreadsheetComparison.ColumnName(column)}{row}）{expression}"))
+                    if (!sharedFormulas.TryAdd(id, new(expression, range, row, column)))
                         throw new InvalidDataException("共享公式的基准单元格重复。");
                 }
                 // The master overrides even a follower that carries its own formula text (SpreadsheetML §18.3.1.40).
-                else if (!sharedFormulas.TryGetValue(id, out expression))
+                if (!sharedFormulas.TryGetValue(id, out var shared))
                     throw new InvalidDataException("无法找到共享公式的基准单元格。");
+                expression = shared.At(row, column, remainingCharacters - (value?.Length ?? 0), token);
                 break;
             case "array":
                 expression = $"数组公式（{formula.Reference?.Value}）{expression}";

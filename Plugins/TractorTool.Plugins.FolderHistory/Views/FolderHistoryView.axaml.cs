@@ -317,8 +317,9 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
             return;
         }
         var all = action.SelectedIndex == 1;
-        var versions = await model.GetCleanupPreviewAsync(folder.Root, all);
-        if (versions is null || !Current(model)) return;
+        var preview = await model.GetCleanupPreviewAsync(folder.Root, all);
+        if (preview is null || !Current(model)) return;
+        var versions = preview.Versions;
         if (versions.Count == 0)
         { model.SetNotice(all ? "没有可删除的版本。" : "没有符合当前清理策略的版本。两项保留设置都为 0 时保留全部；重要版本也会保留。"); return; }
         if (await ShowAsync(all ? "确认删除全部版本" : "确认清理旧版本", Panel(
@@ -327,7 +328,7 @@ public partial class FolderHistoryView : UserControl, IPluginPageLifetime
             Text("当前工作文件、历史库身份和规则保留。各版本共享存储内容，释放空间不能直接按版本文件大小相加。", true),
             Text(all ? "删除后将无法从这些版本找回文件。自动保存保持暂停，需要时请明确重新开启。" : "未列出的版本和重要版本继续保留。")),
             all ? "永久删除全部版本" : "永久删除列出的版本") == FAContentDialogResult.Primary && Current(model))
-            await model.DeleteVersionsAsync(folder.Root, versions.Select(version => version.Id).ToArray(), all);
+            await model.DeleteVersionsAsync(preview);
     });
 
     private async void ResumeCleanup(object? sender, RoutedEventArgs e) => await InteractAsync(async model =>

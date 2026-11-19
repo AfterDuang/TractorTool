@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史全插件审查 | [E131 · 清理确认、自动保护和 Office 对比（2026-11-20）](#evidence-folder-history-full-review) |
 | 文件夹历史办公文档 | [E130 · Word 与 Excel 内容对比（2026-11-19）](#evidence-folder-history-office) |
 | 文件夹历史图标 | [E129 · Fluent 彩色文件夹（2026-11-19）](#evidence-folder-history-icon) |
 | 文件夹历史代码审查 | [E128 · 文件名大小写、恢复确认与长行分段（2026-11-19）](#evidence-folder-history-review) |
@@ -167,6 +168,18 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-full-review"></a>
+
+## E131 文件夹历史全插件审查（2026-11-20）
+
+Astra 分别检查了快照保存与自动调度、Duplicati 接入、持久化、恢复与回滚、选区发布、历史清理、文件树与工作区、文本与 Office 预览、插件生命周期及独立打包。手动清理曾只根据版本文件名确认。两个库在同一秒保存时可能使用相同文件名。0.6.1 将清理绑定到具体库和有效预览，拒绝旧确认，续办完成后回收对应的旧清理索引。工作文件扫描遇到临时占用或子项消失时延后核对，文件夹本身不可用仍要求处理。系统时钟回拨或快照日期在未来时，其他受保护目录也能继续调度。
+
+Word 对比保留字体符号，按修订后的段落与表格提取文字。Excel 对比按成员位置解释共享公式，结合整行和可区分的保存值对齐重复标签，复用内容相同的工作簿。交叉复审补充了重复标签与相对引用同时出现的插行回归。
+
+构建检查工程使用 `dotnet build tests/TractorTool.FolderHistoryChecks -c Release --no-restore -m:1 -nr:false`，结果为 0 警告、0 错误。分别运行该 Release 检查程序集的默认入口、`--transactions`、`--office`、`--workspace` 和 `--badges`，全部通过。样本包括同一路径替换历史库、删除中断续办、扫描期间文件被占用、时钟回拨及跨行共享公式。512 条备份排除规则展开后超过 Windows 命令行上限，模拟引擎通过临时参数文件接收全部规则，成功、失败及取消后均清理了本次参数文件。
+
+使用 `scripts/Build-Plugin.ps1` 和 E117 的 Avalonia 12.1.6 宿主 SDK 独立构建 0.6.1，0 警告、0 错误。ZIP 共 16 个文件，2,612,494 字节，逐项 SHA256 与打包输出一致，整包 SHA256 为 `E6CE0A343B765F1588F2BEDD95DA15DD6EF56AF2648F7EBFFCBC6E36DCFCA63F`。本轮运行范围为临时数据、模拟引擎及离屏界面，实机范围见 [A28](DEVELOPMENT.md#folder-history-first)。
 
 <a id="evidence-folder-history-office"></a>
 ## E130：Word 与 Excel 快照内容对比（2026-11-19）

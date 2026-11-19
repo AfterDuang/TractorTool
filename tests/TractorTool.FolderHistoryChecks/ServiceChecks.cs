@@ -174,19 +174,25 @@ internal static class ServiceChecks
         }
         await ThrowsAsync<InvalidOperationException>(() => service.GetCleanupPreviewAsync(moved, deleteAll: true));
         var beforeDeletionRequests = host.Processes;
-        await ThrowsAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(moved, new[] { goodId }));
+        await service.SetPinnedAsync(moved, goodId, false);
+        var pinnedPreview = await service.GetCleanupPreviewAsync(moved, deleteAll: true);
+        await service.SetPinnedAsync(moved, goodId, true);
+        await ThrowsAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(pinnedPreview));
         Assert(host.Processes == beforeDeletionRequests && File.Exists(Path.Combine(repository, goodId)), "manual deletion bypassed important-version protection");
         await service.SetPinnedAsync(moved, goodId, false);
+        var allPreview = await service.GetCleanupPreviewAsync(moved, deleteAll: true);
         const string addedAfterPreview = "duplicati-20261007T140000Z.dlist.zip";
         EngineChecks.WriteVolume(Path.Combine(repository, addedAfterPreview), true, "SHA256", folder);
         committed = HistoryStore.Read(moved);
         committed.AddVersion(addedAfterPreview, moved, "after confirmation", false);
         HistoryStore.Save(moved, committed);
-        await ThrowsAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(moved, new[] { goodId }, deleteAll: true));
+        await ThrowsAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(allPreview));
         Assert(host.Processes == beforeDeletionRequests && File.Exists(Path.Combine(repository, goodId)) && File.Exists(Path.Combine(repository, addedAfterPreview)),
             "delete-all confirmation silently changed scope after a new version appeared");
         await File.WriteAllTextAsync(badVolume, "damaged manifest volume");
-        await ThrowsAsync<InvalidDataException>(() => service.DeleteVersionsAsync(moved, new[] { goodId }));
+        await service.SaveSettingsAsync(moved, new() { KeepLatestVersions = 1 });
+        var cleanupPreview = await service.GetCleanupPreviewAsync(moved);
+        await ThrowsAsync<InvalidDataException>(() => service.DeleteVersionsAsync(cleanupPreview));
         Assert(!(await service.GetFoldersAsync()).Single().HasPendingCleanup && host.Processes == beforeDeletionRequests,
             "read-only cleanup preflight rejection created a pending deletion or ran a process");
         File.Delete(badVolume);
@@ -196,7 +202,7 @@ internal static class ServiceChecks
             nativeDeleteStarted |= request.Arguments[0] is "delete" or "compact";
             return Task.FromResult(new ProcessResult(2, "repair failed before native deletion", "", false, false));
         };
-        await ThrowsAsync<IOException>(() => service.DeleteVersionsAsync(moved, new[] { goodId }));
+        await ThrowsAsync<IOException>(() => service.DeleteVersionsAsync(cleanupPreview));
         Assert(!nativeDeleteStarted && !(await service.GetFoldersAsync()).Single().HasPendingCleanup && File.Exists(Path.Combine(repository, goodId)),
             "repair failure before native deletion froze the repository or deleted a version");
         await service.StopAsync();
@@ -289,15 +295,19 @@ internal static class ServiceChecks
         var schedule = new CaptureSchedule();
         schedule.Signal(start);
         schedule.Signal(start.AddSeconds(3));
-        Assert(schedule.Pending && schedule.DueAt(settings) == start.AddSeconds(8), "repeated writes did not extend the stability window");
+        Assert(schedule.Pending && schedule.DueAt(settings, start.AddSeconds(3)) == start.AddSeconds(8), "repeated writes did not extend the stability window");
         var captured = schedule.Generation;
         schedule.Signal(start.AddSeconds(10));
         schedule.Complete(captured, start.AddSeconds(12));
-        Assert(schedule.Pending && schedule.DueAt(settings) == start.AddSeconds(72), "writes during capture were lost or minimum interval was skipped");
+        Assert(schedule.Pending && schedule.DueAt(settings, start.AddSeconds(12)) == start.AddSeconds(72), "writes during capture were lost or minimum interval was skipped");
         schedule.Complete(schedule.Generation, start.AddSeconds(72));
         Assert(!schedule.Pending, "unchanged final state remained scheduled");
         schedule.Defer(start.AddSeconds(80));
-        Assert(schedule.Pending && schedule.DueAt(settings) == start.AddSeconds(140), "a changing source was faulted or retried before the minimum interval");
+        Assert(schedule.Pending && schedule.DueAt(settings, start.AddSeconds(80)) == start.AddSeconds(140), "a changing source was faulted or retried before the minimum interval");
+        Assert(schedule.DueAt(settings, start.AddDays(-60)) == start.AddDays(-60), "a clock correction stalled pending work");
+        schedule.Complete(schedule.Generation, start.AddDays(60));
+        schedule.Signal(start);
+        Assert(schedule.DueAt(settings, start) == start.AddSeconds(5), "a future snapshot date blocked the next stable capture");
 
         SavedVersion Version(int number, string id, int age, bool pinned = false, bool protection = false) =>
             new(new(id, start.AddDays(-age), "root", []), "", pinned, number) { IsRestoreProtection = protection };
@@ -604,7 +614,14 @@ internal static class ServiceChecks
                 "ordinary save failed to switch back to the working root or apply exclusions");
             var publishedBytes = await service.ReadFileAsync(work, published.Id, "outside.txt");
             Assert(System.Text.Encoding.UTF8.GetString(publishedBytes) == "latest outside", "alternating source roots broke published-version restoration");
-            await service.DeleteVersionsAsync(work, [published.Id]);
+            await service.SaveSettingsAsync(work, new() { KeepLatestVersions = 1, ExcludedPaths = ["ignored.txt"] });
+            await service.SetPinnedAsync(work, oldId, true);
+            await service.SetPinnedAsync(work, latestId, true);
+            var cleanup = await service.GetCleanupPreviewAsync(work);
+            Assert(cleanup.Versions.Single().Id == published.Id, "cleanup preview did not select the unprotected published snapshot");
+            await service.DeleteVersionsAsync(cleanup);
+            await service.SetPinnedAsync(work, oldId, false);
+            await service.SetPinnedAsync(work, latestId, false);
             Assert(!File.Exists(Path.Combine(repository, published.Id)) && File.Exists(Path.Combine(repository, ordinaryVersion.Id)) &&
                 (await service.GetVersionsAsync(work))[0].Id == ordinaryVersion.Id, "deletion after alternating source roots removed a different snapshot");
             corruptBackup = true;

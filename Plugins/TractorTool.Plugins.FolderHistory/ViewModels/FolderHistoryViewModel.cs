@@ -168,10 +168,10 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
     public Task<PendingRestoreInfo?> GetPendingRestoreAsync(string root) => ReadAsync("正在检查未完成恢复…", "无法读取恢复记录", () => service.GetPendingRestoreAsync(root));
     public Task AbandonRestoreAsync(string root) => ChangeAsync("正在撤销本次恢复…", "无法撤销恢复", root,
         () => service.AbandonRestoreAsync(root), "已撤销本次恢复；当前文件处理结果见任务记录，自动保存仍暂停。");
-    public Task<IReadOnlyList<SavedVersion>?> GetCleanupPreviewAsync(string root, bool all) => ReadAsync(
+    public Task<CleanupPreview?> GetCleanupPreviewAsync(string root, bool all) => ReadAsync(
         "正在计算历史清理范围…", "无法准备清理", () => service.GetCleanupPreviewAsync(root, all));
-    public Task DeleteVersionsAsync(string root, IReadOnlyList<string> ids, bool deleteAll = false) => ChangeAsync("正在清理选定历史…", "历史清理未完成", root,
-        () => service.DeleteVersionsAsync(root, ids, deleteAll), "选定历史已清理，当前工作文件未改动。");
+    public Task DeleteVersionsAsync(CleanupPreview preview) => ChangeAsync("正在清理选定历史…", "历史清理未完成", preview.Root,
+        () => service.DeleteVersionsAsync(preview), "选定历史已清理，当前工作文件未改动。");
     public Task ResumeCleanupAsync(string root) => ChangeAsync("正在继续未完成清理…", "清理仍未完成", root,
         () => service.ResumeCleanupAsync(root), "已完成此前确认的历史清理，当前工作文件未改动。");
     public Task RemoveFolderAsync(string root) => ChangeAsync("正在移除关联…", "无法移除关联", null,

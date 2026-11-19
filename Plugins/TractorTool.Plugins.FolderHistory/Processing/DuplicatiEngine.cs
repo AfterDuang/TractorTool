@@ -71,10 +71,15 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
     private async Task<HistoryVersion> BackupCoreAsync(string root, string historyDirectory, CancellationToken token,
         IReadOnlyList<string>? excludedRelativePaths)
     {
+        token.ThrowIfCancellationRequested();
         HistoryPaths.RequireDirectory(root);
         historyDirectory = HistoryPaths.Absolute(historyDirectory);
         var volumes = ReadVolumes(historyDirectory);
-        foreach (var volume in volumes) _ = ReadVersion(volume);
+        foreach (var volume in volumes)
+        {
+            token.ThrowIfCancellationRequested();
+            _ = ReadVersion(volume);
+        }
         var before = volumes.Select(volume => volume.Id).ToHashSet(StringComparer.Ordinal);
         var repository = Repository(historyDirectory);
         Directory.CreateDirectory(repository);
@@ -90,7 +95,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         filters.AddRange(exclusions.Select(path => ExcludePath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)))));
         // A separator-only marker list disables the default without passing an invalid blank path.
         var ignoreMarkers = $"--ignore-filenames={Path.PathSeparator}";
-        await RunAsync("backup", historyDirectory,
+        await RunWithFiltersAsync("backup", historyDirectory,
             [
                 root, .. filters, "--snapshot-policy=off", "--usn-policy=off",
                 "--disable-filetime-check=true", "--exclude-empty-folders=false", ignoreMarkers,
@@ -138,35 +143,53 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         var emptyRestoreWarning = selectedEntries.All(entry => entry.IsDirectory)
             ? selectedEntries.Count == 0 ? "NoFilesOrFoldersRestored" : "NoFilesRestored"
             : null;
-        // Keep large literal selections out of the Windows process command line.
+        // Read the live repository's numbering, including incomplete versions, without trusting a stale local index.
+        await RunWithFiltersAsync("restore", historyDirectory,
+            [
+                $"--version={index.ToString(CultureInfo.InvariantCulture)}", $"--restore-path={staging}", .. filters,
+                "--no-local-db=true", "--overwrite=false", "--dont-compress-restore-paths=false",
+                "--allow-restore-outside-target-directory=false", "--skip-metadata=true", "--disable-ads-restore=true"
+            ], token, emptyRestoreWarning, forceParameterFile: selections.Count > 1).ConfigureAwait(false);
+
+        var restored = await WorkingTree.ScanAsync(staging, excludeHistory: false, token).ConfigureAwait(false);
+        if (!HistoryComparison.Equal(selectedEntries, restored))
+            throw new InvalidDataException("提取内容与所选版本的目录清单或 SHA256 不符。");
+    }
+
+    private async Task RunWithFiltersAsync(string command, string historyDirectory, IReadOnlyList<string> arguments,
+        CancellationToken token, string? emptyRestoreWarning = null, bool forceParameterFile = false)
+    {
+        token.ThrowIfCancellationRequested();
+        var filters = arguments.Where(IsFilter).ToArray();
+        if (!forceParameterFile && filters.Sum(filter => (long)filter.Length) <= 4096)
+        {
+            await RunAsync(command, historyDirectory, arguments, token, emptyRestoreWarning).ConfigureAwait(false);
+            return;
+        }
+        var temporary = TempDirectory(historyDirectory);
+        HistoryPaths.CheckPath(temporary);
+        Directory.CreateDirectory(temporary);
+        // Both expanded exclusions and literal selections can exceed the Windows command-line limit.
         string? parameterFile = null;
         FileStream? lease = null;
         try
         {
-            if (selections.Count > 1 || filters.Any(filter => filter.Length > 4096))
+            var file = Path.Combine(temporary, "selection-" + Guid.NewGuid().ToString("N") + ".txt");
+            var content = Encoding.UTF8.GetBytes(string.Join('\n', filters));
+            using (var output = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                var file = Path.Combine(temporary, "selection-" + Guid.NewGuid().ToString("N") + ".txt");
-                var content = Encoding.UTF8.GetBytes(string.Join('\n', filters));
-                using (var output = new FileStream(file, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                {
-                    parameterFile = file;
-                    await output.WriteAsync(content, token).ConfigureAwait(false);
-                }
-                // Duplicati opens the file independently. Hold a read-only lease so options cannot change after verification.
-                HistoryPaths.CheckPath(file);
-                lease = File.OpenRead(file);
-                var actual = await SHA256.HashDataAsync(lease, token).ConfigureAwait(false);
-                if (lease.Length != content.Length || !actual.SequenceEqual(SHA256.HashData(content)))
-                    throw new IOException("恢复选择文件已变化，已停止提取。");
-                filters = ["--parameters-file=" + Path.GetFileName(file)];
+                parameterFile = file;
+                await output.WriteAsync(content, token).ConfigureAwait(false);
             }
-            // Read the live repository's numbering, including incomplete versions, without trusting a stale local index.
-            await RunAsync("restore", historyDirectory,
-                [
-                    $"--version={index.ToString(CultureInfo.InvariantCulture)}", $"--restore-path={staging}", .. filters,
-                    "--no-local-db=true", "--overwrite=false", "--dont-compress-restore-paths=false",
-                    "--allow-restore-outside-target-directory=false", "--skip-metadata=true", "--disable-ads-restore=true"
-                ], token, emptyRestoreWarning, workingDirectory: parameterFile is null ? null : temporary).ConfigureAwait(false);
+            // Duplicati opens the file independently. Hold a read-only lease so options cannot change after verification.
+            HistoryPaths.CheckPath(file);
+            lease = File.OpenRead(file);
+            var actual = await SHA256.HashDataAsync(lease, token).ConfigureAwait(false);
+            if (lease.Length != content.Length || !actual.SequenceEqual(SHA256.HashData(content)))
+                throw new IOException("筛选参数文件已变化，已停止操作。");
+            var prepared = arguments.Where(argument => !IsFilter(argument))
+                .Append("--parameters-file=" + Path.GetFileName(file)).ToArray();
+            await RunAsync(command, historyDirectory, prepared, token, emptyRestoreWarning, workingDirectory: temporary).ConfigureAwait(false);
         }
         finally
         {
@@ -175,13 +198,11 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             {
                 try { HistoryPaths.CheckPath(parameterFile); File.Delete(parameterFile); }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
-                { log.Write(AppLogLevel.Warning, LogSource, "本次恢复的临时选择文件未能清理：" + parameterFile, error); }
+                { log.Write(AppLogLevel.Warning, LogSource, "本次操作的临时筛选文件未能清理：" + parameterFile, error); }
             }
         }
-
-        var restored = await WorkingTree.ScanAsync(staging, excludeHistory: false, token).ConfigureAwait(false);
-        if (!HistoryComparison.Equal(selectedEntries, restored))
-            throw new InvalidDataException("提取内容与所选版本的目录清单或 SHA256 不符。");
+        static bool IsFilter(string argument) => argument.StartsWith("--include=", StringComparison.Ordinal) ||
+            argument.StartsWith("--exclude=", StringComparison.Ordinal);
     }
 
     public static IReadOnlyList<HistoryEntry> SelectEntries(HistoryVersion version, string? selection)
@@ -249,6 +270,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
                 throw new InvalidDataException("引擎尚未回收全部内容块，已保留清理记录。");
             RequireClosedDatabase(Index(historyDirectory));
             File.Delete(Index(historyDirectory));
+            if (pending is not null) RemoveCompletedCleanupIndex(historyDirectory, pending);
             DeleteCleanupJournal(journalPath);
             return;
         }
@@ -262,6 +284,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         RequireSameRepository(before, ReadCleanupRepository(historyDirectory, out _));
         WriteCleanup(journalPath, new(versionIds.ToArray(), allowEmpty, retained, Path.GetFileName(database)));
         deletionStarting?.Invoke();
+        if (pending is not null) RemoveCompletedCleanupIndex(historyDirectory, pending);
         var ordered = ReadVolumes(historyDirectory);
         var indices = ordered.Select((volume, index) => (volume, index)).Where(item => selected.Contains(item.volume.Id))
             .Select(item => item.index.ToString(CultureInfo.InvariantCulture)).ToArray();
@@ -323,6 +346,20 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
     {
         HistoryPaths.CheckPath(path);
         File.Delete(path);
+    }
+
+    private void RemoveCompletedCleanupIndex(string historyDirectory, CleanupJournal journal)
+    {
+        var path = Path.Combine(TempDirectory(historyDirectory), journal.DatabaseName);
+        try
+        {
+            RequireClosedDatabase(path);
+            File.Delete(path);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            log.Write(AppLogLevel.Warning, LogSource, "旧清理索引仍被占用或不可删除，已保留：" + path, error);
+        }
     }
 
     private static void RequireClosedDatabase(string path)

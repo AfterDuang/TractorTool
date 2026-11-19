@@ -74,8 +74,10 @@ try
     {
         Throws<InvalidDataException>(() => HistoryPaths.ResolveWorkPath(work, ".TRACTORTOOL-HISTORY/index"));
         using var writer = File.Open(file, FileMode.Open, FileAccess.Write, FileShare.Read);
-        await ThrowsAsync<IOException>(() => WorkingTree.ScanAsync(work, CancellationToken.None));
+        await ThrowsAsync<WorkingTreeChangedException>(() => WorkingTree.ScanAsync(work, CancellationToken.None));
     }
+    Assert(HistoryComparison.Equal(contents, await WorkingTree.ScanAsync(work, CancellationToken.None)), "stable files could not be captured after the writer closed");
+    await ThrowsAsync<DirectoryNotFoundException>(() => WorkingTree.ScanAsync(Path.Combine(fixture, "offline-root"), CancellationToken.None));
 
     var staging = NewDirectory("staging");
     var stageFolder = Directory.CreateDirectory(Path.Combine(staging, "设计图")).FullName;

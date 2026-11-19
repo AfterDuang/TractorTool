@@ -103,6 +103,7 @@ internal static class EngineChecks
         Check(emptyVersion.Entries.Count == 0, "只有源目录的完整版本可登记");
         await CheckDiagnosticsAsync(fixture.FullName, executable);
         await CheckSelectionAsync(fixture.FullName, executable);
+        await CheckLongExclusionsAsync(fixture.FullName, executable);
         await CheckPublicationSourcesAsync(fixture.FullName, executable);
         await CheckCleanupAsync(fixture.FullName, executable);
     }
@@ -185,6 +186,65 @@ internal static class EngineChecks
                 Regex.IsMatch(full + Path.DirectorySeparatorChar + "child.txt", Environment.ExpandEnvironmentVariables(filter[11..^1])) &&
                 !Regex.IsMatch(full + "sibling", Environment.ExpandEnvironmentVariables(filter[11..^1]))),
                 "排除规则必须与扫描器的精确路径及子树一致");
+        }
+    }
+
+    private static async Task CheckLongExclusionsAsync(string fixture, string executable)
+    {
+        var exclusions = Enumerable.Range(0, 512).Select(index => $"排除 {index:D4} [%TEMP%]").ToArray();
+        Check(string.Join('\n', exclusions).Length < 16000, "长排除规则样本应仍可从设置界面输入");
+        foreach (var outcome in new[] { "success", "failure", "cancel" })
+        {
+            var root = Directory.CreateDirectory(Path.Combine(fixture, "long-exclusions %WINDIR% [1]", outcome)).FullName;
+            var history = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(root)).FullName;
+            var repository = Directory.CreateDirectory(Path.Combine(history, "repository")).FullName;
+            var temporary = Path.Combine(history, "temp");
+            using var cancellation = new CancellationTokenSource();
+            string? parameterFile = null;
+            var log = new FakeLog();
+            var runner = new FakeRunner(request =>
+            {
+                var option = request.Arguments.Single(argument => argument.StartsWith("--parameters-file=", StringComparison.Ordinal));
+                var name = option["--parameters-file=".Length..];
+                Check(request.WorkingDirectory == temporary && Path.GetFileName(name) == name && !Path.IsPathRooted(name) &&
+                    request.Arguments[0] == "backup" && request.Arguments[2] == root &&
+                    request.Arguments.Contains("--snapshot-policy=off") && request.Arguments.Contains("--no-auto-compact=true") &&
+                    !request.Arguments.Any(argument => argument.StartsWith("--exclude=", StringComparison.Ordinal)),
+                    "长排除备份必须保留源和选项，并用临时目录及参数文件基名传入规则");
+                parameterFile = Path.Combine(request.WorkingDirectory!, name);
+                var filters = File.ReadAllLines(parameterFile);
+                Check(filters.Length == exclusions.Length + 1 && filters.Sum(filter => (long)filter.Length) > 32767 &&
+                    request.Arguments.Sum(argument => (long)argument.Length) < 32767,
+                    "参数文件必须完整保留超过 Windows 命令行长度的全部规则");
+                Check(Regex.IsMatch(history + Path.DirectorySeparatorChar, Environment.ExpandEnvironmentVariables(filters[0][11..^1])),
+                    "参数文件遗漏了强制历史目录排除");
+                for (var index = 0; index < exclusions.Length; index++)
+                {
+                    var path = Path.Combine(root, exclusions[index]);
+                    var expression = Environment.ExpandEnvironmentVariables(filters[index + 1][11..^1]);
+                    Check(Regex.IsMatch(path, expression) && Regex.IsMatch(path + Path.DirectorySeparatorChar + "child", expression) &&
+                        !Regex.IsMatch(path + "sibling", expression), "长规则丢失、顺序改变或字面转义被改变");
+                }
+                if (outcome == "cancel")
+                {
+                    cancellation.Cancel();
+                    throw new OperationCanceledException(cancellation.Token);
+                }
+                if (outcome == "failure") return new ProcessResult(2, "", "", false, false);
+                WriteVolume(Path.Combine(repository, "duplicati-20261007T120000Z.dlist.zip"), true, "SHA256",
+                    new { type = "Folder", path = root + Path.DirectorySeparatorChar });
+                return Success;
+            });
+            var engine = new DuplicatiEngine(runner, executable, log);
+            if (outcome == "cancel")
+                await ExpectAsync<OperationCanceledException>(() => engine.BackupAsync(root, history, cancellation.Token, exclusions), "长规则备份取消语义被改变");
+            else if (outcome == "failure")
+                await ExpectAsync<IOException>(() => engine.BackupAsync(root, history, cancellation.Token, exclusions), "长规则备份失败被当作成功");
+            else await engine.BackupAsync(root, history, cancellation.Token, exclusions);
+            Check(parameterFile is not null && !File.Exists(parameterFile) && !Directory.EnumerateFiles(temporary, "selection-*.txt").Any(),
+                "备份成功、失败或取消后必须关闭租约并清理本次参数文件");
+            Check(File.Exists(LogPath(runner.Requests.Single())) == (outcome != "success") &&
+                (outcome != "cancel" || log.Entries.Single().Level == AppLogLevel.Info), "参数文件复用改变了诊断保留或取消日志级别");
         }
     }
 
@@ -331,6 +391,16 @@ internal static class EngineChecks
         await ExpectAsync<InvalidDataException>(() => new DuplicatiEngine(unchanged, executable, new FakeLog())
             .DeleteVersionsAsync(history, [ids[0]], CancellationToken.None), "退出0但未删除选定卷不能成功");
         Check(File.Exists(Path.Combine(history, "cleanup.json")) && File.Exists(Path.Combine(repository, ids[0])), "清理结果异常必须留计划和原卷");
+        var firstIndex = unchanged.Requests[0].Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..];
+        var retry = new FakeRunner(request =>
+        {
+            if (request.Arguments[0] == "repair")
+                File.WriteAllText(request.Arguments.Single(argument => argument.StartsWith("--dbpath=", StringComparison.Ordinal))[9..], "replacement index");
+            else File.Delete(Path.Combine(repository, ids[0]));
+            return Success;
+        });
+        await new DuplicatiEngine(retry, executable, new FakeLog()).DeleteVersionsAsync(history, [ids[0]], CancellationToken.None, resume: true);
+        Check(!File.Exists(firstIndex) && File.Exists(Path.Combine(history, "index.sqlite")), "续办清理后应保留已验证的新索引并释放旧索引");
 
         var fullRoot = Directory.CreateDirectory(Path.Combine(fixture, "cleanup-all-resume")).FullName;
         var fullHistory = Directory.CreateDirectory(HistoryPaths.HistoryDirectory(fullRoot)).FullName;
@@ -362,7 +432,8 @@ internal static class EngineChecks
         });
         await new DuplicatiEngine(resumed, executable, new FakeLog()).DeleteVersionsAsync(fullHistory, [ids[0]], CancellationToken.None,
             resume: true, allowEmpty: true);
-        Check(!Directory.EnumerateFileSystemEntries(fullRepository).Any() && !File.Exists(Path.Combine(fullHistory, "cleanup.json")),
+        Check(!Directory.EnumerateFileSystemEntries(fullRepository).Any() && !File.Exists(Path.Combine(fullHistory, "cleanup.json")) &&
+            originalDatabase is not null && !File.Exists(originalDatabase),
             "全删中断后未完成内容和记录核对");
     }
 
@@ -500,10 +571,15 @@ internal static class EngineChecks
             runnerError.ToString().Contains("runner failure detail", StringComparison.Ordinal) &&
             runnerError.ToString().Contains("ExitCode: unavailable", StringComparison.Ordinal), "进程异常没有区分短摘要和未知退出码");
         using var canceled = new CancellationTokenSource();
-        canceled.Cancel();
         var canceledLog = new FakeLog();
-        var canceledRunner = new FakeRunner(_ => throw new OperationCanceledException(canceled.Token));
+        var canceledRunner = new FakeRunner(_ =>
+        {
+            canceled.Cancel();
+            throw new OperationCanceledException(canceled.Token);
+        });
         var canceling = new DuplicatiEngine(canceledRunner, executable, canceledLog);
+        await ExpectAsync<OperationCanceledException>(() => canceling.BackupAsync(root, history, new(true)), "启动前取消应跳过清单读取与引擎调用");
+        Check(canceledRunner.Requests.Count == 0 && canceledLog.Entries.Count == 0, "启动前取消仍调用了引擎或生成了进程日志");
         await ExpectAsync<OperationCanceledException>(() => canceling.BackupAsync(root, history, canceled.Token), "正常取消保持取消语义");
         Check(canceledLog.Entries.Single().Level == AppLogLevel.Info && File.Exists(LogPath(canceledRunner.Requests.Single())),
             "正常取消应保留诊断且不记 Error");

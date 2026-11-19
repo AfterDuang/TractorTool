@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Contracts;
 using TractorTool.Plugins.FolderHistory.Processing;
@@ -20,9 +21,13 @@ public static class HistoryRetention
 
 public sealed partial class FolderHistoryService
 {
-    private readonly Dictionary<string, FolderSettings> _cleanupRules = new(HistoryPaths.Comparer);
-    public Task<IReadOnlyList<SavedVersion>> GetCleanupPreviewAsync(string root, bool deleteAll = false) => ExclusiveAsync(token =>
+    private readonly ConditionalWeakTable<CleanupPreview, CleanupPlan> _cleanupPlans = new();
+    private readonly Dictionary<string, Guid> _latestCleanupPreview = new(HistoryPaths.Comparer);
+    private sealed record CleanupPlan(Guid RepositoryId, string[] VersionIds, int KeepLatestVersions, int KeepDays);
+
+    public Task<CleanupPreview> GetCleanupPreviewAsync(string root, bool deleteAll = false) => ExclusiveAsync(token =>
     {
+        root = HistoryPaths.Absolute(root);
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         var state = Open(root);
@@ -30,19 +35,28 @@ public sealed partial class FolderHistoryService
         var versions = ReadCommitted(root, state);
         if (deleteAll && versions.Any(version => version.Pinned))
             throw new InvalidOperationException("存在重要版本，请先逐个取消重要标记，再确认删除全部版本。");
-        if (!deleteAll) _cleanupRules[root] = state.Settings with { ExcludedPaths = [.. state.Settings.ExcludedPaths] };
-        return Task.FromResult(deleteAll ? versions : HistoryRetention.Candidates(versions, state.Settings, DateTimeOffset.UtcNow));
+        var selected = deleteAll ? versions : HistoryRetention.Candidates(versions, state.Settings, DateTimeOffset.UtcNow);
+        var preview = new CleanupPreview(Guid.NewGuid(), root, deleteAll, Array.AsReadOnly(selected.ToArray()));
+        _cleanupPlans.Add(preview, new(state.Id, selected.Select(version => version.Id).ToArray(),
+            state.Settings.KeepLatestVersions, state.Settings.KeepDays));
+        _latestCleanupPreview[root] = preview.Id;
+        return Task.FromResult(preview);
     });
 
-    public Task DeleteVersionsAsync(string root, IReadOnlyList<string> ids, bool deleteAll = false)
-    {
-        var selected = ids.ToArray();
-        return ExclusiveAsync(async token =>
+    public Task DeleteVersionsAsync(CleanupPreview preview) => ExclusiveAsync(async token =>
         {
-            _ = Open(root);
+            if (!_cleanupPlans.TryGetValue(preview, out var plan) || _latestCleanupPreview.GetValueOrDefault(preview.Root) != preview.Id)
+                throw new InvalidOperationException("清理预览已失效，请重新预览。");
+            var root = preview.Root;
+            var selected = plan.VersionIds;
+            var deleteAll = preview.DeleteAll;
+            if (Open(root).Id != plan.RepositoryId)
+                throw new InvalidOperationException("历史库已变化，请重新预览清理范围。");
             using var lease = await RequestEngineAsync(token).ConfigureAwait(false);
             using var ownership = HistoryStore.Lock(root);
             var state = Open(root);
+            if (state.Id != plan.RepositoryId)
+                throw new InvalidOperationException("历史库已变化，请重新预览清理范围。");
             RequireNoPendingOperation(root, state);
             var versions = ReadCommitted(root, state);
             if (selected.Length == 0 || selected.Distinct(StringComparer.Ordinal).Count() != selected.Length ||
@@ -52,20 +66,20 @@ public sealed partial class FolderHistoryService
                 throw new InvalidOperationException("待删除版本中存在重要版本；未删除任何版本，请先取消重要标记。");
             if (deleteAll && selected.Length != versions.Count || !deleteAll && selected.Length == versions.Count)
                 throw new InvalidOperationException("全部版本的删除范围已变化或尚未明确确认，请重新预览；未扩大删除范围。");
-            if (!deleteAll && _cleanupRules.TryGetValue(root, out var previewRules))
+            if (!deleteAll)
             {
                 var candidates = HistoryRetention.Candidates(versions, state.Settings, DateTimeOffset.UtcNow).Select(version => version.Id).ToHashSet(StringComparer.Ordinal);
-                if (previewRules.KeepDays != state.Settings.KeepDays || previewRules.KeepLatestVersions != state.Settings.KeepLatestVersions ||
+                if (plan.KeepDays != state.Settings.KeepDays || plan.KeepLatestVersions != state.Settings.KeepLatestVersions ||
                     selected.Any(id => !candidates.Contains(id)))
                     throw new InvalidOperationException("保留规则或版本保护状态已变化，请重新预览清理范围。");
             }
             await DeleteCoreAsync(root, state, Engine(lease), selected, token, deleteAll: deleteAll).ConfigureAwait(false);
-            _cleanupRules.Remove(root);
+            _latestCleanupPreview.Remove(root);
+            _cleanupPlans.Remove(preview);
             ConfigureObservation(root, state, recheck: true);
             NotifyChanged();
             return true;
         });
-    }
 
     public Task ResumeCleanupAsync(string root) => ExclusiveAsync(async token =>
     {

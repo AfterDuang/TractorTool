@@ -2,7 +2,10 @@ namespace TractorTool.Plugins.FolderHistory.Models;
 
 public sealed record HistoryEntry(string Path, bool IsDirectory, long Length, string Hash);
 
-public sealed class WorkingTreeChangedException(string message) : IOException(message);
+public sealed class WorkingTreeChangedException(string message, Exception? innerException) : IOException(message, innerException)
+{
+    public WorkingTreeChangedException(string message) : this(message, null) { }
+}
 
 public sealed record HistoryVersion(string Id, DateTimeOffset CreatedAt, string SourceRoot,
     IReadOnlyList<HistoryEntry> Entries);
@@ -48,6 +51,8 @@ public sealed record RestorePreview(Guid Id, string Root, string VersionId, stri
 }
 
 public sealed record PendingRestoreInfo(string TargetVersionId, string ProtectionVersionId, string Status);
+
+public sealed record CleanupPreview(Guid Id, string Root, bool DeleteAll, IReadOnlyList<SavedVersion> Versions);
 
 public sealed record HistoryChange(string Path, string Kind, long? BeforeLength, long? AfterLength);
 

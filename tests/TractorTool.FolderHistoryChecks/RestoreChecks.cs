@@ -1,6 +1,7 @@
 using System.Text.Json;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Plugins.FolderHistory.Processing;
+using TractorTool.Plugins.FolderHistory.Services;
 using TractorTool.Plugins.FolderHistory.Storage;
 
 internal static class RestoreChecks
@@ -56,6 +57,65 @@ internal static class RestoreChecks
         await CheckSelectionAsync(fixture);
         await CheckNestedHistoryAsync(fixture);
         await CheckProgressSizeAsync(fixture);
+        await CheckCleanupConfirmationsAsync(fixture);
+    }
+
+    private static async Task CheckCleanupConfirmationsAsync(string fixture)
+    {
+        foreach (var deleteAll in new[] { false, true })
+        {
+            var area = Directory.CreateDirectory(Path.Combine(fixture, "cleanup-confirmation-" + deleteAll)).FullName;
+            var host = new ServiceChecks.TestHost(area);
+            using var service = new FolderHistoryService(new("checks", host, host, host, CancellationToken.None)
+                { Packages = host, Processes = host, Tasks = host });
+            var root = CreateRoot(area, "work");
+            const string first = "duplicati-20261007T120000Z.dlist.zip";
+            const string last = "duplicati-20261007T130000Z.dlist.zip";
+            await PopulateAsync("original library");
+            await service.AddFolderAsync(root);
+            try
+            {
+                var superseded = await service.GetCleanupPreviewAsync(root, deleteAll);
+                var preview = await service.GetCleanupPreviewAsync(root + Path.DirectorySeparatorChar, deleteAll);
+                await ExpectAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(superseded));
+                await ExpectAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(preview with { }));
+                await service.RemoveFolderAsync(root + Path.DirectorySeparatorChar);
+                await service.AddFolderAsync(root);
+                await ExpectAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(preview));
+
+                preview = await service.GetCleanupPreviewAsync(root, deleteAll);
+                await service.RemoveFolderAsync(root);
+                var original = root + "-original";
+                Directory.Move(root, original);
+                CreateRoot(area, "work");
+                await PopulateAsync("replacement library with the same volume names");
+                await service.AddFolderAsync(root);
+                await ExpectAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(preview));
+                var current = await service.GetCleanupPreviewAsync(root, deleteAll);
+                await ExpectAsync<InvalidOperationException>(() => service.DeleteVersionsAsync(preview));
+                Check(host.PackageRequests == 0 && host.Queued == 0 && host.Processes == 0 &&
+                    HistoryStore.Read(root).PendingDeleteIds.Count == 0 && HistoryStore.Read(root).Versions.Count == 2 &&
+                    File.ReadAllText(Path.Combine(original, "file.txt")) == "original library" &&
+                    File.ReadAllText(Path.Combine(root, "file.txt")) == "replacement library with the same volume names",
+                    "旧清理确认触及了重新关联的历史库或进入了引擎准备");
+                await ExpectAsync<OperationCanceledException>(() => service.DeleteVersionsAsync(current));
+                Check(host.PackageRequests == 1 && host.Queued == 0 && host.Processes == 0,
+                    "当前有效的清理确认没有走正常的依赖准备和用户拒绝路径");
+            }
+            finally { await service.StopAsync(); }
+
+            async Task PopulateAsync(string text)
+            {
+                Write(root, "file.txt", text);
+                await VersionAsync(root, root, first);
+                await VersionAsync(root, root, last);
+                var state = HistoryStore.Read(root);
+                state.AddVersion(first, root, "first", false);
+                state.AddVersion(last, root, "last", false);
+                state.Settings = new() { KeepLatestVersions = 1 };
+                HistoryStore.Save(root, state);
+            }
+        }
     }
 
     private static async Task CheckSelectionAsync(string fixture)

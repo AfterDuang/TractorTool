@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -34,14 +35,21 @@ internal static class WordComparison
         using var reader = OpenXmlReader.Create(main);
         var lines = new List<string>();
         var paragraph = new StringBuilder();
-        var enclosingRows = new Stack<(int Column, bool Continued)>();
-        var tableStarts = new Stack<int>();
+        var enclosingRows = new Stack<(int Column, bool Continued, int RowDepth, int CellDepth)>();
+        var tableStarts = new Stack<(int Lines, int DeletedRows)>();
         var cellColumn = 0;
         var continuedCell = false;
         var characters = 0;
+        var paragraphCount = 0;
+        var deletedRows = 0;
+        var rowDepth = -1;
+        var cellDepth = -1;
+        var paragraphDepth = -1;
         var excludedDepth = int.MaxValue;
         var inBody = false;
         var inParagraph = false;
+        var deletedParagraphMark = false;
+        var joinNextParagraph = false;
         while (reader.Read())
         {
             token.ThrowIfCancellationRequested();
@@ -60,33 +68,73 @@ internal static class WordComparison
                     type == typeof(W.DeletedRun) || type == typeof(W.MoveFromRun) || type == typeof(AlternateContent))
                     excludedDepth = reader.Depth;
                 else if (type == typeof(W.Table))
-                    tableStarts.Push(lines.Count);
+                {
+                    RequireParagraphBoundary();
+                    tableStarts.Push((lines.Count, deletedRows));
+                }
                 else if (type == typeof(W.TableRow))
                 {
-                    enclosingRows.Push((cellColumn, continuedCell));
+                    enclosingRows.Push((cellColumn, continuedCell, rowDepth, cellDepth));
                     cellColumn = 0;
+                    rowDepth = reader.Depth;
+                    cellDepth = -1;
                 }
                 else if (type == typeof(W.TableCell))
                 {
+                    RequireParagraphBoundary();
                     cellColumn++;
                     continuedCell = false;
+                    cellDepth = reader.Depth;
+                }
+                else if (type == typeof(W.Deleted) && rowDepth >= 0 && reader.Depth == rowDepth + 2)
+                {
+                    // Current properties sit directly below the row; trPrChange contains obsolete markers.
+                    deletedRows++;
+                    excludedDepth = rowDepth;
+                }
+                else if (type == typeof(W.CellDeletion) && cellDepth >= 0 && reader.Depth == cellDepth + 2)
+                {
+                    cellColumn--;
+                    excludedDepth = cellDepth;
                 }
                 else if (type == typeof(W.Paragraph))
                 {
+                    if (++paragraphCount > MaxParagraphs)
+                        throw new InvalidDataException("Word 正文和表格超过 100,000 段预览上限。");
+                    if (joinNextParagraph && reader.Depth != paragraphDepth)
+                        throw new InvalidDataException("Word 含有跨容器的段落修订，无法完整对比。");
                     inParagraph = true;
-                    paragraph.Clear();
-                    if (cellColumn > 0)
+                    paragraphDepth = reader.Depth;
+                    deletedParagraphMark = false;
+                    if (!joinNextParagraph)
                     {
-                        // Use the column, not the absolute row, so inserting a table row preserves later matches.
-                        paragraph.Append($"表格第 {cellColumn} 列");
-                        if (continuedCell) paragraph.Append(" · 续段");
-                        continuedCell = true;
-                        paragraph.Append("　");
+                        paragraph.Clear();
+                        if (cellColumn > 0)
+                        {
+                            // Use the column, not the absolute row, so inserting a table row preserves later matches.
+                            paragraph.Append($"表格第 {cellColumn} 列");
+                            if (continuedCell) paragraph.Append(" · 续段");
+                            continuedCell = true;
+                            paragraph.Append("　");
+                        }
                     }
+                    joinNextParagraph = false;
                 }
                 else if (inParagraph)
                 {
                     if (type == typeof(W.Text)) paragraph.Append(reader.GetText());
+                    else if (type == typeof(W.Deleted) && reader.Depth == paragraphDepth + 3)
+                        deletedParagraphMark = true;
+                    else if (type == typeof(W.SymbolChar))
+                    {
+                        var symbol = (W.SymbolChar)reader.LoadCurrentElement()!;
+                        var font = symbol.Font?.Value;
+                        var code = symbol.Char?.Value;
+                        if (string.IsNullOrWhiteSpace(font) || code?.Length != 4 ||
+                            !ushort.TryParse(code, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var value))
+                            throw new InvalidDataException("Word 正文含有无效的符号字符。");
+                        paragraph.Append($"〔符号 {font}:{value:X4}〕");
+                    }
                     else if (type == typeof(W.TabChar)) paragraph.Append('\t');
                     else if (type == typeof(W.Break) || type == typeof(W.CarriageReturn)) paragraph.Append('\n');
                     else if (type == typeof(W.NoBreakHyphen)) paragraph.Append('\u2011');
@@ -97,21 +145,43 @@ internal static class WordComparison
             {
                 if (type == typeof(W.Paragraph))
                 {
-                    AddLine(paragraph.ToString());
+                    joinNextParagraph = deletedParagraphMark;
+                    if (!joinNextParagraph)
+                    {
+                        AddLine(paragraph.ToString());
+                        paragraph.Clear();
+                    }
                     inParagraph = false;
                 }
+                else if (type == typeof(W.TableCell))
+                {
+                    RequireParagraphBoundary();
+                    cellDepth = -1;
+                }
                 else if (type == typeof(W.TableRow))
-                    (cellColumn, continuedCell) = enclosingRows.Pop();
-                else if (type == typeof(W.Table) && tableStarts.Pop() == lines.Count)
-                    AddLine("（空表格）");
+                    (cellColumn, continuedCell, rowDepth, cellDepth) = enclosingRows.Pop();
+                else if (type == typeof(W.Table))
+                {
+                    var start = tableStarts.Pop();
+                    if (start == (lines.Count, deletedRows)) AddLine("（空表格）");
+                }
                 else if (type == typeof(W.Body))
+                {
+                    RequireParagraphBoundary();
                     break;
+                }
             }
-            if (characters + (inParagraph ? paragraph.Length : 0) > MaxCharacters)
+            if (characters + paragraph.Length > MaxCharacters)
                 throw new InvalidDataException("Word 正文和表格文字超过 4,194,304 个字符。");
         }
         if (!inBody) throw new InvalidDataException("Word 文档缺少正文。");
         return lines.ToArray();
+
+        void RequireParagraphBoundary()
+        {
+            if (joinNextParagraph)
+                throw new InvalidDataException("Word 含有跨表格边界或末尾的段落修订，无法完整对比。");
+        }
 
         void AddLine(string text)
         {

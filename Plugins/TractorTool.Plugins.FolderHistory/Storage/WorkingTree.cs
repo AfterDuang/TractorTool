@@ -21,8 +21,18 @@ public static class WorkingTree
         root = HistoryPaths.Absolute(root);
         HistoryPaths.RequireDirectory(root);
         var items = new Dictionary<string, HistoryEntry>(HistoryPaths.Comparer);
-        foreach (var path in Directory.EnumerateFileSystemEntries(root))
-            await VisitAsync(path, Path.GetFileName(path)).ConfigureAwait(false);
+        try
+        {
+            foreach (var path in Directory.EnumerateFileSystemEntries(root))
+                await VisitAsync(path, Path.GetFileName(path)).ConfigureAwait(false);
+        }
+        catch (IOException error) when (excludeHistory && (error is FileNotFoundException or DirectoryNotFoundException ||
+            OperatingSystem.IsWindows() && (error.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021))))
+        {
+            // Editors replace or briefly lock files during a save. A missing root still requires attention.
+            HistoryPaths.RequireDirectory(root);
+            throw new WorkingTreeChangedException("文件在扫描期间被移动、删除或占用，稍后重新核对。", error);
+        }
         token.ThrowIfCancellationRequested();
         return items.Values.OrderBy(item => item.Path, StringComparer.Ordinal).ToArray();
 
