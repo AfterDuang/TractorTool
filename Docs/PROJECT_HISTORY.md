@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史办公文档 | [E130 · Word 与 Excel 内容对比（2026-11-19）](#evidence-folder-history-office) |
 | 文件夹历史图标 | [E129 · Fluent 彩色文件夹（2026-11-19）](#evidence-folder-history-icon) |
 | 文件夹历史代码审查 | [E128 · 文件名大小写、恢复确认与长行分段（2026-11-19）](#evidence-folder-history-review) |
 | 文件夹历史工作区 | [E126 · 工作版本、按选区提交及大文本对比（2026-11-19）](#evidence-folder-history-revisions) · [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
@@ -166,6 +167,17 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-office"></a>
+## E130：Word 与 Excel 快照内容对比（2026-11-19）
+
+文件夹历史 0.6.0 在原有内容对比页按扩展名选择预览方式。插件私有引入 Open XML SDK 3.5.1，复用原有快照提取、SHA256 校验、差异行对齐和分页。普通文本仍走原解码路径。办公文档范围及大小限制见[插件说明](Plugins/FolderHistory.md#23-查看与对比历史)。
+
+隔离回归入口为 `dotnet run --project tests/TractorTool.FolderHistoryChecks -c Release -- --office`。样本在内存或临时目录生成，用模拟引擎从登记快照提取 Word 文件并通过工作区模型读取变化。该检查不调用已安装的 Office 或真实 Duplicati。实机验收见 [A28](DEVELOPMENT.md#folder-history-first)。
+
+Release 检查工程编译通过，0 警告、0 错误。`--office` 通过，覆盖 Word 跨 run 正文、普通表格、空段落、纯格式差异和超过 4 MiB 的快照文件；Excel 插行、相同结果的公式改写、共享公式、共享字符串与转义、空表、损坏文档及 32,767 字符单元格跨页。纯文本的既有回归同时通过。独立审查指出的分页字符预算、共享公式成员和 Excel 字符转义均已修复并复核。
+
+独立发布包 `artifacts/e130-folder-history-office/plugin/TractorTool.FolderHistory-0.6.0.zip` 共 16 个文件、2,603,041 字节，SHA256 为 `5CE4F40B2A6BA6E17ED7DCDB177315384506131FCC7586737017378292118B10`。ZIP 内含 Open XML SDK、System.IO.Packaging、插件依赖清单和许可，逐项哈希与打包输出一致。独立打包时因无法连接 NuGet 漏洞信息源出现两条 NU1900，构建 0 错误；随后联网重新还原成功，未再报告警告。
 
 <a id="evidence-folder-history-icon"></a>
 

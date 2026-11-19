@@ -233,15 +233,16 @@ public sealed partial class FolderHistoryService
     public Task<byte[]> ReadFileAsync(string root, string versionId, string relativePath, int maxBytes = TextComparison.MaxBytes,
         CancellationToken cancellationToken = default) => ExclusiveAsync(async token =>
     {
-        if (maxBytes is < 1 or > TextComparison.MaxBytes) throw new ArgumentOutOfRangeException(nameof(maxBytes));
         relativePath = HistoryPaths.NormalizeRelative(relativePath);
+        if (maxBytes < 1 || maxBytes > OfficeComparison.FileSizeLimit(OfficeComparison.GetFormat(relativePath)))
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
         _ = Open(root);
         using var ownership = HistoryStore.Lock(root);
         var version = ReadCommittedVersion(root, Open(root), versionId);
         var entry = version.Entries.SingleOrDefault(item => HistoryPaths.Comparer.Equals(item.Path, relativePath))
             ?? throw new InvalidOperationException("这个版本没有所选文件。");
-        if (entry.IsDirectory) throw new InvalidOperationException("请选择一个文本文件。");
-        if (entry.Length > maxBytes) throw new InvalidOperationException($"文件超过文本预览上限 {maxBytes / 1024} KiB，可另存查看。");
+        if (entry.IsDirectory) throw new InvalidOperationException("请选择一个文件。");
+        if (entry.Length > maxBytes) throw new InvalidOperationException($"文件超过预览上限 {maxBytes / 1024} KiB，可另存查看。");
         using var lease = await RequestEngineAsync(token, allowInstall: false).ConfigureAwait(false);
         var staging = Path.Combine(HistoryPaths.HistoryDirectory(root), "temp", "preview-" + Guid.NewGuid().ToString("N"));
         var selected = DuplicatiEngine.SelectEntries(version, relativePath);

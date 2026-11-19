@@ -11,18 +11,26 @@ internal sealed class TextComparisonPreview
     private readonly List<DisplayLine> _lines = [];
     private readonly List<int> _pageStarts = [0];
     private readonly string _summary;
-    private readonly int _rowCount;
+    private int _rowCount, _pageRows, _pageCharacters;
+
+    public TextComparisonPreview(string summary, IReadOnlyList<TextDiffLine> changes, CancellationToken token)
+    {
+        _summary = summary;
+        foreach (var row in changes)
+        {
+            SourceTextLine? before = row.BeforeText is { } left ? new(left, "", row.BeforeNote) : null;
+            SourceTextLine? after = row.AfterText is { } right ? new(right, "", row.AfterNote) : null;
+            AddRow(row.Kind, before, after, (row.BeforeLine ?? 0) - 1, (row.AfterLine ?? 0) - 1, token);
+        }
+    }
 
     public TextComparisonPreview(SourceTextLine[] before, SourceTextLine[] after, IReadOnlyList<ComparedTextLine> rows,
-        string oldEncoding, string newEncoding, bool pairedLargeRange, CancellationToken token)
+        string oldEncoding, string newEncoding, bool pairedLargeRange, CancellationToken token, string unit = "行")
     {
         var added = 0;
         var modified = 0;
         var deleted = 0;
         var differentEndings = false;
-        var rowCount = 0;
-        var pageRows = 0;
-        var pageCharacters = 0;
         foreach (var row in rows)
         {
             token.ThrowIfCancellationRequested();
@@ -34,10 +42,10 @@ internal sealed class TextComparisonPreview
                 differentEndings |= before[row.Before].Ending != after[row.After].Ending;
             }
         }
-        _summary = $"新增 {added} 行 · 修改 {modified} 行 · 删除 {deleted} 行";
+        _summary = $"新增 {added} {unit} · 修改 {modified} {unit} · 删除 {deleted} {unit}";
         if (differentEndings) _summary += " · 换行方式有变化";
         if (oldEncoding != newEncoding) _summary += $" · {oldEncoding} → {newEncoding}";
-        if (pairedLargeRange) _summary += " · 部分密集差异按行配对，可能不是最少改动";
+        if (pairedLargeRange) _summary += $" · 部分密集差异按{unit}配对，可能不是最少改动";
 
         for (var index = 0; index < rows.Count;)
         {
@@ -59,13 +67,11 @@ internal sealed class TextComparisonPreview
                 var first = rows[omittedStart];
                 var last = rows[omittedEnd - 1];
                 var count = omittedEnd - omittedStart;
-                var gap = $"已折叠 {count:N0} 行未变化内容 · 原 {first.Before + 1}–{last.Before + 1} / 新 {first.After + 1}–{last.After + 1}";
-                AddDisplayLine(new("省略", default, default, rowCount, 1, false, gap, count));
+                var gap = $"已折叠 {count:N0} {unit}未变化内容 · 原 {first.Before + 1}–{last.Before + 1} / 新 {first.After + 1}–{last.After + 1}";
+                AddDisplayLine(new("省略", default, default, _rowCount, 1, false, gap, count), token);
             }
             for (var offset = index - trailing; offset < index; offset++) AddRow(rows[offset]);
         }
-        _rowCount = rowCount;
-
         bool Unchanged(ComparedTextLine row) => row.Before >= 0 && row.After >= 0 &&
             before[row.Before] == after[row.After];
 
@@ -75,31 +81,39 @@ internal sealed class TextComparisonPreview
             var oldLine = row.Before >= 0 ? before[row.Before] : (SourceTextLine?)null;
             var newLine = row.After >= 0 ? after[row.After] : (SourceTextLine?)null;
             var kind = oldLine is null ? "新增" : newLine is null ? "删除" : oldLine.Value.Text == newLine.Value.Text ? "相同" : "修改";
-            var endingChanged = oldLine is { } old && newLine is { } next && old.Ending != next.Ending;
-            var bounds = kind == "修改" ? ChangeBounds(oldLine!.Value.Text, newLine!.Value.Text, token) : (0, oldLine?.Text.Length ?? 0, newLine?.Text.Length ?? 0);
-            var left = Side(oldLine, row.Before, bounds.Item1, bounds.Item2, kind == "相同", token);
-            var right = Side(newLine, row.After, bounds.Item1, bounds.Item3, kind == "相同", token);
-            var count = Math.Max(left.PartCount, right.PartCount);
-            AddDisplayLine(new(kind, left, right, rowCount, count, endingChanged, "", 0));
+            this.AddRow(kind, oldLine, newLine, row.Before, row.After, token);
         }
+    }
 
-        void AddDisplayLine(DisplayLine line)
+    private void AddRow(string kind, SourceTextLine? before, SourceTextLine? after, int beforeIndex, int afterIndex,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var endingChanged = before.HasValue && after.HasValue && before.Value.Ending != after.Value.Ending;
+        var bounds = kind == "修改" && before.HasValue && after.HasValue
+            ? ChangeBounds(before.Value.Text, after.Value.Text, token)
+            : (0, before?.Text.Length ?? 0, after?.Text.Length ?? 0);
+        var left = Side(before, beforeIndex, bounds.Item1, bounds.Item2, kind == "相同", token);
+        var right = Side(after, afterIndex, bounds.Item1, bounds.Item3, kind == "相同", token);
+        AddDisplayLine(new(kind, left, right, _rowCount, Math.Max(left.PartCount, right.PartCount), endingChanged, "", 0), token);
+    }
+
+    private void AddDisplayLine(DisplayLine line, CancellationToken token)
+    {
+        _lines.Add(line);
+        for (var part = 0; part < line.RowCount; part++)
         {
-            _lines.Add(line);
-            for (var part = 0; part < line.RowCount; part++)
+            token.ThrowIfCancellationRequested();
+            var characters = line.Before.PartLength(part) + line.After.PartLength(part) + line.GapSummary.Length + 2;
+            if (_pageRows > 0 && (_pageRows >= TextComparison.PageSize || _pageCharacters + characters > PageCharacters))
             {
-                token.ThrowIfCancellationRequested();
-                var characters = line.Before.PartLength(part) + line.After.PartLength(part) + line.GapSummary.Length + 2;
-                if (pageRows > 0 && (pageRows >= TextComparison.PageSize || pageCharacters + characters > PageCharacters))
-                {
-                    _pageStarts.Add(rowCount + part);
-                    pageRows = pageCharacters = 0;
-                }
-                pageRows++;
-                pageCharacters += characters;
+                _pageStarts.Add(_rowCount + part);
+                _pageRows = _pageCharacters = 0;
             }
-            rowCount += line.RowCount;
+            _pageRows++;
+            _pageCharacters += characters;
         }
+        _rowCount += line.RowCount;
     }
 
     public TextComparisonResult GetPage(int pageIndex, CancellationToken token)
@@ -193,8 +207,9 @@ internal sealed class TextComparisonPreview
         var changeStart = Math.Clamp(side.ChangeStart, start, end);
         var changeEnd = Math.Clamp(side.ChangeEnd, changeStart, end);
         var parts = new DiffText(source.Text[start..changeStart], source.Text[changeStart..changeEnd], source.Text[changeEnd..end]);
-        var note = start > 0 || end < source.Text.Length
-            ? $"长行片段 · 字符位置 {start + 1:N0}–{end:N0} / {source.Text.Length:N0}（UTF-16）" : "";
+        var note = source.Note;
+        if (start > 0 || end < source.Text.Length)
+            note += (note.Length > 0 ? " · " : "") + $"长行片段 · 字符位置 {start + 1:N0}–{end:N0} / {source.Text.Length:N0}（UTF-16）";
         if (endingChanged) note += (note.Length > 0 ? " · " : "") + "换行：" + source.Ending;
         return (side.Number, source.Text[start..end], parts, note);
     }

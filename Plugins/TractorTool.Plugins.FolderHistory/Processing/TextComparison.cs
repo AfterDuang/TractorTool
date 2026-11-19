@@ -25,9 +25,12 @@ public sealed record TextComparisonResult(bool IsText, string Summary, IReadOnly
     internal TextComparisonPreview? Preview { get; init; }
     public TextComparisonResult GetPage(int pageIndex, CancellationToken cancellationToken = default) =>
         Preview?.GetPage(pageIndex, cancellationToken) ?? this;
+
+    internal static TextComparisonResult FromChanges(string summary, IReadOnlyList<TextDiffLine> changes, CancellationToken token) =>
+        new TextComparisonPreview(summary, changes, token).GetPage(0, token);
 }
 
-internal readonly record struct SourceTextLine(string Text, string Ending);
+internal readonly record struct SourceTextLine(string Text, string Ending, string Note = "");
 internal readonly record struct ComparedTextLine(int Before, int After);
 
 public static class TextComparison
@@ -50,6 +53,25 @@ public static class TextComparison
         if (oldLines is null || newLines is null)
             return Unavailable("文本超过 100,000 行预览上限，可另存原始文件查看。");
 
+        var rows = Align(oldLines, newLines, line => line.Text, cancellationToken, out var approximate);
+        return new TextComparisonPreview(oldLines, newLines, rows, oldEncoding, newEncoding, approximate, cancellationToken)
+            .GetPage(0, cancellationToken);
+    }
+
+    internal static TextComparisonResult CompareParagraphs(string[] before, string[] after, CancellationToken token)
+    {
+        var rows = AlignLines(before, after, token, out var approximate);
+        return new TextComparisonPreview(Array.ConvertAll(before, s => new SourceTextLine(s, "")),
+            Array.ConvertAll(after, s => new SourceTextLine(s, "")), rows, "", "", approximate, token, "段")
+            .GetPage(0, token);
+    }
+
+    internal static IReadOnlyList<ComparedTextLine> AlignLines(string[] before, string[] after, CancellationToken token,
+        out bool approximate) => Align(before, after, text => text, token, out approximate);
+
+    private static IReadOnlyList<ComparedTextLine> Align<T>(T[] oldLines, T[] newLines, Func<T, string> textOf,
+        CancellationToken cancellationToken, out bool approximate)
+    {
         var tokens = new Dictionary<string, int>(StringComparer.Ordinal);
         var oldTokens = Tokenize(oldLines);
         var newTokens = Tokenize(newLines);
@@ -58,8 +80,8 @@ public static class TextComparison
         var remainingAnchorLines = 8 * MaxLines;
         var pairedLargeRange = false;
         CompareRange(0, oldLines.Length, 0, newLines.Length, 0);
-        return new TextComparisonPreview(oldLines, newLines, rows, oldEncoding, newEncoding,
-            pairedLargeRange, cancellationToken).GetPage(0, cancellationToken);
+        approximate = pairedLargeRange;
+        return rows;
 
         void AppendChanges(int oldStart, int oldEnd, int newStart, int newEnd)
         {
@@ -272,16 +294,17 @@ public static class TextComparison
             return positions;
         }
 
-        int[] Tokenize(SourceTextLine[] lines)
+        int[] Tokenize(T[] lines)
         {
             var result = new int[lines.Length];
             for (var index = 0; index < lines.Length; index++)
             {
                 if ((index & 1023) == 0) cancellationToken.ThrowIfCancellationRequested();
-                if (!tokens.TryGetValue(lines[index].Text, out var value))
+                var text = textOf(lines[index]);
+                if (!tokens.TryGetValue(text, out var value))
                 {
                     value = tokens.Count;
-                    tokens.Add(lines[index].Text, value);
+                    tokens.Add(text, value);
                 }
                 result[index] = value;
             }

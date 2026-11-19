@@ -315,8 +315,10 @@ internal sealed partial class FolderHistoryViewModel
             file.Before?.IsDirectory == false && file.After?.IsDirectory == true)
         { TextSummary = "项目类型发生变化。"; return; }
         if (file.IsDirectory || file.Before is null && file.After is null) return;
-        if (file.Before?.Length > TextComparison.MaxBytes || file.After?.Length > TextComparison.MaxBytes)
-        { TextSummary = "文件超过 4 MiB 文本预览上限，可另存一份查看。"; return; }
+        var format = OfficeComparison.GetFormat(file.Path);
+        var maxBytes = OfficeComparison.FileSizeLimit(format);
+        if (file.Before?.Length > maxBytes || file.After?.Length > maxBytes)
+        { TextSummary = $"文件超过 {maxBytes / (1024 * 1024)} MiB 预览上限，可另存一份查看。"; return; }
         var request = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         _preview = request;
         TextSummary = "正在读取内容…";
@@ -326,10 +328,12 @@ internal sealed partial class FolderHistoryViewModel
         {
             try
             {
-                var oldBytes = file.Before is null ? [] : await service.ReadFileAsync(root, before!, file.Before.Path, cancellationToken: request.Token);
-                var newBytes = file.After is null ? [] : file.Before?.Hash == file.After.Hash ? oldBytes :
-                    await service.ReadFileAsync(root, after, file.After.Path, cancellationToken: request.Token);
-                var result = await Task.Run(() => TextComparison.Compare(oldBytes, newBytes, request.Token), request.Token);
+                var oldBytes = file.Before is null ? null : await service.ReadFileAsync(root, before!, file.Before.Path, maxBytes, request.Token);
+                var newBytes = file.After is null ? null : file.Before?.Hash == file.After.Hash ? oldBytes :
+                    await service.ReadFileAsync(root, after, file.After.Path, maxBytes, request.Token);
+                var result = await Task.Run(() => format is { } office
+                    ? OfficeComparison.Compare(office, oldBytes, newBytes, request.Token)
+                    : TextComparison.Compare(oldBytes ?? [], newBytes ?? [], request.Token), request.Token);
                 if (!request.IsCancellationRequested)
                 {
                     ShowTextPage(result);

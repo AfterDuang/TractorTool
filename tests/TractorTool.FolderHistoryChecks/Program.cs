@@ -12,6 +12,15 @@ if (args is ["--badges"] or ["--badges", _])
 var fixture = Directory.CreateTempSubdirectory("TractorTool.FolderHistoryChecks-").FullName;
 try
 {
+    if (args is ["--office"])
+    {
+        TextComparisonChecks.Run();
+        WordComparisonChecks.Run();
+        SpreadsheetComparisonChecks.Run();
+        InteractionChecks.CheckOfficePreview(fixture);
+        Console.WriteLine("Office and plain-text comparison checks passed.");
+        return;
+    }
     if (args is ["--transactions"])
     {
         await EngineChecks.RunAsync(new DirectoryInfo(fixture));
@@ -117,6 +126,8 @@ try
         renamed.Any(item => item.Path == newName.Path && item.Kind == "新增"), "case-only rename did not expose both paths");
 
     TextComparisonChecks.Run();
+    WordComparisonChecks.Run();
+    SpreadsheetComparisonChecks.Run();
     SnapshotNumberChecks.Run(fixture);
     WorkspaceChecks.Run(fixture);
     await ServiceChecks.RunAsync(fixture);
