@@ -13,7 +13,6 @@ internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDire
     public string? CurrentVersionId { get; init; }
     public long? CurrentVersionNumber { get; init; }
     public Thickness Indent => new(Depth * 16, 0, 0, 0);
-    public bool IsUntracked => Presence == TreePresence.Untracked;
     public bool IsHistoricalOnly => Presence == TreePresence.Historical;
     public string StatusText => Presence switch
     {
@@ -28,8 +27,8 @@ internal sealed record TreeItem(string Path, string Name, int Depth, bool IsDire
     public string StatusDescription => (Path.Length == 0 ? Name : Path) + (Presence switch
     {
         TreePresence.Untracked => "，尚未收录到最新快照",
-        TreePresence.Modified => "，当前内容已修改，尚未收录到任何现存快照",
-        TreePresence.OlderRevision => $"，当前内容与旧版 #{CurrentVersionNumber} 相同",
+        TreePresence.Modified => "，当前名称或内容已修改，尚未保存快照",
+        TreePresence.OlderRevision => $"，当前名称和内容与旧版 #{CurrentVersionNumber} 相同",
         TreePresence.Historical => "，仅在历史中存在",
         TreePresence.Excluded => "，已从后续快照排除",
         TreePresence.Unavailable => "，无法核对当前文件",
@@ -116,7 +115,8 @@ internal sealed record VersionActionContext(string Root, string VersionId, strin
 internal sealed class HistoryWorkspace
 {
     private readonly Dictionary<string, TreeItem[]> _children;
-    private readonly Dictionary<string, Dictionary<(long Length, string Hash), VersionItem>> _fileRevisions = new(HistoryPaths.Comparer);
+    // A case-only rename is a file revision even on a case-insensitive volume.
+    private readonly Dictionary<string, Dictionary<(long Length, string Hash), VersionItem>> _fileRevisions = new(StringComparer.Ordinal);
     private readonly TreeItem _root;
     public VersionItem[] Versions { get; }
     public IReadOnlySet<string> TrackedFiles { get; }
@@ -210,9 +210,10 @@ internal sealed class HistoryWorkspace
                 : null;
             var presence = HistoryExclusions.IsExcluded(path, disk.Exclusions) ? TreePresence.Excluded :
                 entry.Unavailable || disk.Unreadable.Contains(path) ? TreePresence.Unavailable :
-                recorded?.IsDirectory == entry.IsDirectory ? TreePresence.Recorded : TreePresence.Untracked;
+                recorded?.IsDirectory != entry.IsDirectory ? TreePresence.Untracked :
+                recorded.Path == path ? TreePresence.Recorded : TreePresence.Modified;
             if (entry.Content is { } current && presence is not (TreePresence.Excluded or TreePresence.Unavailable))
-                presence = recorded is { IsDirectory: false } && recorded.Length == current.Length && recorded.Hash == current.Hash
+                presence = recorded == current
                     ? TreePresence.Recorded : matched is not null ? TreePresence.OlderRevision : TreePresence.Modified;
             var canExpand = _children.ContainsKey(path) || entry.IsDirectory &&
                 presence is not (TreePresence.Excluded or TreePresence.Unavailable) &&

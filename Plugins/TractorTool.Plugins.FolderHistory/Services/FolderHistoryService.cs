@@ -297,6 +297,7 @@ public sealed partial class FolderHistoryService : IDisposable
     {
         // Disassociation never removes the work directory or its history.
         SaveRegistry(_registry.Folders.Where(folder => !HistoryPaths.Comparer.Equals(folder.Root, root)).ToList());
+        _latestRestorePreview.Remove(root);
         RemoveObservation(root);
         NotifyChanged();
         return Task.FromResult(true);

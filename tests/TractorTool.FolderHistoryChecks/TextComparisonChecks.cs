@@ -112,6 +112,22 @@ internal static class TextComparisonChecks
             string.Concat(rows.Select(line => line.AfterText)) == longAdded &&
             rows.All(line => !char.IsLowSurrogate(line.AfterText![0]) && !char.IsHighSurrogate(line.AfterText[^1])),
             "long added line could not be fully paged or a surrogate pair was split");
+        var first = new string('a', 4093);
+        var second = "👨‍💻" + new string('b', 4090);
+        const string last = "e\u0301尾";
+        var graphemes = first + second + last;
+        Assert(Pages(TextComparison.Compare([], Bytes(graphemes))).Select(row => row.AfterText).SequenceEqual([first, second, last]) &&
+            TextComparison.Compare(Bytes(graphemes), Bytes(graphemes)).Lines.Single().AfterText == first,
+            "segmenting or clipping a long line split a joined emoji or a combining sequence");
+        var leftContext = "👨‍💻" + new string('a', 78);
+        var rightContext = new string('b', 79) + "e\u0301";
+        var clipped = TextComparison.Compare(Bytes(prefix + leftContext + "旧" + rightContext + "尾"),
+            Bytes(prefix + leftContext + "新" + rightContext + "尾")).Lines.Single();
+        Assert(clipped.After == new DiffText(leftContext, "新", rightContext), "clipped context split a grapheme");
+        var oversizedElement = "中" + new string('\u0301', 80_000);
+        var chunks = Pages(TextComparison.Compare([], Bytes(oversizedElement))).Select(row => row.AfterText!).ToArray();
+        Assert(chunks.All(chunk => chunk.Length is > 0 and <= 4096) && string.Concat(chunks) == oversizedElement,
+            "a single oversized grapheme bypassed the segment budget or lost content");
         var bytes = Encoding.BigEndianUnicode.GetPreamble().Concat(Encoding.BigEndianUnicode.GetBytes(prefix + "\r\n")).ToArray();
         Assert(TextComparison.Compare(bytes, Bytes(prefix + "\r\n")).Summary.Contains("UTF-16 BE → UTF-8"),
             "long text lost its original encoding report");

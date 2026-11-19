@@ -176,7 +176,6 @@ internal sealed partial class FolderHistoryViewModel(FolderHistoryService servic
         () => service.ResumeCleanupAsync(root), "已完成此前确认的历史清理，当前工作文件未改动。");
     public Task RemoveFolderAsync(string root) => ChangeAsync("正在移除关联…", "无法移除关联", null,
         () => service.RemoveFolderAsync(root), "已移除关联。当前文件和历史仍在原目录，重新添加可以继续查看。");
-    public void ReportPickerError(Exception error) => ReportError("无法选择文件夹", error);
     public void ReportError(string operation, Exception error) { Notice = ""; Error = $"{operation}：{error.GetBaseException().Message}"; }
     public void SetNotice(string message) { Error = ""; Notice = message; }
 
@@ -309,5 +308,4 @@ internal sealed record FolderItem(FolderInfo Info)
     public string Root => Info.Root;
     public string Name => Path.GetFileName(Root.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } name ? name : Root;
     public string LastSaved => Info.LastSavedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "尚未保存";
-    public string Detail => $"{Info.VersionCount} 个版本 · {FolderHistoryViewModel.FormatSize(Info.HistoryBytes)}";
 }

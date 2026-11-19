@@ -71,13 +71,13 @@ internal static partial class InteractionChecks
             var draft = Path.Combine(root, "草稿.txt");
             var renamed = Path.Combine(root, "待发布.txt");
             File.WriteAllText(draft, "临时草稿");
-            Until(() => FindPath("草稿.txt") is { IsUntracked: true }, "a new file was not visible while auto-save was paused");
+            Until(() => FindPath("草稿.txt") is { Presence: TreePresence.Untracked }, "a new file was not visible while auto-save was paused");
             File.Move(draft, renamed);
-            Until(() => FindPath("草稿.txt") is null && FindPath("待发布.txt") is { IsUntracked: true }, "rename left a stale tree row");
+            Until(() => FindPath("草稿.txt") is null && FindPath("待发布.txt") is { Presence: TreePresence.Untracked }, "rename left a stale tree row");
             File.Delete(sample);
             Until(() => FindPath("sample.txt") is { IsHistoricalOnly: true }, "deleting a recorded file lost its history or looked live");
             File.WriteAllBytes(sample, revised);
-            Until(() => FindPath("sample.txt") is { IsHistoricalOnly: false, IsUntracked: false }, "recreated file still looked deleted");
+            Until(() => FindPath("sample.txt") is { Presence: TreePresence.Recorded }, "recreated file still looked deleted");
             var firstPoint = TreeRowCenter("sample.txt");
             var lastPoint = TreeRowCenter("待发布.txt");
             window.MouseMove(firstPoint);
@@ -87,7 +87,7 @@ internal static partial class InteractionChecks
             Until(() => selectionBox.IsVisible, "drag did not start");
             var liveChange = Path.Combine(root, "001.txt");
             File.WriteAllText(liveChange, "changes the row order during drag");
-            Until(() => FindPath("001.txt") is { IsUntracked: true }, "the live model stalled during a drag");
+            Until(() => FindPath("001.txt") is { Presence: TreePresence.Untracked }, "the live model stalled during a drag");
             Require(selectionBox.IsVisible && !tree.Items.OfType<TreeItem>().Any(item => item.Path == "001.txt"),
                 "the live update interrupted the gesture or moved the hit-tested rows");
             window.MouseUp(lastPoint, MouseButton.Left);
@@ -224,11 +224,11 @@ internal static partial class InteractionChecks
             File.WriteAllText(Path.Combine(other, "首次快照前.txt"), "draft");
             var switching = model.AddFolderAsync(other, enableProtection: false);
             Until(() => switching.IsCompleted && model.SelectedFolder?.Root == other && model.VersionsLoaded &&
-                FindPath("首次快照前.txt") is { IsUntracked: true }, "new library hid files before the first snapshot");
+                FindPath("首次快照前.txt") is { Presence: TreePresence.Untracked }, "new library hid files before the first snapshot");
             switching.GetAwaiter().GetResult();
             File.WriteAllText(Path.Combine(root, "旧目录.txt"), "old");
             File.WriteAllText(Path.Combine(other, "新目录.txt"), "new");
-            Until(() => FindPath("新目录.txt") is { IsUntracked: true }, "switching libraries stopped live updates");
+            Until(() => FindPath("新目录.txt") is { Presence: TreePresence.Untracked }, "switching libraries stopped live updates");
             Require(FindPath("旧目录.txt") is null && FindPath("sample.txt") is null && model.TimelineVersions.Count == 0,
                 "the previous library's files or history leaked into the empty library");
             WorkspaceChecks.CheckLiveRepositoryMove(other, model, Until);

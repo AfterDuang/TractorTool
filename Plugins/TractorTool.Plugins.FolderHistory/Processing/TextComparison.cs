@@ -5,7 +5,6 @@ namespace TractorTool.Plugins.FolderHistory.Processing;
 public sealed record TextDiffLine(string Kind, int? BeforeLine, int? AfterLine, string? BeforeText, string? AfterText)
 {
     public bool IsGap => Kind == "省略";
-    public bool HasContent => !IsGap;
     public bool BeforeChanged => BeforeLine.HasValue && (Kind != "相同" || EndingChanged);
     public bool AfterChanged => AfterLine.HasValue && (Kind != "相同" || EndingChanged);
     public bool MissingAfter => AfterLine is null;

@@ -241,6 +241,13 @@ internal static class ServiceChecks
             Assert(!(await service.GetFoldersAsync()).Single().ProtectionEnabled &&
                 !JsonNode.Parse(await File.ReadAllTextAsync(metadata))!["protectionEnabled"]!.GetValue<bool>() && host.PackageRequests == 0 && host.Queued == 0,
                 "an association published before the optional enable step could resume unattended protection");
+            var superseded = await service.PreviewRestoreAsync(work, id);
+            var latest = await service.PreviewRestoreAsync(work, id);
+            await ThrowsAsync<InvalidOperationException>(() => service.RestoreInPlaceAsync(superseded));
+            await service.RemoveFolderAsync(work);
+            await service.AddFolderAsync(work);
+            await ThrowsAsync<InvalidOperationException>(() => service.RestoreInPlaceAsync(latest));
+            Assert(host.PackageRequests == 0 && host.Queued == 0, "a stale restore confirmation reached the engine");
         }
         finally { host.FailSettingsSave = false; await service.StopAsync(); }
     }

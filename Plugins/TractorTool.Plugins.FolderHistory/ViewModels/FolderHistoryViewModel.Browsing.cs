@@ -34,14 +34,14 @@ internal sealed partial class FolderHistoryViewModel
     [ObservableProperty] private string _comparisonSummary = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextPreview))] private string _textSummary = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasTextLines))] private IReadOnlyList<TextDiffLine> _textLines = [];
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(TextPageSummary), nameof(HasTextPages), nameof(CanPreviousTextPage), nameof(CanNextTextPage)),
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(TextPageSummary), nameof(HasTextPages)),
         NotifyCanExecuteChangedFor(nameof(PreviousTextPageCommand), nameof(NextTextPageCommand))]
     private TextComparisonResult? _textPage;
 
     public string TextPageSummary => TextPage is { PageCount: > 1 } page ? $"第 {page.PageIndex + 1} / {page.PageCount} 页" : "";
     public bool HasTextPages => TextPage?.PageCount > 1;
-    public bool CanPreviousTextPage => TextPage?.PageIndex > 0;
-    public bool CanNextTextPage => TextPage is { } page && page.PageIndex + 1 < page.PageCount;
+    private bool CanPreviousTextPage => TextPage?.PageIndex > 0;
+    private bool CanNextTextPage => TextPage is { } page && page.PageIndex + 1 < page.PageCount;
 
     [RelayCommand(CanExecute = nameof(CanPreviousTextPage))]
     private void PreviousTextPage()

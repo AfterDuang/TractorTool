@@ -77,9 +77,9 @@ internal sealed class TextComparisonPreview
             var kind = oldLine is null ? "新增" : newLine is null ? "删除" : oldLine.Value.Text == newLine.Value.Text ? "相同" : "修改";
             var endingChanged = oldLine is { } old && newLine is { } next && old.Ending != next.Ending;
             var bounds = kind == "修改" ? ChangeBounds(oldLine!.Value.Text, newLine!.Value.Text, token) : (0, oldLine?.Text.Length ?? 0, newLine?.Text.Length ?? 0);
-            var left = Side(oldLine, row.Before, bounds.Item1, bounds.Item2, kind == "相同");
-            var right = Side(newLine, row.After, bounds.Item1, bounds.Item3, kind == "相同");
-            var count = Math.Max(1, (Math.Max(left.End - left.Start, right.End - right.Start) + SegmentLength - 1) / SegmentLength);
+            var left = Side(oldLine, row.Before, bounds.Item1, bounds.Item2, kind == "相同", token);
+            var right = Side(newLine, row.After, bounds.Item1, bounds.Item3, kind == "相同", token);
+            var count = Math.Max(left.PartCount, right.PartCount);
             AddDisplayLine(new(kind, left, right, rowCount, count, endingChanged, "", 0));
         }
 
@@ -89,8 +89,7 @@ internal sealed class TextComparisonPreview
             for (var part = 0; part < line.RowCount; part++)
             {
                 token.ThrowIfCancellationRequested();
-                var characters = Math.Clamp(line.Before.End - line.Before.Start - part * SegmentLength, 0, SegmentLength) +
-                    Math.Clamp(line.After.End - line.After.Start - part * SegmentLength, 0, SegmentLength) + line.GapSummary.Length + 2;
+                var characters = line.Before.PartLength(part) + line.After.PartLength(part) + line.GapSummary.Length + 2;
                 if (pageRows > 0 && (pageRows >= TextComparison.PageSize || pageCharacters + characters > PageCharacters))
                 {
                     _pageStarts.Add(rowCount + part);
@@ -142,27 +141,55 @@ internal sealed class TextComparisonPreview
         return new(true, _summary, result) { PageIndex = pageIndex, PageCount = pageCount, Preview = this };
     }
 
-    private static LineSide Side(SourceTextLine? line, int index, int changeStart, int changeEnd, bool unchanged)
+    private static LineSide Side(SourceTextLine? line, int index, int changeStart, int changeEnd, bool unchanged, CancellationToken token)
     {
         if (line is not { } source) return default;
         var start = 0;
         var end = source.Text.Length;
-        if (unchanged) { end = Math.Min(end, SegmentLength); changeStart = changeEnd = 0; }
-        else if (end > SegmentLength)
+        if (unchanged) changeStart = changeEnd = 0;
+        else if (end > SegmentLength && (changeStart > CharacterContext || changeEnd + CharacterContext < end))
         {
-            start = SurrogateBoundary(source.Text, Math.Max(0, changeStart - CharacterContext));
-            end = Math.Min(end, changeEnd + CharacterContext);
-            if (end < source.Text.Length && char.IsLowSurrogate(source.Text[end])) end++;
+            (start, end) = ElementBounds(source.Text, Math.Max(0, changeStart - CharacterContext),
+                Math.Min(end, changeEnd + CharacterContext), token);
         }
-        return new(source, index + 1, start, end, changeStart, changeEnd);
+        int[]? breaks = null;
+        if (end - start > SegmentLength)
+        {
+            var cuts = SegmentBreaks(source.Text, start, end, token);
+            if (unchanged) end = cuts.First();
+            else breaks = cuts.ToArray();
+        }
+        return new(source, index + 1, start, end, changeStart, changeEnd, breaks);
+    }
+
+    private static IEnumerable<int> SegmentBreaks(string text, int start, int end, CancellationToken token)
+    {
+        for (var offset = start; end - start > SegmentLength;)
+        {
+            token.ThrowIfCancellationRequested();
+            var next = offset + StringInfo.GetNextTextElementLength(text.AsSpan(offset));
+            if (next - start > SegmentLength && offset > start)
+            {
+                start = offset;
+                yield return start;
+            }
+            // A single grapheme can exceed the preview budget. Only then split at a Unicode scalar.
+            while (next - start > SegmentLength)
+            {
+                token.ThrowIfCancellationRequested();
+                start = SurrogateBoundary(text, start + SegmentLength);
+                yield return start;
+            }
+            offset = next;
+        }
     }
 
     private static (int? Number, string? Text, DiffText Parts, string Note) RenderSide(LineSide side, int part, bool endingChanged)
     {
-        if (side.Line is not { } source || part > 0 && side.Start + part * SegmentLength >= side.End)
+        if (side.Line is not { } source || part >= side.PartCount)
             return (null, null, new("", "", ""), "");
-        var start = SurrogateBoundary(source.Text, side.Start + part * SegmentLength);
-        var end = SurrogateBoundary(source.Text, Math.Min(side.End, side.Start + (part + 1) * SegmentLength));
+        var start = side.Boundary(part);
+        var end = side.Boundary(part + 1);
         var changeStart = Math.Clamp(side.ChangeStart, start, end);
         var changeEnd = Math.Clamp(side.ChangeEnd, changeStart, end);
         var parts = new DiffText(source.Text[start..changeStart], source.Text[changeStart..changeEnd], source.Text[changeEnd..end]);
@@ -212,7 +239,12 @@ internal sealed class TextComparisonPreview
     private static int SurrogateBoundary(string text, int index) =>
         index > 0 && index < text.Length && char.IsHighSurrogate(text[index - 1]) && char.IsLowSurrogate(text[index]) ? index - 1 : index;
 
-    private readonly record struct LineSide(SourceTextLine? Line, int? Number, int Start, int End, int ChangeStart, int ChangeEnd);
+    private readonly record struct LineSide(SourceTextLine? Line, int? Number, int Start, int End, int ChangeStart, int ChangeEnd, int[]? Breaks)
+    {
+        public int PartCount => Line is null ? 0 : (Breaks?.Length ?? 0) + 1;
+        public int Boundary(int part) => part == 0 ? Start : Breaks is not null && part <= Breaks.Length ? Breaks[part - 1] : End;
+        public int PartLength(int part) => Boundary(part + 1) - Boundary(part);
+    }
     private sealed record DisplayLine(string Kind, LineSide Before, LineSide After, int FirstRow, int RowCount,
         bool EndingChanged, string GapSummary, int OmittedLineCount);
 }

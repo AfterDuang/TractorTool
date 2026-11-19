@@ -53,14 +53,17 @@ internal static partial class InteractionChecks
             "unchanged lines hid the actual edits");
         savePreview("large-text-changes");
         model.SelectedVersion = model.TimelineVersions.Single(v => v.Id == Later);
-        Until(() => model.HasTextPages && model.CanNextTextPage, "large addition was not paged");
+        Until(() => model.HasTextPages, "large addition was not paged");
         var page = model.TextPageSummary;
         var scroll = view.FindControl<ScrollViewer>("DiffScroll")!;
         scroll.ScrollToEnd();
         Until(() => scroll.Offset.Y > 0, "large addition could not scroll");
-        var next = view.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, "下一页") && IsPresented(b));
+        Button PageButton(string label) => view.GetVisualDescendants().OfType<Button>().Single(b => Equals(b.Content, label) && IsPresented(b));
+        var previous = PageButton("上一页");
+        var next = PageButton("下一页");
+        Require(!previous.IsEffectivelyEnabled && next.IsEffectivelyEnabled, "first page buttons offered an invalid direction");
         Click(next);
-        Until(() => model.TextPageSummary != page && model.CanPreviousTextPage && scroll.Offset.Y == 0,
+        Until(() => model.TextPageSummary != page && previous.IsEffectivelyEnabled && scroll.Offset.Y == 0,
             "next page did not start at the first new line");
     }
 

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using TractorTool.Contracts;
 using TractorTool.Plugins.FolderHistory.Models;
@@ -8,7 +9,9 @@ namespace TractorTool.Plugins.FolderHistory.Services;
 
 public sealed partial class FolderHistoryService
 {
-    private readonly Dictionary<Guid, (RestorePreview Preview, InPlaceRestorePlan Plan)> _restorePreviews = [];
+    // Closing a preview releases its full file manifest; only its ID is needed to reject superseded confirmations.
+    private readonly ConditionalWeakTable<RestorePreview, InPlaceRestorePlan> _restorePlans = new();
+    private readonly Dictionary<string, Guid> _latestRestorePreview = new(HistoryPaths.Comparer);
 
     public Task<RestorePreview> PreviewRestoreAsync(string root, string versionId, string? relativePath = null) =>
         PreviewRestoreSelectionAsync(root, versionId, [relativePath ?? HistorySelection.Root]);
@@ -27,19 +30,17 @@ public sealed partial class FolderHistoryService
                 state.Settings.ExcludedPaths.ToArray(), token).ConfigureAwait(false);
             var preview = new RestorePreview(Guid.NewGuid(), root, versionId, plan.Selection, plan.Changes)
                 { RelativePaths = Array.AsReadOnly(plan.SelectedPaths.ToArray()) };
-            foreach (var id in _restorePreviews.Where(pair => HistoryPaths.Comparer.Equals(pair.Value.Preview.Root, root)).Select(pair => pair.Key).ToArray())
-                _restorePreviews.Remove(id);
-            _restorePreviews[preview.Id] = (preview, plan);
+            _restorePlans.Add(preview, plan);
+            _latestRestorePreview[root] = preview.Id;
             return preview;
         });
     }
 
     public Task<string?> RestoreInPlaceAsync(RestorePreview preview) => ExclusiveAsync(async token =>
     {
-        if (!_restorePreviews.TryGetValue(preview.Id, out var prepared) || prepared.Preview != preview)
+        if (!_restorePlans.TryGetValue(preview, out var plan) || _latestRestorePreview.GetValueOrDefault(preview.Root) != preview.Id)
             throw new InvalidOperationException("恢复预览已失效，请重新预览。");
-        var root = prepared.Preview.Root;
-        var plan = prepared.Plan;
+        var root = preview.Root;
         _ = Open(root);
         using var lease = await RequestEngineAsync(token).ConfigureAwait(false);
         using var ownership = HistoryStore.Lock(root);
@@ -47,7 +48,7 @@ public sealed partial class FolderHistoryService
         RequireNoPendingOperation(root, state);
         if (!state.Settings.ExcludedPaths.SequenceEqual(plan.Exclusions, HistoryPaths.Comparer))
             throw new InvalidOperationException("排除规则已变化，请重新预览恢复范围。");
-        var target = ReadCommittedVersion(root, state, prepared.Preview.VersionId);
+        var target = ReadCommittedVersion(root, state, preview.VersionId);
         var extractedEntries = DuplicatiEngine.SelectEntriesForSelection(target, plan.SelectedPaths);
         var latest = state.Versions.LastOrDefault() is { } receipt ? ReadCommittedVersion(root, receipt) : null;
         var targetEntries = plan.Target.ToHashSet();
@@ -87,7 +88,8 @@ public sealed partial class FolderHistoryService
                 return "恢复完成，未创建快照；自动保护已暂停。" +
                     (originalsDirectory is null ? "" : " 未保存原件按原路径保留于：" + originalsDirectory);
             }, token).ConfigureAwait(false);
-            _restorePreviews.Remove(preview.Id);
+            _latestRestorePreview.Remove(root);
+            _restorePlans.Remove(preview);
             CleanupStaging(staging, extractedEntries);
             SetRuntimeStatus(root, "已恢复，未创建快照；自动保护已暂停");
         }

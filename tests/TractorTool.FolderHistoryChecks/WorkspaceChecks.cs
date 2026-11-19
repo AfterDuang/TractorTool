@@ -129,6 +129,20 @@ internal static class WorkspaceChecks
 
         if (OperatingSystem.IsWindows())
         {
+            var renamed = new HistoryWorkspace("内容", [Version(1, oldFile), Version(2, oldFile with { Path = "Sample.bin" })]);
+            TreeItem RenamedRow() => renamed.VisibleTree(expanded, WorkingDirectoryListing.Read(root, repositoryId, expanded,
+                [], CancellationToken.None, trackedFiles: renamed.TrackedFiles, cache: cache)).Single(row => !row.IsDirectory);
+            Assert(RenamedRow() is { Presence: TreePresence.OlderRevision, CurrentVersionId: "1" },
+                "the latest spelling hid an older revision with identical bytes");
+            var draftName = Path.Combine(root, "SAMPLE.bin");
+            var latestName = Path.Combine(root, "Sample.bin");
+            File.Move(path, draftName);
+            Assert(RenamedRow() is { Presence: TreePresence.Modified, CurrentVersionId: null },
+                "an unsaved casing was marked as a saved file revision");
+            File.Move(draftName, latestName);
+            Assert(RenamedRow() is { Presence: TreePresence.Recorded, CurrentVersionId: "2" },
+                "the exact latest spelling was not recognized");
+            File.Move(latestName, path);
             using var locked = File.Open(path, FileMode.Open, FileAccess.Write, FileShare.None);
             var blocked = Read();
             Assert(Tree(blocked) is { Presence: TreePresence.Unavailable, CurrentVersionId: null } && blocked.Warning.Length != 0,
@@ -173,7 +187,7 @@ internal static class WorkspaceChecks
         expanded.Add("doc");
         var listing = WorkingDirectoryListing.Read(root, repositoryId, expanded, ["cache"], CancellationToken.None);
         var tree = workspace.VisibleTree(expanded, listing).ToDictionary(item => item.Path);
-        Assert(tree["new.bin"].IsUntracked && tree["doc/new.txt"].IsUntracked && tree["doc"].Presence == TreePresence.Recorded,
+        Assert(tree["new.bin"].Presence == TreePresence.Untracked && tree["doc/new.txt"].Presence == TreePresence.Untracked && tree["doc"].Presence == TreePresence.Recorded,
             "new items or tracked directory status incorrect");
         Assert(tree["docs"].IsHistoricalOnly && tree["doc/draft"].IsHistoricalOnly, "disk deletion lost historical paths");
         Assert(tree["cache"] is { Presence: TreePresence.Excluded, HasChildren: false } && !tree.ContainsKey("cache/ignored")
@@ -188,7 +202,7 @@ internal static class WorkspaceChecks
     {
         var moved = root + "-moved";
         Directory.Move(root, moved);
-        until(() => model.HasLiveTreeWarning && model.VisibleTreeItems.All(item => !item.IsUntracked),
+        until(() => model.HasLiveTreeWarning && model.VisibleTreeItems.All(item => item.Presence != TreePresence.Untracked),
             "moving the selected library left its live tree active");
         Directory.CreateDirectory(root);
         HistoryStore.Create(root);
@@ -199,10 +213,10 @@ internal static class WorkspaceChecks
         Directory.Move(root, root + "-replacement");
         Directory.Move(moved, root);
         File.WriteAllText(Path.Combine(root, "returned.txt"), "belongs to the original history");
-        until(() => !model.HasLiveTreeWarning && model.VisibleTreeItems.Any(item => item.Path == "returned.txt" && item.IsUntracked),
+        until(() => !model.HasLiveTreeWarning && model.VisibleTreeItems.Any(item => item.Path == "returned.txt" && item.Presence == TreePresence.Untracked),
             "restoring the original directory did not reattach its watcher");
         File.WriteAllText(Path.Combine(root, "after-return.txt"), "a later event on the restored directory");
-        until(() => model.VisibleTreeItems.Any(item => item.Path == "after-return.txt" && item.IsUntracked),
+        until(() => model.VisibleTreeItems.Any(item => item.Path == "after-return.txt" && item.Presence == TreePresence.Untracked),
             "the watcher still followed the replacement directory after the original one returned");
     }
 

@@ -258,9 +258,9 @@
                   </WrapPanel>
                   <TextBlock Classes="caption" Text="{Binding TextSummary}" IsVisible="{Binding HasTextPreview}" />
                   <WrapPanel IsVisible="{Binding HasTextPages}" ItemSpacing="6">
-                    <Button Classes="quiet small" Content="上一页" Command="{Binding PreviousTextPageCommand}" IsEnabled="{Binding CanPreviousTextPage}" />
+                    <Button Classes="quiet small" Content="上一页" Command="{Binding PreviousTextPageCommand}" />
                     <TextBlock Classes="caption line" Text="{Binding TextPageSummary}" />
-                    <Button Classes="quiet small" Content="下一页" Command="{Binding NextTextPageCommand}" IsEnabled="{Binding CanNextTextPage}" />
+                    <Button Classes="quiet small" Content="下一页" Command="{Binding NextTextPageCommand}" />
                   </WrapPanel>
                 </StackPanel>
                 <ScrollViewer x:Name="DiffScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"

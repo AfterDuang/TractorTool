@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史代码审查 | [E128 · 文件名大小写、恢复确认与长行分段（2026-11-19）](#evidence-folder-history-review) |
 | 文件夹历史工作区 | [E126 · 工作版本、按选区提交及大文本对比（2026-11-19）](#evidence-folder-history-revisions) · [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
 | 文件树状态角标 | [E127 · 六种特殊状态与窄栏展示（2026-11-19）](#evidence-folder-history-badges) |
 | 文件夹历史交互修复 | [E124 · 菜单、快照说明与按需对比（2026-11-18）](#evidence-folder-history-snapshot) |
@@ -164,6 +165,16 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-review"></a>
+
+## E128 文件夹历史代码审查（2026-11-19）
+
+0.5.2 让文件树与快照记录采用相同的路径拼写和内容判断。在默认 Windows 目录中，同一份内容换回已记录的旧拼写会标出相应的旧版本，新的拼写会标为已修改。移除目录后旧恢复确认失效，关闭预览后完整文件清单可随预览对象回收。长行分段保留组合字符；单个字素本身超过 4096 个 UTF-16 单位时，按 Unicode 标量分片。删除了无消费者的成员，分页按钮统一由命令决定启用状态。
+
+Release 检查工程构建通过。`--badges` 核对了浅深主题和宽窄文件树。`--workspace` 验证了旧名、新名、最新名对应的角标，以及长行组合字符、分页按钮和滚动位置。`--transactions` 验证了过期恢复确认、选区提交和已有恢复事务。使用临时目录、离屏窗口和模拟引擎。正式宿主及真实 Duplicati 由 A28 接续验收。
+
+E117 发布 SDK 独立构建通过，包内 9 个文件逐项校验成功。ZIP 大小为 337557 字节，SHA256 为 `99E3B8A7C2EDB8F332E0C955C0821E52AC8F77B84FA5810E5D027BBC06BFC922`。构建时 NuGet 漏洞数据源不可达，产生 NU1900 警告。
 
 <a id="evidence-folder-history-badges"></a>
 
