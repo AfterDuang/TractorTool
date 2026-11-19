@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -244,7 +245,7 @@ internal static class EngineChecks
             Check(parameterFile is not null && !File.Exists(parameterFile) && !Directory.EnumerateFiles(temporary, "selection-*.txt").Any(),
                 "备份成功、失败或取消后必须关闭租约并清理本次参数文件");
             Check(File.Exists(LogPath(runner.Requests.Single())) == (outcome != "success") &&
-                (outcome != "cancel" || log.Entries.Single().Level == AppLogLevel.Info), "参数文件复用改变了诊断保留或取消日志级别");
+                (outcome != "cancel" || log.Entries.Count == 0), "参数文件复用改变了诊断保留或重复记录正常取消");
         }
     }
 
@@ -570,19 +571,71 @@ internal static class EngineChecks
         Check(!runnerError.GetBaseException().Message.Contains("runner failure detail", StringComparison.Ordinal) &&
             runnerError.ToString().Contains("runner failure detail", StringComparison.Ordinal) &&
             runnerError.ToString().Contains("ExitCode: unavailable", StringComparison.Ordinal), "进程异常没有区分短摘要和未知退出码");
-        using var canceled = new CancellationTokenSource();
-        var canceledLog = new FakeLog();
-        var canceledRunner = new FakeRunner(_ =>
+        var untouchedLog = new FakeLog();
+        var untouchedRunner = new FakeRunner(_ => Success);
+        await ExpectAsync<OperationCanceledException>(() => new DuplicatiEngine(untouchedRunner, executable, untouchedLog)
+            .BackupAsync(root, history, new(true)), "启动前取消应跳过清单读取与引擎调用");
+        Check(untouchedRunner.Requests.Count == 0 && untouchedLog.Entries.Count == 0, "启动前取消仍调用了引擎或生成了进程日志");
+
+        (string Name, string? Log, int Warnings)[] canceledDiagnostics =
+        [
+            ("missing", null, 0), ("empty", "", 0), ("permission", PermissionLog, 1),
+            ("unknown", OtherLog, 1), ("mixed", PermissionLog + OtherLog, 2), ("error", ErrorLog, 1),
+            ("unreadable", "", 1), ("oversized", PermissionLog + new string('x', 128 * 1024), 2)
+        ];
+        foreach (var command in new[] { "backup", "restore" })
+        foreach (var diagnostic in canceledDiagnostics)
         {
-            canceled.Cancel();
-            throw new OperationCanceledException(canceled.Token);
-        });
-        var canceling = new DuplicatiEngine(canceledRunner, executable, canceledLog);
-        await ExpectAsync<OperationCanceledException>(() => canceling.BackupAsync(root, history, new(true)), "启动前取消应跳过清单读取与引擎调用");
-        Check(canceledRunner.Requests.Count == 0 && canceledLog.Entries.Count == 0, "启动前取消仍调用了引擎或生成了进程日志");
-        await ExpectAsync<OperationCanceledException>(() => canceling.BackupAsync(root, history, canceled.Token), "正常取消保持取消语义");
-        Check(canceledLog.Entries.Single().Level == AppLogLevel.Info && File.Exists(LogPath(canceledRunner.Requests.Single())),
-            "正常取消应保留诊断且不记 Error");
+            using var canceled = new CancellationTokenSource();
+            var expected = new OperationCanceledException("expected engine cancellation", canceled.Token);
+            var canceledLog = new FakeLog();
+            var canceledRunner = new FakeRunner(request =>
+            {
+                if (diagnostic.Name == "unreadable")
+                {
+                    File.Delete(LogPath(request));
+                    Directory.CreateDirectory(LogPath(request));
+                }
+                canceled.Cancel();
+                throw expected;
+            }, diagnostic.Log);
+            var canceling = new DuplicatiEngine(canceledRunner, executable, canceledLog);
+            var operation = command == "backup" ? canceling.BackupAsync(root, history, canceled.Token) :
+                canceling.RestoreAsync(version, history, Path.Combine(history, "temp", "canceled-" + Guid.NewGuid().ToString("N")), canceled.Token);
+            var actual = await ExpectAsync<OperationCanceledException>(() => operation, "正常取消保持取消语义");
+            Check(ReferenceEquals(actual, expected) && actual.CancellationToken == canceled.Token && operation.IsCanceled &&
+                actual.StackTrace!.Contains(nameof(FakeRunner), StringComparison.Ordinal), "取消必须保留原异常、令牌和进程调用栈");
+            var logPath = LogPath(canceledRunner.Requests.Single());
+            Check((File.Exists(logPath) || Directory.Exists(logPath)) == (diagnostic.Log is not null),
+                "取消不应创建不存在的诊断文件，也不能清理已有诊断");
+            Check(canceledLog.Entries.Count == diagnostic.Warnings && canceledLog.Entries.All(item =>
+                item.Level == AppLogLevel.Warning && item.Error!.ToString().Contains(logPath, StringComparison.Ordinal) &&
+                !item.Error.ToString().Contains(nameof(OperationCanceledException), StringComparison.Ordinal) &&
+                !item.Error.ToString().Contains(expected.Message, StringComparison.Ordinal)), "取消只记录实际诊断及路径，不重复记录取消堆栈");
+            if (diagnostic.Name == "unreadable")
+                Check(canceledLog.Entries.Single().Error!.ToString().Contains("诊断日志无法读取", StringComparison.Ordinal), "取消不能吞掉实际日志访问故障");
+            if (diagnostic.Name == "oversized")
+                Check(canceledLog.Entries.Any(item => item.Error!.ToString().Contains("超过读取限制", StringComparison.Ordinal)), "取消不能吞掉诊断超限");
+            if (diagnostic.Name is "permission" or "unknown" or "mixed" or "error")
+                Check(canceledLog.Entries.Any(item => item.Error!.ToString().Contains(diagnostic.Log!, StringComparison.Ordinal)), "取消时丢失实际警告或错误内容");
+        }
+
+        foreach (var unexpectedCancellation in new[] { false, true })
+        {
+            using var cancellation = new CancellationTokenSource();
+            var failedLog = new FakeLog();
+            var failedRunner = new FakeRunner(_ =>
+            {
+                if (unexpectedCancellation) throw new OperationCanceledException("unrequested cancellation");
+                cancellation.Cancel();
+                throw new IOException("process cleanup failure");
+            }, operationLog: null);
+            var failed = new DuplicatiEngine(failedRunner, executable, failedLog);
+            var error = await ExpectAsync<IOException>(() => failed.BackupAsync(root, history, cancellation.Token),
+                "非预期取消或进程清理失败不能降级为正常取消");
+            Check(error.ToString().Contains(unexpectedCancellation ? "unrequested cancellation" : "process cleanup failure", StringComparison.Ordinal) &&
+                error.ToString().Contains("诊断日志无法读取", StringComparison.Ordinal), "真正失败必须保留进程异常和缺失诊断信息");
+        }
     }
 
     internal static void WriteVolume(string path, bool full, string fileHash, params object[] entries)
@@ -632,10 +685,10 @@ internal static class EngineChecks
         }
     }
 
-    private sealed class FakeLog : IAppLog
+    internal sealed class FakeLog : IAppLog
     {
-        public List<(AppLogLevel Level, Exception? Error)> Entries { get; } = [];
+        public ConcurrentQueue<(AppLogLevel Level, Exception? Error)> Entries { get; } = new();
         public void Write(string source, string message, Exception? error = null) => Write(AppLogLevel.Info, source, message, error);
-        public void Write(AppLogLevel level, string source, string message, Exception? error = null) => Entries.Add((level, error));
+        public void Write(AppLogLevel level, string source, string message, Exception? error = null) => Entries.Enqueue((level, error));
     }
 }

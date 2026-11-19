@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using TractorTool.Contracts;
 using TractorTool.Plugins.FolderHistory.Processing;
 using TractorTool.Plugins.FolderHistory.Services;
 using TractorTool.Plugins.FolderHistory.Storage;
@@ -38,7 +39,8 @@ internal static partial class InteractionChecks
             "legacy formats were routed to Open XML");
 
         var host = new ServiceChecks.TestHost(fixture) { AllowPackage = true };
-        using var service = new FolderHistoryService(new("checks", host, host, host, CancellationToken.None)
+        var log = new EngineChecks.FakeLog();
+        using var service = new FolderHistoryService(new("checks", host, host, log, CancellationToken.None)
             { Packages = host, Processes = host, Tasks = host });
         var root = Directory.CreateDirectory(Path.Combine(fixture, "office")).FullName;
         var source = Path.Combine(root, name);
@@ -71,10 +73,50 @@ internal static partial class InteractionChecks
             load.GetAwaiter().GetResult();
             model.SetSelection([model.VisibleTreeItems.Single(item => item.Path == name)]);
             model.SelectedTab = 1;
-            Until(() => model.TextLines.Any(row => row.BeforeText == "旧条款" && row.AfterText == "新条款"),
+            bool ShowsRevisions() => model.TextLines.Any(row => row.BeforeText == "旧条款" && row.AfterText == "新条款");
+            Until(ShowsRevisions,
                 "comparing snapshots did not render the Word change for a file above 4 MiB");
             Require(host.Processes == 2 && File.ReadAllBytes(source).AsSpan().SequenceEqual(revised),
                 "preview read extra snapshots or modified the working file");
+
+            var earlier = model.Versions.Single(row => row.Id == Earlier);
+            var later = model.Versions.Single(row => row.Id == Later);
+            // Keep rapid selection changes in one UI turn; assert extraction count, not elapsed time.
+            model.SelectedVersion = earlier;
+            model.SelectedVersion = later;
+            model.ComparisonBase = null;
+            model.ComparisonBase = earlier;
+            Until(ShowsRevisions, "rapid version/base changes did not show the final comparison");
+            Require(host.Processes == 4, "rapid selection extracted an intermediate preview");
+
+            var restore = host.ProcessHandler!;
+            var started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            const string lateFailure = "injected stale preview stderr";
+            host.ProcessHandler = async (request, cancellation) =>
+            {
+                if (started.TrySetResult(cancellation))
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                    return new(1, "", lateFailure, false, false);
+                }
+                return await restore(request, cancellation).ConfigureAwait(false);
+            };
+            model.SelectedVersion = earlier;
+            Until(() => started.Task.IsCompleted, "the old preview never reached extraction");
+            model.SelectedVersion = later;
+            Require(started.Task.Result.IsCancellationRequested, "changing selection did not cancel the active extraction");
+            Until(ShowsRevisions, "a cancelled extraction replaced or blocked the final comparison");
+            Require(host.Processes == 7 && !model.HasError, "cancelled preview restarted or reported a page error");
+            Require(log.Entries.Count(entry => entry.Level == AppLogLevel.Warning &&
+                entry.Error?.ToString().Contains(lateFailure, StringComparison.Ordinal) == true) == 1,
+                "a superseded preview lost or duplicated the engine failure warning");
+
+            model.SelectedVersion = earlier;
+            model.Detach();
+            var settled = Task.Delay(TimeSpan.FromSeconds(1));
+            Until(() => settled.IsCompleted, "pending preview cancellation did not settle");
+            Require(host.Processes == 7 && model.TextLines.Count == 0 && !model.HasError,
+                "leaving during the selection delay started an extraction or applied a stale preview");
         }
         finally { model.Detach(); }
     }

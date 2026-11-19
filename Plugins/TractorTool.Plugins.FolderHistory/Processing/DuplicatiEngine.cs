@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -454,21 +455,24 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         }
         catch (Exception error) { processError = error; }
 
-        var (operationLog, logError) = ReadOperationLog(logPath);
+        var canceled = processError is OperationCanceledException && token.IsCancellationRequested;
+        var (operationLog, logError) = ReadOperationLog(logPath, allowMissing: canceled);
         var (permissionWarning, entryError) = CheckOperationLog(operationLog);
         var details = $"Command: {command}\nExitCode: {result?.ExitCode.ToString(CultureInfo.InvariantCulture) ?? "unavailable"}" +
             $"\nLog: {logPath}\nLogStatus: {logError ?? "complete"}\nLogEntries: {entryError ?? "compatible"}" +
-            $"\nOperation log:\n{operationLog}\nProcess error:\n{Limit(processError?.ToString() ?? "none")}" +
+            $"\nOperation log:\n{operationLog}\nProcess error:\n{(canceled ? "canceled" : Limit(processError?.ToString() ?? "none"))}" +
             $"\nstderr (truncated: {result?.StandardErrorTruncated}):\n{Limit(result?.StandardError ?? "unavailable")}" +
             $"\nstdout (truncated: {result?.StandardOutputTruncated}):\n{Limit(result?.StandardOutput ?? "unavailable")}";
         if (permissionWarning)
             log.Write(AppLogLevel.Warning, LogSource,
                 "Duplicati 未能收紧索引文件权限；历史仍受所在目录权限控制。", new IOException(details));
 
-        if (processError is OperationCanceledException && token.IsCancellationRequested)
+        if (canceled)
         {
-            log.Write(AppLogLevel.Info, LogSource, "Duplicati 操作已取消，已记录现有诊断。", new IOException(details));
-            throw new OperationCanceledException("操作已取消。诊断日志位置：" + logPath, token);
+            if (logError is not null || entryError is not null)
+                log.Write(AppLogLevel.Warning, LogSource, "Duplicati 操作已取消，另有诊断需要检查。诊断日志位置：" + logPath,
+                    new IOException(details));
+            ExceptionDispatchInfo.Throw(processError!);
         }
         var failure = processError is not null || result is null ? $"Duplicati {command} 执行失败。" :
             logError is not null ? "Duplicati 诊断日志不完整，无法确认操作结果。" :
@@ -519,12 +523,17 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
         return (permissionWarning, error);
     }
 
-    private static (string Text, string? Error) ReadOperationLog(string path)
+    private static (string Text, string? Error) ReadOperationLog(string path, bool allowMissing)
     {
         var text = new StringBuilder();
         try
         {
             HistoryPaths.CheckPath(path);
+            if (allowMissing && HistoryPaths.Attributes(path) is null)
+            {
+                HistoryPaths.RequireDirectory(Path.GetDirectoryName(path)!);
+                return ("", null);
+            }
             using var reader = new StreamReader(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read), new UTF8Encoding(false, true));
             var buffer = new char[4096];
             while (text.Length <= DiagnosticLimit)
@@ -535,6 +544,7 @@ public sealed class DuplicatiEngine(IProcessRunner processes, string executable,
             }
             return (Limit(text.ToString()), "诊断日志超过读取限制，原文件已保留。");
         }
+        catch (FileNotFoundException) when (allowMissing) { return ("", null); }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or DecoderFallbackException)
         {
             return (text.ToString(), "诊断日志无法读取：" + error.Message);

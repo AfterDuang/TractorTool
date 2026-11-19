@@ -10,7 +10,7 @@
 
 **E117：官方 Avalonia 12.1.6 已升级，用户测试后反馈暂未发现升级问题并授权本地提交，不推送。** 已同步宿主/公共 UI、三个正式插件与两个机制夹具的引用和清单；DataGrid 保持独立发布的 12.1.2，FluentAvaloniaUI 3.1.0、Contracts API 1.7 / UI API 1.5 不变。15 工程 Release 构建 0 警告/0 错误，三个正式插件用发布 SDK 独立打包，完整 ZIP 的 379 文件静态校验及共享程序集身份核对通过。用户测试时 FFmpeg 安装末尾曾拒绝移动目录，重试成功，未修改安装/进程代码，根因未定位。Agent 未启动应用或检查程序；测试入口、匹配插件版本及旧安装升级顺序统一见[升级指引](DEVELOPMENT.md#avalonia-1216-upgrade)，构建与用户反馈见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)。原动效与默认渲染未改，不宣称消闪。
 
-**E131 文件夹历史 0.6.1** 完成全插件代码审查，修复过期清理确认、自动保护遇到临时文件变化或时钟回拨，以及 Word 修订与 Excel 公式的对比。库格式和外部引擎沿用原版。下一步在正式宿主用真实办公文档及 Duplicati 核对对比、保存和恢复。[A28 与升级入口](DEVELOPMENT.md#folder-history-first)
+**E132 文件夹历史 0.6.2** 优化了快速切换文件和版本时的预览提取与取消诊断。下一步在正式宿主用真实文档核对连续切换后的预览、运行日志，以及保存和恢复。[A28 与升级入口](DEVELOPMENT.md#folder-history-first)
 
 **当前在 M5，E113 已修正退出时页头绑定访问空呈现器的问题，未推送。** E112 的同步绑定在清理/恢复时遇到 Child=null；现用 Avalonia 空条件绑定处理，保留原动效和清理逻辑。宿主及集成检查工程构建通过，新增回归仅编译，真实退出待用户验证。E111 存储修复仍待运行验收；结果统一见[当前台账](DEVELOPMENT.md#current-status)，过程见 [E113](PROJECT_HISTORY.md#evidence-header-null-binding) / [E112](PROJECT_HISTORY.md#evidence-page-header-motion) / [E111](PROJECT_HISTORY.md#evidence-framework-failure-paths)。
 

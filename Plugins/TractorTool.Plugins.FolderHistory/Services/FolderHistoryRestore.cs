@@ -257,6 +257,12 @@ public sealed partial class FolderHistoryService
             if (Convert.ToHexString(SHA256.HashData(result)) != entry.Hash) throw new IOException("提取文件内容变化，无法预览。");
             return result;
         }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            // The user may already be viewing another file when the engine reports this failure.
+            _context.Log.Write(AppLogLevel.Warning, _context.PluginId, $"读取快照文件预览失败：{relativePath}", error);
+            throw;
+        }
         finally { CleanupStaging(staging, selected); }
     }, cancellationToken);
 }

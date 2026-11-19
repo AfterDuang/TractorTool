@@ -8,6 +8,7 @@ namespace TractorTool.Plugins.FolderHistory.ViewModels;
 
 internal sealed partial class FolderHistoryViewModel
 {
+    private static readonly TimeSpan PreviewSelectionDelay = TimeSpan.FromMilliseconds(180);
     private readonly HashSet<string> _expanded = new(HistoryPaths.Comparer) { "" };
     private Dictionary<string, TreeItem> _visibleByPath = new(HistoryPaths.Comparer);
     private HashSet<string> _scope = new(HistoryPaths.Comparer);
@@ -328,6 +329,11 @@ internal sealed partial class FolderHistoryViewModel
         {
             try
             {
+                // Keyboard navigation can cross several rows before the user stops on a file.
+                await Task.Delay(PreviewSelectionDelay, request.Token).ConfigureAwait(
+                    ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+                if (request.IsCancellationRequested) return;
+
                 var oldBytes = file.Before is null ? null : await service.ReadFileAsync(root, before!, file.Before.Path, maxBytes, request.Token);
                 var newBytes = file.After is null ? null : file.Before?.Hash == file.After.Hash ? oldBytes :
                     await service.ReadFileAsync(root, after, file.After.Path, maxBytes, request.Token);

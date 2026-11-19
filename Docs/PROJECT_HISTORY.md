@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 文件夹历史预览取消 | [E132 · 快速切换与引擎取消诊断（2026-11-20）](#evidence-folder-history-preview-cancellation) |
 | 文件夹历史全插件审查 | [E131 · 清理确认、自动保护和 Office 对比（2026-11-20）](#evidence-folder-history-full-review) |
 | 文件夹历史办公文档 | [E130 · Word 与 Excel 内容对比（2026-11-19）](#evidence-folder-history-office) |
 | 文件夹历史图标 | [E129 · Fluent 彩色文件夹（2026-11-19）](#evidence-folder-history-icon) |
@@ -168,6 +169,16 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-preview-cancellation"></a>
+
+## E132 文件夹历史连续切换预览（2026-11-20）
+
+用户提供的调试输出对应 0.6.1 宿主进程 3896。00:40:47 和 00:40:55 的记录均来自 Duplicati 的 `restore` 取消；宿主随后正常退出。旧实现将预期取消的堆栈写入 INFO，若子进程来不及生成日志，还会在详情里报告日志读取失败。宿主日志未记录触发取消的具体点击。
+
+0.6.2 在内容预览提取前等待选中项稳定 180 ms。切换选区、比较版本或离页会撤销等待，已经启动的提取仍使用原有取消和临时文件清理流程。引擎在调用方请求取消时保留原异常和令牌，仅将伴随的实际诊断写入运行日志。非预期的进程失败仍保留完整详情，过期预览的失败记为 Warning，当前视图继续显示新选择的结果。
+
+Release 检查工程和独立插件包均构建通过，0 警告、0 错误。`TractorTool.FolderHistoryChecks` 的 `--office`、`--transactions`、`--workspace` 三个入口通过。连续切换版本及基准后，模拟引擎只为最终的一对文档提取两次；等待期间离页的提取次数为零。已经启动的旧提取收到取消后若仍返回非零退出码和 stderr，宿主保留一条包含具体错误的 Warning，新文档正常显示。另验证了无日志、权限提示、未知条目、日志不可读或超限等取消场景。独立包共 16 个文件，内容逐项核对通过，ZIP SHA256 为 `BD244726A9705B20B6718B235208840F8A8FAD2A2F835C85828F7A71E0550566`。正式宿主和真实 Duplicati 的 0.6.2 交互待验。
 
 <a id="evidence-folder-history-full-review"></a>
 
