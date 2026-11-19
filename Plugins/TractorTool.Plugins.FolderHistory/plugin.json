@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.FolderHistory",
   "name": "文件夹版本历史",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "entryAssembly": "TractorTool.Plugins.FolderHistory.dll",
   "entryType": "TractorTool.Plugins.FolderHistory.FolderHistoryPlugin",
   "apiVersion": "1.7",

@@ -15,6 +15,7 @@
 | 阶段 | 记录 |
 | --- | --- |
 | 文件夹历史工作区 | [E126 · 工作版本、按选区提交及大文本对比（2026-11-19）](#evidence-folder-history-revisions) · [E125 · 实时文件树、稳定快照号及自适应对比（2026-11-18）](#evidence-folder-history-live-tree) |
+| 文件树状态角标 | [E127 · 六种特殊状态与窄栏展示（2026-11-19）](#evidence-folder-history-badges) |
 | 文件夹历史交互修复 | [E124 · 菜单、快照说明与按需对比（2026-11-18）](#evidence-folder-history-snapshot) |
 | 文件夹历史工作区 | [E123 · 文件树、并排比较与按版本恢复（2026-11-18）](#evidence-folder-history-workbench) |
 | 文件夹历史完整流程 | [E122 · 自动保护、比较、恢复与清理（2026-11-17）](#evidence-folder-history-complete) |
@@ -163,6 +164,14 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-folder-history-badges"></a>
+
+## E127 文件树状态角标（2026-11-19）
+
+0.5.1 沿用工作树现有七种状态。正常项保留主图标，其他六种状态使用不同形状的右下角标。宽栏显示文字，树宽小于 200 DIP 时优先保留文件名、角标和旧版编号。整行的状态提示与辅助名称继续可用。
+
+Release 检查工程构建后运行 `TractorTool.FolderHistoryChecks.dll --badges artifacts/e127-folder-history-badges/preview` 通过。检查使用生产文件树模板和样本行，在浅色、深色及 190、360 DIP 四种组合下核对图形差异、右下角位置、状态文字和辅助名称。截图位于上述目录。独立包内 9 个文件逐项匹配，ZIP 为 337411 字节，SHA256 为 `388876313253538BB082B872D30EB7E81605D589787B9EE182EF097EE0CF9694`。构建产生 NU1900，NuGet 漏洞数据源不可达。本轮未启动正式客户端或 Duplicati。
 
 <a id="evidence-folder-history-revisions"></a>
 

@@ -49,15 +49,7 @@ internal static partial class InteractionChecks
         }
         HistoryStore.Save(root, state);
 
-        AppBuilder.Configure<Application>().UseSkia()
-            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
-        var app = Application.Current!;
-        app.RequestedThemeVariant = ThemeVariant.Dark;
-        TractorTool.UI.Motion.Configure(app, false);
-        app.Styles.Add(new FluentAvaloniaTheme { PreferSystemTheme = false, PreferUserAccentColor = false });
-        var ui = new Uri("avares://TractorTool.UI/");
-        app.Resources.MergedDictionaries.Add(new ResourceInclude(ui) { Source = new Uri(ui, "Styles/ThemeResources.axaml") });
-        app.Styles.Add(new StyleInclude(ui) { Source = new Uri(ui, "Styles/SharedStyles.axaml") });
+        var app = CreateHeadlessApplication();
         var model = new FolderHistoryViewModel(service, CancellationToken.None);
         var view = new FolderHistoryView { DataContext = model };
         var window = new Window { Width = 1100, Height = 680,
@@ -272,6 +264,20 @@ internal static partial class InteractionChecks
             }
         }
         finally { window.Close(); Dispatcher.UIThread.RunJobs(); }
+    }
+
+    private static Application CreateHeadlessApplication()
+    {
+        AppBuilder.Configure<Application>().UseSkia()
+            .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).SetupWithoutStarting();
+        var app = Application.Current!;
+        app.RequestedThemeVariant = ThemeVariant.Dark;
+        TractorTool.UI.Motion.Configure(app, false);
+        app.Styles.Add(new FluentAvaloniaTheme { PreferSystemTheme = false, PreferUserAccentColor = false });
+        var ui = new Uri("avares://TractorTool.UI/");
+        app.Resources.MergedDictionaries.Add(new ResourceInclude(ui) { Source = new Uri(ui, "Styles/ThemeResources.axaml") });
+        app.Styles.Add(new StyleInclude(ui) { Source = new Uri(ui, "Styles/SharedStyles.axaml") });
+        return app;
     }
 
     private static TextBox NoteInput(FAContentDialog dialog) => dialog.GetVisualDescendants().OfType<TextBox>()

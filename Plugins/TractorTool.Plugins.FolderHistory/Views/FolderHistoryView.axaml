@@ -58,8 +58,32 @@
     <Style Selector="Grid#ComparisonPane.unified Border.editorDivider">
       <Setter Property="IsVisible" Value="False" />
     </Style>
-    <Style Selector="ListBox#FileTree.compact TextBlock.untrackedLabel">
+    <Style Selector="ListBox#FileTree.compact TextBlock.treeStatusText:not(TextBlock[Tag=OlderRevision])">
       <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=Untracked]">
+      <Setter Property="Data" Value="M3.5,0 H5.5 V3.5 H9 V5.5 H5.5 V9 H3.5 V5.5 H0 V3.5 H3.5 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource AppLogInfoBrush}" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=Modified]">
+      <Setter Property="Data" Value="M0,7 L6.3,0.7 L9.3,3.7 L3,10 L0,10 Z M7,0 L7.7,-0.7 Q8.4,-1.4 9.1,-0.7 L10.7,0.9 Q11.4,1.6 10.7,2.3 L10,3 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource AppLogWarningBrush}" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=OlderRevision]">
+      <Setter Property="Data" Value="M0,4 L4.5,0 V2.7 H5.5 C9,2.7 11,5.2 10,8.2 C9.3,10 7.4,11 5,11 V8.8 C8.4,8.8 9,5 5.5,5 H4.5 V8 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemAccentColor}" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=Historical]">
+      <Setter Property="Data" Value="M0,0 H10 V2.5 H0 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=Excluded]">
+      <Setter Property="Data" Value="F0 M5,0 A5,5 0 1 1 5,10 A5,5 0 1 1 5,0 Z M5,1.5 A3.5,3.5 0 0 0 2,6.8 L6.8,2 A3.5,3.5 0 0 0 5,1.5 Z M8,3.2 L3.2,8 A3.5,3.5 0 0 0 8,3.2 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="PathIcon.treeBadge[Tag=Unavailable]">
+      <Setter Property="Data" Value="M0,0 H2.5 L2.2,6.2 H0.3 Z M0,7.5 H2.5 V10 H0 Z" />
+      <Setter Property="Foreground" Value="{DynamicResource AppLogErrorBrush}" />
     </Style>
   </UserControl.Styles>
   <UserControl.Resources>
@@ -122,15 +146,16 @@
                                 Data="M1,3 L6,3 L8,5 L15,5 L15,13 L1,13 Z" />
                       <PathIcon Width="12" Height="14" IsVisible="{Binding !IsDirectory}"
                                 Data="M3,1 L10,1 L14,5 L14,15 L3,15 Z M4.5,2.5 L4.5,13.5 L12.5,13.5 L12.5,6 L9,6 L9,2.5 Z" />
-                      <Border IsVisible="{Binding IsUntracked}" Background="{DynamicResource AppCardBrush}" CornerRadius="4"
-                              Width="9" Height="9" HorizontalAlignment="Right" VerticalAlignment="Bottom">
-                        <PathIcon Width="9" Height="9" Foreground="{DynamicResource AppLogInfoBrush}"
-                                  Data="M3.5,0 H5.5 V3.5 H9 V5.5 H5.5 V9 H3.5 V5.5 H0 V3.5 H3.5 Z" />
+                      <Border Classes="treeStatusBadge" IsHitTestVisible="False"
+                              IsVisible="{Binding StatusText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                              Background="{DynamicResource AppCardBrush}" CornerRadius="5"
+                              Width="11" Height="11" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                        <PathIcon Classes="treeBadge" Width="9" Height="9" Tag="{Binding Presence, StringFormat='{}{0}'}" />
                       </Border>
                     </Grid>
                     <Grid Grid.Column="2" ColumnDefinitions="*,Auto">
                       <TextBlock Classes="line" Text="{Binding Name}" />
-                      <TextBlock Grid.Column="1" Classes="caption line" Classes.untrackedLabel="{Binding IsUntracked}"
+                      <TextBlock Grid.Column="1" Classes="caption line treeStatusText" Tag="{Binding Presence, StringFormat='{}{0}'}"
                                  Margin="4,0,0,0" Text="{Binding StatusText}" />
                     </Grid>
                   </Grid>

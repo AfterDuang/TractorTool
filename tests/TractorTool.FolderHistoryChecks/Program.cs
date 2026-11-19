@@ -2,6 +2,13 @@ using System.Security.Cryptography;
 using TractorTool.Plugins.FolderHistory.Models;
 using TractorTool.Plugins.FolderHistory.Storage;
 
+if (args is ["--badges"] or ["--badges", _])
+{
+    InteractionChecks.CheckTreeBadges(args.Length == 2 ? Path.GetFullPath(args[1]) : null);
+    Console.WriteLine("File tree status badge checks passed.");
+    return;
+}
+
 var fixture = Directory.CreateTempSubdirectory("TractorTool.FolderHistoryChecks-").FullName;
 try
 {
