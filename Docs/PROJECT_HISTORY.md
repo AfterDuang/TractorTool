@@ -173,7 +173,9 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 0.5.3 通过导航页的 `IconPath` 加载包内 PNG，保留 Folder 符号回退。浅、深背景的 28 像素预览位于 `artifacts/e129-folder-history-icon/sidebar-sizes.png`，正式宿主显示待实机确认。[图标来源与许可](../Plugins/TractorTool.Plugins.FolderHistory/NOTICE.md#导航图标)
 
-Astra 终审核实了图标来源、许可和宿主调用路径，并发现同一目录的两种写法可能各保留一份有效的恢复确认。登记确认时改用恢复计划已规范化的目录。回归用例使用带尾部分隔符的路径重新预览，再移除并重加目录，检查过期确认在请求引擎前被拒绝。此项修复已由 Astra 复审，Release 检查工程构建通过。
+Astra 终审核实了图标来源、许可和宿主调用路径，并发现同一目录的两种写法可能各保留一份有效的恢复确认。登记确认时改用恢复计划已规范化的目录。此项修复已由 Astra 复审，Release 检查工程构建通过。
+
+在提交 `d31e943` 上运行 `dotnet tests/TractorTool.FolderHistoryChecks/bin/Release/net10.0/TractorTool.FolderHistoryChecks.dll --transactions`，退出码为 0。临时库先以带尾部分隔符的路径重新预览，随后移除并重新关联目录。两份旧确认分别被拒绝，模拟宿主的依赖请求数和入队任务数均为 0。
 
 使用 E117 发布 SDK 独立构建，0 错误，NuGet 漏洞数据源不可达产生 2 条 NU1900 警告。ZIP 内 11 个文件均与最终构建输出逐项核对，较 0.5.2 新增彩色图标和 MIT 许可。最终 ZIP SHA256 为 `411F14DA9C7C77A7B6DD8F44B5198921A9EAACD4581AC1E84DDE46D842D19939`。
 
