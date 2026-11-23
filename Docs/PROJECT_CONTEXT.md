@@ -4,9 +4,9 @@
 
 ## 1. 当前工作
 
-当前在 M5 可靠性收尾。宿主和四个随包插件已使用集中 NuGet 版本配置；Debug、Release 和独立打包结果见 [E133](PROJECT_HISTORY.md#evidence-central-package-versions)。后续升级从 [Directory.Packages.props](../Directory.Packages.props) 开始，插件清单须声明与目标宿主一致的 Avalonia 版本。
+当前发布版本为 1.0.0，宿主和四个随包插件共享 Avalonia 12.1.6 基线。工程依赖从 [Directory.Packages.props](../Directory.Packages.props) 维护，插件清单须匹配目标宿主。
 
-发布准备与待修问题见[当前台账](DEVELOPMENT.md#current-status)。正式分发标识采用 `v<产品版本>`，普通分支构建、标签草稿和人工公开分别取证。产品与插件发布版本独立于 Contracts/UI API、第三方包和数据格式版本。
+发布修复、回归范围及设备验收缺口见 [E135](PROJECT_HISTORY.md#evidence-release-100) 和[当前台账](DEVELOPMENT.md#current-status)。正式标签为 `v1.0.0`，GitHub Actions 生成草稿，维护者决定公开时间。
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 

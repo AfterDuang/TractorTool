@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.ClipboardHistory",
   "name": "剪贴板历史",
-  "version": "1.1.5",
+  "version": "1.0.0",
   "entryAssembly": "TractorTool.Plugins.ClipboardHistory.dll",
   "entryType": "TractorTool.Plugins.ClipboardHistory.ClipboardPlugin",
   "apiVersion": "1.0",
