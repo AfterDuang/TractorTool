@@ -180,6 +180,87 @@ internal static class PackageChecks
             using var repaired = await scope.RequestAsync(Key);
             Require(service.GetStatus(Key).Phase == PackagePhase.Ready && !service.GetPackages().Single().CanRemove);
         });
+        foreach (var cancel in new[] { false, true })
+        Test("repair keeps installed files after " + (cancel ? "cancellation" : "download failure"), async path =>
+        {
+            using (var http = Client(Archive()))
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var replacement = new HttpClient(new Handler(async (_, token) =>
+            {
+                entered.SetResult();
+                if (cancel) await Task.Delay(Timeout.Infinite, token);
+                throw new HttpRequestException("offline");
+            }));
+            await using var service = Create(path, replacement, new Probe());
+            var directory = service.GetStatus(Key).Directory;
+            var receipt = File.ReadAllBytes(Path.Combine(directory, "receipt.json"));
+            var tool = Path.Combine(directory, "bin", "tool.exe");
+            File.WriteAllText(tool, "previous bytes");
+            using var scope = service.CreateScope("Repair", [Key], CancellationToken.None);
+            await Throws<InvalidDataException>(() => scope.AcquireAsync(Key));
+            service.ConfirmInstallAsync = (prompt, _) => Task.FromResult(prompt.IsRepair);
+            var repair = scope.TryRequestAsync(Key);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (cancel)
+            {
+                service.CancelInstall(Key);
+                await Throws<OperationCanceledException>(() => repair);
+            }
+            else await Throws<HttpRequestException>(() => repair);
+            Require(service.GetPackages().Single().IsInstalled && File.ReadAllText(tool) == "previous bytes");
+            Require(File.ReadAllBytes(Path.Combine(directory, "receipt.json")).SequenceEqual(receipt));
+        });
+        foreach (var committed in new[] { false, true })
+        Test("restart recovers repair interrupted " + (committed ? "after" : "before") + " commit", async path =>
+        {
+            using var http = Client(Archive());
+            string directory;
+            await using (var install = Create(path, http, new Probe()))
+            {
+                await install.InstallAsync(Key);
+                directory = install.GetStatus(Key).Directory;
+            }
+            var transaction = Path.Combine(Path.GetDirectoryName(directory)!, ".repair-win-x64");
+            Directory.CreateDirectory(transaction);
+            File.WriteAllText(Path.Combine(transaction, "owner.txt"), "TractorTool.PackageRepair.v1");
+            var previous = Path.Combine(transaction, "previous");
+            if (committed) Directory.CreateDirectory(previous);
+            else
+            {
+                Directory.CreateDirectory(Path.Combine(transaction, "incoming"));
+                Directory.Move(directory, previous);
+            }
+            File.WriteAllText(Path.Combine(previous, "old.txt"), "previous");
+            // No plugin declaration is available yet. Recovery must precede receipt discovery.
+            await using var reload = new ExternalPackageService(path, "win-x64", http, new Probe(), new Log());
+            Equal(reload.GetStatus(Key).Phase, PackagePhase.Ready);
+            Require(File.Exists(Path.Combine(directory, "old.txt")) == !committed && !Directory.Exists(transaction));
+        });
+        Test("same process retries a blocked repair journal before asking to install", async path =>
+        {
+            using var http = Client(Archive());
+            string directory;
+            await using (var install = Create(path, http, new Probe()))
+            {
+                await install.InstallAsync(Key);
+                directory = install.GetStatus(Key).Directory;
+            }
+            var transaction = Path.Combine(Path.GetDirectoryName(directory)!, ".repair-win-x64");
+            Directory.CreateDirectory(Path.Combine(transaction, "incoming"));
+            var marker = Path.Combine(transaction, "owner.txt");
+            File.WriteAllText(marker, "TractorTool.PackageRepair.v1");
+            Directory.Move(directory, Path.Combine(transaction, "previous"));
+            using var offline = new HttpClient(new Handler((_, _) => throw new InvalidOperationException("unexpected download")));
+            using var locked = File.Open(marker, FileMode.Open, FileAccess.Read, FileShare.None);
+            await using var service = new ExternalPackageService(path, "win-x64", offline, new Probe(), new Log());
+            service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin", [Recipe(Archive())])], true));
+            service.ConfirmInstallAsync = (_, _) => throw new InvalidOperationException("unexpected consent");
+            Require(!Directory.Exists(directory));
+            locked.Dispose();
+            using var lease = await service.TryRequestAsync(Key, "Test.Plugin");
+            Require(lease is not null && service.GetPackages().Single().IsInstalled && !Directory.Exists(transaction));
+        });
         Test("GitHub resolution is shared, consent is required, and installed leases stay offline", async path =>
         {
             var bytes = Archive(); var recipe = Recipe(bytes); var calls = 0; var downloads = 0; var prompts = 0;
@@ -388,6 +469,13 @@ internal static class PackageChecks
             Require(service.GetPackages().All(p => p.Package.Id != "Pending"));
             references.SetDiscovered([new("broken", null, PluginState.Invalid, "broken")], null);
             Require(service.ReferenceError.Length != 0);
+            await service.InstallAsync(Key);
+            references.SetDiscovered([], null);
+            Require(service.ReferenceError.Contains("Test.Plugin") && !service.GetPackages().Single(p => p.Package == Key).CanRemove);
+            await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+            Require(manager.QueueChange("Test.Plugin", PluginChangeKind.Uninstall, []) is null);
+            manager.ApplyPending();
+            Require(service.ReferenceError == "" && service.GetPackages().Single(p => p.Package == Key).CanRemove);
         });
         Test("bad hash never executes tools or commits", async path =>
         {

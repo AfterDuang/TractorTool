@@ -389,8 +389,48 @@ internal static class PluginManagementChecks
             manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Failed, "Injected outcome")]);
             Assert(manager.Snapshot.Single().Error.Length != 0);
             Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null); manager.ApplyPending();
-            Assert(manager.Snapshot.Single().ActiveVersion == "1.0.0" && File.ReadAllText(config) == "last old-version save");
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "1.0.0", Enabled: true, AwaitingLoad: true });
+            Assert(File.ReadAllText(config) == "last old-version save");
             Assert(File.ReadAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "preferences.json")) == "new-version format");
+        });
+        check("Management rollback keeps a disabled plugin disabled after an update", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null); manager.ApplyPending();
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "2.0.0", Enabled: false, Recovery.HadData: false });
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null); manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "1.0.0", Enabled: false, AwaitingLoad: false, Pending: null });
+            var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot));
+            host.Discover([], manager.Snapshot); Assert(host.Records.Single().State == PluginState.Disabled);
+        });
+        check("Management update retains its request until the plugin data directory can be backed up", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null);
+            var queued = manager.Snapshot.Single();
+            var data = paths.GetPluginDataDirectory(queued.Id);
+            Directory.CreateDirectory(Path.GetDirectoryName(data)!);
+            File.WriteAllText(data, "occupied");
+            var snapshot = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", queued.Pending!.Token);
+            void RequirePending()
+            {
+                var item = manager.Snapshot.Single();
+                Assert(item.Pending == queued.Pending && item.ActiveVersion == queued.ActiveVersion && item.Error.Length != 0);
+                Assert(!File.Exists(Path.Combine(snapshot, "snapshot.json")));
+            }
+            manager.ApplyPending(); RequirePending();
+            Assert(File.ReadAllText(data) == "occupied");
+            File.Delete(data); Directory.CreateDirectory(data);
+            var config = Path.Combine(data, "preferences.json");
+            File.WriteAllText(config, "old data");
+            using (var locked = new FileStream(config, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                manager.ApplyPending(); RequirePending();
+            }
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "2.0.0", Pending: null, Recovery.HadData: true, Error: "" });
+            Assert(File.ReadAllText(Path.Combine(snapshot, "saved", "preferences.json")) == "old data");
         });
         check("Management pending changes block migration before copying", () =>
         {

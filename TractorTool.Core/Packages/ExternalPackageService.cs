@@ -22,6 +22,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     private Task? _shutdown;
     private readonly Task _recovery;
     private const string WorkMarker = "TractorTool.PackageWork.v1";
+    private const string RepairMarker = "TractorTool.PackageRepair.v1";
     public event Action? Changed;
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
@@ -88,9 +89,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 e.Operation = StartOperation(async () =>
                 {
                     _log.Write("Packages", $"{package.Id} {package.Version}：开始下载并安装依赖。");
-                    if (repair && e.HasFiles) RemoveFiles(e);
-                    lock (_gate) e.Definition = definition;
-                    await InstallCoreAsync(e, e.InstallCancellation.Token).ConfigureAwait(false);
+                    await InstallCoreAsync(e, definition, repair && e.HasFiles, e.InstallCancellation.Token).ConfigureAwait(false);
                 }, e);
             }
             else if (e.InstallCancellation is null) throw new InvalidOperationException("依赖正在清理。");
@@ -127,6 +126,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
 
     private void RemoveFiles(Entry e)
     {
+        RecoverReplacement(e.Directory);
         PackageFiles.CheckPath(e.Directory);
         if (Directory.Exists(e.Directory))
         {
@@ -147,7 +147,9 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         token.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            EnsureRunning(); var e = Find(package);
+            EnsureRunning();
+            RecoverBeforeRequest(package);
+            var e = Find(package);
             _ = DeclaredDownload(package, e.Definition);
             if (e.Phase != PackagePhase.Ready || e.Operation is not null) throw new InvalidOperationException("请先在设置中安装所需的外部工具。");
             e.Users[owner] = e.Users.GetValueOrDefault(owner) + 1;
@@ -199,7 +201,11 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             Exception? failure = null;
             try { await _recovery.ConfigureAwait(false); await action().ConfigureAwait(false); }
             catch (OperationCanceledException ex) when (e.InstallCancellation?.IsCancellationRequested == true || _stopping.IsCancellationRequested)
-            { failure = ex; SetState(e, PackagePhase.Missing); _log.Write("Packages", $"{e.Definition.Package.Id}：安装已取消。"); }
+            {
+                failure = ex;
+                SetState(e, e.HasFiles ? PackagePhase.Failed : PackagePhase.Missing, e.HasFiles ? "修复已取消，已保留原安装。" : "");
+                _log.Write("Packages", $"{e.Definition.Package.Id}：安装已取消。");
+            }
             catch (Exception ex) { failure = ex; SetState(e, PackagePhase.Failed, ex.Message); _log.Write("Packages", $"{e.Definition.Package.Id} 操作失败", ex); }
             finally
             {
@@ -219,17 +225,18 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         return completion.Task;
     }
 
-    private async Task InstallCoreAsync(Entry e, CancellationToken callerToken)
+    private async Task InstallCoreAsync(Entry e, PackageDefinition definition, bool replace, CancellationToken callerToken)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
         timeout.CancelAfter(TimeSpan.FromMinutes(15));
         var token = timeout.Token;
-        if (Directory.Exists(e.Directory)) throw new IOException("该版本目录已存在但未通过检查，请先移除再重试。");
         var work = NewWorkDirectory();
         try
         {
+            RecoverReplacement(e.Directory, work);
+            if (!replace && Directory.Exists(e.Directory)) throw new IOException("该版本目录已存在但未通过检查，请先确认修复。");
             var zip = Path.Combine(work, "download.zip");
-            using var response = await _http.GetAsync(e.Definition.DownloadUri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            using var response = await _http.GetAsync(definition.DownloadUri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             if (response.RequestMessage?.RequestUri?.Scheme != "https") throw new InvalidDataException("下载不能重定向到非 HTTPS 地址。");
             var total = response.Content.Headers.ContentLength;
@@ -250,13 +257,13 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 if (total is not null && received != total) throw new InvalidDataException("下载不完整。");
             }
             SetState(e, PackagePhase.Verifying);
-            if (!string.Equals(await HashAsync(zip, token), e.Definition.Sha256, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(await HashAsync(zip, token), definition.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("SHA-256 校验失败，未安装下载内容。");
             SetState(e, PackagePhase.Installing);
             var staging = Path.Combine(work, "content"); Directory.CreateDirectory(staging);
             var installedBytes = await PackageFiles.ExtractAsync(zip, staging, token);
             Dictionary<string, string> hashes = [];
-            foreach (var (name, tool) in e.Definition.Tools)
+            foreach (var (name, tool) in definition.Tools)
             {
                 var path = PackageFiles.SafePath(staging, tool.Path);
                 if (!File.Exists(path)) throw new InvalidDataException($"工具包缺少 {name}。");
@@ -270,18 +277,77 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 hashes[name] = await HashAsync(path, token);
             }
             await File.WriteAllTextAsync(Path.Combine(staging, "receipt.json"), JsonSerializer.Serialize(
-                new Receipt(2, e.Definition.Sha256, hashes, installedBytes, e.Definition)), token);
+                new Receipt(2, definition.Sha256, hashes, installedBytes, definition)), token);
             token.ThrowIfCancellationRequested();
             PackageFiles.CheckPath(e.Directory);
             Directory.CreateDirectory(Path.GetDirectoryName(e.Directory)!);
-            Directory.Move(staging, e.Directory);
-            lock (_gate) { e.InstalledBytes = installedBytes; e.HasFiles = true; }
+            if (replace && HasDirectory(e.Directory)) ReplacePackage(work, staging, e.Directory);
+            else Directory.Move(staging, e.Directory);
+            lock (_gate) { e.Definition = definition; e.InstalledBytes = installedBytes; e.HasFiles = true; }
             SetState(e, PackagePhase.Ready);
         }
         catch (OperationCanceledException ex) when (!callerToken.IsCancellationRequested)
         { throw new TimeoutException("工具下载或验证超时，请重试。", ex); }
         finally { Cleanup(work); }
     }
+
+    private static string ReplacementDirectory(string directory) =>
+        PackageFiles.SafePath(Path.GetDirectoryName(directory)!, ".repair-" + Path.GetFileName(directory));
+
+    private void ReplacePackage(string work, string staging, string directory)
+    {
+        // Publish a complete transaction before moving the installed directory. Ordinary
+        // .work cleanup can then never discard the only copy of the previous installation.
+        var prepared = Path.Combine(work, "replacement");
+        Directory.CreateDirectory(prepared);
+        File.WriteAllText(Path.Combine(prepared, "owner.txt"), RepairMarker);
+        Directory.Move(staging, Path.Combine(prepared, "incoming"));
+        var transaction = ReplacementDirectory(directory);
+        Directory.Move(prepared, transaction);
+        try
+        {
+            Directory.Move(directory, Path.Combine(transaction, "previous"));
+            Directory.Move(Path.Combine(transaction, "incoming"), directory);
+        }
+        catch
+        {
+            RecoverReplacement(directory, work);
+            throw;
+        }
+        try { RetireReplacement(transaction, work); }
+        catch (Exception ex) { _log.Write(AppLogLevel.Warning, "Packages", "新安装已就绪，旧目录将在下次启动时清理。", ex); }
+    }
+
+    private bool RecoverReplacement(string directory, string? work = null)
+    {
+        var transaction = ReplacementDirectory(directory);
+        if (!HasDirectory(transaction)) return false;
+        var marker = new FileInfo(PackageFiles.SafePath(transaction, "owner.txt"));
+        if (!marker.Exists || marker.Length != RepairMarker.Length || File.ReadAllText(marker.FullName) != RepairMarker)
+            throw new InvalidDataException("修复暂存目录身份不明，已保留原文件。");
+        var previous = PackageFiles.SafePath(transaction, "previous");
+        if (HasDirectory(previous))
+        {
+            if (!HasDirectory(directory))
+                Directory.Move(previous, directory); // Interrupted between renames. Restore before reading the receipt.
+            else if (HasDirectory(PackageFiles.SafePath(transaction, "incoming")))
+                throw new IOException("修复目标被其他文件占用，已保留原安装与替代包。");
+        }
+        RetireReplacement(transaction, work ?? NewWorkDirectory());
+        return true;
+    }
+
+    private static bool HasDirectory(string directory)
+    {
+        PackageFiles.CheckPath(directory);
+        var attributes = new FileInfo(directory).Attributes;
+        if (attributes == (FileAttributes)(-1)) return false;
+        if (!attributes.HasFlag(FileAttributes.Directory)) throw new IOException("工具目录被文件占用：" + directory);
+        return true;
+    }
+
+    private static void RetireReplacement(string transaction, string work) =>
+        Directory.Move(transaction, Path.Combine(work, Guid.NewGuid().ToString("N")));
 
     private string NewWorkDirectory()
     {
@@ -296,7 +362,10 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         {
             var parent = PackageFiles.SafePath(_root, ".work");
             if (!Directory.Exists(parent)) return;
-            foreach (var work in Directory.EnumerateDirectories(parent))
+            // Request-side journal recovery can retire more directories while this scan is running.
+            string[] candidates;
+            lock (_gate) candidates = Directory.GetDirectories(parent);
+            foreach (var work in candidates)
             {
                 if (!Guid.TryParseExact(Path.GetFileName(work), "N", out _)) continue;
                 try

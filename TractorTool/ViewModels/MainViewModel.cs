@@ -141,15 +141,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (_detached) return;
         foreach (var page in _registered)
         {
+            var record = _plugins.Records.Single(r => r.Manifest?.Id == page.PluginId && r.State == PluginState.Loaded);
+            var image = _icons.GetPluginIcon(record.Directory, page.Options.IconPath, page.PluginId);
             if (page.IsSettings)
             {
-                Settings.AddPluginPage(new(page.Title, page.Factory));
+                Settings.AddPluginPage(new(page.Title, page.Factory, Description: page.Options.Description, Icon: page.Options.Icon, ImageSource: image));
                 continue;
             }
-            var record = _plugins.Records.Single(r => r.Manifest?.Id == page.PluginId && r.State == PluginState.Loaded);
             var item = new NavigationItem(page.Title, new RelayCommand(() => OpenPluginPage(page)),
-                page.PluginId + "/" + page.Id, page.Options.Icon, page.Options.Description,
-                _icons.GetPluginIcon(record.Directory, page.Options.IconPath, page.PluginId));
+                page.PluginId + "/" + page.Id, page.Options.Icon, page.Options.Description, image);
             Navigation.Add(item);
         }
         Plugins.Update(_registered, Navigation);
@@ -312,6 +312,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             if (IsLogsSelected) Logs.Refresh();
         });
     }
+    public Task BeginShutdown()
+    {
+        var pendingSave = Settings.BeginShutdown();
+        var pendingManagement = Plugins.BeginShutdown();
+        Detach();
+        return Task.WhenAll(_initialization ?? Task.CompletedTask, pendingSave, pendingManagement);
+    }
+
     public void Detach()
     {
         if (_detached) return;

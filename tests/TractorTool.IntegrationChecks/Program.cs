@@ -61,6 +61,21 @@ var settingsStore = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoo
 var vm = new MainViewModel(paths, host, log, new SettingsViewModel(paths, settingsStore, settingsStore.Load(), log), () => Task.CompletedTask);
 var window = new TractorTool.Views.MainWindow { DataContext = vm };
 window.Show();
+Check("Closing the dialog owner declines both displayed and queued requests", () =>
+{
+    using var dialogs = new HostDialogs(window);
+    var displayed = dialogs.ConfirmAsync("Fixture", "First request");
+    Dispatcher.UIThread.RunJobs();
+    var queued = dialogs.ConfirmAsync("Fixture", "Second request");
+    Assert(!displayed.IsCompleted && !queued.IsCompleted);
+    dialogs.Dispose();
+    Pump(Task.WhenAll(displayed, queued));
+    Assert(!displayed.Result && !queued.Result);
+    using var caller = new CancellationTokenSource();
+    caller.Cancel();
+    var cancelled = dialogs.ConfirmAsync("Fixture", "Cancelled by caller", caller.Token);
+    Assert(cancelled.IsCanceled);
+});
 Check("Custom title surface has the native title role and decorative content cannot intercept hits", () =>
 {
     var title = window.FindControl<Border>("TitleBarDragRegion");
@@ -168,6 +183,9 @@ Check("Plugin settings write through registered page", () =>
     var pluginGroup = settingsView.FindControl<Expander>("PluginSettingsGroup")!;
     var editor = settingsView.GetVisualDescendants().OfType<TextBox>().Single();
     Assert(softwareGroup.IsExpanded && pluginGroup.IsExpanded && pluginGroup.IsVisible);
+    var categoryIcon = pluginGroup.GetVisualDescendants().OfType<TractorTool.UI.Controls.ToolIcon>().Single();
+    Assert(categoryIcon.Kind == ToolIconKind.Settings && categoryIcon.ImageSource is Bitmap);
+    Assert(ReferenceEquals(categoryIcon.ImageSource, vm.Navigation.Single(n => n.Key == "Test.Independent/home").ImageSource));
     softwareGroup.IsExpanded = pluginGroup.IsExpanded = false;
     window.UpdateLayout();
     Assert(ReferenceEquals(vm.Settings.SelectedPage, vm.Settings.PluginSettings.Single()));
@@ -240,6 +258,7 @@ Check("Shutdown keeps icons alive until the window closes and records plugin cle
     Assert(log.ReadRecent().Contains("StopAsync") && log.ReadRecent().Contains("DisposeAsync"));
     Assert(log.Snapshot().Entries.Any(e => e.Source == "Test.Independent" && e.Message == "常驻服务已结束。"));
 });
+NavigationChecks.Run(Check, output, window);
 window.Close();
 
 foreach (var blockedDirectory in new[] { false, true })
@@ -402,7 +421,9 @@ Task LoadLifecyclePlugins(PluginHost caseHost, Action? onRegistered = null) => c
     ((IPluginUiModule)plugin).RegisterPages(new PageRegistry(record.Manifest!.Id));
     onRegistered?.Invoke();
 });
-Check("Concurrent initialization shares one task and commits the delayed plugin only once", () =>
+foreach (var exitDuringInitialization in new[] { false, true })
+Check(exitDuringInitialization ? "Shutdown waits for initialization and skips its UI commit" :
+    "Concurrent initialization shares one task and commits the delayed plugin only once", () =>
 {
     var root = Path.Combine(output, "repeat-init-" + Guid.NewGuid().ToString("N"));
     var casePaths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
@@ -423,10 +444,14 @@ Check("Concurrent initialization shares one task and commits the delayed plugin 
         Pump(WaitForMarkerAsync(directory, "initialize-started"));
         var second = caseVm.InitializeAsync();
         Assert(ReferenceEquals(first, second) && !first.IsCompleted && !caseVm.Plugins.NoMatches);
+        var shutdown = exitDuringInitialization ? caseVm.BeginShutdown() : Task.CompletedTask;
+        var pluginShutdown = exitDuringInitialization ? caseHost.DisposeAsync().AsTask() : Task.CompletedTask;
+        Assert(shutdown.IsCompleted != exitDuringInitialization);
         Release(directory, "initialize");
-        Pump(Task.WhenAll(first, second));
+        Pump(Task.WhenAll(first, second, shutdown, pluginShutdown));
         Assert(ReferenceEquals(first, caseVm.InitializeAsync()));
-        Assert(caseVm.Navigation.Count == 2 && caseVm.Settings.PluginSettings.Count == 0 && caseVm.Home.InstalledPlugins.Count == 1);
+        Assert(caseVm.Navigation.Count == (exitDuringInitialization ? 1 : 2) && caseVm.Settings.PluginSettings.Count == 0);
+        Assert(caseVm.Home.InstalledPlugins.Count == (exitDuringInitialization ? 0 : 1));
     }
     finally { Directory.CreateDirectory(directory); Release(directory, "initialize"); caseVm.Dispose(); Pump(caseHost.DisposeAsync().AsTask()); }
 });
@@ -569,12 +594,50 @@ Check("Dependency settings separate installed packages and persistent GitHub sou
     finally { model.Dispose(); Pump(service.DisposeAsync().AsTask()); Pump(runner.DisposeAsync().AsTask()); }
 });
 AppearanceChecks.Run(Check, Pump, output);
+Check("First dependency transfer appears in settings and can be cancelled", () =>
+{
+    using var pending = new PendingPackageDownload();
+    using var http = new HttpClient(pending);
+    var runner = new ProcessRunner("PackageSettings.Check", log, _ => throw new InvalidOperationException());
+    var key = new TractorTool.Contracts.Packages.PackageReference("FirstDownload", "1.0.0");
+    var endpoint = new Uri("https://example.invalid/package");
+    var definition = new PackageDefinition(key, "win-x64", "Fixture", "", endpoint, new string('a', 64), "Fixture",
+        endpoint, new Dictionary<string, PackageTool> { ["tool"] = new("tool.exe", "1.0") });
+    var service = new ExternalPackageService(Path.Combine(output, "first-ui-download"), "win-x64", http, runner, log, [definition]);
+    service.UpdateReferences(new([], true));
+    using var model = new ExternalToolsViewModel(service, _ => { });
+    try
+    {
+        var install = service.InstallAsync(key);
+        Pump(pending.Entered.Task);
+        var card = model.VisibleCards.Single();
+        Assert(!card.IsInstalled && card.IsBusy && card.CancelCommand.CanExecute(null));
+        var removed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        model.VisibleCards.CollectionChanged += (_, _) => { if (model.IsEmpty) removed.TrySetResult(); };
+        card.CancelCommand.Execute(null);
+        try { Pump(install); } catch (OperationCanceledException) { }
+        Pump(removed.Task);
+        Assert(install.IsCanceled && model.IsEmpty && !card.CancelCommand.CanExecute(null));
+    }
+    finally { model.Dispose(); Pump(service.DisposeAsync().AsTask()); Pump(runner.DisposeAsync().AsTask()); }
+});
 MotionChecks.Run(Check);
 TaskUiChecks.Run(Check, Pump, output);
 LogViewChecks.Run(Check, output);
-NavigationChecks.Run(Check, output);
 IconChecks.Run(Check, published, output);
-PluginManagementUiChecks.Run(Check, Pump, output);
+PluginManagementUiChecks.Run(Check, Pump, published, output);
 TrayMenuChecks.Run(Check, Pump, output);
 Console.WriteLine($"RESULT passed={passed} failed={failed}; publishedHost={published}; evidence={output}");
 return failed == 0 ? 0 : 1;
+
+file sealed class PendingPackageDownload : HttpMessageHandler
+{
+    public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+    {
+        Entered.TrySetResult();
+        await Task.Delay(Timeout.Infinite, token);
+        throw new InvalidOperationException("Expected download cancellation");
+    }
+}

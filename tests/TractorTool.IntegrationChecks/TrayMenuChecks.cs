@@ -25,7 +25,7 @@ internal static class TrayMenuChecks
             var plugin = new Fixture(menu => menu.Add("same", new("Action"), _ => Task.CompletedTask));
             var first = tray.Register(Record("First"), plugin)!;
             var second = tray.Register(Record("Second"), plugin)!;
-            Assert(tray.Menu.Items.OfType<NativeMenuItem>().Select(i => i.Header)
+            Assert(tray.Menu.Items.Where(i => i is not NativeMenuItemSeparator).Cast<NativeMenuItem>().Select(i => i.Header)
                 .SequenceEqual(new[] { "显示 TractorTool", "First", "Second", "退出" }));
             var rejected = false;
             try { tray.Register(Record("Old", "1.4"), plugin); } catch (InvalidDataException) { rejected = true; }

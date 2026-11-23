@@ -56,6 +56,21 @@ internal static class DataMigrationChecks
             Reject<InvalidDataException>(() => store.Save(new() { DataRoot = "relative" }));
             Assert(store.Load().DataRoot is null);
         });
+        check("A missing bootstrap with a surviving backup stops before creating default data", () =>
+        {
+            var profile = Path.Combine(root, "orphaned-bootstrap");
+            var pointer = Path.Combine(profile, "bootstrap.json");
+            var backup = pointer + ".bak";
+            var custom = profile + "-custom";
+            Write(custom, "retained.txt", "data");
+            new JsonFileStore<BootstrapSettings>(backup).Save(new() { DataRoot = custom });
+            var original = File.ReadAllText(backup);
+            Reject<InvalidDataException>(() => AppPaths.Open(profile));
+            Assert(!File.Exists(pointer) && !Directory.Exists(Path.Combine(profile, "Config")));
+            Assert(File.ReadAllText(backup) == original && File.ReadAllText(Path.Combine(custom, "retained.txt")) == "data");
+            File.Copy(backup, pointer);
+            Assert(AppPaths.Open(profile).DataRoot == custom);
+        });
         check("Migration copies persistent data then cleans owned source folders and preserves root files and plugin code", () =>
         {
             var paths = Paths(); using var sourceLease = new InstanceLease(paths.DataRoot);
@@ -108,6 +123,24 @@ internal static class DataMigrationChecks
             Assert(migration.Queue(Target(paths), manager) is not null);
             Assert(File.ReadAllText(Path.Combine(Target(paths), "keep.txt")) == "user file" && migration.Snapshot.Migration is null);
         });
+        if (OperatingSystem.IsWindows())
+        {
+            var mapped = DriveInfo.GetDrives().FirstOrDefault(drive => drive.DriveType == DriveType.Network);
+            if (mapped is null) Console.WriteLine("SKIP Mapped migration target: no mapped Windows network drive.");
+            else check("Queue and startup reject a mapped network drive", () =>
+            {
+                var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+                var target = Path.Combine(mapped.Name, "migration-check-" + Guid.NewGuid().ToString("N"));
+                var migration = new DataRootMigration(paths);
+                Assert(migration.Queue(target, manager)?.Contains("本机磁盘") == true && migration.Snapshot.Migration is null);
+                new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Save(new()
+                {
+                    Migration = new(Guid.NewGuid().ToString("N"), paths.DataRoot, target, paths.AppRoot)
+                });
+                var result = migration.ApplyAtStartup(manager, null, default);
+                Assert(result.Error?.Contains("本机磁盘") == true && migration.Snapshot.DataRoot is null);
+            });
+        }
         check("Migration target lease failure retains source and permits explicit retry", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
@@ -167,6 +200,16 @@ internal static class DataMigrationChecks
             var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, Target(paths));
             var reopened = new DataRootMigration(next);
             Reject<InvalidOperationException>(reopened.Cancel);
+            var targetFile = Path.Combine(next.ConfigRoot, "fixture.txt");
+            var modified = File.GetLastWriteTimeUtc(targetFile);
+            File.WriteAllText(targetFile, "corrupted"); // Same length and timestamp, source copy is already gone.
+            File.SetLastWriteTimeUtc(targetFile, modified);
+            Reject<IOException>(() => reopened.ApplyAtStartup(manager, null, default));
+            Assert(reopened.Snapshot.Migration is not null && File.Exists(Path.Combine(paths.DataRoot, "Cache", "scratch.bin")));
+            File.Delete(targetFile);
+            Reject<IOException>(() => reopened.ApplyAtStartup(manager, null, default));
+            Assert(reopened.Snapshot.Migration is not null && File.Exists(Path.Combine(paths.DataRoot, "Cache", "scratch.bin")));
+            File.WriteAllText(targetFile, "committed");
             var resumed = reopened.ApplyAtStartup(manager, null, default);
             Assert(resumed.Error is null && resumed.TargetLease is null && reopened.Snapshot.Migration is null);
             Assert(File.ReadAllText(Path.Combine(next.ConfigRoot, "fixture.txt")) == "committed");
@@ -233,11 +276,37 @@ internal static class DataMigrationChecks
                 new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
             var markerPath = Path.Combine(Target(paths), ".tractortool-migration.json");
             var marker = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(markerPath))!.AsObject();
-            marker.Remove("cleanup"); File.WriteAllText(markerPath, marker.ToJsonString());
+            marker.Remove("cleanup"); marker.Remove("targetHashes"); File.WriteAllText(markerPath, marker.ToJsonString());
             var reopened = new DataRootMigration(new AppPaths(paths.AppRoot, paths.BootstrapRoot, Target(paths)));
             var resumed = reopened.ApplyAtStartup(manager, null, default);
             Assert(resumed.Error is null && resumed.Warning?.Contains("旧版本") == true && reopened.Snapshot.Migration is null);
             Assert(File.ReadAllText(Path.Combine(paths.ConfigRoot, "fixture.txt")) == "old data");
+        });
+        check("Legacy cleanup inventory upgrades only with evidence from every copied file", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Write(paths.ConfigRoot, "fixture.txt", "legacy data");
+            Write(paths.LogRoot, "keep.log", "retain until verified");
+            var originalFile = Path.Combine(paths.ConfigRoot, "fixture.txt");
+            var originalTime = File.GetLastWriteTimeUtc(originalFile);
+            var migration = new DataRootMigration(paths); Assert(migration.Queue(Target(paths), manager) is null);
+            using var cancel = new CancellationTokenSource();
+            Reject<OperationCanceledException>(() => migration.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
+            var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, Target(paths));
+            var markerPath = Path.Combine(next.DataRoot, ".tractortool-migration.json");
+            var marker = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(markerPath))!.AsObject();
+            marker.Remove("targetHashes"); File.WriteAllText(markerPath, marker.ToJsonString());
+            File.Delete(originalFile);
+            var reopened = new DataRootMigration(next);
+            Reject<IOException>(() => reopened.ApplyAtStartup(manager, null, default));
+            Assert(reopened.Snapshot.Migration is not null && File.Exists(Path.Combine(paths.LogRoot, "keep.log")));
+            File.WriteAllText(originalFile, "legacy data"); File.SetLastWriteTimeUtc(originalFile, originalTime);
+            using var interrupt = new CancellationTokenSource();
+            Reject<OperationCanceledException>(() => reopened.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == "正在清理旧应用数据…") interrupt.Cancel(); }), interrupt.Token));
+            Assert(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(markerPath))!["targetHashes"] is not null);
+            Assert(reopened.ApplyAtStartup(manager, null, default).Error is null && reopened.Snapshot.Migration is null);
         });
         foreach (var deleteSource in new[] { false, true })
             check("Migration committed custom source " + (deleteSource ? "may already be missing without recreation" : "must be locked before cleanup"), () =>
@@ -254,7 +323,15 @@ internal static class DataMigrationChecks
                 new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
             var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, Target(paths));
             var reopened = new DataRootMigration(next);
-            if (deleteSource) Directory.Delete(paths.DataRoot, recursive: true); // Isolated test data only.
+            if (deleteSource)
+            {
+                Directory.Delete(paths.DataRoot, recursive: true); // Isolated test data only.
+                var copied = Path.Combine(next.ConfigRoot, "fixture.txt");
+                File.WriteAllText(copied, "edited custom data");
+                Reject<IOException>(() => reopened.ApplyAtStartup(manager, null, default));
+                Assert(reopened.Snapshot.Migration is not null && !Directory.Exists(paths.DataRoot));
+                File.WriteAllText(copied, "copied custom data");
+            }
             else
             {
                 using var busy = new InstanceLease(paths.DataRoot);

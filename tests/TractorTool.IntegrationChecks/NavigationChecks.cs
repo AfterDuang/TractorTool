@@ -18,7 +18,7 @@ using TractorTool.Views;
 
 internal static class NavigationChecks
 {
-    public static void Run(Action<string, Action> check, string output)
+    public static void Run(Action<string, Action> check, string output, MainWindow? shell = null)
     {
         check("Shell header bindings survive presenter clearing and failure recovery without errors", () =>
         {
@@ -30,7 +30,8 @@ internal static class NavigationChecks
             try
             {
                 Motion.Configure(Application.Current!, false);
-                window = new MainWindow();
+                // Headless windows share a synthetic HWND; use the suite's existing Fluent shell.
+                window = shell ?? new MainWindow();
                 window.Show(); window.UpdateLayout(); Dispatcher.UIThread.RunJobs();
                 var host = window.FindControl<PageHost>("PagePresenter")!;
                 var header = ((Grid)host.Parent!).Children.OfType<Grid>().Single();

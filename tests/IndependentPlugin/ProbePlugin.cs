@@ -29,7 +29,7 @@ public class ProbePlugin : IPlugin, IPluginUiModule, IPluginBackgroundService, I
     public virtual void RegisterPages(IPluginPageRegistry registry)
     {
         registry.AddNavigationPage("home", "独立插件", CreatePage, new PluginPageOptions(ToolIconKind.Tools, "独立加载的示例插件，使用宿主共享的图标、控件和主题。") { IconPath = "Assets/icon.png" });
-        registry.AddSettingsPage("settings", "独立插件设置", CreateSettings, new PluginPageOptions(ToolIconKind.Settings, "保存一条备注，检查插件自己的设置持久化。"));
+        registry.AddSettingsPage("settings", "独立插件设置", CreateSettings, new PluginPageOptions(ToolIconKind.Settings, "保存一条备注，检查插件自己的设置持久化。") { IconPath = "Assets/icon.png" });
     }
     public virtual void RegisterTrayMenu(IPluginTrayMenu menu)
     {

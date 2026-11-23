@@ -35,8 +35,8 @@ Name: "chinesesimplified"; MessagesFile: "Languages\ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: unchecked
 
 [Files]
-#include PayloadInclude
 Source: "installation.ini"; DestDir: "{app}"; Flags: ignoreversion
+#include PayloadInclude
 
 [Icons]
 Name: "{autoprograms}\TractorTool"; Filename: "{app}\TractorTool.exe"; WorkingDir: "{app}"
@@ -116,9 +116,23 @@ begin
   if not Result then EndMaintenance;
 end;
 
+function InitialSeed(Root: String): AnsiString;
+begin
+  if DirExists(Root + '\Plugins') then Result := 'keep:{#SeedHash}' else Result := '{#SeedHash}';
+end;
+
+function ReadSeed(Name: String; var Seed: AnsiString): Boolean;
+var
+  Size: Integer;
+begin
+  Result := FileSize(Name, Size) and ((Size = Length('{#SeedHash}')) or (Size = Length('keep:{#SeedHash}'))) and
+    LoadStringFromFile(Name, Seed) and ((Seed = '{#SeedHash}') or (Seed = 'keep:{#SeedHash}'));
+end;
+
 function CheckDestination: String;
 var
-  Root, Parent, DefaultData: String;
+  Root, Parent, DefaultData, Marker: String;
+  Seed: AnsiString;
   Attributes: Cardinal;
   Found: TFindRec;
 begin
@@ -142,12 +156,28 @@ begin
     Result := '安装目录中有文件或目录链接，请选择不包含链接的安装位置。';
     exit;
   end;
+  Marker := Root + '\.plugin-seed';
+  if DirExists(Marker) or DirExists(Marker + '.new') then begin
+    Result := '安装事务标记被目录占用，请检查安装位置。';
+    exit;
+  end;
+  if FileExists(Marker + '.new') then begin
+    if FileExists(Marker) or not ReadSeed(Marker + '.new', Seed) or (Seed <> InitialSeed(Root)) then begin
+      Result := '首次安装临时记录与当前安装包或目录不符，已保留原文件。';
+      exit;
+    end;
+  end;
+  { A matching transaction was recorded only after checking the original destination. }
+  if FileExists(Marker) then begin
+    if not ReadSeed(Marker, Seed) or ((Seed = '{#SeedHash}') and DirExists(Root + '\Plugins\.management')) then
+      Result := '首次安装记录与此安装包不符，或插件已由软件接管。请使用原安装包或选择新的空目录。';
+    exit;
+  end;
   if GetIniString('TractorTool', 'Id', '', Root + '\installation.ini') = InstallationId then exit;
-  { Fresh directory, retained plugins, or our interrupted first-install marker only. }
   if FindFirst(Root + '\*', Found) then begin
     try
       repeat
-        if (Found.Name <> '.') and (Found.Name <> '..') and (Found.Name <> '.plugin-seed') and
+        if (Found.Name <> '.') and (Found.Name <> '..') and (Found.Name <> '.plugin-seed.new') and
           not ((CompareText(Found.Name, 'Plugins') = 0) and ((Found.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0)) then begin
           Result := '此目录不是安装器管理的 TractorTool 安装。请选择新空目录，保留原文件。';
           exit;
@@ -163,26 +193,37 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   InstalledVersion, NewVersion: Int64;
   Seed: AnsiString;
+  Root, Marker: String;
 begin
-  Result := CheckDestination;
-  if Result <> '' then exit;
   if not BeginMaintenance then begin
     Result := '请从托盘菜单或设置显式退出 TractorTool 后重试，不能只关闭窗口。';
     exit;
   end;
+  Result := CheckDestination;
+  if Result <> '' then begin
+    EndMaintenance;
+    exit;
+  end;
+  Root := ExpandConstant('{app}');
+  Marker := Root + '\.plugin-seed';
   if GetPackedVersion(ExpandConstant('{app}\TractorTool.dll'), InstalledVersion) and
     StrToVersion('{#AppNumericVersion}', NewVersion) and (ComparePackedVersion(InstalledVersion, NewVersion) > 0) then begin
     Result := '已安装更新版本，请使用相同或更新版本的安装器。';
     exit;
   end;
   InstallBundledPlugins := not DirExists(ExpandConstant('{app}\Plugins'));
-  if FileExists(ExpandConstant('{app}\.plugin-seed')) then begin
-    if not LoadStringFromFile(ExpandConstant('{app}\.plugin-seed'), Seed) or
-      (Seed <> '{#SeedHash}') or DirExists(ExpandConstant('{app}\Plugins\.management')) then begin
-      Result := '首次插件安装尚未完成，或插件已由软件接管。请用原安装器恢复，或选择新的空目录。';
+  if FileExists(Marker) then begin
+    if not ReadSeed(Marker, Seed) then begin
+      Result := '首次安装记录已变化，已停止。';
       exit;
     end;
-    InstallBundledPlugins := True;
+    InstallBundledPlugins := Seed = '{#SeedHash}';
+  end else if FileExists(Marker + '.new') or InstallBundledPlugins or
+    (GetIniString('TractorTool', 'Id', '', Root + '\installation.ini') <> InstallationId) then begin
+    if not ForceDirectories(Root) or
+      (not FileExists(Marker + '.new') and not SaveStringToFile(Marker + '.new', InitialSeed(Root), False)) or
+      not ReadSeed(Marker + '.new', Seed) or (Seed <> InitialSeed(Root)) or not RenameFile(Marker + '.new', Marker) then
+      Result := '无法记录首次安装，请检查安装目录的写入权限后重试。';
   end;
 end;
 
@@ -191,16 +232,9 @@ begin
   Result := InstallBundledPlugins;
 end;
 
-procedure RecordSeed;
-begin
-  if not FileExists(ExpandConstant('{app}\.plugin-seed')) then
-    if not SaveStringToFile(ExpandConstant('{app}\.plugin-seed'), '{#SeedHash}', False) then
-      RaiseException('无法记录首次插件安装，已停止。');
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if (CurStep = ssPostInstall) and InstallBundledPlugins then
+  if CurStep = ssPostInstall then
     if FileExists(ExpandConstant('{app}\.plugin-seed')) and not DeleteFile(ExpandConstant('{app}\.plugin-seed')) then
       SeedFinalizationFailed := True;
 end;

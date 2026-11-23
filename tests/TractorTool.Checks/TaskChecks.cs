@@ -187,12 +187,15 @@ internal static class TaskChecks
         Case("Write failure never returns an executable unrecorded task and can be retried", async () =>
         {
             var path = FileFor("write-failure");
-            Directory.CreateDirectory(path);
             var service = new BackgroundTaskService(path, new TestLog());
             using var scope = service.CreateScope("Test.WriteFailure");
+            await service.FlushAsync();
+            // Fail the save after initialization has read the store successfully.
+            System.IO.File.Delete(path);
+            Directory.CreateDirectory(path);
             await Throws<IOException>(() => scope.QueueAsync(Request()));
             Assert(service.Snapshot.Count == 0 && service.PersistenceError is not null);
-            Directory.Delete(path); // Empty directory created by this fixture.
+            Directory.Delete(path);
             using var task = await scope.QueueAsync(Request());
             Assert((await task.RunAsync((_, _) => Task.FromResult<string?>("result"))).State == BackgroundTaskState.Succeeded);
             await service.BeginShutdownAsync();

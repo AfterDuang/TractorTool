@@ -52,8 +52,12 @@ public sealed class PluginPackageReferences : IDisposable
                 foreach (var item in managed)
                 {
                     if (item.Error.Length != 0) error = "部分插件变更尚未恢复，暂停清理依赖。";
-                    if (item.ActiveVersion is not null && item.Recovery is { } recovery)
-                        manifests.Add(Read(item.Id, recovery.Version));
+                    if (item.ActiveVersion is { } activeVersion)
+                    {
+                        if (error.Length == 0 && !_active.Any(m => m.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase) && m.Version == activeVersion))
+                            error = $"未发现已登记的插件 {item.Id} {activeVersion}，暂停清理依赖。";
+                        if (item.Recovery is { } recovery) manifests.Add(Read(item.Id, recovery.Version));
+                    }
                     if (item.Pending is { Kind: PluginChangeKind.Activate, Version: { } version } pending)
                     {
                         var staging = PluginFiles.Under(_paths.PluginRoot, ".management", "staging", pending.Token, item.Id, version);

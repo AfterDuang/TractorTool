@@ -3,7 +3,10 @@
              x:Class="TractorTool.Views.SettingsView" x:DataType="vm:SettingsViewModel">
   <UserControl.Resources>
     <DataTemplate x:Key="CategoryTemplate" x:DataType="vm:SettingsPage">
-      <TextBlock Text="{Binding Title}" Margin="4,6" TextTrimming="CharacterEllipsis" />
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="4,6">
+        <ui:ToolIcon Kind="{Binding Icon}" ImageSource="{Binding ImageSource}" FontSize="16" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+      </Grid>
     </DataTemplate>
   </UserControl.Resources>
   <Grid x:Name="Layout" ColumnDefinitions="180,*" RowDefinitions="Auto,*">

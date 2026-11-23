@@ -49,8 +49,16 @@ public sealed class AppPaths : IAppPaths
         fixedRoot = Absolute(fixedRoot);
         DataDirectories.CheckPath(fixedRoot);
         Directory.CreateDirectory(fixedRoot);
-        DataDirectories.CheckPath(Path.Combine(fixedRoot, "bootstrap.json"));
-        var store = new JsonFileStore<BootstrapSettings>(Path.Combine(fixedRoot, "bootstrap.json"), BootstrapSettings.Validate);
+        var pointer = Path.Combine(fixedRoot, "bootstrap.json");
+        DataDirectories.CheckPath(pointer);
+        if (new FileInfo(pointer).Attributes == (FileAttributes)(-1))
+        {
+            var backup = pointer + ".bak";
+            DataDirectories.CheckPath(backup);
+            if (new FileInfo(backup).Attributes != (FileAttributes)(-1))
+                throw new InvalidDataException($"启动定位文件缺失：{pointer}。请核对备份 {backup} 中的数据目录和迁移记录，确认正确后恢复主文件并重新启动。");
+        }
+        var store = new JsonFileStore<BootstrapSettings>(pointer, BootstrapSettings.Validate);
         var settings = store.Load();
         var result = new AppPaths(AppContext.BaseDirectory, fixedRoot, settings.DataRoot);
         if (settings.DataRoot is not null && !DataDirectories.Exists(result.DataRoot))

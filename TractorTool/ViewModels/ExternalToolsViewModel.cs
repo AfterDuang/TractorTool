@@ -71,9 +71,8 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     {
         var packages = _service?.GetPackages() ?? [];
         foreach (var item in packages.Where(p => p.IsInstalled)) _knownInstalled.Add(item.Package);
-        // A repair temporarily removes files; keep its progress, cancel action and failure visible.
-        var snapshots = packages.Where(p => p.IsInstalled || _knownInstalled.Contains(p.Package) &&
-            (p.Status.CanCancel || p.Status.Phase == PackagePhase.Failed)).ToArray();
+        var snapshots = packages.Where(p => p.IsInstalled || p.Status.CanCancel ||
+            (_knownInstalled.Contains(p.Package) && p.Status.Phase == PackagePhase.Failed)).ToArray();
         foreach (var stale in Cards.Where(c => !snapshots.Any(s => s.Package == c.Key)).ToArray())
         { stale.MarkUnavailable(); Cards.Remove(stale); }
         foreach (var snapshot in snapshots)
@@ -223,7 +222,7 @@ public sealed class PackageCardViewModel : ObservableObject
     }
     public void Refresh(PackageListItem item) { _item = item; RefreshStopped(); }
     public void MarkUnavailable() => Refresh(_item with { IsInstalled = false, CanInstall = false, CanRemove = false,
-        Status = _item.Status with { Phase = PackagePhase.Missing, InstalledBytes = null, Error = "当前目录已不包含此包，请返回列表。" } });
+        Status = _item.Status with { Phase = PackagePhase.Missing, CanCancel = false, InstalledBytes = null, Error = "当前目录已不包含此包，请返回列表。" } });
     public void RefreshStopped()
     {
         OnPropertyChanged(string.Empty);

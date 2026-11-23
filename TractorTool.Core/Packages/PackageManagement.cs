@@ -1,4 +1,5 @@
 using System.Text.Json;
+using TractorTool.Core.Storage;
 using TractorTool.Contracts.Packages;
 using TractorTool.Contracts;
 
@@ -155,43 +156,67 @@ public sealed partial class ExternalPackageService
                 {
                     var directory = Path.Combine(version, _rid);
                     var key = new PackageReference(Path.GetFileName(id), Path.GetFileName(version));
-                    _entries.TryGetValue(key, out var known);
-                    try
-                    {
-                        PackageFiles.CheckPath(version);
-                        if (!Directory.Exists(directory)) continue;
-                        _pendingReceipts[key] = null;
-                        var path = PackageFiles.SafePath(directory, "receipt.json");
-                        if (new FileInfo(path).Length > 65536) throw new InvalidDataException("安装记录过大。");
-                        var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path)) ?? throw new InvalidDataException("安装记录为空。");
-                        _pendingReceipts[key] = receipt;
-                        if (receipt.Schema == 1 && receipt.Definition is null && known is null)
-                            continue;
-                        var definition = receipt.Definition ?? known?.Definition ?? throw new InvalidDataException("旧安装缺少源元数据，已保留文件。");
-                        PackageDefinitions.Validate(definition);
-                        if (definition.Package != key || definition.Rid != _rid || !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
-                            throw new InvalidDataException("安装记录与目录身份不符。");
-                        var entry = new Entry(definition, directory) { HasFiles = true,
-                            SourceDefinition = string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
-                        _entries[key] = entry; _pendingReceipts.Remove(key);
-                        try
-                        {
-                            var verified = ReadReceipt(entry)!;
-                            entry.Phase = PackagePhase.Ready; entry.InstalledBytes = verified.InstalledBytes;
-                            if (receipt.Schema == 1)
-                                UpgradeReceipt(directory, path, receipt with { Schema = 2, Definition = definition });
-                        }
-                        catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
-                    }
-                    catch (Exception ex)
-                    {
-                        if (known is not null) { known.Phase = PackagePhase.Failed; known.Error = ex.Message; }
-                        _log.Write(AppLogLevel.Warning, "Packages", "安装记录无法读取，已保留文件：" + key.Id, ex);
-                    }
+                    try { RecoverReplacement(directory); }
+                    catch (Exception ex) { InvalidInstallation(key, ex); continue; }
+                    ReadInstalledDefinition(key, directory);
                 }
             }
         }
         catch (Exception ex) { SourceError = "读取依赖安装目录失败：" + ex.Message; _log.Write("Packages", SourceError, ex); }
+    }
+
+    // Called under _gate, before selecting an install prompt or handing out a lease.
+    private void RecoverBeforeRequest(PackageReference key)
+    {
+        if (HasConflictingIdentity(key))
+            throw new InvalidDataException("依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写。");
+        _entries.TryGetValue(key, out var known);
+        if (known is not null && (known.Phase == PackagePhase.Ready || known.Operation is not null ||
+            known.Preparation is not null || known.Requests != 0 || known.Users.Count != 0)) return;
+        AppPaths.ValidateId(key.Id); AppPaths.ValidateId(key.Version);
+        var directory = Path.Combine(_root, key.Id, key.Version, _rid);
+        if (!RecoverReplacement(directory)) return;
+        ReadInstalledDefinition(key, directory);
+        if (!_entries.ContainsKey(key)) RestoreDeclaredInstallations();
+    }
+
+    private void ReadInstalledDefinition(PackageReference key, string directory)
+    {
+        _entries.TryGetValue(key, out var known);
+        try
+        {
+            if (!HasDirectory(directory)) return;
+            if (known is not null) known.HasFiles = true;
+            _pendingReceipts[key] = null;
+            var path = PackageFiles.SafePath(directory, "receipt.json");
+            if (new FileInfo(path).Length > 65536) throw new InvalidDataException("安装记录过大。");
+            var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path)) ?? throw new InvalidDataException("安装记录为空。");
+            _pendingReceipts[key] = receipt;
+            if (receipt.Schema == 1 && receipt.Definition is null && known is null)
+                return;
+            var definition = receipt.Definition ?? known?.Definition ?? throw new InvalidDataException("旧安装缺少源元数据，已保留文件。");
+            PackageDefinitions.Validate(definition);
+            if (definition.Package != key || definition.Rid != _rid || !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("安装记录与目录身份不符。");
+            var entry = new Entry(definition, directory) { HasFiles = true,
+                SourceDefinition = string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
+            _entries[key] = entry; _pendingReceipts.Remove(key);
+            try
+            {
+                var verified = ReadReceipt(entry)!;
+                entry.Phase = PackagePhase.Ready; entry.InstalledBytes = verified.InstalledBytes;
+                if (receipt.Schema == 1)
+                    UpgradeReceipt(directory, path, receipt with { Schema = 2, Definition = definition });
+            }
+            catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
+        }
+        catch (Exception ex) { InvalidInstallation(key, ex); }
+    }
+
+    private void InvalidInstallation(PackageReference key, Exception ex)
+    {
+        if (_entries.TryGetValue(key, out var entry)) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
+        _log.Write(AppLogLevel.Warning, "Packages", "安装记录无法读取，已保留文件：" + key.Id, ex);
     }
 
     private void RestoreDeclaredInstallations()
@@ -211,6 +236,7 @@ public sealed partial class ExternalPackageService
                 _entries[key] = entry; _pendingReceipts.Remove(key);
                 try
                 {
+                    RecoverReplacement(directory);
                     var receipt = ReadReceipt(entry) ?? throw new InvalidDataException("旧安装目录已不存在。");
                     entry.Phase = PackagePhase.Ready; entry.InstalledBytes = receipt.InstalledBytes;
                     if (receipt.Schema == 1)

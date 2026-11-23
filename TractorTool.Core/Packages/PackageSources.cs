@@ -99,8 +99,7 @@ public sealed partial class ExternalPackageService
         lock (_gate)
         {
             EnsureRunning();
-            if (HasConflictingIdentity(package))
-                throw new InvalidDataException("依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写。");
+            RecoverBeforeRequest(package);
             _entries.TryGetValue(package, out var e);
             var recipe = DeclaredDownload(package, e?.Definition);
             if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null ||

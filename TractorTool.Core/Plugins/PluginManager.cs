@@ -334,7 +334,7 @@ public sealed class PluginManager : IDisposable
             case PluginChangeKind.Rollback:
                 PluginFiles.ValidatePackage(VersionPath(item.Id, item.Recovery!.Version), _compatibility);
                 Restore(item.Id, item.Recovery!);
-                return item with { ActiveVersion = item.Recovery.Version, Recovery = null, AwaitingLoad = true, Enabled = true };
+                return item with { ActiveVersion = item.Recovery.Version, Recovery = null, AwaitingLoad = item.Enabled };
             default: throw new InvalidDataException("未知插件变更。");
         }
     }
@@ -354,8 +354,8 @@ public sealed class PluginManager : IDisposable
         var data = PluginFiles.Under(_paths.DataRoot, "Data", "Plugins", item.Id);
         var destination = PluginFiles.Under(root, "saved");
         // An interrupted backup has not yet authorized activation. Restart it from still-active data.
+        var hadData = DataDirectories.Exists(data);
         PluginFiles.Delete(root, destination);
-        var hadData = Directory.Exists(data);
         if (hadData) PluginFiles.Copy(data, destination); else Directory.CreateDirectory(destination);
         metadata.Save(new() { Id = item.Id, Version = item.ActiveVersion!, DataRoot = _paths.DataRoot, HadData = hadData, Digest = PluginFiles.Digest(destination) });
         return new(item.ActiveVersion!, token, _paths.DataRoot, hadData);

@@ -8,11 +8,12 @@ using TractorTool.Platform;
 using Avalonia.Threading;
 using TractorTool.Core.Packages;
 using Avalonia.Controls;
+using Avalonia.Media;
 using TractorTool.Views;
 using TractorTool.UI;
 namespace TractorTool.ViewModels;
 public sealed record SettingsPage(string Title, Func<Control> Factory, SettingsPage? Parent = null,
-    string Description = "", ToolIconKind Icon = ToolIconKind.Settings);
+    string Description = "", ToolIconKind Icon = ToolIconKind.Settings, IImage? ImageSource = null);
 public sealed record SettingsBreadcrumb(SettingsPage Page, bool IsFirst, bool IsCurrent);
 public sealed record ThemeChoice(string Id, string Name);
 public sealed record AccentChoice(string Value, string Name);
@@ -77,7 +78,7 @@ public partial class SettingsViewModel : ViewModelBase
         ExternalTools = new(packages, OpenPackage);
         Migration = new(paths, manager, log);
         SoftwareSettings = [new("通用设置", () => new SettingsGeneralView { DataContext = this }),
-            new("外部依赖", () => new SettingsGeneralView { DataContext = this })];
+            new("外部依赖", () => new SettingsGeneralView { DataContext = this }, Icon: ToolIconKind.Tools)];
         GeneralPages = [new("外观", () => new SettingsAppearanceView { DataContext = this }, SoftwareSettings[0], "主题、主题色与界面动画", ToolIconKind.Palette),
             new("应用数据", () => new SettingsDataView { DataContext = this }, SoftwareSettings[0], "数据目录与存储位置", ToolIconKind.Folder),
             new("关于软件", () => new SettingsAboutView { DataContext = this }, SoftwareSettings[0], "版本信息与退出应用", ToolIconKind.Info)];

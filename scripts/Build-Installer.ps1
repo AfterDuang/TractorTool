@@ -33,7 +33,7 @@ $entries = foreach ($file in (Get-ChildItem -LiteralPath $bundle -File -Recurse 
     $parent = Split-Path $relative
     $target = if ($parent) { "{app}\$parent" } else { '{app}' }
     $flags = if ($relative.StartsWith('Plugins\', [StringComparison]::OrdinalIgnoreCase)) {
-        'ignoreversion uninsneveruninstall; Check: SeedPlugins; BeforeInstall: RecordSeed'
+        'ignoreversion uninsneveruninstall; Check: SeedPlugins'
     } else { 'ignoreversion' }
     'Source: "{0}"; DestDir: "{1}"; Flags: {2}' -f $file.FullName, $target, $flags
 }

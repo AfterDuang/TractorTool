@@ -10,8 +10,14 @@ public sealed class HostDialogs(Window owner) : IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _closed = new();
-    public Task<bool> ConfirmAsync(string title, string message, CancellationToken token = default) =>
-        ShowAsync(title, message, "确认", "取消", token);
+    public async Task<bool> ConfirmAsync(string title, string message, CancellationToken token = default)
+    {
+        try { return await ShowAsync(title, message, "确认", "取消", token).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (_closed.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            return false; // Closing the owner declines any pending request for consent.
+        }
+    }
     public Task<bool> ConfirmExitAsync(int count, CancellationToken token) => ShowAsync("仍有任务未完成",
         $"还有 {count} 个任务等待或正在处理。退出会停止这些任务；关闭窗口到托盘可以继续处理。",
         "停止任务并退出", "继续处理", token);

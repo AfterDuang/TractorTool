@@ -12,6 +12,11 @@ public partial class MainWindow : FAAppWindow
     private MainViewModel? _presentedViewModel;
     private readonly HostDialogs _dialogs;
     public Task<bool> ConfirmExitAsync(int count, CancellationToken token) => _dialogs.ConfirmExitAsync(count, token);
+    internal void BeginShutdown()
+    {
+        _dialogs.Dispose();
+        IsEnabled = false;
+    }
     public MainWindow()
     {
         InitializeComponent();

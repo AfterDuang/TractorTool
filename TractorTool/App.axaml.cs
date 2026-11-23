@@ -224,17 +224,15 @@ public partial class App : Application
         }
         if (_exiting) return;
         _exiting = true;
-        if (_desktop?.MainWindow is { } window) window.IsEnabled = false;
-        var pendingSave = _vm?.Settings.BeginShutdown() ?? Task.CompletedTask;
-        var pendingManagement = _vm?.Plugins.BeginShutdown() ?? Task.CompletedTask;
-        _vm?.Detach();
+        if (_desktop?.MainWindow is MainWindow window) window.BeginShutdown();
+        var pendingWorkspace = _vm?.BeginShutdown() ?? Task.CompletedTask;
         _log?.Write("Host", "退出：等待设置保存并停止任务、插件和常驻服务。");
         try
         {
             var stopTasks = _tasks?.BeginShutdownAsync() ?? Task.CompletedTask;
             var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
             var stopPackages = StopPackagesAsync();
-            await Task.WhenAll(pendingSave, pendingManagement, stopTasks, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(pendingWorkspace, stopTasks, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
         }
         catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
         finally { _tray?.Dispose(); _desktop?.Shutdown(); }

@@ -5,7 +5,9 @@ using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Contracts;
 using TractorTool.Core.Logging;
+using TractorTool.Core.Packages;
 using TractorTool.Core.Plugins;
+using TractorTool.Core.Processes;
 using TractorTool.Core.Storage;
 using TractorTool.UI;
 using TractorTool.ViewModels;
@@ -13,7 +15,7 @@ using TractorTool.Views;
 
 internal static class PluginManagementUiChecks
 {
-    public static void Run(Action<string, Action> check, Action<Task> pump, string output)
+    public static void Run(Action<string, Action> check, Action<Task> pump, string published, string output)
     {
         var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
         AppPaths Paths()
@@ -45,6 +47,57 @@ internal static class PluginManagementUiChecks
             zip.CreateEntryFromFile(typeof(IPlugin).Assembly.Location, "Fixture.dll");
             return file;
         }
+        async Task ShutdownDuringActivationAsync()
+        {
+            var paths = Paths();
+            var fixture = Directory.GetDirectories(Path.Combine(published, "Plugins", "Test.Independent")).Single();
+            var manifest = ManifestValidator.Read(fixture);
+            var archive = Path.Combine(paths.DataRoot, "independent.zip");
+            ZipFile.CreateFromDirectory(fixture, archive);
+            using var manager = new PluginManager(paths, compatibility);
+            Assert(manager.QueueInstall(archive, []) is null);
+            var log = new AppLog(paths.LogRoot);
+            using var http = new HttpClient();
+            await using var runner = new ProcessRunner("Shutdown.Check", log, _ => throw new InvalidOperationException("Unexpected process"));
+            await using var packages = new ExternalPackageService(paths.PackageRoot, "win-x64", http, runner, log);
+            await using var host = new PluginHost(paths, compatibility, log);
+            var settings = new SettingsViewModel(paths, new(Path.Combine(paths.ConfigRoot, "settings.json")), new(), log, packages, manager);
+            using var vm = new MainViewModel(paths, host, log, settings, () => Task.CompletedTask, manager, packages: packages);
+            var beforeCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var release = new ManualResetEventSlim();
+            var released = false;
+            void PauseBeforeCommit()
+            {
+                // ApplyPending invalidates package references after moving the code and before saving the selection.
+                if (beforeCommit.TrySetResult()) released = release.Wait(TimeSpan.FromSeconds(10));
+            }
+            packages.Changed += PauseBeforeCommit;
+            var initialization = vm.InitializeAsync();
+            Task shutdown;
+            try
+            {
+                await beforeCommit.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                var journal = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Load();
+                Assert(journal.Plugins.Single() is { ActiveVersion: null, Pending.Kind: PluginChangeKind.Activate });
+                Assert(File.Exists(Path.Combine(paths.PluginRoot, manifest.Id, manifest.Version, manifest.EntryAssembly)));
+                shutdown = vm.BeginShutdown();
+                Assert(!shutdown.IsCompleted);
+            }
+            finally
+            {
+                release.Set();
+                packages.Changed -= PauseBeforeCommit;
+                await initialization;
+            }
+            await shutdown;
+            Assert(released);
+            manager.Dispose();
+            using var reopened = new PluginManager(paths, compatibility);
+            var active = reopened.Snapshot.Single();
+            Assert(active.Id == manifest.Id && active.ActiveVersion == manifest.Version && active.Pending is null && active.AwaitingLoad && active.Error.Length == 0);
+        }
+        check("Shutdown waits for an in-flight activation and leaves a committed version for the next startup",
+            () => pump(ShutdownDuringActivationAsync()));
         check("Picker and dropped archive both require confirmation and share ZIP validation", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
