@@ -9,20 +9,45 @@ $hostSdk = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPa
 foreach ($assembly in @('TractorTool.Contracts.dll', 'TractorTool.UI.dll')) {
     if (!(Test-Path -LiteralPath (Join-Path $hostSdk $assembly) -PathType Leaf)) { throw 'HostSdkDir 必须指向已经发布的宿主。' }
 }
+$hostDeps = Get-Content -LiteralPath (Join-Path $hostSdk 'TractorTool.deps.json') -Raw | ConvertFrom-Json -AsHashtable
+$hostAvalonia = @($hostDeps.libraries.Keys | Where-Object { $_ -like 'Avalonia/*' -and $hostDeps.libraries[$_].type -eq 'package' })
+if ($hostAvalonia.Count -ne 1) { throw '已发布宿主的 TractorTool.deps.json 缺少唯一的 Avalonia 包版本。' }
+$hostAvaloniaVersion = $hostAvalonia[0].Split('/')[1]
+function Read-PluginManifest([string]$Path, [string]$AvaloniaVersion) {
+    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($manifest.avaloniaVersion -isnot [string] -or $manifest.avaloniaVersion -cne $AvaloniaVersion) {
+        throw "Avalonia 版本不兼容：$Path 声明 '$($manifest.avaloniaVersion)'，目标宿主为 '$AvaloniaVersion'。"
+    }
+    $manifest
+}
 $destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if ((Test-Path -LiteralPath $destination) -and (Get-ChildItem -LiteralPath $destination -Force | Select-Object -First 1)) {
     throw '插件输出目录必须为空，避免覆盖旧包。'
 }
 $Project = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Project)
 $projectRoot = Split-Path $Project
-$manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'plugin.json') -Raw | ConvertFrom-Json
+$manifest = Read-PluginManifest (Join-Path $projectRoot 'plugin.json') $hostAvaloniaVersion
 $files = Join-Path $destination 'files'
 # Normal restore is required when switching between source SDK references and published DLLs.
+$assetsPathFile = [IO.Path]::GetTempFileName()
 Push-Location $projectRoot
 try {
-    dotnet build $Project -t:Rebuild -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files
+    dotnet build $Project -t:Rebuild -c Release -m:1 -nr:false "-p:HostSdkDir=$hostSdk" "-p:Version=$($manifest.version)" -o $files `
+        -getProperty:ProjectAssetsFile "-getResultOutputFile:$assetsPathFile"
     if ($LASTEXITCODE -ne 0) { throw '插件构建失败。' }
-} finally { Pop-Location }
+    $assetsPath = (Get-Content -LiteralPath $assetsPathFile -Raw).Trim()
+    $assets = Get-Content -LiteralPath $assetsPath -Raw | ConvertFrom-Json -AsHashtable
+} finally {
+    Pop-Location
+    Remove-Item -LiteralPath $assetsPathFile
+}
+$builtManifest = Read-PluginManifest (Join-Path $files 'plugin.json') $hostAvaloniaVersion
+if ($builtManifest.id -cne $manifest.id -or $builtManifest.version -cne $manifest.version) { throw '构建输出与源清单的插件 ID 或版本不一致。' }
+foreach ($package in $assets.libraries.Keys) {
+    if ($package -like 'Avalonia/*' -and $assets.libraries[$package].type -eq 'package' -and $package.Split('/')[1] -cne $hostAvaloniaVersion) {
+        throw "插件还原了 $package，目标宿主使用 $($hostAvalonia[0])。请按目标宿主基线重新编译。"
+    }
+}
 $shared = @(Get-ChildItem -LiteralPath $files -Recurse -Filter *.dll | Where-Object {
     $_.BaseName -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$'
 })
@@ -30,7 +55,6 @@ if ($shared.Count) { throw '插件输出包含宿主/共享 SDK 的副本。' }
 $licenses = Join-Path $files 'Licenses'
 # Only collect this known license when the package actually ships; MVVM is not an SDK requirement.
 if (Test-Path -LiteralPath (Join-Path $files 'CommunityToolkit.Mvvm.dll') -PathType Leaf) {
-    $assets = Get-Content -LiteralPath (Join-Path $projectRoot 'obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
     $toolkit = @($assets.libraries.Keys | Where-Object { $_ -like 'CommunityToolkit.Mvvm/*' })
     if ($toolkit.Count -ne 1) { throw '未找到唯一的 MVVM 还原版本。' }
     $packagePath = $assets.libraries[$toolkit[0]].path

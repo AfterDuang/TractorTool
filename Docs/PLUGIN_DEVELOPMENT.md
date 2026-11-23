@@ -283,7 +283,7 @@ registry.AddNavigationPage("main", "我的工具", () => new MyToolView(),
 | 用途 | 引用与构建方式 |
 | --- | --- |
 | 日常编辑/构建 | 不传 `HostSdkDir`；插件 `ProjectReference` 公开 Contracts/UI，普通解决方案还原、构建和设计时分析使用同一依赖图；无需预先发布宿主 |
-| 独立插件交付 | 显式传入有效 `HostSdkDir`；公共 SDK 改为已发布 Contracts/UI DLL，`Private=false`，私有项目/NuGet 依赖仍正常构建；打包脚本 restore 并 `-t:Rebuild`，检查共享副本 |
+| 独立插件交付 | 显式传入有效 `HostSdkDir`；公共 SDK 改为已发布 Contracts/UI DLL，`Private=false`。打包脚本还原并重建插件，校验清单中的 Avalonia 版本与目标宿主一致，检查共享程序集副本 |
 | 检查源码开发 | 检查工程默认引用被测项目；这只方便编辑和编译，不能作为独立安装证明 |
 | 发布产物检查 | IntegrationChecks 显式传 `HostSdkDir`；ClipboardChecks 同时传 `HostSdkDir` 和 `PluginBuildDir`，只引用指定产物。缺少任意路径或 DLL 明确失败 |
 
@@ -301,7 +301,9 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 
 独立交付须先发布宿主到新目录并记录原文件哈希，再引用该 SDK 构建插件、核对完整依赖与许可，最后复核宿主哈希未变。源码模式编译不能代替独立构建证据；ZIP 安装、DLL 装载及真实交互也分别取证。
 
-[Build-Plugin](../scripts/Build-Plugin.ps1) 要求 PowerShell 7.4+ 和根 global.json 指定的 SDK，不要求插件使用 CommunityToolkit.Mvvm。脚本复制实际随包的 MVVM 许可及插件自备许可，不自动补齐其他私有库许可，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
+仓内插件在工程中声明 `PackageReference`，版本取自 [Directory.Packages.props](../Directory.Packages.props)。仓外插件在自己的工程或中央版本文件中指定依赖，按目标宿主填写 `plugin.json` 的 `avaloniaVersion`。脚本从插件目录调用 `dotnet`，仓外项目可用自己的 `global.json` 选择对应 SDK。MVVM 由使用它的插件随包交付。
+
+[Build-Plugin](../scripts/Build-Plugin.ps1) 要求 PowerShell 7.4+。仓内开发与 CI 使用根 [global.json](../global.json) 锁定的 .NET SDK。脚本复制实际随包的 MVVM 许可及插件自备许可，其他私有库许可由插件作者提供，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
 
 以下是命令示例，未表示已经执行；从仓库根目录操作，两个输出位置均使用新目录：
 

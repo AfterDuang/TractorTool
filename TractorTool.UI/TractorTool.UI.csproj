@@ -2,10 +2,26 @@
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TractorTool.Contracts/TractorTool.Contracts.csproj" />
-    <PackageReference Include="Avalonia" Version="12.1.6" />
-    <PackageReference Include="FluentAvaloniaUI" Version="3.1.0" />
-    <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.6" />
-    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Skia" Version="12.1.6" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="FluentAvaloniaUI" />
+    <PackageReference Include="Avalonia.Controls.ColorPicker" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" />
+    <PackageReference Include="Avalonia.Skia" />
   </ItemGroup>
+  <Target Name="GenerateUiAvaloniaVersion" AfterTargets="PrepareForBuild" BeforeTargets="BeforeCompile;CoreCompile">
+    <Error Condition="'$(TractorToolAvaloniaVersion)' == ''" Text="缺少集中配置的 Avalonia 版本。" />
+    <PropertyGroup>
+      <_UiVersionFile>$(IntermediateOutputPath)UiApi.AvaloniaVersion.g.cs</_UiVersionFile>
+      <_UiVersionSource>namespace TractorTool.UI%3B
+public static partial class UiApi
+{
+    public const string AvaloniaVersion = "$(TractorToolAvaloniaVersion)"%3B
+}</_UiVersionSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_UiVersionFile)" Lines="$(_UiVersionSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_UiVersionFile)" />
+      <FileWrites Include="$(_UiVersionFile)" />
+    </ItemGroup>
+  </Target>
 </Project>

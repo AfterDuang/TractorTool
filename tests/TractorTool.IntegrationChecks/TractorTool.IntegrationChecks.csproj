@@ -13,12 +13,12 @@
     <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="12.1.6" />
-    <PackageReference Include="FluentAvaloniaUI" Version="3.1.0" />
-    <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.6" />
-    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Skia" Version="12.1.6" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Avalonia.Headless" />
+    <PackageReference Include="FluentAvaloniaUI" />
+    <PackageReference Include="Avalonia.Controls.ColorPicker" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" />
+    <PackageReference Include="Avalonia.Skia" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
   <Target Name="RequirePublishedHost" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
     <Error Condition="!Exists('$(HostSdkDir)/TractorTool.dll') Or !Exists('$(HostSdkDir)/TractorTool.Core.dll') Or !Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"

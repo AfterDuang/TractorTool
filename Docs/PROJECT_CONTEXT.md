@@ -1,8 +1,10 @@
 # TractorTool 开发上下文
 
-更新日期：2026-11-20。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-11-23。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
+
+仓内 NuGet 依赖升级从 [Directory.Packages.props](../Directory.Packages.props) 开始。调整 Avalonia 基线时，同步更新随包插件的兼容声明，并使用目标宿主 SDK 重新打包。验证记录见 [E133](PROJECT_HISTORY.md#evidence-central-package-versions)。
 
 **E120 视频图标更新：** 0.5.7 通过现有 IconPath 将导航/设置改为与 HUD 同系列的 Fluent 彩色摄像机，未改框架或媒体逻辑；独立构建与包资源静态核对通过，实际 UI 由用户确认。[更新包与证据](DEVELOPMENT.md#video-icon-update)。
 

@@ -47,12 +47,14 @@ Build-Distribution 的输出目录结构如下；VS Code 菜单会自动使用�
 ## 参数与边界
 
 - **Output**：输出位置；Build-Distribution、Build-Installer、Get-InnoCompiler 要求目录尚不存在，Publish-Host、Build-Plugin 要求新目录或空目录，不用已有安装目录作为构建输出。
-- **Project / HostSdkDir**：要打包的插件 `.csproj` / 已发布宿主目录。HostSdkDir 中须有公开 SDK DLL，不是仓库源码目录。
+- **Project / HostSdkDir**：要打包的插件 `.csproj` / 已发布宿主目录。目标目录包含公开 SDK DLL 和宿主发布时生成的 `TractorTool.deps.json`。
 - **AssetsDir / CompilerPath**：已有分发的 `assets` 目录 / Inno Setup 的 `ISCC.exe` 文件路径。
 - **ExpectedTag / ExpectedCommit**：Verify-Distribution 的可选 Release 身份校验；两项须同时提供，要求标签等于 `v` 加构建版本、源码提交相同、工作区干净，且包含安装器。普通本地包校验不要求这两项。
 - 分发使用 PowerShell 7.4+ 和 [global.json](../global.json) 指定的 .NET SDK。宿主版本默认来自 [Directory.Build.props](../Directory.Build.props)，插件版本来自各自 plugin.json；菜单不用每次填写版本。
 
 ### 插件打包的现有适用范围
+
+Build-Plugin 从目标宿主的 `TractorTool.deps.json` 读取 Avalonia 版本，校验源码和打包输出中 `plugin.json` 的 `avaloniaVersion`。插件通过 NuGet 引用 Avalonia 时，本次构建实际还原的版本也须匹配。仓外插件可使用自己的 NuGet 配置。
 
 Build-Plugin 不要求 CommunityToolkit.Mvvm。仅在输出实际包含该 DLL 时，从唯一还原版本复制许可和第三方通知；元数据或原文缺失仍拒绝打包。插件自备 `Licenses/` 始终保留，其他私有 NuGet/原生库的许可由插件作者维护，脚本不声称自动收集全部许可。宿主依赖许可由 Export-DependencyNotices 负责。Verify-PluginHost 使用不依赖 MVVM 的 IndependentPlugin 走同一个打包入口，再验证宿主装载。
 

@@ -1,12 +1,14 @@
 # TractorTool 开发与验收
 
-更新日期：2026-11-20。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
+更新日期：2026-11-23。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
 入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
 
 <a id="current-status"></a>
 
 ## 1. 当前状态
+
+**E133 仓内 NuGet 版本集中管理。** Debug、Release 的 17 个工程均构建通过，包版本和目标资产与迁移前一致。四个正式插件通过发布 SDK 打包与分发静态校验。仓外插件的正确基线打包和版本不符拒绝均已验证。[验证范围](PROJECT_HISTORY.md#evidence-central-package-versions)
 
 **E119：剪贴板 1.1.5 已接入与 HUD 同系列的彩色图标。** 仅改插件注册、资源与许可，复用现有 IconPath；独立构建 0 警告/0 错误。未安装或启动，实际显示待用户确认；[更新包入口](#clipboard-icon-update)、[证据](PROJECT_HISTORY.md#evidence-clipboard-color-icon)。不改变 E103 原生回归及其他验收缺口。
 

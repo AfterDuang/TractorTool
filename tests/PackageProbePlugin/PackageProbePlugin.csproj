@@ -12,8 +12,8 @@
     <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.6" IncludeAssets="compile" PrivateAssets="all" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Avalonia" IncludeAssets="compile" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

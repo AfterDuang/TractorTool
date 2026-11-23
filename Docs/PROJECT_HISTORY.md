@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 集中包管理 | [E133 · NuGet 还原等价与插件基线校验（2026-11-23）](#evidence-central-package-versions) |
 | 文件夹历史预览取消 | [E132 · 快速切换与引擎取消诊断（2026-11-20）](#evidence-folder-history-preview-cancellation) |
 | 文件夹历史全插件审查 | [E131 · 清理确认、自动保护和 Office 对比（2026-11-20）](#evidence-folder-history-full-review) |
 | 文件夹历史办公文档 | [E130 · Word 与 Excel 内容对比（2026-11-19）](#evidence-folder-history-office) |
@@ -169,6 +170,15 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-central-package-versions"></a>
+
+## E133 集中包管理与打包兼容检查（2026-11-23）
+
+- 取 `4177501` 源码作对照，分别按 Debug 和 Release 还原。逐工程对比 17 份 `project.assets.json` 中各目标下的 NuGet 包、传递版本和资产，两个配置结果均一致。新实现两种配置的解决方案构建均为 0 警告、0 错误。
+- 从编译后的公共 UI DLL 静态读取 `UiApi.AvaloniaVersion`，确认仍为公开常量 `12.1.6`。重复生成保留文件时间戳，更换基线后重新生成，恢复基线后得到原值。
+- `Build-Distribution.ps1` 使用已发布宿主构建四个独立插件 ZIP，分发静态校验通过，共 399 个文件。另在仓外用 .NET 10 和自定义中间目录构建插件：显式使用相同版本和省略 Avalonia/MVVM 均可打包；源清单、输出清单、实际 NuGet 还原版本三种不匹配均在生成 ZIP 前被拒绝。
+- 本轮验证覆盖构建、打包和产物静态检查。应用、检查程序和真实 UI 由用户运行。
 
 <a id="evidence-folder-history-preview-cancellation"></a>
 
