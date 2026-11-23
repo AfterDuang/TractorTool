@@ -270,7 +270,7 @@ UI 选型、参考源码与历史比较归[参考调研](PROJECT_HISTORY.md#ui-r
 
 [Verify-Distribution](../scripts/Verify-Distribution.ps1) 静态核对路径、内容、版本及各包一致性；安装器及元数据须成对匹配源 ZIP。哈希/静态检查不等于运行验收，ZIP 仅解压到新目录。
 
-[Build-Installer](../scripts/Build-Installer.ps1) 从已校验 ZIP 快照生成精确文件列表，默认当前用户安装，不提权、不自动运行；安装归属标记拒绝非安装版目录、链接及数字版本降级。仅 Plugins 不存在时首次附带插件，升级完整保留 Plugins 和管理状态，卸载只移除安装记录内宿主文件，保留插件和应用数据。首次插件安装中断只允许同包恢复，未完成标记阻止宿主启动。
+[Build-Installer](../scripts/Build-Installer.ps1) 从已校验 ZIP 快照生成精确文件列表，默认当前用户安装。安装归属标记拒绝接管非安装版目录、链接及数字版本降级。仅 Plugins 不存在时首次附带插件，升级保留 Plugins 和管理状态，卸载保留插件和应用数据。`.plugin-seed` 关联原包并阻止未完成安装的宿主启动。若首次写入宿主文件后、写入 `installation.ini` 前中断，目标检查可能先拒绝原目录；恢复缺口见[发布前审查](PROJECT_HISTORY.md#evidence-framework-release-review)。
 
 [WindowsMaintenance](../TractorTool/Platform/WindowsMaintenance.cs) 与安装器共享启动/维护互斥及存活信号，应用运行时拒绝维护，不强停任务、不轮询；当前保护限同一 Windows 会话。安装器只接受匹配维护协议的宿主包，平台实现不进入 Core/Contracts。
 

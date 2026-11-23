@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 框架发布前审查 | [E134 · 恢复路径、插件与依赖管理（2026-11-23）](#evidence-framework-release-review) |
 | 集中包管理 | [E133 · NuGet 还原等价与插件基线校验（2026-11-23）](#evidence-central-package-versions) |
 | 文件夹历史预览取消 | [E132 · 快速切换与引擎取消诊断（2026-11-20）](#evidence-folder-history-preview-cancellation) |
 | 文件夹历史全插件审查 | [E131 · 清理确认、自动保护和 Office 对比（2026-11-20）](#evidence-folder-history-full-review) |
@@ -170,6 +171,31 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-framework-release-review"></a>
+
+## E134 框架发布前审查（2026-11-23）
+
+审查对象为 `02ed30a` 的 Windows 宿主、Core、Contracts、公共 UI 和分发脚本。三个 GPT‑6.2‑Astra 子代理分别检查存储与退出、插件与公共 UI、外部依赖与安装器；主会话复核调用路径。以下是静态代码结论。本轮没有启动应用、运行安装器或向用户数据注入故障。
+
+| 优先级 | 触发与影响 | 修复后应验证 |
+| --- | --- | --- |
+| P1 | [迁移恢复](../TractorTool.Core/Storage/DataRootMigration.cs) 清理中断后，只复验旧根中剩余文件对应的目标。如果旧 A 已清理、目标 A 随后损坏，下次启动仍可能删除旧 B 并清除迁移记录。 | 提交时保存可校验的目标清单。旧根只剩部分文件或整个消失时，目标缺文件或同大小内容损坏均须保留恢复记录，并处理已重绑的回退元数据和旧格式清单。 |
+| P1 | [启动定位](../TractorTool.Core/Storage/AppPaths.cs) 读取不到主 `bootstrap.json` 时会走默认初始化。仅主文件丢失、备份和自定义数据都在时，会另建默认定位，新旧数据可能写入两个根。 | 区分真正首跑与已有备份的定位异常。后者提供恢复提示；未经核实采用旧备份也可能回到错误的数据根。 |
+| P1 | [安装器](../packaging/TractorTool.iss) 先写宿主文件，最后写 `installation.ini`。首次安装硬中断留下部分宿主文件时，原包重跑会在检查 `.plugin-seed` 前拒绝目录。 | 在首个文件写入前记录安装事务；同包能恢复，不接管无关非空目录，并分别覆盖插件写入前后中断。 |
+| P2 | [插件更新备份](../TractorTool.Core/Plugins/PluginManager.cs) 用 `Directory.Exists` 判断是否有旧数据。属性读取被拒可能被记为空备份；权限恢复后回退会将原数据移到 `before-rollback` 并以空目录启动。 | 明确区分缺失、同名文件、权限错误；后两种保留更新请求。 |
+| P2 | [插件回退](../TractorTool.Core/Plugins/PluginManager.cs) 强制设为已启用，原先禁用的插件可能在下一次启动运行常驻服务。 | 覆盖禁用插件更新后回退，保留原启停状态。 |
+| P2 | [插件依赖引用](../TractorTool.Core/Plugins/PluginPackageReferences.cs) 未核对每个已登记活动版本都被发现。整个插件 ID 目录暂时缺失时，它所需的包可能在设置中变为可清理。 | 未匹配的活动版本暂停清理；正式卸载后允许回收。 |
+| P2 | [包修复](../TractorTool.Core/Packages/ExternalPackageService.cs) 在下载替代包前删除旧安装。若上次验证只因文件暂被占用而失败，断网或取消修复也会失去原本可复用的工具。 | 暂存并验证替代包后再切换，提交失败能恢复原目录。 |
+| P2 | [依赖设置页](../TractorTool/ViewModels/ExternalToolsViewModel.cs) 过滤掉首次下载中且从未安装的包，用户看不到进度和停止共享下载的入口。 | 首次下载期间可看到进度并取消；插件取消自己的等待仍与共享下载分开。 |
+| P2 | [迁移目标校验](../TractorTool.Core/Storage/DataRootMigration.cs) 拒绝 UNC 路径，但盘符形式的已映射网络共享可以通过，断网后自定义数据根不可用。 | 选择目标和下次启动时都按实际卷类型复核，覆盖映射网络盘。 |
+| P2 | [显式退出](../TractorTool/App.axaml.cs) 可在启动时后台应用插件待处理变更期间发生；退出等待未计入这一段初始化，备份或移码可能被进程结束打断。 | 将在途初始化纳入已有退出宽限期，验证重启后事务状态。 |
+| P2 | 插件或迁移确认框仍打开时从托盘退出，[主窗被禁用并等待相关操作](../TractorTool/App.axaml.cs)，[确认框的取消](../TractorTool/Views/MainWindow.axaml.cs) 却绑定到窗口关闭。两端会等到退出超时。 | 同意退出后先取消未决交互，再等待已开始的写盘操作；正常取消不记错误。 |
+| P3 | [插件设置分类](../TractorTool/ViewModels/MainViewModel.cs) 只转交标题与页面工厂；视频和 HUD 注册的图标不会出现在设置分类。 | 复用宿主图标缓存及 `ToolIcon`，核对分类显示。 |
+
+**版本迁移边界。** 剪贴板开发版已到 `1.1.5`，开发历史也存在同一 ID 的 `1.0.0`。全新目录可使用新的正式版本号；安装管理器会拒绝同版本覆盖和直接降级，安装器升级也会保留已有 Plugins。若采用统一版本号，已有开发版用户可在管理页卸载旧插件、显式退出重启，再安装正式 ZIP 并再次退出重启。卸载保留插件数据。无需降低版本保护或删除应用数据。
+
+远端普通分支 `4177501` 已通过 [Windows 分发构建](https://github.com/AfterDuang/TractorTool/actions/runs/45188394121)。截至审查，远端没有标签；本地旧标签 `1.0.0` 指向 `56137e9`，标签工作流约定使用 `v1.0.0`。本轮未调整发布版本或推送标签。
 
 <a id="evidence-central-package-versions"></a>
 

@@ -11,7 +11,7 @@
 
 TractorTool 将工具业务放在独立插件中，由精干的宿主统一提供导航、主题、设置、日志、后台任务和外部依赖管理。新增符合现有协议的工具，可以独立编译和安装，无需改动宿主。
 
-> **开发中，尚未发布正式 Release。** Windows x64 ZIP 和安装器已可本地构建，当前进度与验证结果见[开发与验收](Docs/DEVELOPMENT.md#current-status)。
+> **当前处于 1.0.0 发布准备阶段。** Windows x64 分发已通过构建和静态校验，当前验收进度见[开发台账](Docs/DEVELOPMENT.md#current-status)。
 
 ## 框架能力
 
@@ -30,7 +30,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 
 当前目标平台是 **Windows x64**。发布包采用自包含布局，使用时无需另装 .NET SDK；Linux、macOS 暂不提供发布包。
 
-本地构建会生成以下文件，正式下载渠道将在 Release 流程接入后提供：
+本地构建和 GitHub Actions 使用同一套分发脚本，生成以下文件。
 
 | 文件 | 用途 |
 | --- | --- |
@@ -56,7 +56,7 @@ ZIP 版也使用上述数据目录。数据迁移不移动插件程序；卸载�
 
 ## 从源码开发
 
-使用 Windows、VS Code 和仓库 [global.json](global.json) 指定的 .NET SDK，配合 C# 与 Avalonia 扩展。运行分发脚本还需要 **PowerShell 7.4 或更新版本**。
+使用 Windows、VS Code 和仓库 [global.json](global.json) 指定的 .NET SDK，配合 C# Dev Kit（`ms-dotnettools.csdevkit`）与 Avalonia 扩展。运行分发脚本还需要 **PowerShell 7.4 或更新版本**。
 
 1. 用 VS Code 打开仓库根目录，加载 `TractorTool.slnx`。
 2. 完成依赖还原和构建。
@@ -93,9 +93,9 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 ### GitHub Release 草稿
 
-仓库上传 GitHub 后，推送 `v` 加 `Directory.Build.props` 中产品版本的标签，工作流会构建、校验并创建 **Release 草稿**。普通提交、PR 和手动构建只保留 Actions 产物。标签、产物版本与源码提交须一致，工作区须干净；预发布标签生成 prerelease 草稿。
+推送与产品版本匹配的标签（如 `v1.0.0`）时，工作流在干净检出中构建附件，校验版本和源码提交后创建 **Release 草稿**。推送到 `main`、PR 和手动构建只上传 Actions 产物。
 
-草稿不会自动公开。维护者核对附件、发布说明、本项目授权和实际运行验收后，再到 GitHub 发布。已有同标签 Release 不覆盖；上传失败或任务中断可能留下不完整草稿，先在 Releases 核对，仅删除本次失败的草稿，再重跑 `draft-release` job。不要删除正式 Release 来绕过保护。当前配置尚未在 GitHub 实跑，也未自动配置远程或推送。
+维护者核对附件、发布说明、项目授权及运行验收后，在 GitHub 手动公开草稿。上传中断时，先检查 Releases 中已有的同标签记录；如留下不完整的草稿，仅清理该草稿后重跑 `draft-release`。
 
 测试时可用 `--profile-root <绝对路径>` 隔离配置和数据；默认 F5 未使用该参数。方法与验收要求见[开发入口](Docs/DEVELOPMENT.md#workflow)。
 
