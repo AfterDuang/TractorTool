@@ -16,7 +16,7 @@
 
 | 范围 | 当前实现 |
 | --- | --- |
-| 工程与版本 | VS Code，解决方案 17 个工程。SDK 见 [global.json](../global.json)，仓内 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
+| 工程与版本 | VS Code，解决方案 17 个工程。SDK 见 [global.json](../global.json)，框架 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，插件业务私有库版本见所属插件的工程文件。宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
 | 系统数据HUD | 硬件按类型显示图标/示例，CPU 访问条件明确提示，重新检测后清读数缓存；E93 独立采样和 E95 精简保持。E96 离屏回归通过。E94 两项 P2 仍待修复，CPU 温度实读/原生交互/DPI/高频性能待验，托盘方案列表暂缓 |
 | 公共接口 | Contracts API 1.7 / UI API 1.5，保留旧注册及方法 ABI；可选托盘接口不改变原页面协议。PageHost 离页取消沿用自有直接事件，宿主不静态引用具体插件，正式插件独立引用发布 SDK |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑；软件/插件设置分组可独立折叠，标题区 32 DIP，仅保留小图标和常规字重软件名，专属布局留在各页面 |
@@ -38,6 +38,7 @@
 
 | 范围 | 已有证据 | 未覆盖及证据入口 |
 | --- | --- | --- |
+| 插件业务依赖定版 | 1.0.0 标签之后，两项私有库移回对应插件工程。Release 构建及独立打包通过，两包的依赖与 1.0.0 一致 | 本轮仅验证构建与包内容。[E136](PROJECT_HISTORY.md#evidence-plugin-private-versions) |
 | 文件夹版本历史 | 临时库验证旧版恢复、选区提交与后续普通保存、恢复中断、工作树标识及大文本差异。离屏窗口验证历史行菜单、当前行、分页、宽窄布局与拖框 | 真实 Windows 窗口、正式 CLI 的选区恢复与提交、故障注入及大库性能待 A28。[E126](PROJECT_HISTORY.md#evidence-folder-history-revisions) |
 | Avalonia 升级 | E117 全部 15 工程 Release、宿主及关联 4 工程 Debug 构建均 0 警告/0 错误；三个正式插件用发布 SDK 独立构建，清单与 PE 共享程序集引用匹配，宿主文件哈希未变；依赖及许可来源已核对，子代理复审未发现代码/打包阻断问题。用户常规使用反馈暂未发现升级问题并授权提交 | Agent 未运行应用；旧插件拒绝/更新、全部插件加载、退出与动效专项未逐项确认。FFmpeg 安装末尾拒绝访问重试成功，根因未定。旧插件须重编译，不能仅改清单。[E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)、A01–A03/A07 |
 | 框架可靠性 | E135 核心检查 216 项、离屏集成 87 项通过，覆盖配置读取、迁移恢复、插件回退及在途激活时退出 | 大目录耗时、真实 ACL、断电及原生窗口仍待验证。[E135](PROJECT_HISTORY.md#evidence-release-100) |

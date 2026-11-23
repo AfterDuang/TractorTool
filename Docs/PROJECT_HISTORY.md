@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 插件业务依赖定版 | [E136 · 源码与发布 SDK 构建（2026-11-23）](#evidence-plugin-private-versions) |
 | 1.0.0 发布修复 | [E135 · E134 修复和隔离回归（2026-11-23）](#evidence-release-100) |
 | 框架发布前审查 | [E134 · 恢复路径、插件与依赖管理（2026-11-23）](#evidence-framework-release-review) |
 | 集中包管理 | [E133 · NuGet 还原等价与插件基线校验（2026-11-23）](#evidence-central-package-versions) |
@@ -172,6 +173,12 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-plugin-private-versions"></a>
+
+## E136 插件业务依赖定版（2026-11-23）
+
+文件夹历史工程声明 DocumentFormat.OpenXml 3.5.1，系统数据 HUD 工程声明 LibreHardwareMonitorLib 0.9.6。17 工程 Release 构建通过，0 警告、0 错误。核对还原清单，两项私有库分别进入对应插件及其检查工程，宿主均未引用。用 1.0.0 发布 SDK 独立打包，与本地 1.0.0 分发包逐项对比，两个 ZIP 的文件列表（16、69 项）、运行时依赖图和依赖 DLL 哈希（4、26 个）分别一致。本轮未运行插件业务。
 
 <a id="evidence-release-100"></a>
 

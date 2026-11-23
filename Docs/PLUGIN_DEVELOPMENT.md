@@ -301,7 +301,7 @@ dotnet build TractorTool.slnx -c Debug -m:1 -nr:false
 
 独立交付须先发布宿主到新目录并记录原文件哈希，再引用该 SDK 构建插件、核对完整依赖与许可，最后复核宿主哈希未变。源码模式编译不能代替独立构建证据；ZIP 安装、DLL 装载及真实交互也分别取证。
 
-仓内插件在工程中声明 `PackageReference`，版本取自 [Directory.Packages.props](../Directory.Packages.props)。仓外插件在自己的工程或中央版本文件中指定依赖，按目标宿主填写 `plugin.json` 的 `avaloniaVersion`。脚本从插件目录调用 `dotnet`，仓外项目可用自己的 `global.json` 选择对应 SDK。MVVM 由使用它的插件随包交付。
+仓内插件引用 Avalonia、MVVM 时，`PackageReference` 沿用[框架版本](../Directory.Packages.props)。仅供插件业务使用的 NuGet 库，在插件自己的 `.csproj` 中用 `<PackageReference Include="包名" VersionOverride="版本" />` 定版。MVVM 和业务私有库随使用它们的插件交付。仓外插件自行管理 NuGet 版本，按目标宿主填写 `plugin.json` 的 `avaloniaVersion`。脚本从插件目录调用 `dotnet`，仓外项目可用自己的 `global.json` 选择 SDK。
 
 [Build-Plugin](../scripts/Build-Plugin.ps1) 要求 PowerShell 7.4+。仓内开发与 CI 使用根 [global.json](../global.json) 锁定的 .NET SDK。脚本复制实际随包的 MVVM 许可及插件自备许可，其他私有库许可由插件作者提供，详见[脚本适用范围](../scripts/README.md#插件打包的现有适用范围)。
 

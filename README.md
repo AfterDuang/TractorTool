@@ -144,7 +144,7 @@ TractorTool/
 ├─ Docs/                               需求、架构、接入规范与开发验收文档
 ├─ TractorTool.slnx                    解决方案与工程分组
 ├─ Directory.Build.props               公共构建属性与默认产品版本
-├─ Directory.Packages.props            仓内 NuGet 包版本与 Avalonia 编译基线
+├─ Directory.Packages.props            框架 NuGet 包版本与 Avalonia 编译基线
 └─ global.json                         固定开发和 CI 使用的 .NET SDK
 ```
 

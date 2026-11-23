@@ -4,7 +4,7 @@
 
 ## 1. 当前代码与目标结构
 
-框架基于 .NET 10、Avalonia、MVVM，Windows 优先。项目清单见 [TractorTool.slnx](../TractorTool.slnx)，.NET SDK 版本见 [global.json](../global.json)。仓内 NuGet 版本由 [Directory.Packages.props](../Directory.Packages.props) 统一维护，各项目声明自己使用的包和资产类型。宿主公开的 Avalonia 兼容常量由同一编译基线生成。
+框架基于 .NET 10、Avalonia、MVVM，Windows 优先。项目清单见 [TractorTool.slnx](../TractorTool.slnx)，.NET SDK 版本见 [global.json](../global.json)。[Directory.Packages.props](../Directory.Packages.props) 统一维护框架使用的 NuGet 版本，宿主公开的 Avalonia 兼容常量取自该基线。仅供插件业务使用的库由插件在自己的工程中定版并随包交付。
 
 | 模块 | 职责 | 项目依赖边界 |
 | --- | --- | --- |

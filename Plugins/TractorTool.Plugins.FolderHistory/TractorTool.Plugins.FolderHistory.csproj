@@ -16,7 +16,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" IncludeAssets="compile;build;buildTransitive" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
-    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="DocumentFormat.OpenXml" VersionOverride="3.5.1" />
     <InternalsVisibleTo Include="TractorTool.FolderHistoryChecks" />
     <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="NOTICE.md" CopyToOutputDirectory="PreserveNewest" />

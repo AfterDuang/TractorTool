@@ -4,7 +4,7 @@
 
 ## 1. 当前工作
 
-当前发布版本为 1.0.0，宿主和四个随包插件共享 Avalonia 12.1.6 基线。工程依赖从 [Directory.Packages.props](../Directory.Packages.props) 维护，插件清单须匹配目标宿主。
+当前发布版本为 1.0.0，宿主和四个随包插件共享 Avalonia 12.1.6 基线。框架依赖由 [Directory.Packages.props](../Directory.Packages.props) 维护，业务私有库在对应插件工程中定版。插件清单须匹配目标宿主。
 
 发布修复、回归范围及设备验收缺口见 [E135](PROJECT_HISTORY.md#evidence-release-100) 和[当前台账](DEVELOPMENT.md#current-status)。正式标签为 `v1.0.0`，GitHub Actions 生成草稿，维护者决定公开时间。
 
