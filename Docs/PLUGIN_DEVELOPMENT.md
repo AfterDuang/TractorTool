@@ -74,7 +74,7 @@ TractorTool.Plugins.Example/
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
 | `apiVersion` | 当前 1.7，仍接受 1.0–1.6；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7 |
-| `uiApiVersion` | 当前为 1.5；宿主仍接受旧 1.0–1.4 页面注册与已有公开方法签名；使用托盘接口必须声明 1.5 |
+| `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可空，最多 32 个不重复的 id/三段 version；新依赖在 downloads 按 RID 提供 GitHub 安装资料。旧 id/version 清单仍可复用已装包；完整示例见下文 |
@@ -108,11 +108,13 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 | 类型 | 谁声明/提供 | 交付与使用方式 |
 | --- | --- | --- |
 | .NET 平台程序集 | 目标框架及宿主运行时 | 不随插件重复打包；范围来自 SDK 平台清单，不向加载器逐个补 DLL 名称 |
-| 共享 SDK | 宿主提供 Contracts、UI、Avalonia / Avalonia.*、FluentAvalonia、MicroCom.Runtime | 编译引用兼容版本，插件 ZIP 不带副本；共享程序集身份不匹配会拒绝加载 |
+| 共享 SDK | Contracts、UI 及目标宿主提供的 Avalonia、FluentAvalonia、MicroCom.Runtime 共享程序集 | 引用目标 SDK 中的兼容版本；加载器核对共享身份，插件 ZIP 排除这些 DLL |
 | 私有托管/原生库 | 插件自身的项目或 NuGet 依赖 | 随插件携带 DLL、必要的 deps.json、平台原生库、资源与许可；不得依赖开发机缓存或包外链接 |
 | 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
 
 NuGet 是构建期依赖渠道，GitHub Release 是当前外部工具安装渠道，两者不是同一种“源”。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
+
+例如，插件可直接引用目标宿主随附的 `Avalonia.Controls.ColorPicker`。若插件另用宿主 SDK 未提供的 `Avalonia.*` 扩展，使用 1.1.0 或更高版本的宿主 SDK 打包，声明 UI API 1.6，并把扩展 DLL 和私有依赖放进插件 ZIP。现有插件可继续声明其实际使用的旧 UI API。
 
 插件代码是可信的进程内代码；AssemblyLoadContext 不是安全沙箱。不承诺热卸载、不可信代码隔离或任意插件故障都不影响宿主。
 

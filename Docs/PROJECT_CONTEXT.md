@@ -4,9 +4,9 @@
 
 ## 1. 当前工作
 
-当前发布版本为 1.0.0，宿主和四个随包插件共享 Avalonia 12.1.6 基线。框架依赖由 [Directory.Packages.props](../Directory.Packages.props) 维护，业务私有库在对应插件工程中定版。插件清单须匹配目标宿主。
+1.1.0 宿主和四个随包插件沿用 Avalonia 12.1.6 基线。框架依赖由 [Directory.Packages.props](../Directory.Packages.props) 维护，业务私有库在对应插件工程中定版。插件清单须匹配目标宿主。
 
-发布修复、回归范围及设备验收缺口见 [E135](PROJECT_HISTORY.md#evidence-release-100) 和[当前台账](DEVELOPMENT.md#current-status)。正式标签为 `v1.0.0`，GitHub Actions 生成草稿，维护者决定公开时间。
+1.1.0 插件隔离与分发校验见 [E137](PROJECT_HISTORY.md#evidence-release-110)，设备验收缺口见[当前台账](DEVELOPMENT.md#current-status)。推送正式版本标签即触发 GitHub Actions 构建、校验并公开发布。
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 

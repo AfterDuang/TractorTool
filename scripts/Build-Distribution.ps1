@@ -52,7 +52,7 @@ foreach ($plugin in $selectedPlugins) {
     $pluginOutput = Join-Path $destination "work/$($plugin.Id)"
     & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project $plugin.Project -HostSdkDir $bundle -Output $pluginOutput
     $files = Join-Path $pluginOutput 'files'
-    $manifest = Get-Content -LiteralPath (Join-Path $files 'plugin.json') -Raw | ConvertFrom-Json
+    $manifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Path (Join-Path $files 'plugin.json')
     if ($manifest.id -cne $plugin.Id -or $manifest.version -cne $plugin.Version) { throw '插件构建前后身份不一致，请重新发布。' }
     $installPath = "Plugins/$($manifest.id)/$($manifest.version)"
     $install = Join-Path $bundle $installPath

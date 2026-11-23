@@ -126,14 +126,10 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 var manifest = record.Manifest!;
                 var path = ManifestValidator.EntryPath(manifest, record.Directory);
                 if (!File.Exists(path)) throw new FileNotFoundException("找不到入口程序集", path);
-                foreach (var file in System.IO.Directory.EnumerateFiles(record.Directory, "*.dll"))
-                {
-                    var name = Path.GetFileNameWithoutExtension(file);
-                    if (PluginLoadContext.Shared(name) || name is "TractorTool.Core" or "TractorTool")
-                        throw new InvalidDataException($"插件包包含宿主共享程序集 {name}，请移除副本并使用宿主 SDK。");
-                }
+                foreach (var file in PluginFiles.Files(record.Directory))
+                    PluginAssemblyPolicy.ValidatePluginFile(file, manifest);
                 var assembly = new PluginLoadContext(path, record.Directory).LoadFromAssemblyPath(path);
-                if (assembly.GetReferencedAssemblies().Any(a => a.Name is "TractorTool" or "TractorTool.Core"))
+                if (assembly.GetReferencedAssemblies().Any(a => PluginAssemblyPolicy.IsHostInternal(a.Name)))
                     throw new InvalidDataException("插件引用了宿主或 Core；只允许依赖公开 Contracts/UI SDK。");
                 var type = assembly.GetType(manifest.EntryType, throwOnError: true)!;
                 if (!typeof(IPlugin).IsAssignableFrom(type) || type.IsAbstract) throw new InvalidDataException("入口类型必须实现 IPlugin。");

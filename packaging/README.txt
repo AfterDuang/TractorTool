@@ -1,11 +1,11 @@
 TractorTool · Windows x64
 
 将整个目录解压到可写的位置，运行 TractorTool.exe；无需另装 .NET。
-此开发版本附带独立插件，具体插件及版本见 release.json 的 plugins 列表，尚待完整运行验收。
+随附插件及其版本记录在 release.json 的 plugins 列表中。
 
 插件代码位于软件目录的 Plugins/<PluginId>/<Version>，管理变更重启生效。
 应用数据默认位于 %LOCALAPPDATA%\TractorTool，可在设置中安排迁移。
-压缩包不使用便携数据模式，也不包含用户配置、媒体或 FFmpeg。
+ZIP 版也使用上述数据目录，用户配置、媒体和按需下载的工具均单独存放。
 首次需要外部依赖时由宿主确认后下载；卸载插件保留已安装依赖。
 
 请先退出旧版本并解压到新的空目录，不要直接覆盖正在运行的安装。

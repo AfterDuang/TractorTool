@@ -19,7 +19,7 @@ $pluginPackage = Join-Path $run 'plugin-build'
 # This fixture intentionally has no MVVM dependency; exercise the same packaging entry as real plugins.
 Invoke-Recorded 'plugin-build' { & (Join-Path $PSScriptRoot 'Build-Plugin.ps1') -Project (Join-Path $repo 'tests/IndependentPlugin/IndependentPlugin.csproj') -HostSdkDir $publish -Output $pluginPackage }
 $pluginOutput = Join-Path $pluginPackage 'files'
-$pluginManifest = Get-Content -LiteralPath (Join-Path $pluginOutput 'plugin.json') -Raw | ConvertFrom-Json
+$pluginManifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Path (Join-Path $pluginOutput 'plugin.json')
 $install = Join-Path $publish "Plugins/$($pluginManifest.id)/$($pluginManifest.version)"
 New-Item -ItemType Directory -Path $install -Force | Out-Null
 Get-ChildItem -LiteralPath $pluginOutput | Copy-Item -Destination $install -Recurse

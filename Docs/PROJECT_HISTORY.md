@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 插件隔离与自动发布 | [E137 · 1.1.0 发布（2026-11-23）](#evidence-release-110) |
 | 插件业务依赖定版 | [E136 · 源码与发布 SDK 构建（2026-11-23）](#evidence-plugin-private-versions) |
 | 1.0.0 发布修复 | [E135 · E134 修复和隔离回归（2026-11-23）](#evidence-release-100) |
 | 框架发布前审查 | [E134 · 恢复路径、插件与依赖管理（2026-11-23）](#evidence-framework-release-review) |
@@ -173,6 +174,16 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-release-110"></a>
+
+## E137 插件隔离与 1.1.0 自动发布（2026-11-23）
+
+宿主与四个随包插件分别定版为 1.1.0，沿用 Avalonia 12.1.6、Contracts API 1.7 和原程序集绑定版本。UI API 1.6 新增私有 Avalonia 扩展交付能力，已有插件可保留原 UI API 声明。分发校验从清单读取外部工具路径和归档摘要。标签工作流在附件校验和上传完成后公开 Release，预发行标签单独标记。
+
+- `Verify-PluginHost.ps1` 的 18 工程 Release 构建零警告、零错误。核心 217 项、离屏集成 90 项通过，实测私有扩展在插件上下文加载、旧 UI 1.5 插件兼容及共享 DLL 副本拒绝。独立插件构建、安装和检查前后，234 个宿主文件的哈希一致。隔离证据目录为 `artifacts/plugin-host-20261123-235028-9d9de9`。
+- 首轮核心检查有两项在子进程刚创建 PID 文件时遇到 Windows 共享冲突。测试子进程改为写完并关闭同目录临时文件后再改名，以完整文件通知父进程就绪。上述通过结果来自修正后的全量复跑。
+- `DistributionPluginsChecks.ps1` 通过。新版校验器也完整验证了 1.0.0 的 399 个文件、4 个插件及原标签/提交身份。证据覆盖构建、归档和离屏装载，真实安装器升级及硬件场景仍按 A22 等验收项记录。
 
 <a id="evidence-plugin-private-versions"></a>
 

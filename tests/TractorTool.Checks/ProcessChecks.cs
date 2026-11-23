@@ -268,7 +268,10 @@ internal static class ProcessChecks
                 }
                 return 0;
             case "wait":
-                await File.WriteAllTextAsync(args[1], Environment.ProcessId.ToString());
+                // The parent treats the marker's existence as a readiness signal.
+                var pendingMarker = args[1] + ".tmp";
+                await File.WriteAllTextAsync(pendingMarker, Environment.ProcessId.ToString());
+                File.Move(pendingMarker, args[1]);
                 await Task.Delay(Timeout.InfiniteTimeSpan);
                 return 0;
             default: return 64;

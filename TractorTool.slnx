@@ -6,6 +6,7 @@
     <Project Path="Plugins/TractorTool.Plugins.FolderHistory/TractorTool.Plugins.FolderHistory.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/AvaloniaExtensionFixture/AvaloniaExtensionFixture.csproj" />
     <Project Path="tests/FixtureDependency/FixtureDependency.csproj" />
     <Project Path="tests/IndependentPlugin/IndependentPlugin.csproj" />
     <Project Path="tests/PackageProbePlugin/PackageProbePlugin.csproj" />

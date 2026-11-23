@@ -25,6 +25,12 @@ using TractorTool.Views;
 if (args.Length != 2 && !(args.Length == 3 && args[2] == "--navigation-only"))
     throw new ArgumentException("Usage: checks <published-host> <isolated-evidence-directory> [--navigation-only]");
 var published = Path.GetFullPath(args[0]);
+// Exercise the published SDK's policy; the headless check process has extra Avalonia assemblies.
+using (var config = JsonDocument.Parse(File.ReadAllText(Path.Combine(published, "TractorTool.runtimeconfig.json"))))
+{
+    const string policy = "TractorTool.PluginSdk.ReservedAssemblies";
+    AppContext.SetData(policy, config.RootElement.GetProperty("runtimeOptions").GetProperty("configProperties").GetProperty(policy).GetString());
+}
 var output = Path.GetFullPath(args[1]);
 Directory.CreateDirectory(output);
 // Loads the published application XAML and SDK, but not its production desktop lifetime.
@@ -361,6 +367,12 @@ Fault("Initialization exception contained", originalManifest with { EntryType = 
 Fault("Partial registration rolled back", originalManifest with { EntryType = "IndependentPlugin.BadRegistrationPlugin" }, PluginState.Failed);
 Fault("Page factory exception keeps host navigation working", originalManifest with { EntryType = "IndependentPlugin.BrokenPagePlugin" }, PluginState.Loaded);
 Fault("Shared SDK DLL conflict rejected", originalManifest, PluginState.Failed, d => File.WriteAllText(Path.Combine(d, "Avalonia.Controls.dll"), "conflicting-sdk"));
+Fault("Nested mixed-case SDK copy rejected", originalManifest, PluginState.Failed, d =>
+    File.WriteAllText(Path.Combine(d, "Assets", "AVALONIA.CONTROLS.DLL"), "conflicting-sdk"));
+Fault("Private Avalonia extension requires UI 1.6", originalManifest with { UiApiVersion = "1.5" }, PluginState.Failed,
+    expectedFailure: "UI API 1.6");
+Fault("Existing UI 1.5 plugin loads without a private Avalonia extension", originalManifest with { UiApiVersion = "1.5" }, PluginState.Loaded,
+    d => File.Delete(Path.Combine(d, "Avalonia.TractorTool.FixtureExtension.dll")));
 Fault("Missing private dependency reported", originalManifest, PluginState.Failed, RemovePrivateDependency, expectedFailure: missingPrivateDependency);
 Fault("Win32, VisualBasic and XML implementation assemblies resolve from runtime", originalManifest with { EntryType = "IndependentPlugin.FrameworkReferencePlugin" }, PluginState.Loaded);
 // Preload a real DLL and prove default name binding works; an emitted assembly is not a valid substitute.

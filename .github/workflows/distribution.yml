@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
+      - name: Check distribution rules with isolated fixtures
+        run: ./tests/DistributionPluginsChecks.ps1
       - name: Build and statically verify distribution
         run: |
           $compiler = ./scripts/Get-InnoCompiler.ps1 -Output "$env:GITHUB_WORKSPACE/artifacts/inno"
@@ -39,7 +41,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  draft-release:
+  publish-release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: windows-2022
@@ -63,16 +65,16 @@ jobs:
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           ./scripts/Verify-Distribution.ps1 -AssetsDir ./artifacts/release -ExpectedTag $env:RELEASE_TAG -ExpectedCommit $env:SOURCE_COMMIT
-      - name: Create draft with verified assets
+      - name: Publish verified release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $assets = @(Get-ChildItem -LiteralPath ./artifacts/release -File | ForEach-Object FullName)
-          $options = @('--draft', '--verify-tag', '--generate-notes', '--title', "TractorTool $env:RELEASE_TAG")
-          if ($env:RELEASE_TAG.Contains('-')) { $options += '--prerelease' }
+          $options = @('--verify-tag', '--generate-notes', '--title', "TractorTool $env:RELEASE_TAG")
+          if ($env:RELEASE_TAG.Contains('-')) { $options += '--prerelease', '--latest=false' }
           gh release create $env:RELEASE_TAG @assets @options
           if ($LASTEXITCODE -ne 0) {
-            throw '创建或上传失败，可能遗留不完整草稿。请到仓库 Releases 核对同标签：仅删除本次失败的草稿后重跑此 job；已有正式 Release 不得覆盖。'
+            throw '发布未确认。请在 Releases 核对同标签的状态和附件。若上传中断留下草稿，清理该草稿后重跑 publish-release；保留已公开的版本。'
           }

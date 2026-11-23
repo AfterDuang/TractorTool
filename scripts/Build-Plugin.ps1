@@ -10,11 +10,14 @@ foreach ($assembly in @('TractorTool.Contracts.dll', 'TractorTool.UI.dll')) {
     if (!(Test-Path -LiteralPath (Join-Path $hostSdk $assembly) -PathType Leaf)) { throw 'HostSdkDir 必须指向已经发布的宿主。' }
 }
 $hostDeps = Get-Content -LiteralPath (Join-Path $hostSdk 'TractorTool.deps.json') -Raw | ConvertFrom-Json -AsHashtable
+. (Join-Path $PSScriptRoot 'PluginAssemblyPolicy.ps1')
+$hostConfig = Get-Content -LiteralPath (Join-Path $hostSdk 'TractorTool.runtimeconfig.json') -Raw | ConvertFrom-Json -AsHashtable
+$sdkPolicy = Get-PluginSdkAssemblyPolicy $hostConfig $hostDeps
 $hostAvalonia = @($hostDeps.libraries.Keys | Where-Object { $_ -like 'Avalonia/*' -and $hostDeps.libraries[$_].type -eq 'package' })
 if ($hostAvalonia.Count -ne 1) { throw '已发布宿主的 TractorTool.deps.json 缺少唯一的 Avalonia 包版本。' }
 $hostAvaloniaVersion = $hostAvalonia[0].Split('/')[1]
 function Read-PluginManifest([string]$Path, [string]$AvaloniaVersion) {
-    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $manifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Path $Path
     if ($manifest.avaloniaVersion -isnot [string] -or $manifest.avaloniaVersion -cne $AvaloniaVersion) {
         throw "Avalonia 版本不兼容：$Path 声明 '$($manifest.avaloniaVersion)'，目标宿主为 '$AvaloniaVersion'。"
     }
@@ -48,10 +51,9 @@ foreach ($package in $assets.libraries.Keys) {
         throw "插件还原了 $package，目标宿主使用 $($hostAvalonia[0])。请按目标宿主基线重新编译。"
     }
 }
-$shared = @(Get-ChildItem -LiteralPath $files -Recurse -Filter *.dll | Where-Object {
-    $_.BaseName -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$'
-})
-if ($shared.Count) { throw '插件输出包含宿主/共享 SDK 的副本。' }
+foreach ($file in Get-ChildItem -LiteralPath $files -Recurse -File) {
+    Assert-PluginSdkFile $sdkPolicy $file.Name $builtManifest.uiApiVersion
+}
 $licenses = Join-Path $files 'Licenses'
 # Only collect this known license when the package actually ships; MVVM is not an SDK requirement.
 if (Test-Path -LiteralPath (Join-Path $files 'CommunityToolkit.Mvvm.dll') -PathType Leaf) {

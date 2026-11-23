@@ -88,19 +88,14 @@ internal static class PluginFiles
         var manifest = ManifestValidator.Read(path);
         if (compatibility.Check(manifest) is { } error) throw new InvalidDataException(error);
         foreach (var file in Files(path))
-        {
-            var name = Path.GetFileNameWithoutExtension(file);
-            if (file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
-                (PluginLoadContext.Shared(name) || name is "TractorTool" or "TractorTool.Core"))
-                throw new InvalidDataException($"插件包含宿主共享程序集：{name}。");
-        }
+            PluginAssemblyPolicy.ValidatePluginFile(file, manifest);
         using var stream = File.OpenRead(ManifestValidator.EntryPath(manifest, path));
         using var pe = new PEReader(stream);
         if (!pe.HasMetadata) throw new InvalidDataException("入口不是托管 DLL。");
         var metadata = pe.GetMetadataReader();
         if (!metadata.IsAssembly) throw new InvalidDataException("入口不是托管程序集。");
         foreach (var handle in metadata.AssemblyReferences)
-            if (metadata.GetString(metadata.GetAssemblyReference(handle).Name) is "TractorTool" or "TractorTool.Core")
+            if (PluginAssemblyPolicy.IsHostInternal(metadata.GetString(metadata.GetAssemblyReference(handle).Name)))
                 throw new InvalidDataException("插件不能依赖宿主或 Core。");
         return manifest;
     }

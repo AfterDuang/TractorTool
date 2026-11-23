@@ -3,4 +3,5 @@
   <ItemGroup><ProjectReference Include="../../TractorTool.Core/TractorTool.Core.csproj" /></ItemGroup>
   <!-- Compile the real Windows adapter without referencing the Avalonia host executable. -->
   <ItemGroup><Compile Include="../../TractorTool/Platform/WindowsProcessSession*.cs" Link="Platform/%(Filename)%(Extension)" /></ItemGroup>
+  <Import Project="../../TractorTool.Core/Plugins/PluginSdk.targets" />
 </Project>

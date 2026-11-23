@@ -8,7 +8,7 @@
 
 ## 1. 当前状态
 
-**1.0.0 分发包含 Windows x64 宿主和四个同版本插件。** E134 确认的 12 项问题及原触发条件见[审查记录](PROJECT_HISTORY.md#evidence-framework-release-review)，本版修复与验证见 [E135](PROJECT_HISTORY.md#evidence-release-100)。标签工作流校验源码提交、插件 ZIP、安装包及摘要后创建草稿，公开发布由维护者决定。
+**1.1.0 分发包含 Windows x64 宿主和四个 1.1.0 插件。** 产品和插件分别定版，沿用 Avalonia 12.1.6。插件私有扩展、外部工具和发布验证见 [E137](PROJECT_HISTORY.md#evidence-release-110)。正式标签经构建和校验后自动公开附件。
 
 仍待真实 Windows 环境验收的项目包括跨会话安装、断电恢复、大目录迁移、设备采样和媒体导出。切页末段闪动继续使用官方渲染后端，等待上游修复。详见[下一步](#next)及[精度对照](PROJECT_HISTORY.md#evidence-page-flicker-precision)。
 
@@ -16,9 +16,9 @@
 
 | 范围 | 当前实现 |
 | --- | --- |
-| 工程与版本 | VS Code，解决方案 17 个工程。SDK 见 [global.json](../global.json)，框架 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，插件业务私有库版本见所属插件的工程文件。宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
+| 工程与版本 | VS Code，项目清单见 [TractorTool.slnx](../TractorTool.slnx)。SDK 见 [global.json](../global.json)，框架 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，插件业务私有库版本见所属插件的工程文件。宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
 | 系统数据HUD | 硬件按类型显示图标/示例，CPU 访问条件明确提示，重新检测后清读数缓存；E93 独立采样和 E95 精简保持。E96 离屏回归通过。E94 两项 P2 仍待修复，CPU 温度实读/原生交互/DPI/高频性能待验，托盘方案列表暂缓 |
-| 公共接口 | Contracts API 1.7 / UI API 1.5，保留旧注册及方法 ABI；可选托盘接口不改变原页面协议。PageHost 离页取消沿用自有直接事件，宿主不静态引用具体插件，正式插件独立引用发布 SDK |
+| 公共接口 | Contracts API 1.7 / UI API 1.6，保留旧注册及方法 ABI。UI 1.6 支持插件私有 Avalonia 扩展。随包插件独立引用发布 SDK，按所需能力声明最低 UI API |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑；软件/插件设置分组可独立折叠，标题区 32 DIP，仅保留小图标和常规字重软件名，专属布局留在各页面 |
 | 插件托盘 | 按插件名分组，注册普通/勾选动作并更新启用/文字状态；重复点击保护、统一日志、停止取消及解绑；切页/隐藏继续存在。只提供公共菜单接入，不实现悬浮球业务或任意深度菜单树 |
 | 剪贴板 | Fluent 彩色剪贴板图标共用于侧栏、主页和插件管理，Avalonia 保持 12.1.6；系统历史、左列表/右预览、复制原项、事件与激活刷新；WinRT 操作完成后检查取消，避免原生 Cancel 中断离页清理。无自建历史库或定时轮询 |
@@ -29,7 +29,7 @@
 | 日志 | INFO 绿/WARNING 黄/ERROR 红；筛选、复制、暂停、折叠详情，旧上新下、底部跟随，上翻不拉回。“已读”确认点击时全部错误，新错误再提醒。内存 300 条，普通导航不记录 |
 | M5 日志保留 | 10 MiB 分段，UTC 跨日/大小滚动，14 天、最多 20 文件/100 MiB；只清理顶层宿主日志，失败警告后继续。单条磁盘记录 64 KiB，完整原文保留在内存窗口 |
 | M5 数据迁移 | 设置安排/重试/取消；启动先复制 Config/Data/Packages/Logs、hash 校验、持久化源清理清单及原子切换，再重绑回退记录并清理旧 Config/Data/Packages/Logs/Cache；未知根项/bootstrap/锁保留。确认自定义目录删除且无迁移时恢复默认初始化，不重建自定义根。启动/迁移/失败共用唯一主窗口 |
-| M5 分发 | 随包工程从 Plugins 一级子目录自动识别，ID/版本读取 plugin.json；生成宿主 ZIP、每插件独立 ZIP、SHA256SUMS、版本/源码和文件清单，按实际宿主依赖收集许可。本地与 CI 共用脚本，产物按 release.json.plugins 自检；普通 CI 只上传产物，v* 标签经校验后创建 Release 草稿 |
+| M5 分发 | 随包工程从 Plugins 一级子目录自动识别，ID/版本读取 plugin.json。生成宿主 ZIP、独立插件 ZIP、SHA256SUMS、版本/源码和文件清单，按实际依赖收集宿主许可。本地与 CI 共用打包脚本。标签经独立校验后公开 Release，普通 CI 上传构建产物 |
 | M5 安装器 | Inno Setup 6.7.3，当前用户可写目录；从已校验 ZIP 编译，首次附带插件、升级保留现有 Plugins，卸载保留插件及应用数据。首个文件写入前登记安装事务，同包可在原目录恢复。 |
 | 插件打包边界 | Build-Plugin 支持无 MVVM 的插件；仅随包包含 MVVM DLL 时复制对应许可，缺失仍失败；保留插件自备 Licenses。其他私有库许可由作者维护，不声称全部自动收集；宿主验证也复用该打包入口 |
 | 未实现的扩展 | 私有源认证、其他安装类型、机器级安装、非 Windows 进程适配器、Python/pip/AI 扩展；均不作为已实现能力。当前待修复与验收缺口见[下一步](#next)，不再有自有源部署任务 |
@@ -47,10 +47,10 @@
 | 闪动精度诊断（已归档） | E115 四模式共 969 条原生采样，只有整体 F16 层三轮无 RGB 回落；E116 同一真实宿主中用户确认高精度不闪、普通精度仍闪 | 不是正式修复；实际纹理格式、具体量化/驱动原因及性能/跨设备未验证。诊断改动已回退，用户决定不采用定制后端，等待官方修复后再验。[E114–E116](PROJECT_HISTORY.md#evidence-page-flicker-precision)、A01 |
 | 剪贴板取消 | E103 插件 1.1.3 及检查工程编译通过，独立 ZIP 核对通过；真实日志定位的 WinRT 取消问题已修改 | 迟到失败用例仅编译，读取中切页、快速选择、重返页面和原生资源释放待用户验证；与动效闪动没有同链证据。[E103](PROJECT_HISTORY.md#evidence-clipboard-winrt-cancellation)、A08 |
 | 插件边界与 HUD | E67 共享框架/私有依赖清单静态核对通过；E96 HUD 0.4.17 独立包、纯数据及离屏 UI 检查通过 | 静态依赖检查不代表实际隔离加载；E94 两项 P2 仍未修，HUD 原生窗口、真实采样/硬件/网络和性能待验。[E67](PROJECT_HISTORY.md#evidence-framework-assembly-inventory)、[E96](PROJECT_HISTORY.md#evidence-hud-hardware-types)、A03/A25–A27 |
-| 分发与发布 | 自动发现四个插件，分别校验整包、独立 ZIP、安装器及源码身份。见 [E135](PROJECT_HISTORY.md#evidence-release-100) | 真机断电、整包启动、跨会话和无 SDK 环境待验，见 A22 |
+| 分发与发布 | 自动发现随包插件，校验整包、独立 ZIP、安装器及源码身份。1.1.0 见 [E137](PROJECT_HISTORY.md#evidence-release-110)，1.0.0 见 [E135](PROJECT_HISTORY.md#evidence-release-100) | 真机断电、整包启动、跨会话和无 SDK 环境待验，见 A22 |
 | 用户反馈 | E35 日志使用、E62 依赖/视频/GPU/插件升级及旧版数据迁移反馈暂未发现问题 | 未指定构建哈希、硬件和故障注入明细，不覆盖 E104 后的新迁移/重置语义；详见[验收台账](#acceptance) |
 
-用户负责真实 Windows 窗口、安装和硬件验收。本次临时目录自动回归已获授权，范围及结果见 [E135](PROJECT_HISTORY.md#evidence-release-100)。
+用户负责真实 Windows 窗口、安装和硬件验收。隔离回归的执行范围及版本见各轮记录。
 
 <a id="workflow"></a>
 
@@ -90,9 +90,9 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="local-artifacts"></a>
 
-### 1.0.0 分发包
+### 1.1.0 分发包
 
-本地 1.0.0 验证产物目录为 `artifacts/e135-v1.0.0-release/assets`。完整 Windows x64 ZIP 包含宿主与四个正式插件。安装器从同一份 ZIP 编译。独立插件 ZIP 使用插件 ID 命名。可用 [Verify-Distribution](../scripts/Verify-Distribution.ps1) 核对提交、版本和附件。
+[1.1.0 发布页](https://github.com/AfterDuang/TractorTool/releases/tag/v1.1.0) 提供 Windows x64 整包、同源安装器及四个独立插件 ZIP。`release.json` 记录源码提交及各插件身份，配合 `SHA256SUMS` 和 [Verify-Distribution](../scripts/Verify-Distribution.ps1) 可核对附件。
 
 开发版升级、同版本与较高版本插件的处理步骤见[开始使用](../README.md#开始使用)。验证新版本时，将整包解压到新目录，用独立的 `--profile-root` 启动。安装器升级会保留原 Plugins。
 
@@ -105,7 +105,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 ### 本地产物快照
 
-1.0.0 产物见[当版分发](#local-artifacts)。下表仅记录历史路径，适用范围以当轮证据为准。
+当前版本见[当版分发](#local-artifacts)。下表记录历史路径，适用范围以当轮证据为准。
 
 | 产物 | 路径 | 用途与限制 |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | 入口 | 覆盖及边界 |
 | --- | --- |
 | `dotnet run --project tests/TractorTool.FolderHistoryChecks -c Release -- --office` | Word、Excel 样本、原有纯文本比较及模拟快照提取；[E130](PROJECT_HISTORY.md#evidence-folder-history-office) 已通过 |
-| [DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) | 临时工程元数据与 ZIP：0/1/多个任意命名插件、扫描边界、缺失/多工程、清单身份/重复 ID 与漏登记文件；不编译或加载 DLL，不联网。E98 通过语法核对，回归未执行 |
+| [DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) | 使用临时工程与 ZIP 验证插件发现、清单身份、共享程序集及外部工具归属。CI 在构建安装包前运行 |
 | `dotnet run --project tests/TractorTool.Checks -c Release` | 核心存储、管理、日志、依赖、任务与进程；Windows 部分包含真实子进程夹具，包使用内存 ZIP/虚拟 HTTP，不启动 FFmpeg |
 | `dotnet run --project tests/TractorTool.ClipboardChecks` | 剪贴板模型/替身，不证明 WinRT 实际系统行为 |
 | `dotnet run --project tests/TractorTool.VideoChecks` | 媒体数据、参数、进度与隔离输出替身，不证明真实转码或 GPU |
@@ -198,7 +198,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A19 | 取消与失败 | 单项取消/整批取消正确，无遗留进程，失败不冒充成功，余项策略一致 | 集成、进程 | 已修整批登记和迟到取消竞争；E99 公共进程改用 Job 通知及自然 EOF，新增回归只编译。StopTree 成功但 reader 不给 EOF 的 P2 回归未补；单项/整批取消、等待项跳过、失败继续与原生清理未运行验收 |
 | A20 | 输出安全 | 不覆盖源文件和已有文件，只清理任务自身临时产物 | 集成 | 单次事务目录、无覆盖提交和指定临时文件清理已编译；隔离输出检查未运行 |
 | A21 | 退出和恢复 | 明确退出能停止任务，重启标记中断，无无限等待或重复执行 | UI、进程 | 公共任务摘要、日志内任务入口、退出确认及系统退出有界停止已编译；E111 保存/迁移等待及重复退出回归已修正并编译，未运行。真实退出/重启中断、损坏摘要重试与旧生命周期回归待用户验证 |
-| A22 | 发布验证 | 本地与 CI 使用同一脚本，安装/压缩包加载插件，校验信息正确 | 发布、UI | 1.0.0 校验范围见 [E135](PROJECT_HISTORY.md#evidence-release-100)。真实 Windows 整包启动、断电后重装、无 SDK 机器及跨会话待验 |
+| A22 | 发布验证 | 本地与 CI 使用同一脚本，安装/压缩包加载插件，校验信息正确 | 发布、UI | 1.1.0 校验范围见 [E137](PROJECT_HISTORY.md#evidence-release-110)。真实 Windows 整包启动、断电后重装、无 SDK 机器及跨会话待验 |
 | A23 | 日志与任务交互 | 分级/筛选/折叠详情、任务进度；全部已读保留日志，新错误再次提醒；底部跟随且不打断上翻；磁盘保留有界且不误删其他文件 | 集成、UI | E35 用户反馈未发现问题，未逐项报告边界；E36 日志保留检查只编译未运行。E99 已改进程树通知等待和读取清理，仅编译，旧取消输出触发及新原生行为仍待验证 |
 | A24 | 插件托盘扩展 | 插件分组、勾选/禁用/文字更新、动作失败隔离、切页/隐藏保留、停止解绑；原显示/退出入口正常 | 集成、Windows UI | E63 子代理复审和构建通过；自动化检查只编译未运行。E63/E64 历史副本已不存在，E99 独立夹具未安装/加载；真实托盘由用户在当前隔离宿主中验证 |
 | A25 | 桌面状态 HUD 第一步 | 框架依赖解析、主页面/设置分工、失败状态；电源/无电池、五项指标、按需采样、穿透/焦点/DPI/托盘、独立保存、退出清理 | 集成、Windows UI/硬件 | E65 用户发现启动失败，E66/E67 修正后 E68 用户反馈“看着没问题”并允许继续；这是基本使用反馈，专项硬件/退出/加载隔离检查仍未逐项运行，不标整项通过 |
@@ -225,7 +225,7 @@ E117 用户常规使用反馈暂未发现 Avalonia 升级问题。FFmpeg 安装�
 1. **闪动等待官方修复，退出绑定与页头同步另行验收**：按 [E114–E116](PROJECT_HISTORY.md#evidence-page-flicker-precision) 归档原因与证据，不再编译自有 Avalonia/Skia、替换官方 DLL 或维护定制 NuGet；保持默认渲染和 500ms、18 DIP、0→1 淡入。后续有针对同类混色问题的官方修复或受支持配置时，核对变更再用官方包复验原切页、快速/嵌套导航、主题/DPI、透明窗口及性能；本记录不代表上游已确认、接单或承诺版本，也未代用户创建 Issue。E113 真实退出与 E112 页头同步仍待用户验证，不与闪动诊断合并标通过。
 2. **补框架 P2 回归**：复用 [ProcessChecks](../tests/TractorTool.Checks/ProcessChecks.cs) 的 EofReader，让 FakeSession.Stop 成功但不结束读取，限时断言读取被取消、session 释放、任务 Faulted/IOException 并记录清理错误。这是尚未补齐的测试，不是已复现的生产故障，本轮未处理。
 3. **补框架运行证据**：正常取消/超时、根先退出而子进程残留、显式退出，以及 E98 自动发现故障回归和当前完整分发的运行验收。E99 原生通知丢失/取消唤醒/截止查证/API 失败缺确定性覆盖，MVVM 两分支也只有一次性打包证据。旧截图取消异常触发仍未知，不调整调试器设置或把正常取消改成成功。运行由用户负责，未经新指示不执行。
-4. **专项可靠性与发布**：E55 长期内存、迁移近满盘/ACL/中断、跨 Windows 会话、无 SDK 机器及媒体/硬件细项按实际目标补证，保留 E62 已有反馈。GitHub 标签工作流负责生成草稿；真实安装和失败恢复需单独验证。
+4. **专项可靠性与发布**：E55 长期内存、迁移近满盘/ACL/中断、跨 Windows 会话、无 SDK 机器及媒体/硬件细项按实际目标补证，保留 E62 已有反馈。标签工作流负责构建、校验和发布；真实安装和失败恢复需单独验证。
 5. **既有插件问题暂缓**：[E94](PROJECT_HISTORY.md#evidence-hud-full-review) 两项 P2（硬件开关保存后缓存未失效、非硬件 SensorId=null 导致初始化失败）未修复，E96 只在重新检测后清缓存。A26/A27 原生/硬件/性能缺口及托盘动态方案列表继续保留。
 6. **文件夹历史集中验收**：使用正式包 和临时样本，在真实 Windows 宿主及 Duplicati 下核对快速切换文件或快照后的对比内容及日志、导航与状态角标、选区恢复与提交。其他恢复及性能场景见 A28。
 

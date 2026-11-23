@@ -25,17 +25,13 @@ public sealed record PluginManifest
 
 public sealed record HostCompatibility(string Platform, string Rid, string UiApiVersion, string AvaloniaVersion)
 {
+    private static readonly string[] UiApiVersions = ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6"];
+
     public string? Check(PluginManifest manifest)
     {
-        var supportedUi = manifest.UiApiVersion == UiApiVersion || UiApiVersion switch
-        {
-            "1.1" => manifest.UiApiVersion == "1.0",
-            "1.2" => manifest.UiApiVersion is "1.0" or "1.1",
-            "1.3" => manifest.UiApiVersion is "1.0" or "1.1" or "1.2",
-            "1.4" => manifest.UiApiVersion is "1.0" or "1.1" or "1.2" or "1.3",
-            "1.5" => manifest.UiApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4",
-            _ => false
-        };
+        var requiredUi = Array.IndexOf(UiApiVersions, manifest.UiApiVersion);
+        var supportedUi = manifest.UiApiVersion == UiApiVersion ||
+            requiredUi >= 0 && requiredUi < Array.IndexOf(UiApiVersions, UiApiVersion);
         var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4" or "1.5" or "1.6";
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";

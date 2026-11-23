@@ -25,4 +25,5 @@
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
+  <Import Project="../TractorTool.Core/Plugins/PluginSdk.targets" />
 </Project>

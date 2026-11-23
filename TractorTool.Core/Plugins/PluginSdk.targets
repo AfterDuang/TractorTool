@@ -1,0 +1,15 @@
+<Project>
+  <!-- The SDK writes these names into runtimeconfig.json. The running host, plugin packer and
+       distribution verifier thus consume the same inventory for this particular host build. -->
+  <Target Name="SetPluginSdkAssemblyPolicy" BeforeTargets="_GenerateRuntimeConfigurationFilesInputCache" DependsOnTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_PluginUiRuntime Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Extension)' == '.dll'
+        and ('%(ReferenceCopyLocalPaths.AssetType)' == 'runtime' or '%(ReferenceCopyLocalPaths.AssetType)' == '')
+        and '%(ReferenceCopyLocalPaths.DestinationSubDirectory)' == ''
+        and ('%(ReferenceCopyLocalPaths.Filename)' == 'Avalonia' or $([System.String]::Copy('%(ReferenceCopyLocalPaths.Filename)').StartsWith('Avalonia.', System.StringComparison.OrdinalIgnoreCase))
+             or '%(ReferenceCopyLocalPaths.Filename)' == 'FluentAvalonia' or '%(ReferenceCopyLocalPaths.Filename)' == 'MicroCom.Runtime')" />
+      <_PluginSdkName Include="TractorTool;TractorTool.Core;TractorTool.Contracts;TractorTool.UI;@(_PluginUiRuntime->'%(Filename)')" />
+      <RuntimeHostConfigurationOption Include="TractorTool.PluginSdk.ReservedAssemblies" Value="@(_PluginSdkName, '|')" />
+    </ItemGroup>
+  </Target>
+</Project>

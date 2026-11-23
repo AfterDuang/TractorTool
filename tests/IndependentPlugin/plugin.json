@@ -6,7 +6,7 @@
   "entryAssembly": "IndependentPlugin.dll",
   "entryType": "IndependentPlugin.ProbePlugin",
   "apiVersion": "1.0",
-  "uiApiVersion": "1.5",
+  "uiApiVersion": "1.6",
   "avaloniaVersion": "12.1.6",
   "supportedPlatforms": ["windows", "linux", "osx"],
   "description": "独立 DLL、共享界面与后台生命周期的机制验证插件。"

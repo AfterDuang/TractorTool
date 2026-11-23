@@ -16,6 +16,7 @@
     <!-- Compile-only public Avalonia API, same version as the host; never ship a second runtime. -->
     <PackageReference Include="Avalonia" IncludeAssets="compile" PrivateAssets="all" />
     <ProjectReference Include="../FixtureDependency/FixtureDependency.csproj" />
+    <ProjectReference Include="../AvaloniaExtensionFixture/AvaloniaExtensionFixture.csproj" />
     <None Include="plugin.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Assets/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

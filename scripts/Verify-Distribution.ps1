@@ -6,6 +6,7 @@ param(
     [string]$ExpectedCommit
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'PluginAssemblyPolicy.ps1')
 $root = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AssetsDir)
 $checksums = @{}
 foreach ($line in (Get-Content -LiteralPath (Join-Path $root 'SHA256SUMS'))) {
@@ -69,9 +70,51 @@ function Get-ZipFiles($Archive, [string]$Prefix) {
     }
     return $result
 }
+function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime) {
+    # A plugin can reference a package whose download recipe is supplied by a different plugin.
+    $requirements = @{}
+    $packagesByTool = @{}
+    $archiveHashes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($manifest in $Manifests) {
+        $required = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $requirements[$manifest.id] = $required
+        foreach ($dependency in $manifest.dependencies) {
+            $package = "$($dependency.id)/$($dependency.version)"
+            $null = $required.Add($package)
+            foreach ($download in $dependency.downloads) {
+                $null = $archiveHashes.Add($download.sha256)
+                if ($download.rid -cne $Runtime) { continue }
+                foreach ($tool in $download.Tools.GetEnumerator()) {
+                    $name = [IO.Path]::GetFileName($tool.Value.path.Replace('\', '/'))
+                    if (!$packagesByTool.ContainsKey($name)) {
+                        $packagesByTool[$name] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                    }
+                    $null = $packagesByTool[$name].Add($package)
+                }
+            }
+        }
+    }
+    foreach ($file in $Inventory.GetEnumerator()) {
+        $path = $file.Key
+        if ($archiveHashes.Contains($file.Value)) { throw "分发包混入已声明的外部下载归档：$path" }
+        $packages = $packagesByTool[[IO.Path]::GetFileName($path)]
+        if ($null -eq $packages) { continue }
+        # A private file in an unrelated plugin may legitimately have the same name.
+        if (!$path.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) -or
+            $requirements[$path.Split('/')[1]].Overlaps($packages)) {
+            throw "分发包混入已声明的外部工具：$path"
+        }
+    }
+}
 $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root $release.archive))
 try {
     $entries = Get-ZipFiles $zip "$($release.bundleDirectory)/"
+    $hostConfig = Read-ZipText $entries['TractorTool.runtimeconfig.json'] | ConvertFrom-Json -AsHashtable
+    $hostDeps = Read-ZipText $entries['TractorTool.deps.json'] | ConvertFrom-Json -AsHashtable
+    $sdkPolicy = Get-PluginSdkAssemblyPolicy $hostConfig $hostDeps
+    foreach ($name in $sdkPolicy) {
+        if (!$entries.ContainsKey("$name.dll")) { throw "缺少宿主 SDK 文件：$name.dll" }
+    }
     $inventory = @(Read-ZipText $entries['files.json'] | ConvertFrom-Json)
     $listed = @{}
     foreach ($item in $inventory) {
@@ -85,8 +128,9 @@ try {
         if (!$listed.ContainsKey($required)) { throw "缺少分发文件：$required" }
     }
     if ((Get-ZipHash $entries['release.json']) -ne $checksums['release.json']) { throw '内外发布元数据不一致。' }
-    if (@($entries.Keys | Where-Object { $_ -match '(^|/)(ffmpeg|ffprobe)\.exe$|(^|/)bootstrap\.json$|(^|/)(Config|Data|Logs|Cache|\.management)/|(^|/)(Test\.Independent|IndependentPlugin)(/|\.)' }).Count) { throw '分发包混入外部工具、用户数据或测试插件。' }
+    if (@($entries.Keys | Where-Object { $_ -match '^Packages/|(^|/)bootstrap\.json$|(^|/)(Config|Data|Logs|Cache|\.management)/|(^|/)(Test\.Independent|IndependentPlugin)(/|\.)' }).Count) { throw '分发包混入用户数据或测试插件。' }
     $pluginIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $manifests = [Collections.Generic.List[object]]::new()
     $pluginFileCount = 0
     foreach ($plugin in $release.plugins) {
         if ($plugin.id -isnot [string] -or $plugin.version -isnot [string] -or !$pluginIds.Add($plugin.id) -or
@@ -96,19 +140,21 @@ try {
         $pluginZip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root $plugin.archive))
         try {
             $pluginFiles = Get-ZipFiles $pluginZip ''
-            $manifest = Read-ZipText $pluginFiles['plugin.json'] | ConvertFrom-Json
-            if ($manifest.id -ne $plugin.id -or $manifest.version -ne $plugin.version) { throw '插件版本不一致。' }
+            $manifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Json (Read-ZipText $pluginFiles['plugin.json'])
+            if ($manifest.id -cne $plugin.id -or $manifest.version -cne $plugin.version) { throw '插件清单与发布记录的 ID 或版本不一致。' }
+            $manifests.Add($manifest)
             $prefix = "$($plugin.path)/"
             if (@($listed.Keys | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $pluginFiles.Count) { throw '整包与独立插件文件数量不一致。' }
             $pluginFileCount += $pluginFiles.Count
             foreach ($path in $pluginFiles.Keys) {
                 if ((Get-ZipHash $pluginFiles[$path]) -ne $listed["$prefix$path"]) { throw "整包与独立插件不一致：$path" }
-                if ([IO.Path]::GetFileNameWithoutExtension($path) -match '^(TractorTool(\.Core|\.Contracts|\.UI)?|Avalonia(\..*)?|FluentAvalonia|MicroCom\.Runtime)$' -and $path.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)) { throw "插件夹带共享程序集：$path" }
+                Assert-PluginSdkFile $sdkPolicy $path $manifest.uiApiVersion
             }
         } finally { $pluginZip.Dispose() }
     }
     if (@($listed.Keys | Where-Object { $_.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) }).Count -ne $pluginFileCount) {
         throw '整包含有未登记的插件文件。'
     }
+    Assert-NoExternalPackages $listed $manifests $release.runtime
     Write-Output "静态分发校验通过：$($listed.Count) 个文件，$($release.plugins.Count) 个插件；未运行应用。"
 } finally { $zip.Dispose() }

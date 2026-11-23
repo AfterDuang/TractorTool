@@ -163,13 +163,14 @@ internal static class NavigationChecks
             finally { presenter.Clear(); window.Close(); Motion.Configure(Application.Current!, originalMotion); }
         });
 
-        check("UI 1.5 accepts existing page contracts and rejects future versions", () =>
+        check("UI 1.6 accepts older plugins and is rejected by pre-extension hosts", () =>
         {
             var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
             var manifest = new PluginManifest { ApiVersion = "1.7", AvaloniaVersion = UiApi.AvaloniaVersion, SupportedPlatforms = ["windows"] };
-            foreach (var version in new[] { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5" })
+            foreach (var version in new[] { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6" })
                 Require(compatibility.Check(manifest with { UiApiVersion = version }) is null);
-            Require(compatibility.Check(manifest with { UiApiVersion = "1.6" }) is not null);
+            Require(compatibility.Check(manifest with { UiApiVersion = "1.7" }) is not null);
+            Require((compatibility with { UiApiVersion = "1.5" }).Check(manifest with { UiApiVersion = "1.6" }) is not null);
             Require(new HostCompatibility("windows", "win-x64", "1.4", UiApi.AvaloniaVersion)
                 .Check(manifest with { UiApiVersion = "1.5" }) is not null);
             Require(new HostCompatibility("windows", "win-x64", "1.3", UiApi.AvaloniaVersion)

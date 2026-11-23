@@ -11,7 +11,7 @@
 
 TractorTool 将工具业务放在独立插件中，由精干的宿主统一提供导航、主题、设置、日志、后台任务和外部依赖管理。新增符合现有协议的工具，可以独立编译和安装，无需改动宿主。
 
-> **1.0.0 面向 Windows x64。** 可使用自包含 ZIP、用户级安装器或独立插件包。[构建与验收记录](Docs/DEVELOPMENT.md#current-status)
+> **Windows x64** · [下载最新正式版](https://github.com/AfterDuang/TractorTool/releases/latest)（自包含 ZIP、用户级安装器和独立插件包） · [构建与验收记录](Docs/DEVELOPMENT.md#current-status)
 
 ## 框架能力
 
@@ -43,7 +43,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 
 安装版升级保留已有插件和管理状态，卸载保留插件及应用数据。ZIP 应解压到新目录，不直接覆盖旧安装；安装器不接管自行解压的目录。
 
-从开发版切换到 1.0.0 时，如果已装插件版本相同或更高，请在插件管理页卸载该插件，显式退出并重启，再安装正式插件 ZIP 并重启。插件数据会保留。
+从 1.0.0 升级到 1.1.0 时，先升级宿主，再从本版 Release 下载需要更新的插件 ZIP，在插件管理页安装并重启。如果开发版插件的版本号等于或高于目标版本，请先卸载该插件并重启，再安装目标版本。卸载时可保留插件数据。
 
 ### 数据放在哪里
 
@@ -93,11 +93,11 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 发布自动识别 `Plugins` 一级子目录中带 `plugin.json` 的插件工程，无需维护额外名单；各插件 ID 与版本读取自己的清单，产物名单记录在 `release.json.plugins`。目录规则见[脚本说明](scripts/README.md#随包插件自动识别)。
 
-### GitHub Release 草稿
+### GitHub Release
 
-推送与产品版本匹配的标签（如 `v1.0.0`）时，工作流在干净检出中构建附件，校验版本和源码提交后创建 **Release 草稿**。推送到 `main`、PR 和手动构建只上传 Actions 产物。
+推送与产品版本匹配的标签（如 `v1.1.0`）即授权公开发布。工作流在干净检出中构建并校验安装器、ZIP、校验和及源码提交，附件上传完成后自动公开 Release。GitHub 为正式版选择 `Latest`，带后缀的标签（如 `v1.2.0-rc.1`）发布为预发行版。普通分支构建、PR 和手动运行仅上传 Actions 产物。
 
-维护者核对附件、发布说明、项目授权及运行验收后，在 GitHub 手动公开草稿。上传中断时，先检查 Releases 中已有的同标签记录；如留下不完整的草稿，仅清理该草稿后重跑 `draft-release`。
+若上传中断，先在 Releases 核对同标签记录及附件。已公开且附件完整即为发布成功；若留下本次失败的草稿，删除该草稿并保留 Git 标签，然后重跑失败的 `publish-release` 作业。
 
 测试时可用 `--profile-root <绝对路径>` 隔离配置和数据；默认 F5 未使用该参数。方法与验收要求见[开发入口](Docs/DEVELOPMENT.md#workflow)。
 
@@ -140,7 +140,7 @@ TractorTool/
 ├─ tests/                              核心、插件、UI 检查与独立装载夹具
 ├─ scripts/                            构建、发布、插件打包与产物校验
 ├─ packaging/                          安装器、分发说明与许可资料
-├─ .github/workflows/                  调用统一脚本的 CI 与 Release 草稿流程
+├─ .github/workflows/                  调用统一脚本的 CI 与标签发布流程
 ├─ Docs/                               需求、架构、接入规范与开发验收文档
 ├─ TractorTool.slnx                    解决方案与工程分组
 ├─ Directory.Build.props               公共构建属性与默认产品版本

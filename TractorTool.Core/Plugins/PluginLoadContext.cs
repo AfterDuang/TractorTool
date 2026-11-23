@@ -9,14 +9,11 @@ internal sealed class PluginLoadContext(string entryPath, string packageRoot) : 
     private readonly AssemblyDependencyResolver _resolver = new(entryPath);
     private readonly string _directory = Path.GetDirectoryName(entryPath)!;
 
-    internal static bool Shared(string name) => name is "TractorTool.Contracts" or "TractorTool.UI" or "MicroCom.Runtime" or "FluentAvalonia" ||
-        name == "Avalonia" || name.StartsWith("Avalonia.", StringComparison.Ordinal);
-
     protected override Assembly? Load(AssemblyName name)
     {
-        if (name.Name is "TractorTool" or "TractorTool.Core")
+        if (PluginAssemblyPolicy.IsHostInternal(name.Name))
             throw new FileLoadException("插件不能依赖宿主或 Core 内部实现。", name.Name);
-        if (Shared(name.Name!))
+        if (PluginAssemblyPolicy.IsReserved(name.Name!))
         {
             var shared = Default.LoadFromAssemblyName(name);
             if (shared.GetName().Version != name.Version)

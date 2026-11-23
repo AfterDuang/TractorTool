@@ -107,6 +107,9 @@ public sealed class FrameworkReferencePlugin : ProbePlugin
             throw new InvalidOperationException("Framework assemblies must resolve from the runtime.");
         if (System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(FixtureDependency.Message).Assembly) != loadContext)
             throw new InvalidOperationException("Packaged private dependencies must stay in the plugin context.");
+        var extension = loadContext.LoadFromAssemblyName(new("Avalonia.TractorTool.FixtureExtension"));
+        if (System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(extension) != loadContext)
+            throw new InvalidOperationException("A private Avalonia extension must load in the plugin context.");
         return base.InitializeAsync(context, token);
     }
 }

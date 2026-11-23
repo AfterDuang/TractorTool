@@ -25,7 +25,7 @@ foreach ($directory in (Get-ChildItem -LiteralPath $pluginRoot -Directory -Force
             throw "随包插件路径不能经过链接：$path"
         }
     }
-    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Path $manifestPath
     # Match the host's stable ID and numeric plugin-version rules before creating output paths.
     $parsedVersion = $null
     if ($manifest.schemaVersion -ne 1 -or $manifest.id -isnot [string] -or

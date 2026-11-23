@@ -54,7 +54,7 @@ Build-Distribution 的输出目录结构如下；VS Code 菜单会自动使用�
 
 ### 插件打包的现有适用范围
 
-Build-Plugin 从目标宿主的 `TractorTool.deps.json` 读取 Avalonia 版本，校验源码和打包输出中 `plugin.json` 的 `avaloniaVersion`。插件通过 NuGet 引用 Avalonia 时，本次构建实际还原的版本也须匹配。仓外插件可使用自己的 NuGet 配置。
+Build-Plugin 从目标宿主的 `TractorTool.deps.json` 读取 Avalonia 版本，核对清单及实际 NuGet 还原版本。1.1.0 SDK 在 `TractorTool.runtimeconfig.json` 中记录本次构建提供的程序集，打包按该清单排除共享副本。以旧 SDK 为目标时沿用原有的 `Avalonia.*` 限制。仓外插件可使用自己的 NuGet 配置。
 
 Build-Plugin 不要求 CommunityToolkit.Mvvm。仅在输出实际包含该 DLL 时，从唯一还原版本复制许可和第三方通知；元数据或原文缺失仍拒绝打包。插件自备 `Licenses/` 始终保留，其他私有 NuGet/原生库的许可由插件作者维护，脚本不声称自动收集全部许可。宿主依赖许可由 Export-DependencyNotices 负责。Verify-PluginHost 使用不依赖 MVVM 的 IndependentPlugin 走同一个打包入口，再验证宿主装载。
 
@@ -62,8 +62,8 @@ Build-Plugin 不要求 CommunityToolkit.Mvvm。仅在输出实际包含该 DLL �
 
 命令示例集中在 [开发入口](../Docs/DEVELOPMENT.md#workflow) 与 [独立插件打包](../Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。本页只解释脚本，当前实现和验收结果统一看 [开发台账](../Docs/DEVELOPMENT.md#current-status)。
 
-[GitHub 工作流](../.github/workflows/distribution.yml) 的构建 job 只有读取权限；仅 `v*` 标签 push 才进入独立的 Release 写入 job，下载同一次构建产物并调用 Verify-Distribution 后，用 GitHub CLI 创建草稿。使用内置 GITHUB_TOKEN，无需额外发布脚本或 PAT；现有草稿/Release 不自动覆盖。操作及失败恢复见 [Release 草稿](../README.md#github-release-草稿)。
+[GitHub 工作流](../.github/workflows/distribution.yml) 的构建作业使用只读权限。`v*` 标签 push 触发独立的发布作业，以内置 GITHUB_TOKEN 下载本次构建的附件，调用 Verify-Distribution 核对标签和源码提交，再通过 GitHub CLI 上传附件并公开 Release。操作及失败恢复见 [GitHub Release](../README.md#github-release)。
 
 [ReleaseMetadataChecks.ps1](../tests/ReleaseMetadataChecks.ps1) 是只读静态回归入口：对已完成的干净分发目录验证正常身份，并断言错误标签、错误/缺失提交被拒绝。它不启动软件或安装器，当前执行状态见开发台账。
 
-[DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) 使用临时工程元数据和 ZIP 夹具，覆盖 0/1/多个任意命名插件、扫描边界、缺失/多工程、非法清单、重复 ID 和未登记文件；不编译、加载 DLL、联网或启动应用。执行状态同样以开发台账为准。
+[DistributionPluginsChecks.ps1](../tests/DistributionPluginsChecks.ps1) 使用临时工程元数据和 ZIP 验证插件发现、清单身份和包内容，包括多个插件共享外部工具声明、无关插件的同名私有文件、改名归档和共享程序集副本。该检查在 CI 的分发构建之前运行。

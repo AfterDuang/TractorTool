@@ -60,6 +60,16 @@ internal static class PluginManagementChecks
             var staging = Path.Combine(paths.PluginRoot, ".management", "staging");
             Assert(Directory.GetDirectories(staging).Select(Path.GetFileName).SequenceEqual([before.Pending!.Token]));
         });
+        check("Management accepts private Avalonia extensions only with the new UI contract", () =>
+        {
+            var paths = Paths();
+            using var manager = new PluginManager(paths, compatibility with { UiApiVersion = "1.6" });
+            void Extension(ZipArchive zip) => zip.CreateEntry("lib/Avalonia.Example.dll");
+            Reject<InvalidDataException>(() => manager.QueueInstall(Zip(paths, Manifest() with { UiApiVersion = "1.5" }, Extension), []));
+            var current = Manifest() with { UiApiVersion = "1.6" };
+            Reject<InvalidDataException>(() => manager.QueueInstall(Zip(paths, current, zip => zip.CreateEntry("lib/TRACTORTOOL.UI.DLL")), []));
+            Assert(manager.QueueInstall(Zip(paths, current, Extension), []) is null);
+        });
         check("Management installation lock spans profiles", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);

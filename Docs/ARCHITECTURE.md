@@ -60,7 +60,7 @@ Contracts 不包含控件类型；Avalonia 页面契约只在 UI 工程。宿主
 
 [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs) 使用 `AssemblyLoadContext` / `AssemblyDependencyResolver`，按以下边界解析：
 
-- **共享 SDK**：Contracts、UI、Avalonia、FluentAvalonia、MicroCom.Runtime 由默认上下文提供并检查程序集版本；插件包拒绝夹带副本。禁止插件引用宿主或 Core。
+- **共享 SDK**：宿主构建时把 Contracts、UI 和本次发布提供的 Avalonia 系列、FluentAvalonia、MicroCom.Runtime 记入运行时配置。打包、安装和装载使用这份清单。共享程序集由默认上下文提供并检查版本；宿主、Core 仅供内部使用。插件可通过 UI API 1.6 携带清单外的私有 Avalonia 扩展。
 - **私有依赖**：先由插件解析器和入口邻接目录解析；入口、私有托管库和已解析本机库必须位于版本包内，逐级拒绝链接/重解析点。缺失私有依赖或解析后文件消失以 `FileLoadException` 终止，防止全局 `AssemblyResolve` 补救越过隔离。系统本机库由系统解析。
 - **.NET 框架**：仅构建 SDK 的 `Microsoft.NETCore.App` 平台清单内名称可回退到运行时；清单[嵌入 Core](../TractorTool.Core/TractorTool.Core.csproj)，缺失则构建失败，部署无需 SDK。不得用名称前缀或包含宿主依赖的整份 TPA 放行；实际版本与平台可用性仍由 .NET 检查。
 
@@ -263,7 +263,7 @@ UI 选型、参考源码与历史比较归[参考调研](PROJECT_HISTORY.md#ui-r
 
 ### 7.2 发布边界
 
-动态插件宿主采用 Windows x64 自包含目录，不启用 Native AOT、裁剪或单文件布局。本地与 [CI](../.github/workflows/distribution.yml) 共用 [Build-Distribution](../scripts/Build-Distribution.ps1)：发布宿主 → 引用发布 SDK 独立构建插件 → 核对宿主文件未变 → 按正常插件目录组包。附带插件沿用同一装载流程，分发不带用户数据、测试夹具或已下载外部工具。
+动态插件宿主采用 Windows x64 自包含目录。本地与 [CI](../.github/workflows/distribution.yml) 共用 [Build-Distribution](../scripts/Build-Distribution.ps1)，先发布宿主，再引用该 SDK 独立构建插件、核对宿主文件哈希并组包。分发校验从随包插件的下载声明识别外部工具，按包 ID、版本和平台关联消费者，按 SHA‑256 识别下载归档。宿主数据目录、测试夹具和已下载工具均排除在分发之外。动态装载要求保留完整的运行时程序集，构建保持目录布局并关闭 Native AOT 和裁剪。
 
 随包插件从仓库 `Plugins` 一级子目录自动发现，以同目录 `plugin.json` 和唯一 `.csproj` 识别，不维护额外名单或按名称/数量写分支；预检后从各插件清单取得身份，构建结果写入 `release.json.plugins`。产物校验和安装器消费本次快照，不依赖后来修改的源码目录；扫描边界见[脚本说明](../scripts/README.md#随包插件自动识别)。
 
@@ -275,7 +275,7 @@ UI 选型、参考源码与历史比较归[参考调研](PROJECT_HISTORY.md#ui-r
 
 [WindowsMaintenance](../TractorTool/Platform/WindowsMaintenance.cs) 与安装器共享启动/维护互斥及存活信号，应用运行时拒绝维护，不强停任务、不轮询；当前保护限同一 Windows 会话。安装器只接受匹配维护协议的宿主包，平台实现不进入 Core/Contracts。
 
-CI 普通构建只读；标签流程经版本、提交、干净状态及产物校验后，独立写权限 job 仅创建 Release 草稿，不覆盖已有 Release。工具版本、命令和失败恢复见[脚本说明](../scripts/README.md)及[发布入口](../README.md#github-release-草稿)。首版不包含宿主自动更新、在线插件商店、多平台安装器或不可信插件沙箱。
+CI 普通构建只读。标签流程校验版本、提交、干净状态及产物后，由独立写权限作业上传附件并公开 Release。预发行标签单独标记，正式版由 GitHub 选择 Latest。工具版本、命令和失败恢复见[脚本说明](../scripts/README.md)及[发布入口](../README.md#github-release)。
 
 <a id="python-dependencies"></a>
 
