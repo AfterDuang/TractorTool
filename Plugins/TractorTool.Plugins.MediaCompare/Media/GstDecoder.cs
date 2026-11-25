@@ -106,9 +106,12 @@ internal sealed class GstDecoder : IDisposable
         catch { frame.Dispose(); throw; }
     }
 
-    internal void Play(ulong baseTime)
+    internal void Play(ulong baseTime, bool synchronizeVideo)
     {
         if (IsStill) return;
+        // The master supplies the shared-clock cadence. The other bounded appsink
+        // can decode one future PTS so VFR frames need no guessed duration.
+        GstNative.gst_util_set_object_arg(_sink, "sync", synchronizeVideo ? "true" : "false");
         GstNative.gst_element_set_start_time(_pipeline, GstNative.None);
         GstNative.gst_element_set_base_time(_pipeline, baseTime);
         if (GstNative.gst_element_set_state(_pipeline, GstNative.Playing) == 0)
@@ -175,8 +178,12 @@ internal sealed class GstDecoder : IDisposable
                 throw new InvalidDataException("图像尺寸无效或超过当前预览限制。");
             if (Marshal.PtrToStringUTF8(GstNative.gst_structure_get_string(structure, "format")) != "BGRA")
                 throw new InvalidDataException("解码图像没有按预览格式输出。");
-            if (GstNative.gst_structure_get_fraction(structure, "framerate", out var numerator, out var denominator) != 0 && denominator > 0)
-                _frameRate = (double)numerator / denominator;
+            // Negotiated raw caps use 0/1 for VFR. Never substitute max-framerate
+            // or a previous sample's rate when this sample has no fixed rate.
+            var hasFixedRate = GstNative.gst_structure_get_fraction(structure, "framerate", out var numerator, out var denominator) != 0 &&
+                numerator > 0 && denominator > 0;
+            if (!hasFixedRate) numerator = denominator = 0;
+            _frameRate = hasFixedRate ? (double)numerator / denominator : 0;
             var timing = Marshal.PtrToStructure<GstNative.Buffer>(buffer);
             if (timing.Pts == GstNative.None && !IsStill)
                 throw new InvalidDataException("媒体帧没有时间戳，无法保证 A/B 对应关系。");
@@ -184,11 +191,7 @@ internal sealed class GstDecoder : IDisposable
             var segment = GstNative.gst_sample_get_segment(sample);
             var streamTime = segment == 0 ? pts : GstNative.gst_segment_to_stream_time(segment, GstNative.Time, pts);
             if (streamTime == GstNative.None) throw new InvalidDataException("媒体帧时间不在当前播放区间内。");
-            var duration = timing.Duration == GstNative.None || timing.Duration == 0
-                ? _frameRate > 0 ? TimeSpan.FromSeconds(1 / _frameRate) : TimeSpan.Zero
-                : FromNanoseconds(timing.Duration);
-            if (!IsStill && duration <= TimeSpan.Zero)
-                throw new InvalidDataException("媒体缺少帧时长与帧率，无法确定两路对应帧。");
+            var duration = FrameTiming.ResolveDuration(streamTime, timing.Duration, numerator, denominator);
             if (GstNative.gst_buffer_n_memory(buffer) == 1)
             {
                 var memory = GstNative.gst_buffer_peek_memory(buffer, 0);

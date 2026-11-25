@@ -1,22 +1,13 @@
 namespace TractorTool.Plugins.MediaCompare.Rendering;
 
-internal enum PreviewScale { Fit, Fill, ActualPixels }
-
 /// <summary>The same normalized image center and zoom are applied to both sources.</summary>
-internal readonly record struct PreviewView(double CenterX, double CenterY, double Zoom, PreviewScale Scale)
+internal readonly record struct PreviewView(double CenterX, double CenterY, double Zoom)
 {
-    public static PreviewView Fit => new(.5, .5, 1, PreviewScale.Fit);
-    public static PreviewView Fill => new(.5, .5, 1, PreviewScale.Fill);
-    public static PreviewView ActualPixels => new(.5, .5, 1, PreviewScale.ActualPixels);
+    public static PreviewView Fit => new(.5, .5, 1);
 
     public (double Width, double Height) ImageSize(int width, int height, double viewportWidth, double viewportHeight)
     {
-        var scale = Scale switch
-        {
-            PreviewScale.ActualPixels => 1,
-            PreviewScale.Fill => Math.Max(viewportWidth / width, viewportHeight / height),
-            _ => Math.Min(viewportWidth / width, viewportHeight / height)
-        };
+        var scale = Math.Min(viewportWidth / width, viewportHeight / height);
         return (width * scale * Zoom, height * scale * Zoom);
     }
 

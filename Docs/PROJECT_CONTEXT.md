@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-当前交付 [AB 审片 0.1.2](DEVELOPMENT.md#media-compare)：用户反馈 0.1.1 点击播放后整个软件无响应。本轮获准用合成视频和临时目录独立诊断；原生转储及官方契约定位到解码设备 DXGI 操作遗漏设备锁，补齐后四轮播放/暂停/定位/媒体停止通过，纯托管检查及 GPT-6.2-SOL/high 复核通过。详见 [E140](PROJECT_HISTORY.md#evidence-media-compare-playback-lock)。未启动真实宿主或改用户数据；实际宿主卡死是否消失、视觉/音画及完整 GPU 释放仍由用户复测。运行授权仅限本轮隔离诊断，不扩大到后续 UI 接管。GStreamer 仍随插件提供；DLL 统一申请须交架构侧，未改框架。精确邻帧、代理缓存、HDR/Log 及跨 GPU 均未交付，不推送。
+当前交付 [AB 审片 0.1.3](DEVELOPMENT.md#media-compare)：修正帧时间处理与定位状态，整个 A/B 画布可拖入，提供单侧移除/清空，适合画面移到底部、移除填满/1:1并换彩色图标。获本轮授权后，合成 CFR/VFR 组合独立回归与两路 GPT-6.2-SOL/high 复核通过，见 [E141](PROJECT_HISTORY.md#evidence-media-compare-interaction)。未知帧时长的非零定位/暂停后续播仍有明确限制；真实 Explorer 拖放、用户原素材、可见 UI、音画及完整 GPU 释放由用户复测。未启动真实宿主或改用户数据，运行授权只限本轮独立回归。保留 0.1.2 设备锁修正；GStreamer 随插件提供，DLL 统一申请须交架构侧，未改框架。精确邻帧、代理缓存、HDR/Log 及跨 GPU 未交付，不推送。
 
 ## 2. 接续时必须保留
 

@@ -81,8 +81,9 @@ internal static class GpuPlaybackDiagnostic
         private readonly StreamWriter _log;
         private readonly System.Threading.Timer _heartbeat;
         private readonly Stopwatch _elapsed = Stopwatch.StartNew();
-        private long _uiHeartbeat, _receivedFrames, _submittedFrames;
+        private long _uiHeartbeat, _receivedFrames, _submittedFrames, _publishedPosition;
         private long _maxUiGap;
+        private int _frameSides;
         private Exception? _failure;
         private string _stage = "startup";
         private bool _disposed;
@@ -126,6 +127,106 @@ internal static class GpuPlaybackDiagnostic
             if (Volatile.Read(ref _failure) is { } failure) throw failure;
         }
 
+        private static void Require(bool condition, string message)
+        {
+            if (!condition) throw new InvalidOperationException(message);
+        }
+
+        private static async Task ObserveCanceledSeekAsync(Task seek, CancellationToken token)
+        {
+            try { await seek.WaitAsync(TimeSpan.FromSeconds(35)); }
+            // Completion before cancellation is valid; a superseded request may also be
+            // skipped without throwing. Other failures must still fail the diagnostic.
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        }
+
+        private async Task CheckSessionInteractionsAsync(ComparisonSession session)
+        {
+            Stage("seek-multiple");
+            await session.SetPlayingAsync(false).WaitAsync(TimeSpan.FromSeconds(10));
+            foreach (var seconds in new[] { .2, .7, 1.3, 2.05, .4, 3.1, 4.2, 5.9, 8.2, 10.1, .9 })
+            {
+                var target = TimeSpan.FromSeconds(Math.Min(seconds, session.Duration.TotalSeconds - .1));
+                var received = Interlocked.Read(ref _receivedFrames);
+                await session.SeekAsync(target).WaitAsync(TimeSpan.FromSeconds(35));
+                CheckFailure();
+                Require(session.Position == target && !session.IsPlaying && Volatile.Read(ref _frameSides) == 3 &&
+                    Interlocked.Read(ref _receivedFrames) > received && Interlocked.Read(ref _publishedPosition) == target.Ticks,
+                    "Seeking did not publish both paused media at the requested position.");
+                Write("seek-observed", $"positionMs={session.Position.TotalMilliseconds:F0}");
+            }
+
+            Stage("seek-latest-after-cancellation");
+            using (var first = new CancellationTokenSource())
+            using (var second = new CancellationTokenSource())
+            using (var third = new CancellationTokenSource())
+            {
+                var firstSeek = session.SeekAsync(TimeSpan.FromSeconds(.2), first.Token);
+                first.Cancel();
+                var secondSeek = session.SeekAsync(TimeSpan.FromSeconds(1.3), second.Token);
+                second.Cancel();
+                var thirdSeek = session.SeekAsync(TimeSpan.FromSeconds(.4), third.Token);
+                third.Cancel();
+                var target = TimeSpan.FromSeconds(Math.Min(.7, session.Duration.TotalSeconds / 2));
+                var received = Interlocked.Read(ref _receivedFrames);
+                var latest = session.SeekAsync(target);
+                await Task.WhenAll(ObserveCanceledSeekAsync(firstSeek, first.Token),
+                    ObserveCanceledSeekAsync(secondSeek, second.Token),
+                    ObserveCanceledSeekAsync(thirdSeek, third.Token), latest).WaitAsync(TimeSpan.FromSeconds(35));
+                Require(session.Position == target && !session.IsPlaying &&
+                    Interlocked.Read(ref _receivedFrames) > received && Interlocked.Read(ref _publishedPosition) == target.Ticks,
+                    "An obsolete seek replaced the latest requested position.");
+            }
+
+            Stage("audio-selection-and-clear-A");
+            foreach (var source in new[] { AudioSource.Muted, AudioSource.A, AudioSource.B, AudioSource.A })
+                await session.SetAudioAsync(source).WaitAsync(TimeSpan.FromSeconds(10));
+            await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
+            await Task.Delay(150);
+            var retainedB = session.B;
+            var retainedPosition = session.Position;
+            await session.ClearAsync(MediaSide.A).WaitAsync(TimeSpan.FromSeconds(10));
+            Require(session.A is null && retainedB is not null && session.B == retainedB &&
+                session.Duration == retainedB.Duration && session.Position >= retainedPosition &&
+                Interlocked.Read(ref _publishedPosition) == session.Position.Ticks &&
+                !session.IsPlaying && Volatile.Read(ref _frameSides) == 2,
+                "Clearing A did not retain paused B or publish an empty A preview.");
+            CheckFailure();
+            Write("clear-A-observed", $"B={retainedB?.Name}; positionMs={session.Position.TotalMilliseconds:F0}");
+
+            Stage("play-B-only");
+            await session.SetAudioAsync(AudioSource.B).WaitAsync(TimeSpan.FromSeconds(10));
+            Interlocked.Exchange(ref _maxUiGap, 0);
+            await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
+            await ObservePlaybackAsync(session);
+            await session.SetPlayingAsync(false).WaitAsync(TimeSpan.FromSeconds(10));
+
+            Stage("clear-all-with-pending-seek");
+            using (var cancellation = new CancellationTokenSource())
+            {
+                var pending = session.SeekAsync(TimeSpan.FromSeconds(.2), cancellation.Token);
+                cancellation.Cancel();
+                var clear = session.ClearAsync();
+                await Task.WhenAll(ObserveCanceledSeekAsync(pending, cancellation.Token), clear)
+                    .WaitAsync(TimeSpan.FromSeconds(35));
+            }
+            await Task.Delay(100);
+            CheckFailure();
+            Require(session.A is null && session.B is null && session.Duration == TimeSpan.Zero &&
+                session.Position == TimeSpan.Zero && !session.IsPlaying && Volatile.Read(ref _frameSides) == 0,
+                "Clearing all media did not restore the empty stopped session.");
+
+            Stage("reopen-and-play");
+            await session.OpenAsync(MediaSide.A, new(_mediaA)).WaitAsync(TimeSpan.FromSeconds(35));
+            await session.SetAudioAsync(AudioSource.Muted).WaitAsync(TimeSpan.FromSeconds(10));
+            Require(session.A is not null && session.B is null && Volatile.Read(ref _frameSides) == 1,
+                "Reopening after clearing did not publish the new A-only preview.");
+            Interlocked.Exchange(ref _maxUiGap, 0);
+            await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
+            await ObservePlaybackAsync(session);
+            Write("interaction-scope", "Seek cancellation, side/all clearing, reopen and audio command completion checked; audio output and automatic mute are not measured.");
+        }
+
         private async Task ObservePlaybackAsync(ComparisonSession session)
         {
             var start = session.Position;
@@ -154,7 +255,9 @@ internal static class GpuPlaybackDiagnostic
             }
             void Receive(FramePair pair)
             {
+                Interlocked.Exchange(ref _publishedPosition, pair.Position.Ticks);
                 Interlocked.Increment(ref _receivedFrames);
+                Volatile.Write(ref _frameSides, (pair.A is null ? 0 : 1) | (pair.B is null ? 0 : 2));
                 preview.Submit(pair);
                 Interlocked.Increment(ref _submittedFrames);
             }
@@ -173,6 +276,9 @@ internal static class GpuPlaybackDiagnostic
             {
                 Stage("wait-gpu-preview");
                 await previewReady.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                Stage("drag-event-routing");
+                InteractionChecks.CheckEmptyDragRouting();
+                Write("drag-routing-observed", "Empty DragEnter/DragOver/Drop bubbled from Preview and were rejected; this does not exercise native Explorer file transfer.");
                 Stage("create-session");
                 session = await Task.Run(() => new ComparisonSession(_runtime, Path.Combine(_scratch, "cache")));
                 session.FrameReady += Receive;
@@ -195,6 +301,7 @@ internal static class GpuPlaybackDiagnostic
                 Interlocked.Exchange(ref _maxUiGap, 0);
                 await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
                 await ObservePlaybackAsync(session);
+                await CheckSessionInteractionsAsync(session);
                 Stage("stop");
                 session.FrameReady -= Receive;
                 stopTask = session.DisposeAsync().AsTask();

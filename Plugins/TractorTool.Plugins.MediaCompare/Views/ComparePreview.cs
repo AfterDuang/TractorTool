@@ -59,18 +59,6 @@ public sealed class ComparePreview : Control
         _view = PreviewView.Fit; Redraw();
     }
 
-    public void ActualSize()
-    {
-        Dispatcher.UIThread.VerifyAccess();
-        _view = PreviewView.ActualPixels; Redraw();
-    }
-
-    public void FillView()
-    {
-        Dispatcher.UIThread.VerifyAccess();
-        _view = PreviewView.Fill; Redraw();
-    }
-
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);

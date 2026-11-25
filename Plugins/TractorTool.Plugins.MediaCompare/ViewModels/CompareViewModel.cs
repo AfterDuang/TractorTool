@@ -25,20 +25,25 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     private volatile bool _stopped;
 
     public event Action<FramePair>? FrameReady;
+    public event Action? ViewResetRequested;
 
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanOperate), nameof(ShowStatus))] private bool _isBusy;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PlayLabel))] private bool _isPlaying;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek), nameof(PlaybackHint))] private bool _hasMedia;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus))] private string _error = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek), nameof(CanClear), nameof(ShowClear)), NotifyCanExecuteChangedFor(nameof(ClearAllCommand))] private bool _hasMedia;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanClearA))] private bool _hasA;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanClearB))] private bool _hasB;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus), nameof(DisplayError), nameof(CanClear), nameof(ShowClear)), NotifyCanExecuteChangedFor(nameof(ClearAllCommand))] private string _error = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus), nameof(DisplayError), nameof(CanClear), nameof(ShowClear)), NotifyCanExecuteChangedFor(nameof(ClearAllCommand))] private string _seekError = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus), nameof(DisplayError))] private string _rendererError = "";
     [ObservableProperty] private string _status = "选择或拖入 A、B 素材。滚轮缩放，拖动画面联动平移。";
-    [ObservableProperty] private string _aName = "A · 未选择素材";
-    [ObservableProperty] private string _bName = "B · 未选择素材";
+    [ObservableProperty] private string _aName = "未选择素材";
+    [ObservableProperty] private string _bName = "未选择素材";
     [ObservableProperty] private string _aDetails = "视频、图片或序列帧";
     [ObservableProperty] private string _bDetails = "视频、图片或序列帧";
     [ObservableProperty] private string _aSummary = "视频、图片或序列帧";
     [ObservableProperty] private string _bSummary = "视频、图片或序列帧";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PositionText))] private double _positionSeconds;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(DurationText), nameof(TimelineMaximum), nameof(CanSeek), nameof(CanPlay), nameof(HasTimeline), nameof(PlaybackHint))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(DurationText), nameof(TimelineMaximum), nameof(CanSeek), nameof(CanPlay), nameof(HasTimeline))]
     private double _durationSeconds;
     [ObservableProperty] private double _sequenceFrameRate = 24;
     [ObservableProperty] private int _selectedAudio;
@@ -57,12 +62,15 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             TogglePlayCommand.NotifyCanExecuteChanged();
         }
     }
-    public bool HasError => Error.Length != 0;
+    public bool HasError => Error.Length != 0 || SeekError.Length != 0 || RendererError.Length != 0;
+    public string DisplayError => string.Join("\n", new[] { RendererError, Error, SeekError }.Where(message => message.Length != 0));
     public bool ShowStatus => IsBusy || HasError;
     public bool HasTimeline => DurationSeconds > 0;
-    public string PlaybackHint => HasTimeline ? "空格播放 / 暂停 · 滚轮缩放 · 拖动平移"
-        : HasMedia ? "静态图片 · 滚轮缩放 · 拖动平移" : "打开视频或图片序列后可播放";
     public bool CanOperate => !IsBusy && !_stopped;
+    public bool ShowClear => HasMedia || Error.Length != 0 || SeekError.Length != 0;
+    public bool CanClear => CanOperate && ShowClear;
+    public bool CanClearA => CanOperate && HasA;
+    public bool CanClearB => CanOperate && HasB;
     public bool CanPlay => CanSeek && !IsScrubbing && !IsSeeking;
     public bool CanSeek => CanOperate && HasMedia && DurationSeconds > 0 && RendererAvailable;
     public string PlayLabel => IsPlaying ? "暂停" : "播放";
@@ -73,11 +81,17 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanPlay)); OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanClearA)); OnPropertyChanged(nameof(CanClearB));
         TogglePlayCommand.NotifyCanExecuteChanged();
+        ClearAllCommand.NotifyCanExecuteChanged();
     }
     partial void OnHasMediaChanged(bool value) => TogglePlayCommand.NotifyCanExecuteChanged();
     partial void OnDurationSecondsChanged(double value) => TogglePlayCommand.NotifyCanExecuteChanged();
-    partial void OnRendererAvailableChanged(bool value) => TogglePlayCommand.NotifyCanExecuteChanged();
+    partial void OnRendererAvailableChanged(bool value)
+    {
+        if (value) RendererError = "";
+        TogglePlayCommand.NotifyCanExecuteChanged();
+    }
 
     public async Task OpenAsync(MediaSide side, string path, bool sequence)
     {
@@ -85,6 +99,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         if (sequence && (!double.IsFinite(SequenceFrameRate) || SequenceFrameRate is < 1 or > 240))
         { ReportError("序列帧帧率必须在 1–240 之间。"); return; }
         IsBusy = true;
+        IsScrubbing = false; _resumeAfterScrub = false;
         CancelPendingSeek();
         try
         {
@@ -96,6 +111,37 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
                 RefreshDescription(session);
                 Status = "滚轮缩放 · 拖动联动平移 · 空格播放/暂停";
             }, create: true);
+        }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanClear))]
+    private Task ClearAllAsync() => ClearAsync(null);
+
+    public async Task ClearAsync(MediaSide? side)
+    {
+        if (!CanOperate || (side is null ? !ShowClear : side == MediaSide.A ? !HasA : !HasB)) return;
+        IsBusy = true;
+        IsScrubbing = false; _resumeAfterScrub = false;
+        CancelPendingSeek();
+        try
+        {
+            await _seekWorker;
+            if (_session is null) Error = SeekError = "";
+            else await ExecuteAsync(async (session, token) =>
+            {
+                Status = "正在清空对比…";
+                await session.ClearAsync(side, token);
+                if (side is null || SelectedAudio == (side == MediaSide.A ? 1 : 2)) SelectedAudio = 0;
+                RefreshDescription(session);
+            });
+            if (!HasMedia && Error.Length == 0 && SeekError.Length == 0)
+            {
+                SelectedAudio = 0;
+                SequenceFrameRate = 24;
+                PositionSeconds = DurationSeconds = 0;
+                ViewResetRequested?.Invoke();
+            }
         }
         finally { IsBusy = false; }
     }
@@ -167,12 +213,29 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
                     try
                     {
                         if (_session is { } session)
+                        {
                             await session.SeekAsync(TimeSpan.FromSeconds(seconds), cancellation.Token);
+                            if (version == _seekVersion)
+                            {
+                                SeekError = "";
+                                if (!IsScrubbing)
+                                    PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
+                            }
+                        }
                     }
                     finally { _commands.Release(); }
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-                catch (Exception ex) { if (version == _seekVersion) ReportError("定位失败：" + ex.Message, ex); }
+                catch (Exception ex)
+                {
+                    if (!_stopped && version == _seekVersion)
+                    {
+                        SeekError = "定位失败：" + ex.Message;
+                        if (!IsScrubbing && _session is { } session)
+                            PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
+                        context.Log.Write(AppLogLevel.Error, context.PluginId, SeekError, ex);
+                    }
+                }
                 finally { if (ReferenceEquals(_seekCancellation, cancellation)) _seekCancellation = null; }
             }
         }
@@ -188,7 +251,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     public void ReportRendererError(string message)
     {
         RendererAvailable = false;
-        ReportError(message);
+        RendererError = message;
+        context.Log.Write(AppLogLevel.Error, context.PluginId, message);
         IsScrubbing = false; _resumeAfterScrub = false;
         CancelPendingSeek();
         _ = ExecuteAsync((session, token) => session.SetPlayingAsync(false, token), clearError: false);
@@ -223,7 +287,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             try
             {
                 if (_stopped) return;
-                if (clearError) Error = "";
+                if (clearError) Error = SeekError = "";
                 if (_session is null)
                 {
                     var runtime = Path.Combine(Path.GetDirectoryName(typeof(CompareViewModel).Assembly.Location)!, "Native", "GStreamer");
@@ -243,13 +307,14 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
 
     private void RefreshDescription(ComparisonSession session)
     {
-        AName = session.A?.Name ?? "A · 未选择素材";
-        BName = session.B?.Name ?? "B · 未选择素材";
+        AName = session.A?.Name ?? "未选择素材";
+        BName = session.B?.Name ?? "未选择素材";
         ADetails = Describe(session.A); BDetails = Describe(session.B);
         ASummary = DescribeSummary(session.A); BSummary = DescribeSummary(session.B);
         DurationSeconds = Math.Max(0, session.Duration.TotalSeconds);
         PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
-        HasMedia = session.A is not null || session.B is not null;
+        HasA = session.A is not null; HasB = session.B is not null;
+        HasMedia = HasA || HasB;
         IsPlaying = session.IsPlaying;
     }
 
@@ -261,7 +326,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             Dispatcher.UIThread.Post(() =>
             {
                 Interlocked.Exchange(ref _positionQueued, 0);
-                if (!_stopped && !IsScrubbing)
+                if (!_stopped && !IsScrubbing && !IsSeeking)
                     PositionSeconds = Math.Clamp(TimeSpan.FromTicks(Interlocked.Read(ref _reportedPosition)).TotalSeconds, 0, DurationSeconds);
             });
         var receiver = FrameReady;
@@ -307,9 +372,10 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     }
 
     private static string Describe(MediaDescription? media) => media is null ? "视频、图片或序列帧"
-        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{media.FrameRate:0.###} fps · {FormatTime(media.Duration.TotalSeconds)}")} · {media.Format}";
+        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{DescribeFrameRate(media.FrameRate)} · {FormatTime(media.Duration.TotalSeconds)}")} · {media.Format}";
     private static string DescribeSummary(MediaDescription? media) => media is null ? "视频、图片或序列帧"
-        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{media.FrameRate:0.###} fps")}";
+        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : DescribeFrameRate(media.FrameRate))}";
+    private static string DescribeFrameRate(double frameRate) => frameRate > 0 ? $"{frameRate:0.###} fps" : "可变或未标记帧率";
     private static string FormatTime(double seconds)
     {
         var time = TimeSpan.FromSeconds(Math.Max(0, seconds));

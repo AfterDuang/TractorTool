@@ -30,6 +30,8 @@
 
 文件夹版本历史使用同系列的 [Document Folder 24 原图](fluent-document-folder-24-color.svg)。用 Sharp 以 768 DPI 导出透明 256×256 PNG。上游固定版本和随包许可见[插件声明](../Plugins/TractorTool.Plugins.FolderHistory/NOTICE.md)。
 
+AB 审片使用同一固定提交的 Microsoft [Fluent System Icons Image 彩色图标](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Image/SVG/ic_fluent_image_32_color.svg)，与视频导出的摄像机区分。原始 [SVG](fluent-image-32-color.svg) 用已有 Sharp 按 8 倍栅格化为透明 256×256 PNG，保留轮廓和配色；输出位于 `Plugins/TractorTool.Plugins.MediaCompare/Assets/icon.png`，MIT 许可随包附于 `Assets/LICENSE-FluentSystemIcons.txt`。SVG SHA256：`A508C2123DCBE8AE4622C5FA4D2C9F7C080916C39E4CC8672BE6F2E1FD4DAB16`；PNG SHA256：`60ECE4C6B6456F90A2FA923E8BBA8E723D134A1985A1F64FC5508270F474EDFB`。
+
 ## 应用图标生成记录
 
 生成提示词（内置工具，透明背景开启）：

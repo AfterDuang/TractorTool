@@ -24,6 +24,7 @@ public sealed class MediaFrame : IDisposable
     public int Width { get; }
     public int Height { get; }
     public TimeSpan Timestamp { get; }
+    /// <summary>Zero means unknown; playback uses the next presentation timestamp as its boundary.</summary>
     public TimeSpan Duration { get; }
     /// <summary>BGRA8 ID3D11Texture2D, or zero for a BGRA8 system-memory frame.</summary>
     public nint Texture { get; }

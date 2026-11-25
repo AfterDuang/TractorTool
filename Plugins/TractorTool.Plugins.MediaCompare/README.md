@@ -26,6 +26,6 @@ dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks
 TractorTool.MediaCompareChecks.exe --gpu-playback <runtimeRoot> <newScratchDirectory> <syntheticA> <syntheticB>
 ```
 
-可执行文件位于 `tests/TractorTool.MediaCompareChecks/bin/Release/net10.0`。四个参数均为绝对路径：`runtimeRoot` 是含 `bin` 的 GStreamer 私有运行库根，`newScratchDirectory` 必须不存在，后两项为自行生成的 SDR 视频。独立窗口在屏幕外且不激活；日志、运行库缓存只写入本次临时目录。标准输出重定向文件放在该目录之外，以免提前创建目录而被拒绝。
+可执行文件位于 `tests/TractorTool.MediaCompareChecks/bin/Release/net10.0`。四个参数均为绝对路径：`runtimeRoot` 是含 `bin` 的 GStreamer 私有运行库根，`newScratchDirectory` 必须不存在，后两项为自行生成、至少 8 秒的 SDR 视频；建议 12 秒固定/可变帧率组合。独立窗口在屏幕外且不激活；日志、运行库缓存只写入本次临时目录。标准输出重定向文件放在该目录之外，以免提前创建目录而被拒绝。
 
 启动者需保存诊断 PID 并外部监控 `diagnostic.log`；原生阻塞时先采集线程/转储，再仅终止此进程，不能依赖内部超时取消原生调用。退出成功不是可见 UI、音画正确性或完整 GPU 清理验收，详细判据见[验收方法](../../Docs/Plugins/MediaCompare.md#验收方法)；本轮结果只记录在开发台账。

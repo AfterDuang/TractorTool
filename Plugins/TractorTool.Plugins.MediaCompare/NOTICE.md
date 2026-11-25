@@ -8,6 +8,8 @@
 
 本插件不安装系统编解码器，不修改系统 PATH；运行库准备工具不随插件交付。
 
+导航图标使用 Microsoft Fluent System Icons 的 Image 彩色图标，表示视频、图片及序列帧的画面对比，与视频导出的摄像机图标区分。固定来源：[883bef1 的原始 SVG](https://github.com/microsoft/fluentui-system-icons/blob/883bef1e12d37343d0b2a64a1af43d0209de1128/assets/Image/SVG/ic_fluent_image_32_color.svg)。仅栅格化为透明 256×256 PNG，保留原始轮廓和配色；MIT 许可随包附于 `Assets/LICENSE-FluentSystemIcons.txt`。
+
 NuGet 私有库许可原文按包元数据中的源码提交取得：
 
 - [Vortice.Windows](https://github.com/amerkoleci/Vortice.Windows/blob/9e609cb9439c9872aa1b339f177e40ec96f77239/LICENSE)

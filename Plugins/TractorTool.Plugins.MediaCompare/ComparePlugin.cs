@@ -23,7 +23,7 @@ public sealed class ComparePlugin : IPlugin, IPluginUiModule
     {
         var model = _model ?? throw new InvalidOperationException("插件尚未初始化。");
         registry.AddNavigationPage("compare", "AB 审片", () => new CompareView { DataContext = model },
-            new(ToolIconKind.Video, "并排比较画面，联动查看细节。") { UsesCustomHeader = true });
+            new(ToolIconKind.Video, "并排比较画面，联动查看细节。") { UsesCustomHeader = true, IconPath = "Assets/icon.png" });
     }
 
     public async ValueTask StopAsync(CancellationToken cancellationToken)

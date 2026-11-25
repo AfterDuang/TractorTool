@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片交互与时间处理 | [E141 · 拖放、清空、帧边界及图标（2026-11-26）](#evidence-media-compare-interaction) |
 | AB 审片播放阻塞 | [E140 · 原生转储与解码设备同步（2026-11-26）](#evidence-media-compare-playback-lock) |
 | AB 审片用户反馈 | [E139 · 纹理原点、暂停定位与操作界面（2026-11-26）](#evidence-media-compare-feedback) |
 | AB 审片首版 | [E138 · 独立媒体/GPU 插件（2026-11-25）](#evidence-media-compare-first) |
@@ -177,6 +178,30 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-interaction"></a>
+
+## E141：AB 审片拖放、清空与帧时间处理（2026-11-26）
+
+用户反馈随机定位后播放出现缺少帧时长/帧率错误、画布不接受拖放，要求移除填满/1:1、适合移至底部、可清空恢复初始界面并增加彩色图标。本轮只修改 MediaCompare、专属检查及文档；未改框架，保留 `.vscode/settings.json`。用户明确允许本轮合成固定/可变帧率视频及临时目录独立自动回归；未启动真实宿主或使用用户素材/应用数据。
+
+实现与审查：
+
+- 参照 Apple HIG 工具栏、视频播放及拖放章节重新分组：顶部素材和清空，底部播放、适合画面与试听；每侧整个标题/预览区域接受单个本地文件并突出目标。“⋯”可移除当前侧，清空重置视图、时间、试听与序列帧率，不删除源文件。图标取 Microsoft Fluent System Icons `883bef1e12d37343d0b2a64a1af43d0209de1128` 的 Image 32 Color，原 SVG、256px PNG 与 MIT 许可入库，来源见 Artwork 和插件 NOTICE。
+- GStreamer 允许 duration 为 NONE、raw caps framerate 为 0/1。连续播放用有界副路前瞻取得真实后继 PTS，主路按时钟呈现，副路不等待自己的 appsink 时钟。严格半开区间，不用毫秒容差选未来帧，不延长至仅音频尾段；只在完成配对时提交两路候选。已知时长按绝对开始/结束时间统一转换 tick，固定帧率回退保留 caps 分数，防止独立截断产生一 tick 假间隙。
+- 两路 GPT-6.2-SOL/high 审查指出并复核修正：未知时长准确定位可能被原生裁剪 PTS；副路预读与单侧清空竞争；不足 1ms 的后继边界；ns→tick 进位；滑块被旧定位结果覆盖、失败后位置/错误未恢复；静态素材按钮 Space 被吞；Win32 虚拟拖放对象未释放。另改用 Avalonia 实际的 Bubble 拖放路由，渲染错误独立保留，诊断断言要求每次定位收到新帧及对应时间。最终复核未发现剩余已知阻断。
+
+边界：GStreamer 1.28.9 的 [GstVideoDecoder 裁剪](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-base/gst-libs/gst/video/gstvideodecoder.c#L3387) 对缺时长帧估计结束时间并可改写 PTS，不能仅凭与 seek target 相等证明帧身份。因此未知时长/无固定 FPS 只接受零起点 preroll，非零定位明确提示从开头播放；暂停后非零续播也可能受限。本轮没有新增完整 VFR 帧索引，不能把成功的合成 VFR 等同所有缺时间元数据素材可定位。
+
+验证与证据：
+
+- `dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false` 最终 0 警告/0 错误；默认纯托管检查通过，包含未知时长、严格 PTS、分数 FPS、ns 进位及溢出。
+- 临时证据目录 `artifacts/media-compare-diagnostics/20261126-interaction`。复用上轮 12 秒 720p/30fps H.264＋AAC 合成视频，另用 FFmpeg `testsrc2`、`select` 与 `-fps_mode vfr` 生成前 4 秒 6fps、随后 4 秒 15fps、最后 4 秒 30fps 的合成素材。未读取真实视频。
+- 中间版本 `cfr-run1`、`cfr-vfr-run1` 通过，端点修正后 `vfr-cfr-final` 通过。最终强化断言与播放中移除后，`cfr-vfr-final`、`vfr-cfr-final2` 均退出 0：11 个往返定位点跨越三段帧率、取消请求后最新定位、试听命令、播放中移除 A、B 单独播放、清空、重开及停止。每段 3 秒观察推进 2,833–2,967ms、17–89 次提交，UI 最大心跳间隔 111–116ms；stderr 为空，无已上报原生/渲染错误。
+- 拖放诊断从 Preview 派发空 DragEnter/DragOver/Drop，确认冒泡处理并拒绝空数据；不覆盖 Explorer 的真实文件输入和可见目标高亮。声音仅验证命令完成，帧提交不等于视觉/音画对应验收，离屏预览解除仍不能证明完整异步 GPU 释放。
+- `scripts/Build-Plugin.ps1` 引用 `artifacts/plugin-host-20261123-235028-9d9de9/host` 独立 SDK 构建 0.1.3，0 警告/0 错误。ZIP 142 文件、20,484,783 字节，展开 51,818,050 字节；121 项运行库哈希全部匹配、图标与许可存在，无共享框架 DLL。SHA256：`8FCE5E595F96A23A055B5806B88E853AA94A8EA505C88AE562BFD571EC00500A`，产物及静态报告见[当前台账](DEVELOPMENT.md#media-compare)。
+
+真实宿主安装、Explorer 拖放、原错误素材、可见 UI、声音、长 GOP 拖动性能及完整 GPU 生命周期仍由用户验收；未推送。
 
 <a id="evidence-media-compare-playback-lock"></a>
 

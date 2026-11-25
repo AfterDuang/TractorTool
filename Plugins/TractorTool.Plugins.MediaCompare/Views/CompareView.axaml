@@ -3,14 +3,22 @@
              xmlns:views="using:TractorTool.Plugins.MediaCompare.Views"
              x:Class="TractorTool.Plugins.MediaCompare.Views.CompareView" x:DataType="vm:CompareViewModel"
              Focusable="True">
+  <UserControl.Resources>
+    <SolidColorBrush x:Key="CompareDropBrush" Color="{DynamicResource SystemAccentColor}" />
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="Button.compareAction">
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="MinHeight" Value="32" />
+    </Style>
+  </UserControl.Styles>
   <Grid Margin="24,16,24,16" RowDefinitions="Auto,*,Auto,Auto,Auto" RowSpacing="12">
     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
       <TextBlock Text="AB 审片" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
       <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-        <Button Content="适合" Click="FitView" ToolTip.Tip="显示完整画面并居中（双击画面也可重置）" />
-        <Button Content="填满画布" Click="FillView" ToolTip.Tip="保持比例，裁去超出边缘的部分，使 A/B 各自铺满画布" />
-        <Button Content="1:1" Click="ActualSize" ToolTip.Tip="一个源像素对应一个屏幕像素；A/B 分别使用各自分辨率" AutomationProperties.Name="原始像素" />
-        <Button x:Name="HelpButton" Content="说明" Margin="10,0,0,0">
+        <Button Content="清空对比" Classes="compareAction" Command="{Binding ClearAllCommand}" Click="FocusPreview"
+                IsVisible="{Binding ShowClear}" ToolTip.Tip="移除 A/B 素材并返回初始界面，不删除源文件" />
+        <Button x:Name="HelpButton" Content="说明" Classes="compareAction" Margin="6,0,0,0">
           <Button.Flyout>
             <Flyout>
               <StackPanel Width="300" Spacing="10">
@@ -27,24 +35,25 @@
         </Button>
       </StackPanel>
     </Grid>
-    <Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="8" ClipToBounds="True">
+    <Border x:Name="DropSurface" Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="8" ClipToBounds="True" DragDrop.AllowDrop="True">
       <Grid RowDefinitions="Auto,*">
         <Grid ColumnDefinitions="*,*" Background="{DynamicResource AppCardBrush}">
-          <Border x:Name="SourceA" Padding="10" BorderThickness="0,0,1,1" BorderBrush="{DynamicResource AppBorderBrush}" DragDrop.AllowDrop="True">
+          <Border Padding="10" BorderThickness="0,0,1,1" BorderBrush="{DynamicResource AppBorderBrush}">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
               <TextBlock Text="A" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,4,0" />
               <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                 <TextBlock Text="{Binding AName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding AName}" />
                 <TextBlock Text="{Binding ASummary}" Classes="caption" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ADetails}" />
               </StackPanel>
-              <Button Grid.Column="2" Content="打开" Tag="A" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 A 素材" />
-              <Button x:Name="SourceAOptions" Grid.Column="3" Content="⋯" VerticalAlignment="Center" ToolTip.Tip="A 素材信息与图片序列" AutomationProperties.Name="A 素材信息与图片序列">
+              <Button Grid.Column="2" Content="打开" Classes="compareAction" Tag="A" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 A 素材" />
+              <Button x:Name="SourceAOptions" Grid.Column="3" Content="⋯" Classes="compareAction" VerticalAlignment="Center" ToolTip.Tip="A 素材选项" AutomationProperties.Name="A 素材选项">
                 <Button.Flyout>
                   <Flyout>
                     <StackPanel Width="280" Spacing="10">
                       <TextBlock Text="A 素材" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding AName}" TextWrapping="Wrap" />
                       <TextBlock Text="{Binding ADetails}" Classes="caption" TextWrapping="Wrap" />
+                      <Button Content="移除 A 素材" Tag="A" Click="ClearSource" IsEnabled="{Binding CanClearA}" HorizontalAlignment="Stretch" ToolTip.Tip="从对比中移除，不删除源文件" />
                       <Separator />
                       <TextBlock Text="打开图片序列" FontWeight="SemiBold" />
                       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -58,21 +67,22 @@
               </Button>
             </Grid>
           </Border>
-          <Border x:Name="SourceB" Grid.Column="1" Padding="10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}" DragDrop.AllowDrop="True">
+          <Border Grid.Column="1" Padding="10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource AppBorderBrush}">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
               <TextBlock Text="B" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,4,0" />
               <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                 <TextBlock Text="{Binding BName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding BName}" />
                 <TextBlock Text="{Binding BSummary}" Classes="caption" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding BDetails}" />
               </StackPanel>
-              <Button Grid.Column="2" Content="打开" Tag="B" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 B 素材" />
-              <Button x:Name="SourceBOptions" Grid.Column="3" Content="⋯" VerticalAlignment="Center" ToolTip.Tip="B 素材信息与图片序列" AutomationProperties.Name="B 素材信息与图片序列">
+              <Button Grid.Column="2" Content="打开" Classes="compareAction" Tag="B" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 B 素材" />
+              <Button x:Name="SourceBOptions" Grid.Column="3" Content="⋯" Classes="compareAction" VerticalAlignment="Center" ToolTip.Tip="B 素材选项" AutomationProperties.Name="B 素材选项">
                 <Button.Flyout>
                   <Flyout>
                     <StackPanel Width="280" Spacing="10">
                       <TextBlock Text="B 素材" FontWeight="SemiBold" />
                       <TextBlock Text="{Binding BName}" TextWrapping="Wrap" />
                       <TextBlock Text="{Binding BDetails}" Classes="caption" TextWrapping="Wrap" />
+                      <Button Content="移除 B 素材" Tag="B" Click="ClearSource" IsEnabled="{Binding CanClearB}" HorizontalAlignment="Stretch" ToolTip.Tip="从对比中移除，不删除源文件" />
                       <Separator />
                       <TextBlock Text="打开图片序列" FontWeight="SemiBold" />
                       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -90,7 +100,30 @@
         <Grid Grid.Row="1" Background="#111111" MinHeight="120">
           <views:ComparePreview x:Name="Preview" />
           <Border Width="1" HorizontalAlignment="Center" Background="#555555" IsHitTestVisible="False" />
-          <TextBlock Text="打开 A / B 素材开始比较&#x0a;也可以将文件拖到上方对应区域" Foreground="#B0B0B0" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasMedia}" IsHitTestVisible="False" />
+          <Grid ColumnDefinitions="*,*" IsHitTestVisible="False">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !HasA}">
+              <TextBlock Text="版本 A" Foreground="#EEEEEE" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+              <TextBlock Text="拖入视频或图片" Foreground="#B0B0B0" HorizontalAlignment="Center" />
+              <TextBlock Text="或使用上方“打开”" Foreground="#B0B0B0" FontSize="12" HorizontalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" IsVisible="{Binding !HasB}">
+              <TextBlock Text="版本 B" Foreground="#EEEEEE" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
+              <TextBlock Text="拖入视频或图片" Foreground="#B0B0B0" HorizontalAlignment="Center" />
+              <TextBlock Text="或使用上方“打开”" Foreground="#B0B0B0" FontSize="12" HorizontalAlignment="Center" />
+            </StackPanel>
+          </Grid>
+        </Grid>
+        <Grid Grid.RowSpan="2" ColumnDefinitions="*,*" IsHitTestVisible="False">
+          <Border x:Name="DropIndicatorA" BorderBrush="{DynamicResource CompareDropBrush}" BorderThickness="2" CornerRadius="6,0,0,6" IsVisible="False">
+            <Border Background="{DynamicResource AppCardBrush}" Padding="14,8" Margin="12" CornerRadius="6" VerticalAlignment="Center" HorizontalAlignment="Center">
+              <TextBlock x:Name="DropLabelA" Text="释放以打开 A" />
+            </Border>
+          </Border>
+          <Border x:Name="DropIndicatorB" Grid.Column="1" BorderBrush="{DynamicResource CompareDropBrush}" BorderThickness="2" CornerRadius="0,6,6,0" IsVisible="False">
+            <Border Background="{DynamicResource AppCardBrush}" Padding="14,8" Margin="12" CornerRadius="6" VerticalAlignment="Center" HorizontalAlignment="Center">
+              <TextBlock x:Name="DropLabelB" Text="释放以打开 B" />
+            </Border>
+          </Border>
         </Grid>
       </Grid>
     </Border>
@@ -101,19 +134,21 @@
               AutomationProperties.Name="共同播放时间" ToolTip.Tip="拖动定位；方向键移动 0.1 秒，Page Up/Down 移动 1 秒" />
       <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontFamily="Consolas" VerticalAlignment="Center" ToolTip.Tip="媒体估计总时长；仅有音频的尾段可能没有可比较画面" />
     </Grid>
-    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
-      <Button x:Name="PlayButton" Content="{Binding PlayLabel}" Command="{Binding TogglePlayCommand}" Click="FocusPreview" MinWidth="80" ToolTip.Tip="{Binding PlaybackHint}" />
-      <TextBlock Grid.Column="1" Text="{Binding PlaybackHint}" Classes="caption" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" IsVisible="{Binding HasMedia}">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button x:Name="PlayButton" Classes="compareAction" Content="{Binding PlayLabel}" Command="{Binding TogglePlayCommand}" Click="FocusPreview" IsVisible="{Binding HasTimeline}" MinWidth="80" ToolTip.Tip="空格播放 / 暂停" />
+        <Button Content="适合画面" Classes="compareAction" Click="FitView" IsEnabled="{Binding CanOperate}" ToolTip.Tip="恢复完整画面并居中；双击画面也可恢复" />
+      </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasTimeline}">
         <TextBlock Text="声音" VerticalAlignment="Center" />
-        <ComboBox x:Name="AudioChoice" SelectedIndex="{Binding SelectedAudio, Mode=OneWay}" SelectionChanged="AudioChanged" MinWidth="112" AutomationProperties.Name="试听声音">
-          <ComboBoxItem Content="静音" /><ComboBoxItem Content="只听 A" /><ComboBoxItem Content="只听 B" />
+        <ComboBox x:Name="AudioChoice" SelectedIndex="{Binding SelectedAudio, Mode=OneWay}" IsEnabled="{Binding CanOperate}" SelectionChanged="AudioChanged" MinWidth="112" AutomationProperties.Name="试听声音">
+          <ComboBoxItem Content="静音" /><ComboBoxItem Content="只听 A" IsEnabled="{Binding HasA}" /><ComboBoxItem Content="只听 B" IsEnabled="{Binding HasB}" />
         </ComboBox>
       </StackPanel>
     </Grid>
     <StackPanel Grid.Row="4" Spacing="4" IsVisible="{Binding ShowStatus}">
       <TextBlock Text="{Binding Status}" IsVisible="{Binding IsBusy}" Classes="caption" />
-      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" Foreground="{DynamicResource AppLogErrorBrush}" TextWrapping="Wrap" />
+      <TextBlock Text="{Binding DisplayError}" IsVisible="{Binding HasError}" Foreground="{DynamicResource AppLogErrorBrush}" TextWrapping="Wrap" />
     </StackPanel>
   </Grid>
 </UserControl>

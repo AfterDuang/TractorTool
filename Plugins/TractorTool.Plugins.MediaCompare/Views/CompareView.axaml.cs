@@ -26,7 +26,10 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         AddHandler(KeyDownEvent, OnPlaybackKeyDown, RoutingStrategies.Tunnel);
         AddHandler(KeyUpEvent, OnPlaybackKeyUp, RoutingStrategies.Tunnel);
         LostFocus += (_, _) => ResetPlaybackKey();
-        WireDrop(SourceA, MediaSide.A); WireDrop(SourceB, MediaSide.B);
+        DropSurface.AddHandler(DragDrop.DragEnterEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
+        DropSurface.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
+        DropSurface.AddHandler(DragDrop.DragLeaveEvent, (_, _) => ClearDropFeedback(), RoutingStrategies.Bubble, handledEventsToo: true);
+        DropSurface.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble, handledEventsToo: true);
         Timeline.AddHandler(PointerPressedEvent, (_, e) =>
         {
             if (e.GetCurrentPoint(Timeline).Properties.IsLeftButtonPressed) _attached?.BeginScrub();
@@ -44,9 +47,9 @@ public partial class CompareView : UserControl, IPluginPageLifetime
             if (e.Property == Slider.ValueProperty && _attached is { IsScrubbing: true } model)
                 model.RequestSeek(Timeline.Value);
         };
-        Timeline.KeyDown += (_, e) =>
+        Timeline.AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (_attached is not { } model) return;
+            if (e.KeyModifiers != KeyModifiers.None || _attached is not { CanSeek: true } model) return;
             if (e.Key is Key.Home or Key.End)
             { e.Handled = true; model.RequestSeek(e.Key == Key.Home ? 0 : model.DurationSeconds); }
             else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
@@ -55,7 +58,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
                 var change = e.Key is Key.PageUp or Key.PageDown ? 1 : .1;
                 model.RequestSeek(model.PositionSeconds + (e.Key is Key.Left or Key.Down or Key.PageDown ? -change : change));
             }
-        };
+        }, RoutingStrategies.Tunnel);
         Preview.Error += error => Dispatcher.UIThread.Post(() => _attached?.ReportRendererError(error));
         Preview.RendererStatusChanged += status => Dispatcher.UIThread.Post(() => { if (_attached is { } model) model.RendererStatus = status; });
         Preview.AvailabilityChanged += available => { if (_attached is { } model) model.RendererAvailable = available; };
@@ -67,6 +70,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         _attached = model;
         model.RendererAvailable = Preview.IsAvailable;
         model.FrameReady += Preview.Submit;
+        model.ViewResetRequested += Preview.ResetView;
         Preview.Focus();
         await model.EnterViewAsync();
     }
@@ -75,9 +79,11 @@ public partial class CompareView : UserControl, IPluginPageLifetime
     private void Detach()
     {
         ResetPlaybackKey();
+        ClearDropFeedback();
         if (_attached is not { } model) return;
         _attached = null;
         model.FrameReady -= Preview.Submit;
+        model.ViewResetRequested -= Preview.ResetView;
         model.LeaveView();
     }
 
@@ -112,39 +118,65 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         finally { _picking = false; }
     }
 
-    private void WireDrop(Control zone, MediaSide side)
+    private MediaSide DropSide(DragEventArgs e) => e.GetPosition(DropSurface).X < DropSurface.Bounds.Width / 2 ? MediaSide.A : MediaSide.B;
+
+    private void OnDragOver(object? sender, DragEventArgs e)
     {
-        zone.AddHandler(DragDrop.DragOverEvent, (_, e) =>
-        {
-            e.DragEffects = _attached is { CanOperate: true } && GetDroppedFile(e.DataTransfer) is not null
-                ? DragDropEffects.Copy : DragDropEffects.None;
-            e.Handled = true;
-        });
-        zone.AddHandler(DragDrop.DropEvent, async (_, e) =>
-        {
-            e.Handled = true; e.DragEffects = DragDropEffects.None;
-            if (_attached is not { CanOperate: true } model || GetDroppedFile(e.DataTransfer) is not { } path) return;
-            e.DragEffects = DragDropEffects.Copy;
-            Preview.Focus();
-            await model.OpenAsync(side, path, false);
-        });
+        var accepted = !_picking && _attached is { CanOperate: true } && e.DragEffects.HasFlag(DragDropEffects.Copy)
+            && GetDroppedFile(e.DataTransfer) is not null;
+        e.DragEffects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+        var side = DropSide(e);
+        DropIndicatorA.IsVisible = accepted && side == MediaSide.A;
+        DropIndicatorB.IsVisible = accepted && side == MediaSide.B;
+        DropLabelA.Text = _attached?.HasA == true ? "释放以替换 A" : "释放以打开 A";
+        DropLabelB.Text = _attached?.HasB == true ? "释放以替换 B" : "释放以打开 B";
     }
+
+    private async void OnDrop(object? sender, DragEventArgs e)
+    {
+        ClearDropFeedback();
+        e.Handled = true;
+        var canCopy = e.DragEffects.HasFlag(DragDropEffects.Copy);
+        e.DragEffects = DragDropEffects.None;
+        if (!canCopy || _picking || _attached is not { CanOperate: true } model) return;
+        if (GetDroppedFile(e.DataTransfer) is not { } path) return;
+        var side = DropSide(e);
+        e.DragEffects = DragDropEffects.Copy;
+        Preview.Focus();
+        await model.OpenAsync(side, path, false);
+    }
+
+    private void ClearDropFeedback() => DropIndicatorA.IsVisible = DropIndicatorB.IsVisible = false;
 
     private static string? GetDroppedFile(IDataTransfer data)
     {
+        IStorageItem[]? files = null;
         try
         {
-            var files = data.TryGetFiles()?.Take(2).ToArray();
+            files = data.TryGetFiles()?.ToArray();
             if (files is not { Length: 1 } || files[0] is not IStorageFile file) return null;
             var path = file.TryGetLocalPath();
             return path is not null && Path.IsPathFullyQualified(path) ? path : null;
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or ArgumentException) { return null; }
+        finally
+        {
+            // Virtual shell files can own an OLE transfer even when rejected for
+            // lacking a local path. Release every returned item, including extras.
+            if (files is not null) foreach (var file in files) file.Dispose();
+        }
     }
 
     private void FitView(object? sender, RoutedEventArgs e) => Preview.ResetView();
-    private void FillView(object? sender, RoutedEventArgs e) => Preview.FillView();
-    private void ActualSize(object? sender, RoutedEventArgs e) => Preview.ActualSize();
+    private async void ClearSource(object? sender, RoutedEventArgs e)
+    {
+        if (_attached is not { } model) return;
+        var side = sender is Button { Tag: "B" } ? MediaSide.B : MediaSide.A;
+        SourceAOptions.Flyout?.Hide(); SourceBOptions.Flyout?.Hide();
+        Preview.Focus();
+        await model.ClearAsync(side);
+    }
     private void FocusPreview(object? sender, RoutedEventArgs e) => Preview.Focus();
     private async void AudioChanged(object? sender, SelectionChangedEventArgs e)
     { if (IsLoaded && _attached is { } model) await model.SetAudioAsync(AudioChoice.SelectedIndex); }
@@ -155,7 +187,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
 
     private void OnPlaybackKeyDown(object? sender, KeyEventArgs e)
     {
-        if (!IsPlaybackKey(e) || _attached is not { } model) return;
+        if (!IsPlaybackKey(e) || _attached is not { HasTimeline: true } model) return;
         // Reserve Space before a focused button handles it; Enter still activates buttons.
         e.Handled = true;
         if (_playbackSpacePressed) return;

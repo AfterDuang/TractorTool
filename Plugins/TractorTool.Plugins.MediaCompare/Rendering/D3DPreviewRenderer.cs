@@ -22,7 +22,6 @@ internal sealed class D3DPreviewRenderer : IDisposable
     private ID3D11PixelShader? _pixelShader;
     private ID3D11Buffer? _constants;
     private ID3D11SamplerState? _linearSampler;
-    private ID3D11SamplerState? _pointSampler;
     private ID3D11RasterizerState? _rasterizer;
     private ID3D11Texture2D? _output;
     private ID3D11RenderTargetView? _target;
@@ -60,7 +59,6 @@ internal sealed class D3DPreviewRenderer : IDisposable
         _pixelShader = _device.CreatePixelShader(Compiler.Compile(Shader, "PS", "ComparePreview", "ps_5_0").Span);
         _constants = _device.CreateBuffer(16, BindFlags.ConstantBuffer);
         _linearSampler = _device.CreateSamplerState(new SamplerDescription(Filter.MinMagMipLinear, TextureAddressMode.Clamp));
-        _pointSampler = _device.CreateSamplerState(new SamplerDescription(Filter.MinMagMipPoint, TextureAddressMode.Clamp));
         _rasterizer = _device.CreateRasterizerState(new RasterizerDescription(CullMode.None, FillMode.Solid));
     }
 
@@ -109,7 +107,7 @@ internal sealed class D3DPreviewRenderer : IDisposable
             context.VSSetShader(_vertexShader);
             context.PSSetShader(_pixelShader);
             context.PSSetConstantBuffer(0, _constants);
-            context.PSSetSampler(0, view.Scale == PreviewScale.ActualPixels && view.Zoom >= 1 ? _pointSampler : _linearSampler);
+            context.PSSetSampler(0, _linearSampler);
             var half = Width / 2;
             Draw(_a, 0, half, view);
             Draw(_b, half, Width - half, view);
@@ -174,7 +172,6 @@ internal sealed class D3DPreviewRenderer : IDisposable
         _a?.Dispose(); _a = null; _b?.Dispose(); _b = null;
         ReleaseOutput();
         _rasterizer?.Dispose(); _rasterizer = null;
-        _pointSampler?.Dispose(); _pointSampler = null;
         _linearSampler?.Dispose(); _linearSampler = null;
         _constants?.Dispose(); _constants = null;
         _pixelShader?.Dispose(); _pixelShader = null;
