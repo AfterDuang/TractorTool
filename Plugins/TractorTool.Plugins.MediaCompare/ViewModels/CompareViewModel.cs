@@ -113,7 +113,6 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
                 Status = "正在打开素材…";
                 await session.OpenAsync(side, new(path, kind, SequenceFrameRate), token);
                 RefreshDescription(session);
-                await session.SetAudioAsync((AudioSource)SelectedAudio, token);
                 Status = "滚轮缩放 · 拖动联动平移 · 空格播放/暂停";
             }, create: true);
         }
@@ -137,12 +136,10 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             {
                 Status = "正在清空对比…";
                 await session.ClearAsync(side, token);
-                if (side is null || SelectedAudio == (side == MediaSide.A ? 1 : 2)) SelectedAudio = 0;
                 RefreshDescription(session);
             });
             if (!HasMedia && Error.Length == 0 && SeekError.Length == 0)
             {
-                SelectedAudio = 0;
                 SequenceFrameRate = 24;
                 PositionSeconds = DurationSeconds = 0;
                 ViewResetRequested?.Invoke();
@@ -166,15 +163,12 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         IsAudioChanging = true;
         try
         {
-            await ExecuteAsync(async (session, token) =>
-            {
-                await session.SetAudioAsync((AudioSource)selected, token);
-                SelectedAudio = selected;
-            });
+            await ExecuteAsync((session, token) => session.SetAudioAsync((AudioSource)selected, token));
         }
         finally
         {
             // Restore failed selections before accepting another user request.
+            SelectedAudio = (int)(_session?.SelectedAudio ?? AudioSource.Muted);
             OnPropertyChanged(nameof(SelectedAudio));
             IsAudioChanging = false;
         }
@@ -334,8 +328,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
         HasA = session.A is not null; HasB = session.B is not null;
         HasMedia = HasA || HasB;
-        if ((SelectedAudio == 1 && session.A?.AudioStatus != MediaAudioStatus.Ready) ||
-            (SelectedAudio == 2 && session.B?.AudioStatus != MediaAudioStatus.Ready)) SelectedAudio = 0;
+        SelectedAudio = (int)session.SelectedAudio;
         IsPlaying = session.IsPlaying;
     }
 

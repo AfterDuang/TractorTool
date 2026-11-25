@@ -64,10 +64,10 @@ internal static class MediaInputDiagnostic
                     Check($"sequence-{extension}-{kind}", () => CheckImage(
                         new(Fixture($"{extension}-sequence/frame_0001.{extension}"), kind, 24), true, clock, Write));
             }
-            Check("single-png16", () => CheckImage(new(Fixture("input16.png")), false, clock, Write));
+            Check("single-png16", () => CheckImage(new(Fixture("input16.png")), false, clock, Write, 16));
             foreach (var kind in new[] { MediaSourceKind.Sequence, MediaSourceKind.Auto })
                 Check($"sequence-png16-{kind}", () => CheckImage(
-                    new(Fixture("png16-sequence/frame_0001.png"), kind, 24), true, clock, Write));
+                    new(Fixture("png16-sequence/frame_0001.png"), kind, 24), true, clock, Write, 16));
             Check("seek-play-subtick-boundaries", () => CheckBoundarySeeks(Fixture("video.mp4"), clock, Write));
             Check("session-actual-seek-position", () => CheckActualSeekPosition(args[1],
                 Path.Combine(args[2], "session-cache"), Fixture("video.mp4"), Write));
@@ -81,13 +81,17 @@ internal static class MediaInputDiagnostic
             Check("decoder-audio-lpcm", () => CheckDecoderAudio(Fixture("audio-lpcm.m2ts"), clock, Write));
             Check("audio-ac3", () => CheckAudio(Fixture("audio-ac3.m2ts"), Write));
             Check("audio-lpcm", () => CheckAudio(Fixture("audio-lpcm.m2ts"), Write));
+            Check("pixel-aspect-ratio", () => PlaybackRegressionChecks.CheckPixelAspect(Fixture("video-par.mp4"), clock, Write));
+            Check("gpu-upload-reuse", () => PlaybackRegressionChecks.CheckUploadReuse(Fixture("input.png"), clock, Write));
+            Check("common-timeline-and-replay", () => PlaybackRegressionChecks.Run(args[1],
+                Path.Combine(args[2], "session-cache"), args[3], Write));
         }
         finally { GstNative.gst_object_unref(clock); }
         Write($"complete: failures={failures}; decoded audio is not speaker-output or A/B sync acceptance");
         return failures == 0 ? 0 : 1;
     }
 
-    private static void CheckImage(MediaSource source, bool sequence, nint clock, Action<string> write)
+    private static void CheckImage(MediaSource source, bool sequence, nint clock, Action<string> write, int sourceDepth = 8)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         var opened = GstDecoder.Open(source, clock, timeout.Token);
@@ -96,6 +100,10 @@ internal static class MediaInputDiagnostic
         {
             Require(frame.Width > 0 && frame.Height > 0 && frame.Texture != 0, "No decoded GPU image was returned.");
             Require(decoder.IsStill != sequence, "Image/sequence classification did not match the request.");
+            Require(sourceDepth > 8 ? decoder.Description.PreviewWarning.Contains(sourceDepth.ToString(), StringComparison.Ordinal) &&
+                decoder.Description.PreviewWarning.Contains("8", StringComparison.Ordinal) :
+                string.IsNullOrEmpty(decoder.Description.PreviewWarning),
+                "The persistent per-canvas warning must describe 16-to-8-bit conversion only for high-depth fixtures.");
             write($"image: {decoder.Description}; ptsNs={frame.TimestampNanoseconds}; endNs={frame.EndNanoseconds}");
         }
         if (!sequence) return;
@@ -103,7 +111,7 @@ internal static class MediaInputDiagnostic
         using (var located = decoder.Seek(target, timeout.Token))
             Require(FrameTiming.CoversPreroll(located.TimestampNanoseconds, located.PrerollEndNanoseconds, target),
                 "Sequence seek did not cover the requested time.");
-        decoder.Play(GstNative.gst_clock_get_time(clock) + 30_000_000, synchronizeVideo: false);
+        decoder.Play(GstNative.gst_clock_get_time(clock) + 30_000_000);
         var advanced = false;
         var watch = Stopwatch.StartNew();
         while (watch.Elapsed < TimeSpan.FromSeconds(3))
@@ -142,7 +150,7 @@ internal static class MediaInputDiagnostic
                         located.EndNanoseconds, decoder.Description.FrameRate) == 1_001_000_000;
                 if (!covered && !expectedNativeRounding) failures.Add(observation);
             }
-            decoder.Play(GstNative.gst_clock_get_time(clock) + 30_000_000, synchronizeVideo: false);
+            decoder.Play(GstNative.gst_clock_get_time(clock) + 30_000_000);
             var advanced = false;
             var watch = Stopwatch.StartNew();
             while (watch.Elapsed < TimeSpan.FromSeconds(3))
@@ -172,7 +180,7 @@ internal static class MediaInputDiagnostic
             {
                 if (pair.A is { } a && pair.B is { } b)
                     observed = new(a.TimestampNanoseconds, a.EndNanoseconds, b.TimestampNanoseconds,
-                        b.EndNanoseconds, pair.Position.Ticks, session.IsPlaying);
+                        b.EndNanoseconds, pair.PositionNanoseconds, session.IsPlaying);
             }
         }
         void Await(Task task) => task.WaitAsync(timeout.Token).GetAwaiter().GetResult();
@@ -183,7 +191,7 @@ internal static class MediaInputDiagnostic
             Await(session.OpenAsync(MediaSide.B, new(video), timeout.Token));
             Await(session.SeekAsync(TimeSpan.FromTicks(10_009_999), timeout.Token));
             const long actual = 1_001_000_000;
-            Require(observed is { } pair && pair.Position == actual / 100 && session.Position.Ticks == actual / 100 &&
+            Require(observed is { } pair && pair.Position == actual && session.Position.Ticks == actual / 100 &&
                 FrameTiming.CoversPreroll(pair.A, pair.EndA, actual) && FrameTiming.CoversPreroll(pair.B, pair.EndB, actual),
                 "The session must align both frames/audio to the reported actual seek location.");
             write($"actual-seek: requestedNs=1000999900; effectiveNs={session.Position.Ticks * 100}; pair={observed}");
@@ -204,7 +212,9 @@ internal static class MediaInputDiagnostic
         using var decoder = opened.Decoder;
         using var frame = opened.FirstFrame;
         Require(frame.Texture != 0 && decoder.Description.Format.Contains("10", StringComparison.Ordinal) &&
-            decoder.Description.Format.Contains("8", StringComparison.Ordinal),
+            decoder.Description.Format.Contains("8", StringComparison.Ordinal) &&
+            decoder.Description.PreviewWarning.Contains("10", StringComparison.Ordinal) &&
+            decoder.Description.PreviewWarning.Contains("8", StringComparison.Ordinal),
             "10-bit SDR input must decode and clearly disclose the 8-bit preview conversion.");
         Require(decoder.Description.AudioStatus == MediaAudioStatus.NoTrack,
             "The silent 10-bit fixture must report that it has no audio track.");
@@ -258,7 +268,7 @@ internal static class MediaInputDiagnostic
             {
                 if (pair.A is not { } a || pair.B is not { } b) return;
                 lock (gate) pairs.Add(new(a.TimestampNanoseconds, a.EndNanoseconds,
-                    b.TimestampNanoseconds, b.EndNanoseconds, pair.Position.Ticks, session.IsPlaying));
+                    b.TimestampNanoseconds, b.EndNanoseconds, pair.PositionNanoseconds, session.IsPlaying));
             }
         }
         void Failed(string error) { lock (gate) failure ??= error; }
@@ -293,9 +303,11 @@ internal static class MediaInputDiagnostic
                 for (var i = 0; i < observations.Length; i++)
                 {
                     var pair = observations[i];
-                    var target = pair.A; // A is the moving master in both generated combinations.
-                    Require(pair.Position == target / 100 && pair.B <= target,
-                        "A video/sequence pair contains a future frame or a mismatched timeline position.");
+                    var target = pair.Position;
+                    Require(pair.A <= target && pair.B <= target,
+                        "A video/sequence pair contains a future frame.");
+                    Require(Math.Round(pair.A * 24d / 1_000_000_000) == Math.Round(pair.B * 24d / 1_000_000_000),
+                        "Matching 24 fps inputs must show the same logical frame, independent of A/B placement.");
                     if (pair.EndA is { } endA) Require(target < endA, "The master frame has an empty interval.");
                     if (pair.EndB is { } endB) Require(target < endB, "The secondary frame does not cover the master time.");
                     else

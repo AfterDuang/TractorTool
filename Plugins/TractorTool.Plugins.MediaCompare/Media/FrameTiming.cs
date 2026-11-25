@@ -5,6 +5,57 @@ internal enum FrameCoverage { Covered, NeedNext, Advance, Ended, Gap }
 /// <summary>Pair frames in the decoder's nanosecond timebase; TimeSpan is only a UI boundary.</summary>
 internal static class FrameTiming
 {
+    internal static long? NextPresentation(long? a, long? b,
+        (int Numerator, int Denominator) rateA, (int Numerator, int Denominator) rateB,
+        long? endA = null, long? endB = null)
+    {
+        if (a is null) return b;
+        if (b is null) return a;
+        var first = Math.Min(a.Value, b.Value);
+        var last = Math.Max(a.Value, b.Value);
+        if (first == last) return first;
+        // Some CFR sources floor their rational PTS and others ceil it. Coalesce
+        // only two representations of the very same grid boundary, at its later
+        // real timestamp. This neither shifts frames nor tolerates arbitrary gaps.
+        if ((a < b ? endA : endB) is not { } earlierEnd || earlierEnd <= last ||
+            !ShareGridBoundary(a.Value, b.Value, rateA, rateB)) return first;
+        return last;
+    }
+
+    internal static bool ShareGridBoundary(long a, long b,
+        (int Numerator, int Denominator) rateA, (int Numerator, int Denominator) rateB)
+    {
+        if (Math.Abs(a - b) != 1 || !TryGridIndex(a, rateA, out var indexA) ||
+            !TryGridIndex(b, rateB, out var indexB)) return false;
+        return indexA * (uint)rateA.Denominator * (uint)rateB.Numerator ==
+            indexB * (uint)rateB.Denominator * (uint)rateA.Numerator;
+    }
+
+    internal static long? CoverageEnd(long? end, long? next)
+        => end is null ? next : next is null ? end : Math.Min(end.Value, next.Value);
+
+    internal static long? GapDeadline(long? end, long? next, (int Numerator, int Denominator) rate)
+        => end is { } stop && next is { } start && stop < start && !ShareGridBoundary(stop, start, rate, rate)
+            ? stop : null;
+
+    internal static long ClampPausePosition(long published, long clockPosition, long? end, long? next)
+    {
+        var limit = CoverageEnd(end, next) is { } stop ? Math.Max(published, stop - 1) : published;
+        return Math.Clamp(clockPosition, published, limit);
+    }
+
+    private static bool TryGridIndex(long timestamp, (int Numerator, int Denominator) rate, out UInt128 index)
+    {
+        index = 0;
+        if (timestamp < 0 || rate.Numerator <= 0 || rate.Denominator <= 0) return false;
+        var scale = (UInt128)1_000_000_000 * (uint)rate.Denominator;
+        index = ((UInt128)timestamp * (uint)rate.Numerator + scale / 2) / scale;
+        var exact = index * scale;
+        var floor = exact / (uint)rate.Numerator;
+        var ceiling = (exact + (uint)rate.Numerator - 1) / (uint)rate.Numerator;
+        return (UInt128)timestamp == floor || (UInt128)timestamp == ceiling;
+    }
+
     internal static long? ResolveEnd(ulong startNanoseconds, ulong durationNanoseconds,
         int rateNumerator = 0, int rateDenominator = 1)
     {

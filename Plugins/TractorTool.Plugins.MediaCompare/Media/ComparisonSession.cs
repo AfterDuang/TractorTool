@@ -15,12 +15,13 @@ public sealed class ComparisonSession : IAsyncDisposable
     private readonly Task _worker;
     private readonly nint _clock;
     private GstDecoder? _a, _b;
-    private MediaFrame? _currentA, _currentB, _pendingA, _pendingB, _otherCandidate;
+    private MediaFrame? _currentA, _currentB, _pendingA, _pendingB, _followingA, _followingB;
     private MediaDescription? _descriptionA, _descriptionB;
-    private long _positionNanoseconds, _durationTicks, _seekGeneration;
-    private bool _playing;
+    private long _positionNanoseconds, _durationTicks, _seekGeneration, _playbackStart;
+    private ulong _playbackBaseTime;
+    private bool _playing, _ended;
     private int _disposing;
-    private AudioSource _audio = AudioSource.Muted;
+    private int _audio = (int)AudioSource.Muted;
 
     public ComparisonSession(string runtimeRoot, string cacheRoot)
     {
@@ -38,6 +39,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     public TimeSpan Duration => TimeSpan.FromTicks(Interlocked.Read(ref _durationTicks));
     public TimeSpan Position => TimeSpan.FromTicks(Interlocked.Read(ref _positionNanoseconds) / 100);
     public bool IsPlaying => Volatile.Read(ref _playing);
+    public AudioSource SelectedAudio => (AudioSource)Volatile.Read(ref _audio);
 
     public Task OpenAsync(MediaSide side, MediaSource source, CancellationToken token = default)
         => Enqueue(ct => Open(side, source, ct), token);
@@ -67,15 +69,16 @@ public sealed class ComparisonSession : IAsyncDisposable
     public Task SetPlayingAsync(bool playing, CancellationToken token = default)
         => Enqueue(ct =>
         {
-            Pause();
+            if (playing && IsPlaying) return;
+            Pause(capturePosition: !playing);
             if (!playing || Duration <= TimeSpan.Zero || (_a is null && _b is null)) return;
             var generation = Interlocked.Increment(ref _seekGeneration);
-            if (!Seek(Interlocked.Read(ref _positionNanoseconds), ct, generation)) return;
+            if (!Seek(_ended ? 0 : Interlocked.Read(ref _positionNanoseconds), ct, generation)) return;
             ct.ThrowIfCancellationRequested();
-            var baseTime = GstNative.gst_clock_get_time(_clock) + 30_000_000;
-            var masterIsA = _a is { IsStill: false };
-            _a?.Play(baseTime, synchronizeVideo: masterIsA);
-            _b?.Play(baseTime, synchronizeVideo: !masterIsA);
+            _playbackStart = Interlocked.Read(ref _positionNanoseconds);
+            _playbackBaseTime = GstNative.gst_clock_get_time(_clock) + 30_000_000;
+            _a?.Play(_playbackBaseTime);
+            _b?.Play(_playbackBaseTime);
             SetPlaying(true);
         }, token);
 
@@ -94,7 +97,7 @@ public sealed class ComparisonSession : IAsyncDisposable
             if (source != AudioSource.A) _a?.SetMuted(true);
             if (source != AudioSource.B) _b?.SetMuted(true);
             selected?.SetMuted(false);
-            _audio = source;
+            Volatile.Write(ref _audio, (int)source);
         }, token);
 
     private Task Enqueue(Action<CancellationToken> action, CancellationToken token)
@@ -135,7 +138,8 @@ public sealed class ComparisonSession : IAsyncDisposable
                 if (_stopping.IsCancellationRequested) break;
                 if (IsPlaying)
                 {
-                    try { PumpPlayback(); }
+                    try { await PumpPlaybackAsync().ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
                     catch (Exception error)
                     {
                         PauseAfterFailure();
@@ -165,7 +169,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     private void Open(MediaSide side, MediaSource source, CancellationToken token)
     {
         if (!Enum.IsDefined(side)) throw new ArgumentOutOfRangeException(nameof(side));
-        Pause();
+        Pause(capturePosition: true);
         var (decoder, first) = GstDecoder.Open(source, _clock, token);
         using var initialFrame = first;
         MediaFrame? candidateFrame = null, otherFrame = null;
@@ -181,8 +185,8 @@ public sealed class ComparisonSession : IAsyncDisposable
             otherFrame = side == MediaSide.A ? prepared.B : prepared.A;
             var position = prepared.Position;
             var selectedSide = side == MediaSide.A ? AudioSource.A : AudioSource.B;
-            var audio = _audio == selectedSide && decoder.Description.AudioStatus != MediaAudioStatus.Ready
-                ? AudioSource.Muted : _audio;
+            var audio = SelectedAudio == selectedSide && decoder.Description.AudioStatus != MediaAudioStatus.Ready
+                ? AudioSource.Muted : SelectedAudio;
             if (audio == selectedSide) decoder.EnsureAudioPlayable();
             decoder.SetMuted(audio != selectedSide);
             token.ThrowIfCancellationRequested();
@@ -204,7 +208,8 @@ public sealed class ComparisonSession : IAsyncDisposable
             }
             candidateFrame = otherFrame = null;
             committed = true;
-            _audio = audio;
+            Volatile.Write(ref _audio, (int)audio);
+            _ended = false;
             Interlocked.Exchange(ref _durationTicks, duration.Ticks);
             Interlocked.Exchange(ref _positionNanoseconds, position);
             previous?.Dispose();
@@ -226,6 +231,9 @@ public sealed class ComparisonSession : IAsyncDisposable
     private void Clear(MediaSide? side, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
+        // Capture before dropping either side's interval evidence. The retained
+        // source resumes at the actual pause time, not its last frame's PTS.
+        var pausedPosition = side is null ? 0 : IsPlaying ? PausedPosition() : Interlocked.Read(ref _positionNanoseconds);
         // Clearing is also the recovery path for a failed pipeline.
         PauseAfterFailure();
         DiscardPendingFrames();
@@ -243,10 +251,11 @@ public sealed class ComparisonSession : IAsyncDisposable
             Volatile.Write(ref _descriptionB, null);
             decoder?.Dispose();
         }
-        if (side is null || (_audio == AudioSource.A && _a is null) || (_audio == AudioSource.B && _b is null))
-            _audio = AudioSource.Muted;
+        if (side is null || (SelectedAudio == AudioSource.A && _a is null) || (SelectedAudio == AudioSource.B && _b is null))
+            Volatile.Write(ref _audio, (int)AudioSource.Muted);
+        _ended = false;
         var duration = GetDuration(_descriptionA, _descriptionB);
-        var position = ClampPosition(Interlocked.Read(ref _positionNanoseconds), duration);
+        var position = ClampPosition(pausedPosition, duration);
         Interlocked.Exchange(ref _durationTicks, duration.Ticks);
         Interlocked.Exchange(ref _positionNanoseconds, position);
         Publish(position);
@@ -263,6 +272,7 @@ public sealed class ComparisonSession : IAsyncDisposable
         if (prepared is not { } frames) return false;
         DisposeFrame(ref _currentA); DisposeFrame(ref _currentB);
         _currentA = frames.A; _currentB = frames.B;
+        _ended = false;
         Interlocked.Exchange(ref _positionNanoseconds, frames.Position);
         Publish(frames.Position);
         return true;
@@ -324,84 +334,123 @@ public sealed class ComparisonSession : IAsyncDisposable
             throw new InvalidDataException("解码帧与请求时间不对应，已停止显示以免比较错帧。");
     }
 
-    private void PumpPlayback()
+    private async Task PumpPlaybackAsync()
     {
-        // A is the review clock when it moves; with a still A, B advances it instead.
-        var masterIsA = _a is { IsStill: false };
-        var master = masterIsA ? _a : _b;
-        if (master is null || master.IsStill) { Pause(); return; }
-        ref var pendingMaster = ref (masterIsA ? ref _pendingA : ref _pendingB);
-        ref var currentMaster = ref (masterIsA ? ref _currentA : ref _currentB);
-        if (pendingMaster is null)
+        // The union of both streams' real presentation times drives the preview.
+        // A slow/still left source must not suppress updates from the right source.
+        var readyA = ReadNext(_a, _currentA, ref _pendingA);
+        var readyB = ReadNext(_b, _currentB, ref _pendingB);
+        if (!readyA || !readyB) return;
+
+        var rateA = (_a?.FrameRateNumerator ?? 0, _a?.FrameRateDenominator ?? 0);
+        var rateB = (_b?.FrameRateNumerator ?? 0, _b?.FrameRateDenominator ?? 0);
+        if (_pendingA is { } a && _pendingB is { } b &&
+            ((a.TimestampNanoseconds < b.TimestampNanoseconds && a.EndNanoseconds is null) ||
+             (b.TimestampNanoseconds < a.TimestampNanoseconds && b.EndNanoseconds is null)) &&
+            FrameTiming.ShareGridBoundary(a.TimestampNanoseconds, b.TimestampNanoseconds, rateA, rateB))
         {
-            pendingMaster = master.ReadSample(15_000_000);
-            if (pendingMaster is null)
-            {
-                if (master.IsEnded) Pause();
-                return;
-            }
-            // pull_sample returns the preroll once more on entering PLAYING.
-            if (currentMaster is not null && pendingMaster.TimestampNanoseconds < currentMaster.TimestampNanoseconds)
-                throw new InvalidDataException("媒体帧时间戳发生倒退，无法保证两路画面对齐。");
-            if (currentMaster is not null && pendingMaster.TimestampNanoseconds == currentMaster.TimestampNanoseconds)
-            { DisposeFrame(ref pendingMaster); return; }
+            // A nominal grid is not proof that an unknown-duration frame lasts
+            // even one more nanosecond. Obtain its actual successor before merging.
+            if (a.TimestampNanoseconds < b.TimestampNanoseconds && a.EndNanoseconds is null &&
+                !ReadNext(_a, a, ref _followingA)) return;
+            if (b.TimestampNanoseconds < a.TimestampNanoseconds && b.EndNanoseconds is null &&
+                !ReadNext(_b, b, ref _followingB)) return;
         }
-        var target = pendingMaster.TimestampNanoseconds;
-        if (target >= checked(Duration.Ticks * 100)) { Pause(); return; }
-        var other = masterIsA ? _b : _a;
-        ref var currentOther = ref (masterIsA ? ref _currentB : ref _currentA);
-        ref var pendingOther = ref (masterIsA ? ref _pendingB : ref _pendingA);
-        if (other is { IsStill: false })
+
+        var target = FrameTiming.NextPresentation(_pendingA?.TimestampNanoseconds, _pendingB?.TimestampNanoseconds,
+            rateA, rateB, FrameTiming.CoverageEnd(_pendingA?.EndNanoseconds, _followingA?.TimestampNanoseconds),
+            FrameTiming.CoverageEnd(_pendingB?.EndNanoseconds, _followingB?.TimestampNanoseconds));
+        var end = Math.Min(checked(Duration.Ticks * 100),
+            Math.Min(PlaybackEnd(_a, _currentA, _pendingA), PlaybackEnd(_b, _currentB, _pendingB)));
+        var gap = Math.Min(FrameTiming.GapDeadline(_currentA?.EndNanoseconds, _pendingA?.TimestampNanoseconds, rateA) ?? long.MaxValue,
+            FrameTiming.GapDeadline(_currentB?.EndNanoseconds, _pendingB?.TimestampNanoseconds, rateB) ?? long.MaxValue);
+        if (gap < end && (target is null || gap <= target))
         {
-            while (true)
-            {
-                if (_stopping.IsCancellationRequested || _commands.Reader.TryPeek(out _)) return;
-                var candidate = _otherCandidate ?? currentOther;
-                var coverage = candidate is null ? FrameCoverage.NeedNext : FrameTiming.Coverage(
-                    candidate.TimestampNanoseconds, candidate.EndNanoseconds, pendingOther?.TimestampNanoseconds, target, other.IsEnded);
-                if (coverage == FrameCoverage.Covered) break;
-                if (coverage == FrameCoverage.Ended) { Pause(); return; }
-                if (coverage == FrameCoverage.Gap)
-                    throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
-                if (coverage == FrameCoverage.NeedNext)
-                {
-                    pendingOther ??= other.ReadSample(15_000_000);
-                    if (pendingOther is null)
-                    {
-                        if (other.IsEnded) Pause();
-                        return;
-                    }
-                    if (candidate is not null)
-                    {
-                        if (pendingOther.TimestampNanoseconds < candidate.TimestampNanoseconds)
-                            throw new InvalidDataException("媒体帧时间戳发生倒退，无法保证两路画面对齐。");
-                        // The appsink returns its preroll again when playback starts.
-                        if (pendingOther.TimestampNanoseconds == candidate.TimestampNanoseconds) { DisposeFrame(ref pendingOther); continue; }
-                        continue;
-                    }
-                }
-                if (pendingOther!.TimestampNanoseconds > target)
-                    throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
-                DisposeFrame(ref _otherCandidate);
-                _otherCandidate = pendingOther; pendingOther = null;
-            }
+            if (!await WaitForPresentationAsync(gap).ConfigureAwait(false)) return;
+            throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
         }
-        // Only commit a complete pair. Interruption/clear must retain the last
-        // published other frame, not a future candidate read during alignment.
-        if (_otherCandidate is not null)
+        if (target is null || target >= end)
         {
-            DisposeFrame(ref currentOther);
-            currentOther = _otherCandidate; _otherCandidate = null;
+            if (!await WaitForPresentationAsync(end).ConfigureAwait(false)) return;
+            _ended = true;
+            Pause();
+            return;
         }
-        DisposeFrame(ref currentMaster);
-        currentMaster = pendingMaster; pendingMaster = null;
-        Interlocked.Exchange(ref _positionNanoseconds, target);
-        Publish(target);
+
+        if (!await WaitForPresentationAsync(target.Value).ConfigureAwait(false)) return;
+        VerifyPlaybackFrame(_a, _currentA, _pendingA, _followingA, target.Value);
+        VerifyPlaybackFrame(_b, _currentB, _pendingB, _followingB, target.Value);
+        // Preparation never replaces the last published pair. A queued seek,
+        // clear or cancellation therefore cannot expose a half-advanced pair.
+        CommitPlaybackFrame(ref _currentA, ref _pendingA, ref _followingA, target.Value);
+        CommitPlaybackFrame(ref _currentB, ref _pendingB, ref _followingB, target.Value);
+        Interlocked.Exchange(ref _positionNanoseconds, target.Value);
+        Publish(target.Value);
+    }
+
+    private static bool ReadNext(GstDecoder? decoder, MediaFrame? current, ref MediaFrame? pending)
+    {
+        if (decoder is null || decoder.IsStill || pending is not null || decoder.IsEnded) return true;
+        pending = decoder.ReadSample(15_000_000);
+        if (pending is null) return decoder.IsEnded;
+        if (current is not null && pending.TimestampNanoseconds < current.TimestampNanoseconds)
+            throw new InvalidDataException("媒体帧时间戳发生倒退，无法保证两路画面对齐。");
+        // pull_sample returns the preroll once more on entering PLAYING.
+        if (current is not null && pending.TimestampNanoseconds == current.TimestampNanoseconds)
+        {
+            DisposeFrame(ref pending);
+            return false;
+        }
+        return true;
+    }
+
+    private static long PlaybackEnd(GstDecoder? decoder, MediaFrame? current, MediaFrame? pending)
+        => decoder is { IsStill: false, IsEnded: true } && pending is null && current is not null
+            ? current.EndNanoseconds ?? current.TimestampNanoseconds : long.MaxValue;
+
+    private static void VerifyPlaybackFrame(GstDecoder? decoder, MediaFrame? current, MediaFrame? pending,
+        MediaFrame? following, long target)
+    {
+        if (decoder is null || decoder.IsStill) return;
+        var advance = pending is not null && pending.TimestampNanoseconds <= target;
+        var candidate = advance ? pending : current;
+        if (candidate is null) throw new InvalidDataException("播放时缺少可显示的媒体帧。");
+        var next = advance ? following : pending;
+        var coverage = FrameTiming.Coverage(candidate.TimestampNanoseconds, candidate.EndNanoseconds,
+            next?.TimestampNanoseconds, target, decoder.IsEnded);
+        if (coverage != FrameCoverage.Covered)
+            throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
+    }
+
+    private static void CommitPlaybackFrame(ref MediaFrame? current, ref MediaFrame? pending,
+        ref MediaFrame? following, long target)
+    {
+        if (pending is null || pending.TimestampNanoseconds > target) return;
+        DisposeFrame(ref current);
+        current = pending; pending = following; following = null;
+    }
+
+    private async Task<bool> WaitForPresentationAsync(long target)
+    {
+        var deadline = checked(_playbackBaseTime + (ulong)Math.Max(0, target - _playbackStart));
+        while (!_stopping.IsCancellationRequested && !_commands.Reader.TryPeek(out _))
+        {
+            var now = GstNative.gst_clock_get_time(_clock);
+            if (now >= deadline) return true;
+            // Flush seeks reset running_time to zero. The same base time schedules
+            // native audio and this pair; commands interrupt even a very slow frame.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
+            var milliseconds = Math.Min((deadline - now + 999_999) / 1_000_000, int.MaxValue);
+            timeout.CancelAfter((int)milliseconds);
+            try { await _commands.Reader.WaitToReadAsync(timeout.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!_stopping.IsCancellationRequested) { }
+        }
+        return false;
     }
 
     private void Publish(long positionNanoseconds)
     {
-        var pair = new FramePair(_currentA?.Retain(), _currentB?.Retain(), TimeSpan.FromTicks(positionNanoseconds / 100));
+        var pair = new FramePair(_currentA?.Retain(), _currentB?.Retain(), positionNanoseconds);
         try
         {
             if (FrameReady is { } handler) handler(pair);
@@ -410,10 +459,30 @@ public sealed class ComparisonSession : IAsyncDisposable
         catch { pair.Dispose(); throw; }
     }
 
-    private void Pause()
+    private void Pause(bool capturePosition = false)
     {
+        var position = capturePosition && IsPlaying ? PausedPosition() : (long?)null;
         try { _a?.Pause(); _b?.Pause(); }
         finally { SetPlaying(false); }
+        if (position is { } actual)
+        {
+            Interlocked.Exchange(ref _positionNanoseconds, actual);
+            Publish(actual);
+        }
+    }
+
+    private long PausedPosition()
+    {
+        var now = GstNative.gst_clock_get_time(_clock);
+        var elapsed = now > _playbackBaseTime ? now - _playbackBaseTime : 0;
+        var actual = _playbackStart + (long)Math.Min(elapsed, (ulong)(long.MaxValue - _playbackStart));
+        actual = ClampPosition(actual, Duration);
+        var published = Interlocked.Read(ref _positionNanoseconds);
+        if (_a is { IsStill: false })
+            actual = FrameTiming.ClampPausePosition(published, actual, _currentA?.EndNanoseconds, _pendingA?.TimestampNanoseconds);
+        if (_b is { IsStill: false })
+            actual = FrameTiming.ClampPausePosition(published, actual, _currentB?.EndNanoseconds, _pendingB?.TimestampNanoseconds);
+        return actual;
     }
     private void PauseAfterFailure()
     {
@@ -432,7 +501,8 @@ public sealed class ComparisonSession : IAsyncDisposable
 
     private void DiscardPendingFrames()
     {
-        DisposeFrame(ref _pendingA); DisposeFrame(ref _pendingB); DisposeFrame(ref _otherCandidate);
+        DisposeFrame(ref _pendingA); DisposeFrame(ref _pendingB);
+        DisposeFrame(ref _followingA); DisposeFrame(ref _followingB);
     }
 
     public async ValueTask DisposeAsync()

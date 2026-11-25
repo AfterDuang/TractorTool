@@ -10,7 +10,7 @@ using TractorTool.Plugins.MediaCompare.Rendering;
 namespace TractorTool.Plugins.MediaCompare.Views;
 
 /// <summary>Atomic A/B preview. Submit transfers ownership, and may be called from a decoder thread.</summary>
-public sealed class ComparePreview : Control
+public sealed class ComparePreview : Control, IAsyncDisposable
 {
     private readonly object _pendingGate = new();
     private FramePair? _pending;
@@ -19,12 +19,17 @@ public sealed class ComparePreview : Control
     private CompositionSurfaceVisual? _visual;
     private TopLevel? _topLevel;
     private PreviewView _view = PreviewView.Fit;
-    private PixelSize _imageA, _imageB;
+    private Size _imageA, _imageB;
     private bool _attached, _pumping, _dirty, _failed;
+    private bool _stopped;
+    private Task _transition = Task.CompletedTask;
+    private Task _presentation = Task.CompletedTask;
+    private Task? _stopTask;
+    private Exception? _cleanupError;
     private int _generation, _wakeQueued;
     private Point? _dragStart;
     private PreviewView _dragView;
-    private PixelSize _dragImage;
+    private Size _dragImage;
     private double _dragViewportWidth;
     private string? _rendererStatus;
 
@@ -32,6 +37,7 @@ public sealed class ComparePreview : Control
     public event Action<string>? RendererStatusChanged;
     public event Action<bool>? AvailabilityChanged;
     public bool IsAvailable => _attached && !_failed && _session is not null;
+    internal PreviewLifetime? Lifetime { get; set; }
 
     public ComparePreview()
     {
@@ -62,56 +68,94 @@ public sealed class ComparePreview : Control
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
+        if (_stopped || Lifetime?.Register(this) == false) return;
         _attached = true; _failed = false; _rendererStatus = null;
         _topLevel = TopLevel.GetTopLevel(this);
         if (_topLevel is not null) _topLevel.ScalingChanged += OnScalingChanged;
         lock (_pendingGate) _acceptFrames = true;
-        _ = InitializeAsync(++_generation);
+        _transition = InitializeAsync(_transition, ++_generation);
     }
 
-    private async Task InitializeAsync(int generation)
+    private async Task InitializeAsync(Task previous, int generation)
     {
         CompositionPreviewSession? created = null;
         try
         {
+            // A replacement surface starts only after the preceding generation has retired.
+            await previous;
+            if (!_attached || generation != _generation) return;
             var compositor = ElementComposition.GetElementVisual(this)?.Compositor
                 ?? throw new InvalidOperationException("媒体预览尚未连接到窗口。");
             created = await CompositionPreviewSession.CreateAsync(compositor);
-            if (!_attached || generation != _generation) { await created.DisposeAsync(); return; }
+            if (!_attached || generation != _generation) { await ReleaseSessionAsync(created); return; }
             _session = created;
-            AvailabilityChanged?.Invoke(true);
             _visual = compositor.CreateSurfaceVisual();
             _visual.Surface = created.Surface;
             _visual.Size = new Vector(Bounds.Width, Bounds.Height);
             ElementComposition.SetElementChildVisual(this, _visual);
             SetStatus("GPU 预览 · A/B 同帧合成");
             Redraw();
+            if (_attached && generation == _generation) AvailabilityChanged?.Invoke(true);
         }
         catch (Exception ex)
         {
-            if (created is not null && !ReferenceEquals(_session, created)) await ReleaseSessionAsync(created);
-            if (_attached && generation == _generation) Fail(ex);
+            if (created is not null)
+            {
+                if (ReferenceEquals(_session, created)) DetachSurface();
+                await ReleaseSessionAsync(created);
+            }
+            if (_attached && generation == _generation) ReportFailure(ex);
         }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        _attached = false; ++_generation;
+        Deactivate();
+        base.OnDetachedFromVisualTree(e);
+    }
+
+    private void Deactivate()
+    {
+        _attached = false;
+        var generation = ++_generation;
         if (_topLevel is not null) _topLevel.ScalingChanged -= OnScalingChanged;
         _topLevel = null;
         DropPending();
         _dragStart = null;
+        _imageA = _imageB = default;
+        var session = DetachSurface();
+        _transition = RetireAsync(_transition, _presentation, session, generation);
+        AvailabilityChanged?.Invoke(false);
+    }
+
+    private CompositionPreviewSession? DetachSurface()
+    {
         ElementComposition.SetElementChildVisual(this, null);
         _visual = null;
         var session = _session; _session = null;
-        if (session is not null) _ = ReleaseSessionAsync(session);
-        base.OnDetachedFromVisualTree(e);
+        return session;
+    }
+
+    private async Task RetireAsync(Task previous, Task presentation, CompositionPreviewSession? session, int generation)
+    {
+        try { await Task.WhenAll(previous, presentation); }
+        catch (Exception ex) { RecordCleanupFailure(ex); }
+        if (session is not null) await ReleaseSessionAsync(session);
+        if (!_attached && generation == _generation) Lifetime?.Retired(this);
     }
 
     private async Task ReleaseSessionAsync(CompositionPreviewSession session)
     {
         try { await session.DisposeAsync(); }
-        catch (Exception ex) { Error?.Invoke($"释放媒体预览资源失败：{ex.Message}"); }
+        catch (Exception ex) { RecordCleanupFailure(ex); }
+    }
+
+    private void RecordCleanupFailure(Exception error)
+    {
+        _cleanupError ??= error;
+        Lifetime?.RecordCleanupFailure(error);
+        try { Error?.Invoke($"释放媒体预览资源失败：{error.Message}"); }
+        catch { /* Reporting cannot interrupt the remaining GPU cleanup; StopAsync rethrows the failure. */ }
     }
 
     private void DropPending()
@@ -123,12 +167,15 @@ public sealed class ComparePreview : Control
 
     private void Fail(Exception error)
     {
-        AvailabilityChanged?.Invoke(false);
+        var session = DetachSurface();
+        _transition = RetireAsync(_transition, _presentation, session, _generation);
+        ReportFailure(error);
+    }
+
+    private void ReportFailure(Exception error)
+    {
         _failed = true; DropPending();
-        ElementComposition.SetElementChildVisual(this, null);
-        _visual = null;
-        var session = _session; _session = null;
-        if (session is not null) _ = ReleaseSessionAsync(session);
+        AvailabilityChanged?.Invoke(false);
         SetStatus("GPU 预览不可用");
         Error?.Invoke(error.Message);
     }
@@ -151,7 +198,11 @@ public sealed class ComparePreview : Control
     private void Wake()
     {
         if (Interlocked.Exchange(ref _wakeQueued, 1) != 0) return;
-        Dispatcher.UIThread.Post(() => { Interlocked.Exchange(ref _wakeQueued, 0); _ = PumpAsync(); }, DispatcherPriority.Render);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Interlocked.Exchange(ref _wakeQueued, 0);
+            if (!_pumping) _presentation = PumpAsync();
+        }, DispatcherPriority.Render);
     }
 
     private async Task PumpAsync()
@@ -173,11 +224,7 @@ public sealed class ComparePreview : Control
                 {
                     await session.PresentAsync(pair, pixels.Width, pixels.Height, _view);
                     if (pair is not null && ReferenceEquals(_session, session))
-                    {
-                        _imageA = ImageSize(pair.A); _imageB = ImageSize(pair.B);
-                        var cpu = pair.A is { Texture: 0 } || pair.B is { Texture: 0 };
-                        SetStatus(cpu ? "GPU 预览 · 包含 CPU 解码帧上传" : "GPU 预览 · A/B 同帧合成");
-                    }
+                    { _imageA = ImageSize(pair.A); _imageB = ImageSize(pair.B); }
                 }
                 finally { pair?.Dispose(); }
             }
@@ -198,7 +245,21 @@ public sealed class ComparePreview : Control
         }
     }
 
-    private static PixelSize ImageSize(MediaFrame? image) => image is null ? default : new(image.Width, image.Height);
+    private static Size ImageSize(MediaFrame? image) => image is null ? default : new(image.DisplayWidth, image.DisplayHeight);
+
+    public ValueTask DisposeAsync()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        _stopped = true;
+        return new(_stopTask ??= StopAsync());
+    }
+
+    private async Task StopAsync()
+    {
+        Deactivate();
+        await _transition;
+        if (_cleanupError is not null) throw new InvalidOperationException("释放媒体预览资源失败。", _cleanupError);
+    }
 
     private bool HasDrawableBounds()
     {
@@ -259,7 +320,7 @@ public sealed class ComparePreview : Control
     protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
     { _dragStart = null; base.OnPointerCaptureLost(e); }
 
-    private (PixelSize Image, double Width, double X) GetActiveImage(Point point)
+    private (Size Image, double Width, double X) GetActiveImage(Point point)
     {
         var scale = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
         var pixels = PixelSize.FromSize(Bounds.Size, scale);

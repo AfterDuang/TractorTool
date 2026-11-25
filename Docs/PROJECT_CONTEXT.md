@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-当前交付 [AB 审片 0.1.4](DEVELOPMENT.md#media-compare)：修正纳秒帧区间和实际定位落点，拖入编号首帧自动识别序列；按用户决定允许高位深 SDR 降至 8 位并持续提示，补齐 LPCM 与音轨状态。授权的合成输入、CFR/VFR 双向 GPU 回归及 GPT-6.2-SOL/high 复核通过，见 [E142](PROJECT_HISTORY.md#evidence-media-compare-input-formats)。用户原素材、真实拖放/声音/UI及完整 GPU 释放仍待验；NU1900 漏洞扫描未完成。未启动真实宿主或改用户数据，运行授权仅限本轮独立回归。保留 0.1.2 设备锁；GStreamer 随插件提供，DLL 统一申请须交架构侧，未改框架。未知帧时长非零定位仍受限，精确邻帧、代理缓存、HDR/Log 及跨 GPU 未交付，不推送。
+当前交付 [AB 审片 0.1.5](DEVELOPMENT.md#media-compare)：完整处理 Astra Review 的配帧/刷新、暂停/重播、PAR、预览停止和冗余代码问题。最终构建、托管、授权合成输入与双向 GPU 回归、Astra 复核及独立打包通过，见 [E143](PROJECT_HISTORY.md#evidence-media-compare-review-fixes)；打包 NU1900 表示漏洞扫描未完成。只改插件、专属检查及文档，保留 0.1.2 设备锁和 `.vscode/settings.json`；未启动真实宿主、未读用户素材/数据；用户已授权提交并推送审片开发改动至远端 main。接续由用户复测真实 UI/声音、原素材、驱动资源回收与长 GOP 性能；未知帧时长非零定位、HDR/Log、跨 GPU 和代理缓存边界不变，运行库统一申请须交架构侧。
 
 ## 2. 接续时必须保留
 

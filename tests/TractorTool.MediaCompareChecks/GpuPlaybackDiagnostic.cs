@@ -58,7 +58,7 @@ internal static class GpuPlaybackDiagnostic
             var run = _run ?? throw new InvalidOperationException("Missing diagnostic configuration.");
             if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime lifetime)
                 throw new InvalidOperationException("The diagnostic requires a desktop lifetime.");
-            var preview = new ComparePreview();
+            var preview = new ComparePreview { Lifetime = new PreviewLifetime() };
             var window = new Window
             {
                 Title = "TractorTool isolated GPU playback diagnostic",
@@ -180,7 +180,10 @@ internal static class GpuPlaybackDiagnostic
 
             Stage("audio-selection-and-clear-A");
             foreach (var source in new[] { AudioSource.Muted, AudioSource.A, AudioSource.B, AudioSource.A })
+            {
                 await session.SetAudioAsync(source).WaitAsync(TimeSpan.FromSeconds(10));
+                Require(session.SelectedAudio == source, "The session must report the committed audio selection.");
+            }
             await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
             await Task.Delay(150);
             var retainedB = session.B;
@@ -189,7 +192,7 @@ internal static class GpuPlaybackDiagnostic
             Require(session.A is null && retainedB is not null && session.B == retainedB &&
                 session.Duration == retainedB.Duration && session.Position >= retainedPosition &&
                 Interlocked.Read(ref _publishedPosition) == session.Position.Ticks &&
-                !session.IsPlaying && Volatile.Read(ref _frameSides) == 2,
+                !session.IsPlaying && session.SelectedAudio == AudioSource.Muted && Volatile.Read(ref _frameSides) == 2,
                 "Clearing A did not retain paused B or publish an empty A preview.");
             CheckFailure();
             Write("clear-A-observed", $"B={retainedB?.Name}; positionMs={session.Position.TotalMilliseconds:F0}");
@@ -213,7 +216,8 @@ internal static class GpuPlaybackDiagnostic
             await Task.Delay(100);
             CheckFailure();
             Require(session.A is null && session.B is null && session.Duration == TimeSpan.Zero &&
-                session.Position == TimeSpan.Zero && !session.IsPlaying && Volatile.Read(ref _frameSides) == 0,
+                session.Position == TimeSpan.Zero && !session.IsPlaying && session.SelectedAudio == AudioSource.Muted &&
+                Volatile.Read(ref _frameSides) == 0,
                 "Clearing all media did not restore the empty stopped session.");
 
             Stage("reopen-and-play");
@@ -224,7 +228,7 @@ internal static class GpuPlaybackDiagnostic
             Interlocked.Exchange(ref _maxUiGap, 0);
             await session.SetPlayingAsync(true).WaitAsync(TimeSpan.FromSeconds(35));
             await ObservePlaybackAsync(session);
-            Write("interaction-scope", "Seek cancellation, side/all clearing, reopen and audio command completion checked; audio output and automatic mute are not measured.");
+            Write("interaction-scope", "Seek cancellation, side/all clearing, reopen and committed audio/mute state checked; speaker output is not measured.");
         }
 
         private async Task ObservePlaybackAsync(ComparisonSession session)
@@ -276,8 +280,16 @@ internal static class GpuPlaybackDiagnostic
             {
                 Stage("wait-gpu-preview");
                 await previewReady.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                Stage("rapid-preview-reattach");
+                previewReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                window.Content = null;
+                window.Content = preview;
+                window.Content = null;
+                window.Content = preview;
+                await previewReady.Task.WaitAsync(TimeSpan.FromSeconds(15));
                 Stage("drag-event-routing");
                 InteractionChecks.CheckEmptyDragRouting();
+                await PreviewLifetimeChecks.RunAsync();
                 Write("drag-routing-observed", "Empty DragEnter/DragOver/Drop bubbled from Preview and were rejected; this does not exercise native Explorer file transfer.");
                 Stage("create-session");
                 session = await Task.Run(() => new ComparisonSession(_runtime, Path.Combine(_scratch, "cache")));
@@ -303,15 +315,29 @@ internal static class GpuPlaybackDiagnostic
                 await ObservePlaybackAsync(session);
                 await CheckSessionInteractionsAsync(session);
                 Stage("stop");
+                // Refresh queues a pair while disposal starts, exercising in-flight presentation.
+                await session.RefreshPreviewAsync().WaitAsync(TimeSpan.FromSeconds(10));
                 session.FrameReady -= Receive;
+                var previewStop = preview.Lifetime!.DisposeAsync().AsTask();
                 stopTask = session.DisposeAsync().AsTask();
-                await stopTask.WaitAsync(TimeSpan.FromSeconds(10));
+                await Task.WhenAll(stopTask, previewStop).WaitAsync(TimeSpan.FromSeconds(15));
                 session = null;
                 Stage("detach-preview");
                 window.Content = null;
-                await Task.Delay(500);
+                await preview.DisposeAsync();
+                window.Content = preview;
+                Require(!preview.IsAvailable, "A stopped preview must not create a new renderer on reattachment.");
+                window.Content = null;
+                Stage("stop-during-preview-initialization");
+                var initializationLifetime = new PreviewLifetime();
+                var initializing = new ComparePreview { Lifetime = initializationLifetime };
+                window.Content = initializing;
+                window.Content = null;
+                await initializationLifetime.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15));
+                await initializing.DisposeAsync();
+                Require(!initializing.IsAvailable, "Stop must await retirement of an initializing preview.");
                 CheckFailure();
-                Write("scope", "Decoded position, UI responsiveness and decoder stop observed; Submit count is not visual acceptance, and preview detach does not await GPU disposal.");
+                Write("scope", "Decoded position, UI responsiveness, decoder stop and awaited preview retirement observed; Submit count is not visible UI, audio synchronization or driver allocation acceptance.");
                 Stage("complete");
                 success = true;
             }
@@ -329,6 +355,8 @@ internal static class GpuPlaybackDiagnostic
                     catch (Exception error) { Write("cleanup-failed", error.ToString()); }
                 }
                 uiTimer.Stop();
+                try { await preview.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)); }
+                catch (Exception error) { success = false; Write("preview-cleanup-failed", error.ToString()); }
                 preview.AvailabilityChanged -= AvailabilityChanged;
                 preview.Error -= PreviewFailed;
                 lifetime.Shutdown(success ? 0 : 1);

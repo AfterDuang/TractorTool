@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "TractorTool.MediaCompare",
   "name": "AB 审片",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "entryAssembly": "TractorTool.Plugins.MediaCompare.dll",
   "entryType": "TractorTool.Plugins.MediaCompare.ComparePlugin",
   "apiVersion": "1.7",

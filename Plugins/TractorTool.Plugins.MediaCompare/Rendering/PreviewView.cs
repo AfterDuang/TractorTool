@@ -5,13 +5,13 @@ internal readonly record struct PreviewView(double CenterX, double CenterY, doub
 {
     public static PreviewView Fit => new(.5, .5, 1);
 
-    public (double Width, double Height) ImageSize(int width, int height, double viewportWidth, double viewportHeight)
+    public (double Width, double Height) ImageSize(double width, double height, double viewportWidth, double viewportHeight)
     {
         var scale = Math.Min(viewportWidth / width, viewportHeight / height);
         return (width * scale * Zoom, height * scale * Zoom);
     }
 
-    public PreviewView ZoomAt(int width, int height, double viewportWidth, double viewportHeight,
+    public PreviewView ZoomAt(double width, double height, double viewportWidth, double viewportHeight,
         double x, double y, double factor)
     {
         var next = this with { Zoom = Math.Clamp(Zoom * factor, .05, 64) };
@@ -26,7 +26,7 @@ internal readonly record struct PreviewView(double CenterX, double CenterY, doub
         };
     }
 
-    public PreviewView Pan(int width, int height, double viewportWidth, double viewportHeight, double dx, double dy)
+    public PreviewView Pan(double width, double height, double viewportWidth, double viewportHeight, double dx, double dy)
     {
         var size = ImageSize(width, height, viewportWidth, viewportHeight);
         return this with

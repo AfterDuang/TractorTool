@@ -9,6 +9,8 @@ namespace TractorTool.Plugins.MediaCompare;
 public sealed class ComparePlugin : IPlugin, IPluginUiModule
 {
     private CompareViewModel? _model;
+    private readonly PreviewLifetime _previews = new();
+    private Task? _stopTask;
 
     public ValueTask InitializeAsync(PluginContext context, CancellationToken cancellationToken)
     {
@@ -22,19 +24,21 @@ public sealed class ComparePlugin : IPlugin, IPluginUiModule
     public void RegisterPages(IPluginPageRegistry registry)
     {
         var model = _model ?? throw new InvalidOperationException("插件尚未初始化。");
-        registry.AddNavigationPage("compare", "AB 审片", () => new CompareView { DataContext = model },
+        registry.AddNavigationPage("compare", "AB 审片", () => new CompareView(_previews) { DataContext = model },
             new(ToolIconKind.Video, "并排比较画面，联动查看细节。") { UsesCustomHeader = true, IconPath = "Assets/icon.png" });
     }
 
     public async ValueTask StopAsync(CancellationToken cancellationToken)
     {
-        if (_model is { } model)
-            await Dispatcher.UIThread.InvokeAsync(() => model.DisposeAsync().AsTask());
+        await Dispatcher.UIThread.InvokeAsync(StopCoreAsync);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_model is { } model) await model.DisposeAsync();
-        _model = null;
+        try { await Dispatcher.UIThread.InvokeAsync(StopCoreAsync); }
+        finally { _model = null; }
     }
+
+    private Task StopCoreAsync() => _stopTask ??= Task.WhenAll(
+        _previews.DisposeAsync().AsTask(), _model?.DisposeAsync().AsTask() ?? Task.CompletedTask);
 }

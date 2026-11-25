@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片审查修复 | [E143 · 共同时间、显示几何与预览生命周期（2026-11-26）](#evidence-media-compare-review-fixes) |
 | AB 审片输入格式 | [E142 · 纳秒定位、自动序列、SDR 预览及 LPCM（2026-11-26）](#evidence-media-compare-input-formats) |
 | AB 审片交互与时间处理 | [E141 · 拖放、清空、帧边界及图标（2026-11-26）](#evidence-media-compare-interaction) |
 | AB 审片播放阻塞 | [E140 · 原生转储与解码设备同步（2026-11-26）](#evidence-media-compare-playback-lock) |
@@ -179,6 +180,39 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-review-fixes"></a>
+
+## E143：AB 审片 Astra 审查修复（2026-11-26）
+
+用户指定 GPT-6.2-Astra 审查代码与冗余，随后要求完整处理发现项，并单独授权本轮合成素材、新临时目录独立回归。本轮限定 MediaCompare、专属检查及文档，不改框架、不使用真实素材或应用数据，保留用户 `.vscode/settings.json`。
+
+审查确认旧配帧策略固定 A 主路：同为 24 fps 的视频 PTS 向下取整、序列向上取整，旧日志可出现视频第 23 帧配序列第 22 帧，换边后则为 23/23。E142 的断言只证明 B 覆盖 A 时间，没有检查实际逻辑帧/图像；原“配对通过”不能外推为左右交换内容相同。另确认非方形像素未参与显示几何、自然结束不能重播，以及预览初始化/释放没有归入插件停止等待。重复上传未变化帧、不可达 CPU 路径、重复音轨状态和测试、文件过滤不一致及降精度提示缺断言一并处理。
+
+实现要点：
+
+- 以两路真实 PTS 并集安排呈现，统一使用 GstClock，取消固定 A 主路。CFR 时间戳相差 1 ns 时，仅在同一有理数边界且严格覆盖可证的条件下使用较晚真实起点；缺时长时须取得真实后继证明，不由名义网格延长末帧。不套用毫秒容差或对不同帧率锁同帧号。自然结束与普通暂停分开，Play 在自然结束后归零；暂停及单侧移除记录共同播放时钟时刻，限制在已证实覆盖内。显式时间空隙在有效区间截止时才暂停报错。
+- 读取最终协商 PAR 并贯穿显示、缩放与平移，纹理复制保留实际像素尺寸。样本身份独立于 PTS/纹理指针，Retain 共用身份，仅成功上传后缓存；清空和重建失效。删除 CPU 像素字段/上传分支，PNG 仍由 GStreamer 转换上传，保留原生设备锁及 ABI 填充。
+- PreviewLifetime 管理活跃与退场预览，停止关闭注册并等待初始化、呈现、释放；快速重进等待前代退场。清理失败仍解除 UI 对象登记，只保留首个异常供停止时报告。声音选择取会话已提交状态，删除 UI 推断/重复命令；选择器移除 EXR、补 WebP 序列和 M2TS，合并重复序列测试。文档纠正“暂停不占解码表面”：会话保留有界样本，不能由 GPU 复制推断全部解码表面已释放。
+
+证据目录：`artifacts/media-compare-diagnostics/20261126-astra-fixes`（Git 忽略）。复用 E142 合成素材，并生成 2 秒 24 fps 无损亮度编码 H.264/对应 PNG 序列、720×576 PAR 16:15 H.264、1 fps＋AAC 视频及带显式帧间空隙的 MKV。编码帧亮度为 `16+4N`，从解码 GPU 纹理读回像素，避免只断言时间区间。
+
+| 检查 | 已取得证据与范围 |
+| --- | --- |
+| 最终 Release 构建 | `dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false -v minimal`，0 警告/0 错误；检查代码初次因 `MapFlags` 类型歧义构建失败，限定 Direct3D11 类型后成功 |
+| 最终纯托管检查 | `managed-final2.out.log`，退出 0；所有权、样本身份、PAR 视图数学、严格时间边界、共同呈现顺序与序列检查通过，包含未知时长、EOS、1 ns 后继覆盖与空隙截止点 |
+| 最终独立输入回归 | `inputs-final/inputs.log`，退出 0、failures=0；E142 输入用例继续通过，增加 8 位无警告、10/16 位持久 PreviewWarning 断言。`inputs-1` 是早期通过的中途记录，最终证据以 `inputs-final` 为准 |
+| 内容与刷新 | 同一 24 fps 编码视频/序列双向各观察 29 对，实际像素匹配；最后 PTS 为 1208333333/1208333334 ns，共同呈现时间取较晚值。1 fps 序列与 24 fps 视频交换 A/B，各观察 2/29 个不同帧，未由低帧率一侧压低另一侧刷新 |
+| 重播与显示 | 普通暂停从 503.130 ms 继续；自然结束后从零重播推进至约 255 ms。PAR 素材纹理 720×576、显示 768×576。GPU 上传计数验证保留帧不重复、新样本即使同 PTS/纹理仍上传、清空及 renderer 重建失效，累计 4 次 |
+| 帧间暂停、移除与空隙 | 1 fps＋AAC 播放后等待 650 ms，暂停保存共同时间 620.682 ms；分别移除左/右单图时保留另一侧的 621.614/620.798 ms 与已选择音轨，续播不回退。PTS 0/1/2 秒、有效时长 0.1 秒的 MKV 在约 131.2 ms 报时间空隙，而非提前或等至下个 PTS |
+| 最终离屏 GPU 回归 | `gpu-final-cfr-vfr/diagnostic.log`、`gpu-final-vfr-cfr/diagnostic.log` 均退出 0、stderr 为空，UI 最大心跳间隔 114/118 ms。包含多点定位/取消、试听提交/静音、清空/重开、快速重进、在途停止和初始化中退场；模拟清理异常验证 WeakReference 回收与首错保留，不是实际驱动故障注入 |
+| 独立 SDK ZIP | `Build-Plugin.ps1` 引用既有发布 SDK 生成 0.1.5，0 错误、2 条 NU1900；漏洞数据查询未完成。144 文件、ZIP 20,522,341 字节、展开 51,906,064 字节；123 项运行库哈希全部匹配，图标/许可/LPCM 完整，无共享框架 DLL，见[静态报告](../artifacts/media-compare-0.1.5-final/package-check.json)。`sdk-check.json` 确认原 234 个宿主文件哈希未变，额外既存的独立插件夹具保留 |
+
+GPT-6.2-Astra 多轮复核发现的未知时长末帧、低帧率暂停/移除时刻、显式空隙及退场失败保留问题均已处理；末轮核对 Clear 路径与冗余网格判断后未发现新的功能问题。未新增框架接口或替换上游媒体库。
+
+ZIP SHA256：`F955F6073B72622FFB9A2573D125CE6C3554FC1A9BF3982F7E29E5BE7C9FF97D`。静态包核对初次误写图标许可路径 `Licenses/FluentSystemIcons.txt` 被拒，改为实际 `Assets/LICENSE-FluentSystemIcons.txt` 后重核通过，未改包内容掩盖失败。
+
+GPU 像素读取不是显示器最终帧，PCM 解码不是扬声器或音画同步验收，异步释放完成也不证明驱动显存全部归还。原错误素材、Explorer 拖放、可见 UI、真实声音与长 GOP 性能继续由用户验收。本轮验证完成后，用户授权提交并推送本轮修复及此前的审片开发提交至远端 main。
 
 <a id="evidence-media-compare-input-formats"></a>
 

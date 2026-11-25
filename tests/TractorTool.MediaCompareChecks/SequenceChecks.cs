@@ -4,7 +4,7 @@ internal static class SequenceChecks
 {
     internal static void Run()
     {
-        var root = Path.Combine(Path.GetTempPath(), "TractorTool-SequenceChecks-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "TractorTool-SequenceChecks-50%-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -23,6 +23,10 @@ internal static class SequenceChecks
                 "Dropping a numbered first image must detect the contiguous sequence at the selected fractional rate.");
             Require(Uri.UnescapeDataString(detected.Uri).Contains("镜头 50%%_%04d.png", StringComparison.Ordinal),
                 "Automatic sequence URI must preserve Unicode and escape literal percent signs for the native template.");
+            Require(Uri.UnescapeDataString(detected.Uri).Contains("50%%-", StringComparison.Ordinal),
+                "Literal percent signs in directories must survive the image-sequence printf template.");
+            Require(Read(first, MediaSourceKind.Sequence, 23.976).Uri == detected.Uri,
+                "Explicit and automatic sequence selection must use the same validated URI.");
             Require(Read(first, MediaSourceKind.File).IsStill,
                 "The ordinary Open action must remain an explicit way to open one image despite numbered neighbors.");
 
@@ -37,6 +41,8 @@ internal static class SequenceChecks
             Touch(root, "镜头 50%_0004.png");
             Reject<InvalidDataException>(() => Read(first, MediaSourceKind.Auto),
                 "Automatic detection must report a missing frame instead of silently treating a broken sequence as a still.");
+            Reject<InvalidDataException>(() => Read(first, MediaSourceKind.Sequence),
+                "Explicit selection must also reject a missing frame.");
 
             var unnumbered = Touch(root, "封面.png");
             Require(Read(unnumbered, MediaSourceKind.Auto).IsStill,

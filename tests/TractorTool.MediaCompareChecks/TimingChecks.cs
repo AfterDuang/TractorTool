@@ -4,6 +4,7 @@ internal static class TimingChecks
 {
     internal static void Run()
     {
+        PresentationTimeline();
         Require(FrameTiming.ResolveEnd(0, ulong.MaxValue) is null,
             "A VFR sample may have neither duration nor a fixed frame rate.");
         Require(FrameTiming.ResolveEnd(0, 40_000_000) == Ns(40),
@@ -97,6 +98,94 @@ internal static class TimingChecks
             "A current frame must not be accepted before its actual timestamp.");
         Require(Coverage(0, 33.333, 33.367, 33.333) == FrameCoverage.Gap,
             "Timestamp tolerance must not bridge even a short explicit gap.");
+    }
+
+    private static void PresentationTimeline()
+    {
+        Require(FrameTiming.NextPresentation(null, null, default, default) is null &&
+            FrameTiming.NextPresentation(null, 123, default, default) == 123,
+            "A missing or still side cannot determine playback cadence.");
+        Require(FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1), endA: 1_000_000_000) == 958_333_334 &&
+            FrameTiming.NextPresentation(958_333_334, 958_333_333, (24, 1), (24, 1), endB: 1_000_000_000) == 958_333_334,
+            "The video and sequence's logical frame 23 must share the later actual PTS regardless of A/B order.");
+        Require(FrameTiming.NextPresentation(33_333_333, 33_333_334, (30, 1), (60, 1), endA: 66_666_666) == 33_333_334,
+            "Different fixed rates may meet at the same exact rational boundary.");
+        Require(FrameTiming.NextPresentation(958_333_333, 958_333_334, (0, 1), (24, 1), endA: 1_000_000_000) == 958_333_333 &&
+            FrameTiming.NextPresentation(958_333_332, 958_333_333, (24, 1), (24, 1), endA: 1_000_000_000) == 958_333_332 &&
+            FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1), 958_333_334) == 958_333_333,
+            "Unknown rates, off-grid timestamps and a one-nanosecond interval cannot be stretched or coalesced.");
+        Require(FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1)) == 958_333_333 &&
+            FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1),
+                FrameTiming.CoverageEnd(null, 958_333_334)) == 958_333_333,
+            "An unknown final frame or a real successor one nanosecond later must first publish the earlier frame, not skip it or fail alignment.");
+        Require(FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1),
+                FrameTiming.CoverageEnd(null, 1_000_000_000)) == 958_333_334,
+            "A real successor can prove an unknown-duration frame covers the later shared boundary.");
+        Require(FrameTiming.GapDeadline(100_000_000, 1_000_000_000, (0, 1)) == 100_000_000 &&
+            FrameTiming.GapDeadline(100_000_000, 1_000_000_000, (1, 1)) == 100_000_000,
+            "A known 100ms frame followed by a one-second PTS expires at 100ms, regardless of another side's events or nominal rate.");
+        Require(FrameTiming.GapDeadline(166_666_666, 166_666_667, (24, 1)) is null &&
+            FrameTiming.GapDeadline(166_666_665, 166_666_666, (24, 1)) == 166_666_665 &&
+            FrameTiming.GapDeadline(null, 1_000_000_000, (0, 1)) is null,
+            "Only a provable floor/ceil representation of the same CFR boundary avoids a false gap deadline; VFR uses its real successor.");
+        Require(FrameTiming.ClampPausePosition(0, 800_000_000, 1_000_000_000, 1_000_000_000) == 800_000_000 &&
+            FrameTiming.ClampPausePosition(0, 800_000_000, null, 1_000_000_000) == 800_000_000,
+            "Pausing a one-fps frame at 0.8s retains shared-clock time for both known duration and actual-successor coverage.");
+        Require(FrameTiming.ClampPausePosition(0, 800_000_000, 100_000_000, 1_000_000_000) == 99_999_999 &&
+            FrameTiming.ClampPausePosition(0, 800_000_000, 1_000_000_000, 500_000_000) == 499_999_999 &&
+            FrameTiming.ClampPausePosition(0, 800_000_000, null, null) == 0,
+            "Pause cannot advance across an explicit gap, a known successor, or an unproven final-frame interval.");
+
+        foreach (var rate in new[] { (24, 1), (24_000, 1001) })
+        {
+            var video = Enumerable.Range(0, 121).Select(index => Boundary(index, rate, roundUp: false)).ToArray();
+            var sequence = Enumerable.Range(0, 121).Select(index => Boundary(index, rate, roundUp: true)).ToArray();
+            var forward = Pairs(video, sequence, rate, rate);
+            var reverse = Pairs(sequence, video, rate, rate);
+            Require(forward.Count == 119 && forward.All(pair => pair.A == pair.B),
+                "Every displayed video/sequence pair must identify the same logical source frame, not merely overlapping intervals.");
+            Require(forward.SequenceEqual(reverse.Select(pair => (pair.Time, pair.B, pair.A))),
+                "Swapping A/B must preserve both presentation time and logical correspondence.");
+        }
+
+        var slow = Enumerable.Range(0, 4).Select(index => Boundary(index, (1, 1), false)).ToArray();
+        var fast = Enumerable.Range(0, 181).Select(index => Boundary(index, (60, 1), false)).ToArray();
+        var slowLeft = Pairs(slow, fast, (1, 1), (60, 1));
+        var fastLeft = Pairs(fast, slow, (60, 1), (1, 1));
+        Require(slowLeft.Count(pair => pair.Time < 1_000_000_000) == 59 &&
+            slowLeft.SequenceEqual(fastLeft.Select(pair => (pair.Time, pair.B, pair.A))),
+            "A one-fps sequence must not throttle a sixty-fps video, whichever side contains it.");
+
+        var variable = new long[] { 0, 12_000_000, 55_000_000, 90_000_000, 110_000_000 };
+        var fixedRate = Enumerable.Range(0, 5).Select(index => Boundary(index, (30, 1), false)).ToArray();
+        var mixed = Pairs(variable, fixedRate, (0, 1), (30, 1));
+        Require(mixed.Select(pair => pair.Time).SequenceEqual(new long[] { 12_000_000, 33_333_333, 55_000_000, 66_666_666, 90_000_000 }),
+            "A variable-rate stream and a fixed-rate stream use their real event-time union, not a shared frame index.");
+    }
+
+    private static long Boundary(int index, (int Numerator, int Denominator) rate, bool roundUp)
+    {
+        var scaled = (long)index * 1_000_000_000 * rate.Denominator;
+        return (scaled + (roundUp ? rate.Numerator - 1 : 0)) / rate.Numerator;
+    }
+
+    private static List<(long Time, int A, int B)> Pairs(long[] a, long[] b,
+        (int Numerator, int Denominator) rateA, (int Numerator, int Denominator) rateB)
+    {
+        var result = new List<(long, int, int)>();
+        var indexA = 0; var indexB = 0;
+        while (indexA + 2 < a.Length && indexB + 2 < b.Length)
+        {
+            var target = FrameTiming.NextPresentation(a[indexA + 1], b[indexB + 1], rateA, rateB,
+                a[indexA + 2], b[indexB + 2])!.Value;
+            if (a[indexA + 1] <= target) indexA++;
+            if (b[indexB + 1] <= target) indexB++;
+            Require(a[indexA] <= target && target < a[indexA + 1] &&
+                b[indexB] <= target && target < b[indexB + 1],
+                "Every selected pair must strictly cover its actual shared presentation time.");
+            result.Add((target, indexA, indexB));
+        }
+        return result;
     }
 
     private static FrameCoverage Coverage(double start, double duration, double? next, double target, bool ended = false)

@@ -64,6 +64,8 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         Preview.AvailabilityChanged += available => { if (_attached is { } model) model.RendererAvailable = available; };
     }
 
+    internal CompareView(PreviewLifetime previews) : this() => Preview.Lifetime = previews;
+
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not CompareViewModel model || _attached is not null) return;
@@ -102,8 +104,8 @@ public partial class CompareView : UserControl, IPluginPageLifetime
                 Title = sequence ? $"选择 {side} 序列中的第一张图片（连续编号）" : $"选择 {side} 素材",
                 AllowMultiple = false,
                 FileTypeFilter = sequence
-                    ? [new("序列帧") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp", "*.exr"] }]
-                    : [new("视频与图片") { Patterns = ["*.mp4", "*.mov", "*.mkv", "*.avi", "*.webm", "*.mxf", "*.m4v", "*.png", "*.jpg", "*.jpeg", "*.webp", "*.tif", "*.tiff", "*.bmp", "*.exr"] }, FilePickerFileTypes.All]
+                    ? [new("序列帧") { Patterns = ["*.png", "*.jpg", "*.jpeg", "*.tif", "*.tiff", "*.bmp", "*.webp"] }]
+                    : [new("视频与图片") { Patterns = ["*.mp4", "*.mov", "*.mkv", "*.avi", "*.webm", "*.mxf", "*.m4v", "*.m2ts", "*.mts", "*.ts", "*.png", "*.jpg", "*.jpeg", "*.webp", "*.tif", "*.tiff", "*.bmp"] }, FilePickerFileTypes.All]
             });
             try
             {

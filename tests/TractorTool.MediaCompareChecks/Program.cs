@@ -8,7 +8,6 @@ if (args.Length != 0)
 FrameOwnership();
 ConcurrentOwnership();
 ViewportGeometry();
-SequenceValidation();
 TimingChecks.Run();
 SequenceChecks.Run();
 Console.WriteLine("MediaCompare managed checks passed.");
@@ -19,9 +18,13 @@ static void FrameOwnership()
     var releases = 0;
     var original = Frame(() => releases++);
     var retained = original.Retain();
+    Require(original.SampleId == retained.SampleId, "Retained wrappers must keep the same upload identity.");
+    using (var another = Frame(() => { }))
+        Require(another.SampleId != original.SampleId,
+            "New samples must invalidate upload reuse even when texture pointers and timestamps match.");
     original.Dispose(); original.Dispose();
     Require(releases == 0, "Pending renderer must retain the sample after decoder releases it.");
-    using (var pair = new FramePair(retained, retained, TimeSpan.Zero))
+    using (var pair = new FramePair(retained, retained, 0))
         pair.Dispose();
     Require(releases == 1, "Identical A/B sample and duplicate pair disposal must release once.");
     try { retained.Retain(); throw new Exception("Disposed sample was retained."); }
@@ -31,7 +34,7 @@ static void FrameOwnership()
     var source = Frame(() => releases++);
     var a = source.Retain(); var b = source.Retain();
     source.Dispose();
-    using (var pair = new FramePair(a, b, TimeSpan.Zero)) { }
+    using (var pair = new FramePair(a, b, 0)) { }
     Require(releases == 1, "Different wrappers of the same sample must both be released.");
 }
 
@@ -71,34 +74,20 @@ static void ViewportGeometry()
     Require(Math.Abs(panned.CenterX - (anchored.CenterX - .1)) < 1e-10 &&
         Math.Abs(panned.CenterY - (anchored.CenterY - .1)) < 1e-10,
         "Pan must use source-relative coordinates shared by both panes.");
-}
 
-static void SequenceValidation()
-{
-    var root = Path.Combine(Path.GetTempPath(), "TractorTool-MediaCompareChecks-50%-" + Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(root);
-    try
-    {
-        // Only enumerate names; these placeholders never go to a decoder.
-        var first = Path.Combine(root, "审片 50%_0001.png");
-        File.WriteAllBytes(first, []);
-        File.WriteAllBytes(Path.Combine(root, "审片 50%_0002.png"), []);
-        var sequence = MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence, 23.976), CancellationToken.None);
-        Require(Uri.UnescapeDataString(sequence.Uri).Contains("50%%-", StringComparison.Ordinal),
-            "Literal percent signs in directories must survive the image-sequence printf template.");
-        Require(sequence.SequenceDuration is { } duration && Math.Abs(duration.TotalSeconds - 2 * 1001d / 24000) < 1e-7,
-            "Numbered image sequences must use the requested fractional frame rate.");
-        File.WriteAllBytes(Path.Combine(root, "审片 50%_0004.png"), []);
-        try { MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence), CancellationToken.None); throw new Exception("Gap accepted."); }
-        catch (InvalidDataException) { }
-        using var cancelled = new CancellationTokenSource();
-        cancelled.Cancel();
-        try { MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence), cancelled.Token); throw new Exception("Cancellation ignored."); }
-        catch (OperationCanceledException) { }
-    }
-    finally { Directory.Delete(root, recursive: true); }
+    using var anamorphic = new MediaFrame(720, 576, 0, null, 0, 0, pixelAspectRatio: 16d / 15);
+    var corrected = PreviewView.Fit.ImageSize(anamorphic.DisplayWidth, anamorphic.DisplayHeight, 960, 540);
+    var square = PreviewView.Fit.ImageSize(768, 576, 960, 540);
+    Require(corrected == square && corrected == (720d, 540d),
+        "720x576 with 16:15 pixels must match a square-pixel 768x576 reference at 4:3.");
+    var correctedZoom = PreviewView.Fit.ZoomAt(anamorphic.DisplayWidth, anamorphic.DisplayHeight, 960, 540, 600, 200, 2);
+    var squareZoom = PreviewView.Fit.ZoomAt(768, 576, 960, 540, 600, 200, 2);
+    Require(correctedZoom == squareZoom &&
+        correctedZoom.Pan(anamorphic.DisplayWidth, anamorphic.DisplayHeight, 960, 540, 48, 27) ==
+        squareZoom.Pan(768, 576, 960, 540, 48, 27),
+        "Zoom anchoring and linked pan must use display geometry, independently of stored pixel dimensions.");
 }
 
 static MediaFrame Frame(Action release) => new(1, 1, 0, 41_666_666,
-    0, 0, new byte[4], 4, release);
+    0, 0, release);
 static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }

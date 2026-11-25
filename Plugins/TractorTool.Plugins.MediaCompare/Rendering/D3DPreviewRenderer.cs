@@ -85,6 +85,7 @@ internal sealed class D3DPreviewRenderer : IDisposable
     private void UploadSide(ref SourceTexture? source, MediaFrame? frame)
     {
         if (frame is null) { source?.Dispose(); source = null; return; }
+        if (source?.SampleId == frame.SampleId) return;
         ValidateSize(frame.Width, frame.Height);
         if (source is null || source.Width != frame.Width || source.Height != frame.Height)
         {
@@ -121,7 +122,7 @@ internal sealed class D3DPreviewRenderer : IDisposable
     private void Draw(SourceTexture? source, int x, int width, PreviewView view)
     {
         if (source is null || width == 0) return;
-        var (imageWidth, imageHeight) = view.ImageSize(source.Width, source.Height, width, Height);
+        var (imageWidth, imageHeight) = view.ImageSize(source.DisplayWidth, source.DisplayHeight, width, Height);
         // UV = center + (viewportUV - .5) * viewportSize / imageSize.
         var constants = new Vector4((float)view.CenterX, (float)view.CenterY,
             (float)(width / imageWidth), (float)(Height / imageHeight));
@@ -190,6 +191,9 @@ internal sealed class D3DPreviewRenderer : IDisposable
         private IDXGIKeyedMutex? _writeMutex, _readMutex;
         public int Width { get; private init; }
         public int Height { get; private init; }
+        public double DisplayWidth { get; private set; }
+        public double DisplayHeight { get; private set; }
+        public long SampleId { get; private set; }
         public ID3D11ShaderResourceView View => _view!;
 
         public static SourceTexture Create(ID3D11Device device, int width, int height)
@@ -204,16 +208,9 @@ internal sealed class D3DPreviewRenderer : IDisposable
             catch { source.Dispose(); throw; }
         }
 
-        public unsafe void Upload(ID3D11Device device, ID3D11DeviceContext context, long adapterLuid, MediaFrame frame)
+        public void Upload(ID3D11Device device, ID3D11DeviceContext context, long adapterLuid, MediaFrame frame)
         {
-            if (frame.Texture == 0)
-            {
-                if (frame.Stride < checked(Width * 4) || frame.Pixels.Length < checked(frame.Stride * Height))
-                    throw new InvalidDataException("解码器返回的 BGRA 图像数据不完整。");
-                using var pixels = frame.Pixels.Pin();
-                context.UpdateSubresource(_texture!, 0, null, (nint)pixels.Pointer, (uint)frame.Stride, 0);
-                return;
-            }
+            if (frame.Texture == 0) throw new InvalidDataException("GPU 解码帧缺少图像资源。");
             if (frame.LockDevice is null || frame.UnlockDevice is null)
                 throw new InvalidDataException("GPU 解码帧缺少设备同步接口。");
             // GStreamer's device lock covers DXGI calls as well as the immediate context.
@@ -260,6 +257,8 @@ internal sealed class D3DPreviewRenderer : IDisposable
             Acquire(_readMutex!, 1);
             try { context.CopyResource(_texture!, _opened!); context.Flush(); }
             finally { _readMutex!.ReleaseSync(0); }
+            DisplayWidth = frame.DisplayWidth; DisplayHeight = frame.DisplayHeight;
+            SampleId = frame.SampleId;
         }
 
         private void ReleaseShared()

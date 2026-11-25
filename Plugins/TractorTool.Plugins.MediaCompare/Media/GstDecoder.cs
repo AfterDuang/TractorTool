@@ -21,6 +21,8 @@ internal sealed class GstDecoder : IDisposable
     private static readonly GstNative.DestroyNotify DestroyProbe = data => GCHandle.FromIntPtr(data).Free();
     private bool _disposed;
     internal MediaDescription Description { get; private set; } = null!;
+    internal int FrameRateNumerator { get; private set; }
+    internal int FrameRateDenominator { get; private set; }
     internal bool IsStill => _source.IsStill;
     internal bool IsEnded => _sink != 0 && GstNative.gst_app_sink_is_eos(_sink) != 0;
 
@@ -43,9 +45,11 @@ internal sealed class GstDecoder : IDisposable
                 if (!prepared.IsStill && duration <= TimeSpan.Zero)
                     throw new NotSupportedException("媒体没有可用时长，当前仅支持可定位的本地文件。");
                 var (audioStatus, audioDescription) = decoder.GetAudioStatus();
+                var frameRate = decoder.FrameRateNumerator > 0 && decoder.FrameRateDenominator > 0
+                    ? (double)decoder.FrameRateNumerator / decoder.FrameRateDenominator : 0;
                 decoder.Description = new(prepared.Name, first.Width, first.Height, duration,
-                    prepared.SequenceRate > 0 ? prepared.SequenceRate : decoder._frameRate, prepared.IsStill, format,
-                    audioStatus, audioDescription, decoder._previewWarning);
+                    prepared.SequenceRate > 0 ? prepared.SequenceRate : frameRate, prepared.IsStill, format,
+                    audioStatus, audioDescription, decoder._previewWarning, first.PixelAspectRatio);
                 return (decoder, first);
             }
             catch { first.Dispose(); throw; }
@@ -67,7 +71,7 @@ internal sealed class GstDecoder : IDisposable
             // Preserve native GPU frames when compatible; adapt CPU image formats
             // such as PNG's ARGB64/GRAY16_BE before D3D11 upload.
             "videoconvert name=original ! d3d11upload ! d3d11convert ! video/x-raw(memory:D3D11Memory),format=BGRA ! " +
-            "appsink name=frames sync=true max-buffers=3 drop=false wait-on-eos=false", 1, out var error);
+            "appsink name=frames sync=false max-buffers=3 drop=false wait-on-eos=false", 1, out var error);
         if (error != 0 || _sinkBin == 0)
             throw new InvalidOperationException(GstNative.TakeError(error, "无法建立 D3D11 预览管线。"));
         GstNative.gst_object_ref_sink(_sinkBin);
@@ -115,12 +119,11 @@ internal sealed class GstDecoder : IDisposable
         catch { frame.Dispose(); throw; }
     }
 
-    internal void Play(ulong baseTime, bool synchronizeVideo)
+    internal void Play(ulong baseTime)
     {
         if (IsStill) return;
-        // The master supplies the shared-clock cadence. The other bounded appsink
-        // can decode one future PTS so VFR frames need no guessed duration.
-        GstNative.gst_util_set_object_arg(_sink, "sync", synchronizeVideo ? "true" : "false");
+        // Both bounded appsinks can prefetch; ComparisonSession presents their
+        // merged timeline on the shared clock. Audio keeps its clock synchronization.
         GstNative.gst_element_set_start_time(_pipeline, GstNative.None);
         GstNative.gst_element_set_base_time(_pipeline, baseTime);
         if (GstNative.gst_element_set_state(_pipeline, GstNative.Playing) == 0)
@@ -180,7 +183,6 @@ internal sealed class GstDecoder : IDisposable
         throw new TimeoutException("暂停媒体超时。");
     }
 
-    private double _frameRate;
     private MediaFrame ReadFrame(nint sample)
     {
         try
@@ -197,12 +199,20 @@ internal sealed class GstDecoder : IDisposable
                 throw new InvalidDataException("图像尺寸无效或超过当前预览限制。");
             if (Marshal.PtrToStringUTF8(GstNative.gst_structure_get_string(structure, "format")) != "BGRA")
                 throw new InvalidDataException("解码图像没有按预览格式输出。");
+            var pixelAspectRatio = 1d;
+            if (GstNative.gst_structure_get_value(structure, "pixel-aspect-ratio") != 0)
+            {
+                if (GstNative.gst_structure_get_fraction(structure, "pixel-aspect-ratio", out var aspectNumerator, out var aspectDenominator) == 0 ||
+                    aspectNumerator <= 0 || aspectDenominator <= 0)
+                    throw new InvalidDataException("媒体像素宽高比无效，无法正确呈现画面。");
+                pixelAspectRatio = (double)aspectNumerator / aspectDenominator;
+            }
             // Negotiated raw caps use 0/1 for VFR. Never substitute max-framerate
             // or a previous sample's rate when this sample has no fixed rate.
             var hasFixedRate = GstNative.gst_structure_get_fraction(structure, "framerate", out var numerator, out var denominator) != 0 &&
                 numerator > 0 && denominator > 0;
             if (!hasFixedRate) numerator = denominator = 0;
-            _frameRate = hasFixedRate ? (double)numerator / denominator : 0;
+            FrameRateNumerator = numerator; FrameRateDenominator = denominator;
             var timing = Marshal.PtrToStructure<GstNative.Buffer>(buffer);
             if (timing.Pts == GstNative.None && !IsStill)
                 throw new InvalidDataException("媒体帧没有时间戳，无法保证 A/B 对应关系。");
@@ -228,9 +238,9 @@ internal sealed class GstDecoder : IDisposable
                     if (device == 0 || texture == 0) throw new InvalidDataException("GPU 解码帧缺少图像资源。");
                     var access = new GpuFrameAccess(memory, device);
                     return new(width, height, checked((long)streamTime), end, texture,
-                        GstNative.gst_d3d11_memory_get_subresource_index(memory), default, 0,
+                        GstNative.gst_d3d11_memory_get_subresource_index(memory),
                         () => GstNative.gst_mini_object_unref(sample),
-                        access.Acquire, access.Release, prerollEnd);
+                        access.Acquire, access.Release, prerollEnd, pixelAspectRatio);
                 }
             }
             throw new NotSupportedException("解码器未提供 D3D11 图像。当前预览不能使用不受支持的图像内存。");
