@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片播放阻塞 | [E140 · 原生转储与解码设备同步（2026-11-26）](#evidence-media-compare-playback-lock) |
 | AB 审片用户反馈 | [E139 · 纹理原点、暂停定位与操作界面（2026-11-26）](#evidence-media-compare-feedback) |
 | AB 审片首版 | [E138 · 独立媒体/GPU 插件（2026-11-25）](#evidence-media-compare-first) |
 | 插件隔离与自动发布 | [E137 · 1.1.0 发布（2026-11-23）](#evidence-release-110) |
@@ -176,6 +177,24 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-playback-lock"></a>
+
+## E140：AB 审片播放阻塞与解码设备同步（2026-11-26）
+
+用户确认点击播放后整个软件无响应，允许用合成视频和临时目录运行独立诊断。只读宿主日志核对实际加载为 0.1.1，并发现退出时停止插件超时；未启动真实宿主、安装插件或改用户配置。仅修改审片插件、专属检查及文档，保留 `.vscode/settings.json`，未改软件框架。
+
+证据保存在 `artifacts/media-compare-diagnostics/20261126-playback`：FFmpeg 合成 12 秒 1280×720/30 fps、BT.709 H.264 + AAC，A/B 使用相同内容。检查程序通过显式 `--gpu-playback` 创建不激活的屏幕外 Win32 窗口，使用真实 GStreamer/D3D11/ComparePreview；缓存写新临时目录，外部心跳记录 UI 活跃时间和媒体推进。默认入口仍只运行纯托管检查。
+
+- 基线 `baseline-run`、`baseline-run2` 均在首次播放停住，只提交两对预读帧；独立 UI 心跳仍活跃，因此未完整复现用户的整窗无响应。首次 Mini 转储遇到进程退出、读取失败，未作为证据；第二轮 Heap 转储 `baseline2-hang.dmp` 有效，生成 `baseline2-stacks.txt` 和 `baseline2-native-stacks.txt`。只对诊断进程抓栈和终止，WinDbg 离线读取转储后退出。
+- 原生链：媒体线程 `0x4280` 在 `gst_element_seek_simple` 内等待 pad critical section，其所有者为 H.264 解码线程 `0xa910`；解码与插件上传线程 `0x9980` 同时停在 NVIDIA 驱动的同一等待句柄 `0x1930`。上传栈落在解码设备桥接纹理的 `AcquireSync`；不是 Avalonia 输出纹理。未知私有驱动等待的发信方，不声称已证明驱动内部锁环。
+- 代码违反明确同步契约：源设备 DXGI 查询、共享资源操作及 writer `AcquireSync/ReleaseSync` 原先在 `gst_d3d11_device_lock` 外，与硬解 context 并发。修正将整段源设备操作置于同一设备锁内；writer 获取成功才进入释放 finally，所有异常均解除设备锁，插件设备的读取在解锁后执行。依据：[GStreamer 设备同步](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-bad/gst-libs/gst/d3d11/gstd3d11device.cpp)、[Microsoft D3D11/DXGI 多线程约束](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-render-multi-thread-intro)。未增大超时、关闭硬解或替换引擎。
+- 修正后 `locked-device-run`、`locked-device-run2`、`locked-device-run3`、`final-run` 四轮均退出 0，完成首次播放→暂停→定位→再次播放→媒体停止。每轮两段各观察 3 秒，均推进 2,967 ms、向预览提交 89 对帧；UI 最大心跳间隔 107–113 ms，无已上报预览/媒体错误。提交数不是逐帧呈现数；移除预览后的 500 ms 观察不证明异步 GPU 释放已完成。
+- GPT-6.2-SOL/high 检查 dispatcher 与 GPU 等待链，最终生产补丁审查无阻断项。发现诊断超时清理可能重复调用 DisposeAsync，已保存并复用首次停止任务，复核通过。`dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false` 为 0 警告/0 错误；默认纯托管检查运行通过。
+
+版本升至 0.1.2，以 `scripts/Build-Plugin.ps1` 和 `artifacts/plugin-host-20261123-235028-9d9de9/host` 独立打包通过。ZIP 140 项、20,467,682 字节，展开 51,788,085 字节；121 项运行库文件哈希全部匹配，无共享框架 DLL。ZIP SHA256：`CEAC106B0F983DB39399C808D9915478C73C69EC245B8A41E65B420619AA5997`。安装包及静态报告见[当前台账](DEVELOPMENT.md#media-compare)。
+
+本轮证明修正消除了该合成场景中的原生播放阻塞；未证明所有驱动、素材和真实宿主的无响应均已解决。真实窗口交互、画面/音频同步、完整 GPU 清理和长 GOP 性能仍由用户验收；未推送。
 
 <a id="evidence-media-compare-feedback"></a>
 

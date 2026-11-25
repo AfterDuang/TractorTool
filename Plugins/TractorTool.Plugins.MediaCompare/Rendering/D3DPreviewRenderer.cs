@@ -217,48 +217,49 @@ internal sealed class D3DPreviewRenderer : IDisposable
                 context.UpdateSubresource(_texture!, 0, null, (nint)pixels.Pointer, (uint)frame.Stride, 0);
                 return;
             }
-            // MediaFrame owns the original COM reference. Vortice wrappers own their reference too.
-            Marshal.AddRef(frame.Texture);
-            using var texture = new ID3D11Texture2D(frame.Texture);
-            var description = texture.Description;
-            if (description.Format != Format.B8G8R8A8_UNorm || description.Width < Width || description.Height < Height ||
-                description.SampleDescription.Count != 1 || description.MipLevels != 1 || frame.Subresource >= description.ArraySize)
-                throw new InvalidDataException("解码器返回了不兼容的 GPU 纹理。");
-            using var sourceDevice = texture.Device;
-            if (_sourceDevice?.NativePointer != sourceDevice.NativePointer)
-            {
-                ReleaseShared();
-                using var dxgi = sourceDevice.QueryInterface<IDXGIDevice>();
-                using var adapter = dxgi.GetAdapter();
-                if (adapter.Description.Luid != adapterLuid)
-                    throw new NotSupportedException("媒体解码器与软件界面使用了不同显卡，当前无法共享预览；请将两者设为同一显卡。");
-                try
-                {
-                    _sourceDevice = sourceDevice.QueryInterface<ID3D11Device>();
-                    _sourceContext = _sourceDevice.ImmediateContext;
-                    _shared = _sourceDevice.CreateTexture2D(TextureDescription(Width, Height, BindFlags.ShaderResource, shared: true));
-                    _writeMutex = _shared.QueryInterface<IDXGIKeyedMutex>();
-                    using var resource = _shared.QueryInterface<IDXGIResource>();
-                    _opened = device.OpenSharedResource<ID3D11Texture2D>(resource.SharedHandle);
-                    _readMutex = _opened.QueryInterface<IDXGIKeyedMutex>();
-                }
-                catch { ReleaseShared(); throw; }
-            }
             if (frame.LockDevice is null || frame.UnlockDevice is null)
                 throw new InvalidDataException("GPU 解码帧缺少设备同步接口。");
-            Acquire(_writeMutex!, 0);
+            // GStreamer's device lock covers DXGI calls as well as the immediate context.
+            frame.LockDevice();
             try
             {
-                frame.LockDevice();
+                // MediaFrame and the Vortice wrapper each own a COM reference.
+                Marshal.AddRef(frame.Texture);
+                using var texture = new ID3D11Texture2D(frame.Texture);
+                var description = texture.Description;
+                if (description.Format != Format.B8G8R8A8_UNorm || description.Width < Width || description.Height < Height ||
+                    description.SampleDescription.Count != 1 || description.MipLevels != 1 || frame.Subresource >= description.ArraySize)
+                    throw new InvalidDataException("解码器返回了不兼容的 GPU 纹理。");
+                using var sourceDevice = texture.Device;
+                if (_sourceDevice?.NativePointer != sourceDevice.NativePointer)
+                {
+                    ReleaseShared();
+                    using var dxgi = sourceDevice.QueryInterface<IDXGIDevice>();
+                    using var adapter = dxgi.GetAdapter();
+                    if (adapter.Description.Luid != adapterLuid)
+                        throw new NotSupportedException("媒体解码器与软件界面使用了不同显卡，当前无法共享预览；请将两者设为同一显卡。");
+                    try
+                    {
+                        _sourceDevice = sourceDevice.QueryInterface<ID3D11Device>();
+                        _sourceContext = _sourceDevice.ImmediateContext;
+                        _shared = _sourceDevice.CreateTexture2D(TextureDescription(Width, Height, BindFlags.ShaderResource, shared: true));
+                        _writeMutex = _shared.QueryInterface<IDXGIKeyedMutex>();
+                        using var resource = _shared.QueryInterface<IDXGIResource>();
+                        _opened = device.OpenSharedResource<ID3D11Texture2D>(resource.SharedHandle);
+                        _readMutex = _opened.QueryInterface<IDXGIKeyedMutex>();
+                    }
+                    catch { ReleaseShared(); throw; }
+                }
+                Acquire(_writeMutex!, 0);
                 try
                 {
                     _sourceContext!.CopySubresourceRegion(_shared!, 0, 0, 0, 0, texture, frame.Subresource,
                         new Box(0, 0, 0, Width, Height, 1));
                     _sourceContext.Flush();
                 }
-                finally { frame.UnlockDevice(); }
+                finally { _writeMutex!.ReleaseSync(1); }
             }
-            finally { _writeMutex!.ReleaseSync(1); }
+            finally { frame.UnlockDevice(); }
             Acquire(_readMutex!, 1);
             try { context.CopyResource(_texture!, _opened!); context.Flush(); }
             finally { _readMutex!.ReleaseSync(0); }

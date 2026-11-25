@@ -5,5 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj" AdditionalProperties="SkipMediaCompareRuntime=true" />
+    <PackageReference Include="Avalonia.Desktop" />
   </ItemGroup>
 </Project>

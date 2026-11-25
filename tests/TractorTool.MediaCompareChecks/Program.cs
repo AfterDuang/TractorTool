@@ -1,12 +1,16 @@
 using TractorTool.Plugins.MediaCompare.Media;
 using TractorTool.Plugins.MediaCompare.Rendering;
 
+if (args.Length != 0)
+    return GpuPlaybackDiagnostic.Run(args);
+
 // Pure managed checks: no app, GStreamer initialization, display, or user media.
 FrameOwnership();
 ConcurrentOwnership();
 ViewportGeometry();
 SequenceValidation();
 Console.WriteLine("MediaCompare managed checks passed.");
+return 0;
 
 static void FrameOwnership()
 {
