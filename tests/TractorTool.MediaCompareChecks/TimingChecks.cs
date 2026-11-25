@@ -82,8 +82,8 @@ internal static class TimingChecks
             "A variable-rate frame lasts until its successor timestamp.");
         Require(Coverage(100, 0, 180, 180) == FrameCoverage.Advance,
             "The successor owns the boundary timestamp.");
-        Require(Coverage(100, 20, 180, 130) == FrameCoverage.Gap,
-            "A successor cannot stretch a known short interval across a real gap.");
+        Require(Coverage(100, 20, 180, 130) == FrameCoverage.Covered,
+            "Continuous presentation holds the current image until its real successor, independently of nominal duration.");
         Require(Coverage(100, 0, null, 130, ended: true) == FrameCoverage.Ended,
             "Unknown final frames cannot extend to a container's audio tail.");
         Require(Coverage(100, 40, null, 130, ended: true) == FrameCoverage.Covered,
@@ -96,8 +96,22 @@ internal static class TimingChecks
             "A real successor at 33.367 ms must not advance at the 33.333 ms target.");
         Require(Coverage(33.367, 0, 66.733, 33.333) == FrameCoverage.Gap,
             "A current frame must not be accepted before its actual timestamp.");
-        Require(Coverage(0, 33.333, 33.367, 33.333) == FrameCoverage.Gap,
-            "Timestamp tolerance must not bridge even a short explicit gap.");
+        Require(Coverage(0, 33.333, 33.367, 33.333) == FrameCoverage.Covered,
+            "A quantized duration cannot expire an image before its known successor.");
+        foreach (var (start, duration, next) in new (long, ulong, long)[]
+        {
+            (41_666_666, 41_666_666, 83_333_333), // Independently floored 24 fps PTS/duration.
+            (0, 41_666_666, 42_000_000),          // Matroska millisecond PTS.
+            (0, 41_708_333, 41_711_111),          // MPEG-TS 90 kHz PTS.
+            (123_456_700, 41_708_333, 165_167_811) // Nonzero phase after an accurate seek.
+        })
+        {
+            var end = FrameTiming.ResolveEnd((ulong)start, duration);
+            Require(FrameTiming.Coverage(start, end, next, next - 1, false) == FrameCoverage.Covered &&
+                FrameTiming.Coverage(start, end, next, next, false) == FrameCoverage.Advance &&
+                FrameTiming.ClampPausePosition(start, next - 1, end, next) == next - 1,
+                "Rounding differences must neither stop playback nor advance a frame before its real PTS, including when pausing.");
+        }
     }
 
     private static void PresentationTimeline()
@@ -121,20 +135,13 @@ internal static class TimingChecks
         Require(FrameTiming.NextPresentation(958_333_333, 958_333_334, (24, 1), (24, 1),
                 FrameTiming.CoverageEnd(null, 1_000_000_000)) == 958_333_334,
             "A real successor can prove an unknown-duration frame covers the later shared boundary.");
-        Require(FrameTiming.GapDeadline(100_000_000, 1_000_000_000, (0, 1)) == 100_000_000 &&
-            FrameTiming.GapDeadline(100_000_000, 1_000_000_000, (1, 1)) == 100_000_000,
-            "A known 100ms frame followed by a one-second PTS expires at 100ms, regardless of another side's events or nominal rate.");
-        Require(FrameTiming.GapDeadline(166_666_666, 166_666_667, (24, 1)) is null &&
-            FrameTiming.GapDeadline(166_666_665, 166_666_666, (24, 1)) == 166_666_665 &&
-            FrameTiming.GapDeadline(null, 1_000_000_000, (0, 1)) is null,
-            "Only a provable floor/ceil representation of the same CFR boundary avoids a false gap deadline; VFR uses its real successor.");
         Require(FrameTiming.ClampPausePosition(0, 800_000_000, 1_000_000_000, 1_000_000_000) == 800_000_000 &&
             FrameTiming.ClampPausePosition(0, 800_000_000, null, 1_000_000_000) == 800_000_000,
             "Pausing a one-fps frame at 0.8s retains shared-clock time for both known duration and actual-successor coverage.");
-        Require(FrameTiming.ClampPausePosition(0, 800_000_000, 100_000_000, 1_000_000_000) == 99_999_999 &&
+        Require(FrameTiming.ClampPausePosition(0, 800_000_000, 100_000_000, 1_000_000_000) == 800_000_000 &&
             FrameTiming.ClampPausePosition(0, 800_000_000, 1_000_000_000, 500_000_000) == 499_999_999 &&
             FrameTiming.ClampPausePosition(0, 800_000_000, null, null) == 0,
-            "Pause cannot advance across an explicit gap, a known successor, or an unproven final-frame interval.");
+            "Pause holds until a known successor, without advancing into it or extending an unproven final-frame interval.");
 
         foreach (var rate in new[] { (24, 1), (24_000, 1001) })
         {

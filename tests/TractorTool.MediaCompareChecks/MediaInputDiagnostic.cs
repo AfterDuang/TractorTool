@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using TractorTool.Plugins.MediaCompare.Media;
 using TractorTool.Plugins.MediaCompare.Native.Interop;
@@ -8,9 +9,9 @@ internal static class MediaInputDiagnostic
 {
     internal static int Run(string[] args)
     {
-        if (args.Length != 4 || args[0] != "--media-inputs")
+        if (args.Length != 4 || args[0] is not ("--media-inputs" or "--seek-play"))
         {
-            Console.Error.WriteLine("Usage: --media-inputs <runtimeRoot> <newScratchDirectory> <fixtureRoot>");
+            Console.Error.WriteLine("Usage: --media-inputs|--seek-play <runtimeRoot> <newScratchDirectory> <fixtureRoot>");
             return 2;
         }
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("The decoder diagnostic requires Windows.");
@@ -51,40 +52,55 @@ internal static class MediaInputDiagnostic
         if (clock == 0) throw new InvalidOperationException("Could not obtain the GStreamer clock.");
         try
         {
-            foreach (var name in new[] { "dvdlpcmdec", "avdec_ac3", "avdec_eac3", "avdec_dca", "tsdemux", "pngdec", "jpegdec" })
+            if (args[0] == "--media-inputs")
             {
-                var factory = Native.gst_element_factory_find(name);
-                Write($"factory: {name}={(factory != 0 ? "present" : "missing")}");
-                if (factory != 0) GstNative.gst_object_unref(factory);
-            }
-            foreach (var extension in new[] { "png", "jpg" })
-            {
-                Check($"single-{extension}", () => CheckImage(new(Fixture($"input.{extension}")), false, clock, Write));
+                foreach (var name in new[] { "dvdlpcmdec", "avdec_ac3", "avdec_eac3", "avdec_dca", "tsdemux", "pngdec", "jpegdec" })
+                {
+                    var factory = Native.gst_element_factory_find(name);
+                    Write($"factory: {name}={(factory != 0 ? "present" : "missing")}");
+                    if (factory != 0) GstNative.gst_object_unref(factory);
+                }
+                foreach (var extension in new[] { "png", "jpg" })
+                {
+                    Check($"single-{extension}", () => CheckImage(new(Fixture($"input.{extension}")), false, clock, Write));
+                    foreach (var kind in new[] { MediaSourceKind.Sequence, MediaSourceKind.Auto })
+                        Check($"sequence-{extension}-{kind}", () => CheckImage(
+                            new(Fixture($"{extension}-sequence/frame_0001.{extension}"), kind, 24), true, clock, Write));
+                }
+                Check("single-png16", () => CheckImage(new(Fixture("input16.png")), false, clock, Write, 16));
                 foreach (var kind in new[] { MediaSourceKind.Sequence, MediaSourceKind.Auto })
-                    Check($"sequence-{extension}-{kind}", () => CheckImage(
-                        new(Fixture($"{extension}-sequence/frame_0001.{extension}"), kind, 24), true, clock, Write));
+                    Check($"sequence-png16-{kind}", () => CheckImage(
+                        new(Fixture("png16-sequence/frame_0001.png"), kind, 24), true, clock, Write, 16));
+                Check("seek-play-subtick-boundaries", () => CheckBoundarySeeks(Fixture("video.mp4"), clock, Write));
+                Check("session-actual-seek-position", () => CheckActualSeekPosition(args[1],
+                    Path.Combine(args[2], "session-cache"), Fixture("video.mp4"), Write));
+                foreach (var sequenceFirst in new[] { false, true })
+                    Check($"session-video24-sequence-sequenceFirst={sequenceFirst}", () => CheckSessionPairing(
+                        args[1], Path.Combine(args[2], "session-cache"), Fixture("video24.mp4"),
+                        Fixture("png-sequence/frame_0001.png"), sequenceFirst, Write));
+                Check("10bit-policy", () => CheckHighBitDepth(Fixture("video-10bit.mkv"), clock, Write));
+                Check("hdr-sei-policy", () => CheckHdrRejected(Fixture("video-hdr-sei.mkv"), clock, Write));
+                Check("decoder-audio-ac3", () => CheckDecoderAudio(Fixture("audio-ac3.m2ts"), clock, Write));
+                Check("decoder-audio-lpcm", () => CheckDecoderAudio(Fixture("audio-lpcm.m2ts"), clock, Write));
+                Check("audio-ac3", () => CheckAudio(Fixture("audio-ac3.m2ts"), Write));
+                Check("audio-lpcm", () => CheckAudio(Fixture("audio-lpcm.m2ts"), Write));
+                Check("pixel-aspect-ratio", () => PlaybackRegressionChecks.CheckPixelAspect(Fixture("video-par.mp4"), clock, Write));
+                Check("gpu-upload-reuse", () => PlaybackRegressionChecks.CheckUploadReuse(Fixture("input.png"), clock, Write));
+                Check("common-timeline-and-replay", () => PlaybackRegressionChecks.Run(args[1],
+                    Path.Combine(args[2], "session-cache"), args[3], Write));
             }
-            Check("single-png16", () => CheckImage(new(Fixture("input16.png")), false, clock, Write, 16));
-            foreach (var kind in new[] { MediaSourceKind.Sequence, MediaSourceKind.Auto })
-                Check($"sequence-png16-{kind}", () => CheckImage(
-                    new(Fixture("png16-sequence/frame_0001.png"), kind, 24), true, clock, Write, 16));
-            Check("seek-play-subtick-boundaries", () => CheckBoundarySeeks(Fixture("video.mp4"), clock, Write));
-            Check("session-actual-seek-position", () => CheckActualSeekPosition(args[1],
-                Path.Combine(args[2], "session-cache"), Fixture("video.mp4"), Write));
-            foreach (var sequenceFirst in new[] { false, true })
-                Check($"session-video24-sequence-sequenceFirst={sequenceFirst}", () => CheckSessionPairing(
-                    args[1], Path.Combine(args[2], "session-cache"), Fixture("video24.mp4"),
-                    Fixture("png-sequence/frame_0001.png"), sequenceFirst, Write));
-            Check("10bit-policy", () => CheckHighBitDepth(Fixture("video-10bit.mkv"), clock, Write));
-            Check("hdr-sei-policy", () => CheckHdrRejected(Fixture("video-hdr-sei.mkv"), clock, Write));
-            Check("decoder-audio-ac3", () => CheckDecoderAudio(Fixture("audio-ac3.m2ts"), clock, Write));
-            Check("decoder-audio-lpcm", () => CheckDecoderAudio(Fixture("audio-lpcm.m2ts"), clock, Write));
-            Check("audio-ac3", () => CheckAudio(Fixture("audio-ac3.m2ts"), Write));
-            Check("audio-lpcm", () => CheckAudio(Fixture("audio-lpcm.m2ts"), Write));
-            Check("pixel-aspect-ratio", () => PlaybackRegressionChecks.CheckPixelAspect(Fixture("video-par.mp4"), clock, Write));
-            Check("gpu-upload-reuse", () => PlaybackRegressionChecks.CheckUploadReuse(Fixture("input.png"), clock, Write));
-            Check("common-timeline-and-replay", () => PlaybackRegressionChecks.Run(args[1],
-                Path.Combine(args[2], "session-cache"), args[3], Write));
+            foreach (var name in new[] { "seek-24.mkv", "seek-ntsc.mkv", "seek-film.m2ts", "seek-film.mp4" })
+                foreach (var ticks in new long[] { 0, 418_000, 1_234_567, 1_248_000, 5_000_000, 10_010_000, 12_345_678, 29_170_000 })
+                    Check($"seek-play-{name}-{ticks}ticks", () => PlaybackRegressionChecks.CheckSeekPlayback(
+                        args[1], Path.Combine(args[2], "session-cache"), Fixture(name), TimeSpan.FromTicks(ticks), clock, Write));
+            foreach (var name in new[] { "seek-24.mkv", "seek-ntsc.mkv", "seek-film.m2ts" })
+                foreach (var sequence in new[] { false, true })
+                    foreach (var reverse in new[] { false, true })
+                        Check($"mixed-seek-{name}-sequence={sequence}-reverse={reverse}", () =>
+                            PlaybackRegressionChecks.CheckMixedSeekPlayback(args[1], Path.Combine(args[2], "session-cache"),
+                                Fixture(name), sequence
+                                    ? new(Fixture("png-sequence/frame_0001.png"), MediaSourceKind.Sequence, 24)
+                                    : new(Fixture("seek-film.mp4")), reverse, Write));
         }
         finally { GstNative.gst_object_unref(clock); }
         Write($"complete: failures={failures}; decoded audio is not speaker-output or A/B sync acceptance");
@@ -261,7 +277,7 @@ internal static class MediaInputDiagnostic
         var session = new ComparisonSession(runtime, cache);
         var gate = new object();
         var pairs = new List<PairObservation>();
-        string? failure = null;
+        Exception? failure = null;
         void Receive(FramePair pair)
         {
             using (pair)
@@ -271,13 +287,13 @@ internal static class MediaInputDiagnostic
                     b.TimestampNanoseconds, b.EndNanoseconds, pair.PositionNanoseconds, session.IsPlaying));
             }
         }
-        void Failed(string error) { lock (gate) failure ??= error; }
+        void Failed(Exception error) { lock (gate) failure ??= error; }
         void Await(Task operation) => operation.WaitAsync(TimeSpan.FromSeconds(20), timeout.Token).GetAwaiter().GetResult();
         PairObservation[] Snapshot()
         {
             lock (gate)
             {
-                if (failure is not null) throw new InvalidOperationException(failure);
+                if (failure is not null) ExceptionDispatchInfo.Throw(failure);
                 return pairs.ToArray();
             }
         }
@@ -308,14 +324,12 @@ internal static class MediaInputDiagnostic
                         "A video/sequence pair contains a future frame.");
                     Require(Math.Round(pair.A * 24d / 1_000_000_000) == Math.Round(pair.B * 24d / 1_000_000_000),
                         "Matching 24 fps inputs must show the same logical frame, independent of A/B placement.");
-                    if (pair.EndA is { } endA) Require(target < endA, "The master frame has an empty interval.");
-                    if (pair.EndB is { } endB) Require(target < endB, "The secondary frame does not cover the master time.");
-                    else
+                    for (var next = i + 1; next < observations.Length; next++)
                     {
-                        // For unknown duration, an observed successor is the upper boundary.
-                        for (var next = i + 1; next < observations.Length; next++)
-                            if (observations[next].B > pair.B)
-                            { Require(target < observations[next].B, "Secondary frame exceeded its real successor PTS."); break; }
+                        var successor = observations[next];
+                        if (successor.A > pair.A) Require(target < successor.A, "A frame exceeded its real successor PTS.");
+                        if (successor.B > pair.B) Require(target < successor.B, "B frame exceeded its real successor PTS.");
+                        if (successor.A > pair.A && successor.B > pair.B) break;
                     }
                 }
                 var before = Snapshot();

@@ -220,8 +220,8 @@ internal sealed class GstDecoder : IDisposable
             var segment = GstNative.gst_sample_get_segment(sample);
             var streamTime = segment == 0 ? pts : GstNative.gst_segment_to_stream_time(segment, GstNative.Time, pts);
             if (streamTime == GstNative.None) throw new InvalidDataException("媒体帧时间不在当前播放区间内。");
-            // A nominal duration is enough for preroll, but during playback the
-            // actual successor PTS is authoritative when native duration is absent.
+            // Keep duration for preroll and EOS. Continuous presentation uses the
+            // actual successor PTS, which can be quantized differently from duration.
             var end = _source.SequenceRate > 0
                 ? FrameTiming.SequenceEnd(streamTime, numerator, denominator)
                 : FrameTiming.ResolveEnd(streamTime, timing.Duration);

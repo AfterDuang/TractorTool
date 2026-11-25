@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-当前交付 [AB 审片 0.1.5](DEVELOPMENT.md#media-compare)：完整处理 Astra Review 的配帧/刷新、暂停/重播、PAR、预览停止和冗余代码问题。最终构建、托管、授权合成输入与双向 GPU 回归、Astra 复核及独立打包通过，见 [E143](PROJECT_HISTORY.md#evidence-media-compare-review-fixes)；打包 NU1900 表示漏洞扫描未完成。只改插件、专属检查及文档，保留 0.1.2 设备锁和 `.vscode/settings.json`；未启动真实宿主、未读用户素材/数据；用户已授权提交并推送审片开发改动至远端 main。接续由用户复测真实 UI/声音、原素材、驱动资源回收与长 GOP 性能；未知帧时长非零定位、HDR/Log、跨 GPU 和代理缓存边界不变，运行库统一申请须交架构侧。
+当前交付 [AB 审片 0.1.6](DEVELOPMENT.md#media-compare)：用户在 0.1.5 拖动后播放再次报错，已用正常 MKV/M2TS 复现名义时长与 PTS 独立取整导致的误判。改为保持至后继实际 PTS，保留 EOS/定位校验和异常堆栈；不靠容器特例或时间容差。构建、托管、44 项专项及 66 项完整合成输入检查、SOL 复核与打包通过，见 [E144](PROJECT_HISTORY.md#evidence-media-compare-seek-playback)；NU1900 漏洞扫描未完成。用户已授权提交并推送本轮 0.1.6 修复；上轮已推送至 `2e31f3a`。只改插件、专属检查及文档，保留设备锁与 `.vscode/settings.json`；仅读宿主日志确认版本，未读取用户素材或启动真实宿主。下一步由用户安装新包重启后复测原操作。未知帧时长及长空窗准确定位、真实 UI/声音、长 GOP、HDR/Log 和跨 GPU 的限制见台账；运行库统一申请仍须交架构侧。
 
 ## 2. 接续时必须保留
 

@@ -2,7 +2,7 @@ using TractorTool.Plugins.MediaCompare.Media;
 using TractorTool.Plugins.MediaCompare.Rendering;
 
 if (args.Length != 0)
-    return args[0] == "--media-inputs" ? MediaInputDiagnostic.Run(args) : GpuPlaybackDiagnostic.Run(args);
+    return args[0] is "--media-inputs" or "--seek-play" ? MediaInputDiagnostic.Run(args) : GpuPlaybackDiagnostic.Run(args);
 
 // Pure managed checks: no app, GStreamer initialization, display, or user media.
 FrameOwnership();

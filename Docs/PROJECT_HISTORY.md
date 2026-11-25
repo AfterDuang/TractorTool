@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片定位后播放 | [E144 · 容器时间量化与呈现区间（2026-11-26）](#evidence-media-compare-seek-playback) |
 | AB 审片审查修复 | [E143 · 共同时间、显示几何与预览生命周期（2026-11-26）](#evidence-media-compare-review-fixes) |
 | AB 审片输入格式 | [E142 · 纳秒定位、自动序列、SDR 预览及 LPCM（2026-11-26）](#evidence-media-compare-input-formats) |
 | AB 审片交互与时间处理 | [E141 · 拖放、清空、帧边界及图标（2026-11-26）](#evidence-media-compare-interaction) |
@@ -180,6 +181,32 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-seek-playback"></a>
+
+## E144：AB 审片拖动后播放的时间量化误判（2026-11-26）
+
+用户在 0.1.5 报告“拖动时间轴后再播放”出现“不连续时间戳”，授权本轮合成素材及新临时目录独立回归。只读宿主日志确认运行 0.1.5，但旧日志仅保存错误文案，没有原素材帧时间；未读取用户素材或启动真实宿主。上轮改动已经按授权推送至 `2e31f3a`，本轮为后续修正。
+
+修复前通过正常合成 MKV 24/30000÷1001、M2TS 24000÷1001 与 MP4 对照复现：24 项中前 3 种格式共 18 项失败，MP4 6 项通过。实际 MKV 时间为 `PTS=0 / end=41,666,666 ns / next=42,000,000 ns`，M2TS 为 `0 / 41,708,333 / 41,711,111 ns`；定位后的非零相位也存在同类取整差异。`GapDeadline` 把独立量化的 PTS 与名义 duration 当成确定的画面失效边界，单纯豁免 1 ns 理想帧率网格不足。
+
+核对 [GStreamer 1.28.9 Matroska demux](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-good/gst/matroska/matroska-demux.c)、[D3D11 sink](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-bad/sys/d3d11/gstd3d11videosink.cpp) 与 [GstVideoDecoder](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-base/gst-libs/gst/video/gstvideodecoder.c)：duration 可能来自默认帧周期；正常呈现保留上一图像至下次呈现，并不按 duration 定时清空；准确定位仍按原生区间裁剪。不能把这一呈现策略外推为任意容器空窗都可准确定位，也不能断言所有 duration 都是假信息。
+
+0.1.6 改为以实际后继 PTS 决定连续呈现边界，同步覆盖检查与暂停位置；删除 `GapDeadline`，不增加容器特例或毫秒容差。末帧 EOS、未来帧、倒退 PTS、缺时间与准确定位的原有限制保留。稀疏 PTS 连续播放允许保持画面，因此替换 E143 的“duration 截止即报错”验收，不继续宣称严格间隙识别通过。播放 Error 事件传递原异常，界面摘要与日志堆栈分开；独立诊断也保留原异常栈。只修改审片插件、专属检查与文档。
+
+本轮证据根为 `artifacts/media-compare-diagnostics/20261126-seek-recurrence`：`before/inputs.log` 保存旧代码失败与实际帧时间，`fixtures` 为自行生成的完整输入集合。修复后首轮 `after/inputs.log` 在第 25 项结束前中断，没有 complete/退出码，不记通过；后续完整运行结果另列。
+
+| 本轮验证 | 结果 |
+| --- | --- |
+| `dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false` | 0 错误、1 条 UI 工程 NU1900；未成功获取 NuGet 漏洞数据 |
+| 无参数托管检查 | 退出 0；`managed.out.log`，包括独立量化、非零相位、实际后继边界与 EOS |
+| `--seek-play <runtime> <newScratch> <fixtures>` | `after2/inputs.log` 与 `after2.exit.txt`：44/44、退出 0、stderr 空；32 个格式/位置组合及 12 个混合左右换边，均包含暂停续播 |
+| `--media-inputs <runtime> <newScratch> <fixtures>` | `full/inputs.log` 与 `full.exit.txt`：66/66、退出 0、stderr 空；包含上述专项、像素配对、稀疏 PTS 保持、序列、PAR、上传复用、SDR/HDR 限制、M2TS 解码及暂停/移除/重播 |
+| 独立发布 SDK 打包 | `package-build.log`：0 错误、2 条 NU1900；`sdk-check.json` 确认发布宿主文件数量及哈希未变 |
+
+GPT-6.2-SOL/high 子代理静态复核未发现生产逻辑阻断问题；指出诊断重抛会重置堆栈，已用 `ExceptionDispatchInfo.Throw` 修正并随完整回归通过。未运行真实宿主、读取原素材、执行本轮可见 UI/扬声器验收或重跑屏幕外窗口专项。
+
+产物 `artifacts/media-compare-0.1.6-final/TractorTool.MediaCompare-0.1.6.zip`，SHA256 `40284E993D6D3A31EBB6C72AC4F257F2E037E164C4E0327097F600CA385A839E`；20,522,155 字节，展开 51,905,452 字节，144 文件。`package-check.json` 确认 123 个私有运行库文件哈希一致，无共享框架 DLL。首次附加核对误用了 ZIP 内路径 `Native/Runtime`，按实际 `Native/GStreamer` 修正检查后通过，包未改动。修复交付时未提交或推送；随后用户明确授权提交并推送本轮改动至远端 `main`。提交范围排除 `.vscode/settings.json` 和生成产物；该次推送不重跑已完成的自动回归，也不视为原素材最终效果已验收。
 
 <a id="evidence-media-compare-review-fixes"></a>
 

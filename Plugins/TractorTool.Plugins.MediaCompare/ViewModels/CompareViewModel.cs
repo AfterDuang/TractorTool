@@ -348,11 +348,11 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         else
         {
             try { receiver(pair); }
-            catch (Exception ex) { pair.Dispose(); OnSessionError("预览失败：" + ex.Message); }
+            catch (Exception ex) { pair.Dispose(); OnSessionError(new InvalidOperationException("预览失败：" + ex.Message, ex)); }
         }
     }
 
-    private void OnSessionError(string error) => Dispatcher.UIThread.Post(() => { if (!_stopped) ReportError(error); });
+    private void OnSessionError(Exception error) => Dispatcher.UIThread.Post(() => { if (!_stopped) ReportError(error.Message, error); });
     private void OnPlayingChanged(bool playing) => Dispatcher.UIThread.Post(() => { if (!_stopped) IsPlaying = playing; });
     public void ReportError(string message, Exception? error = null)
     {

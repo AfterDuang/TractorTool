@@ -31,12 +31,12 @@ internal static class FrameTiming
             indexB * (uint)rateB.Denominator * (uint)rateA.Numerator;
     }
 
-    internal static long? CoverageEnd(long? end, long? next)
-        => end is null ? next : next is null ? end : Math.Min(end.Value, next.Value);
-
-    internal static long? GapDeadline(long? end, long? next, (int Numerator, int Denominator) rate)
-        => end is { } stop && next is { } start && stop < start && !ShareGridBoundary(stop, start, rate, rate)
-            ? stop : null;
+    // A displayed video frame is held until the next real presentation timestamp.
+    // Buffer duration may be a nominal period, quantized independently of PTS
+    // (e.g. Matroska DefaultDuration). It is not an instruction to clear the image.
+    // Without a successor, retain the duration limit; never extend the last frame
+    // to a container's audio tail or infer a missing final duration from frame rate.
+    internal static long? CoverageEnd(long? end, long? next) => next ?? end;
 
     internal static long ClampPausePosition(long published, long clockPosition, long? end, long? next)
     {
@@ -116,10 +116,10 @@ internal static class FrameTiming
         long target, bool ended)
     {
         if (start > target) return FrameCoverage.Gap;
-        if (next is { } nextStart && nextStart <= target) return FrameCoverage.Advance;
+        if (next is { } nextStart)
+            return nextStart <= target ? FrameCoverage.Advance : FrameCoverage.Covered;
         if (end is { } stop && target < stop) return FrameCoverage.Covered;
         if (end is null && target == start) return FrameCoverage.Covered;
-        if (next is null) return ended ? FrameCoverage.Ended : FrameCoverage.NeedNext;
-        return end is not null ? FrameCoverage.Gap : FrameCoverage.Covered;
+        return ended ? FrameCoverage.Ended : FrameCoverage.NeedNext;
     }
 }

@@ -48,9 +48,13 @@ TractorTool.MediaCompareChecks.exe --media-inputs <runtimeRoot> <newScratchDirec
 | `coded.mp4`、`coded/frame_0001.png` | 2 秒、24 fps、64×64 的无损 H.264 与其逐帧导出 PNG；第 N 帧亮度 `16+4N`、中性色度，用实际 GPU 像素检查左右交换后配对及自然结束重播 |
 | `video-par.mp4` | 1 秒、25 fps、720×576、PAR 16:15 的 H.264，显示几何应为 768×576 |
 | `video-slow-audio.mp4` | 至少 3 秒、1 fps 的视频与连续 AAC 音轨，检查帧间暂停及移除另一侧时保留实际共同时间 |
-| `video-gap.mkv` | PTS 为 0/1/2 秒、每帧有效时长 0.1 秒的合成视频，检查到首个真实时间空隙时才报告失败 |
+| `video-gap.mkv` | PTS 为 0/1/2 秒、buffer duration 为 0.1 秒的稀疏视频，检查保持到下个真实 PTS，且另一侧仍独立刷新 |
+| `seek-24.mkv`、`seek-ntsc.mkv` | 至少 5 秒、320×180、24 fps 与 30000/1001 fps 的 SDR H.264，MKV 毫秒时间戳与纳秒名义时长用于复现量化差异 |
+| `seek-film.m2ts`、`seek-film.mp4` | 相同长度/尺寸的 24000/1001 fps H.264；M2TS 使用 90 kHz 时间基并带 AAC，MP4 作为对照 |
 | `video-10bit.mkv` | SDR 10 位 HEVC、无音轨，检查 8 位预览提示与音轨状态 |
 | `video-hdr-sei.mkv` | 10 位 HEVC，BT.709 标记但保留 HDR mastering/content-light SEI，检查独立 HDR 拒绝 |
 | `audio-ac3.m2ts`、`audio-lpcm.m2ts` | 带画面和非静音 48 kHz 音轨的 M2TS，分别采用 AC3 与 Blu-ray LPCM；建议 4 秒 |
 
-输出 `inputs.log`，检查解码时间与实际像素、混合刷新、帧间暂停/移除、结束重播、时间空隙、PAR、GPU 上传复用、保持原帧的重新发布、持续精度提示及音频 PCM；不创建 Avalonia 窗口。实际像素读回不是显示器最终呈现，音频解码成功和静音命令完成不代表扬声器输出或同步已验收。启动者仍须保存 PID、监控日志并处理原生阻塞，不能把内部取消当作强制中断保证。
+输出 `inputs.log`，检查解码时间与实际像素、混合刷新、帧间暂停/移除、结束重播、稀疏 PTS 保持、PAR、GPU 上传复用、保持原帧的重新发布、持续精度提示及音频 PCM；不创建 Avalonia 窗口。实际像素读回不是显示器最终呈现，音频解码成功和静音命令完成不代表扬声器输出或同步已验收。启动者仍须保存 PID、监控日志并处理原生阻塞，不能把内部取消当作强制中断保证。
+
+仅核对“拖动后播放”用 `--seek-play` 替换 `--media-inputs`，其余参数相同。使用四个 `seek-*` 素材及 `png-sequence`：逐项记录 seek 后真实 PTS/duration、实际定位和续播；包含取整空窗位置、暂停续播以及视频/序列左右互换。完整输入诊断也包含该子集。

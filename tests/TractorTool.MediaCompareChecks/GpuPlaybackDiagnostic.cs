@@ -294,7 +294,7 @@ internal static class GpuPlaybackDiagnostic
                 Stage("create-session");
                 session = await Task.Run(() => new ComparisonSession(_runtime, Path.Combine(_scratch, "cache")));
                 session.FrameReady += Receive;
-                session.Error += error => RecordFailure("session-error", error);
+                session.Error += error => RecordFailure("session-error", error.ToString());
                 session.PlayingChanged += playing => Write("playing", playing.ToString());
                 Stage("open-A");
                 await session.OpenAsync(MediaSide.A, new(_mediaA)).WaitAsync(TimeSpan.FromSeconds(35));

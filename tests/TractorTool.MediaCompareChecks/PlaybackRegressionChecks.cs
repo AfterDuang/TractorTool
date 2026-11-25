@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using TractorTool.Plugins.MediaCompare.Media;
+using TractorTool.Plugins.MediaCompare.Native.Interop;
 using TractorTool.Plugins.MediaCompare.Rendering;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
@@ -10,6 +12,96 @@ using Vortice.Mathematics;
 // looking timestamp assertion that nevertheless compares two different images.
 internal static class PlaybackRegressionChecks
 {
+    internal static void CheckSeekPlayback(string runtime, string cache, string path, TimeSpan position,
+        nint clock, Action<string> write)
+    {
+        using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+        {
+            var opened = GstDecoder.Open(new(path), clock, timeout.Token);
+            using var decoder = opened.Decoder;
+            opened.FirstFrame.Dispose();
+            using var located = decoder.Seek(checked(position.Ticks * 100), timeout.Token);
+            write($"seek-preroll: requestNs={position.Ticks * 100}; pts={located.TimestampNanoseconds}; " +
+                $"end={located.EndNanoseconds}; fps={decoder.FrameRateNumerator}/{decoder.FrameRateDenominator}");
+            decoder.Play(GstNative.gst_clock_get_time(clock) + 30_000_000);
+            var previousPts = located.TimestampNanoseconds;
+            var previousEnd = located.EndNanoseconds;
+            for (var count = 0; count < 8;)
+            {
+                timeout.Token.ThrowIfCancellationRequested();
+                using var frame = decoder.ReadSample(50_000_000);
+                if (frame is null)
+                {
+                    Require(!decoder.IsEnded, "Synthetic seek fixture ended before eight diagnostic frames.");
+                    continue;
+                }
+                if (frame.TimestampNanoseconds == previousPts) continue;
+                write($"seek-frame: previousPts={previousPts}; previousEnd={previousEnd}; " +
+                    $"nextPts={frame.TimestampNanoseconds}; nextEnd={frame.EndNanoseconds}; " +
+                    $"gapNs={frame.TimestampNanoseconds - previousEnd}");
+                previousPts = frame.TimestampNanoseconds;
+                previousEnd = frame.EndNanoseconds;
+                count++;
+            }
+        }
+        using var probe = new Probe(runtime, cache);
+        probe.Open(new(path), new(path));
+        probe.Await(probe.Session.SeekAsync(position));
+        var actual = probe.Session.Position;
+        var countBefore = probe.Snapshot().Length;
+        probe.Await(probe.Session.SetPlayingAsync(true));
+        probe.WaitFor(() => probe.Session.Position >= actual + TimeSpan.FromMilliseconds(250));
+        probe.Await(probe.Session.SetPlayingAsync(false));
+        var pairs = probe.Snapshot().Skip(countBefore).Where(item => item.Playing).ToArray();
+        Require(pairs.Length >= 4 && pairs.All(item => item.A == item.B && item.Position >= actual.Ticks * 100),
+            "Identical inputs must continue together after an arbitrary seek without rewinding.");
+        var pausedAt = probe.Session.Position;
+        var pausedCount = probe.Snapshot().Length;
+        probe.Await(probe.Session.SetPlayingAsync(true));
+        probe.WaitFor(() => probe.Session.Position >= pausedAt + TimeSpan.FromMilliseconds(150));
+        probe.Await(probe.Session.SetPlayingAsync(false));
+        Require(probe.Snapshot().Skip(pausedCount).All(item => item.Position >= pausedAt.Ticks * 100),
+            "Resuming after a container-rounded seek must not rewind to the previous frame PTS.");
+        write($"seek-play: requestMs={position.TotalMilliseconds:F4}; actualMs={actual.TotalMilliseconds:F4}; " +
+            $"pairs={pairs.Length}; finalMs={probe.Session.Position.TotalMilliseconds:F4}");
+    }
+
+    internal static void CheckMixedSeekPlayback(string runtime, string cache, string path, MediaSource reference,
+        bool reverse, Action<string> write)
+    {
+        using var probe = new Probe(runtime, cache);
+        var source = new MediaSource(path);
+        probe.Open(reverse ? reference : source, reverse ? source : reference);
+        var requested = TimeSpan.FromTicks(1_248_000); // Inside 24 fps MKV's duration/PTS rounding window.
+        probe.Await(probe.Session.SeekAsync(requested));
+        var actual = probe.Session.Position;
+        var before = probe.Snapshot().Length;
+        probe.Await(probe.Session.SetPlayingAsync(true));
+        probe.WaitFor(() => probe.Session.Position >= actual + TimeSpan.FromMilliseconds(500));
+        probe.Await(probe.Session.SetPlayingAsync(false));
+        var pairs = probe.Snapshot().Skip(before).Where(item => item.Playing).ToArray();
+        Require(pairs.Length >= 10 && pairs.Select(item => item.A).Distinct().Count() >= 9 &&
+            pairs.Select(item => item.B).Distinct().Count() >= 9,
+            "Different container timebases must keep both presentation cadences after seeking.");
+        for (var i = 0; i < pairs.Length; i++)
+        {
+            var pair = pairs[i];
+            Require(pair.A <= pair.Position && pair.B <= pair.Position && pair.Position >= actual.Ticks * 100,
+                "Mixed playback must expose the actual time and never present a future frame.");
+            if (i > 0) Require(pair.Position > pairs[i - 1].Position,
+                "Mixed playback must preserve increasing presentation times.");
+        }
+        var pausedAt = probe.Session.Position;
+        before = probe.Snapshot().Length;
+        probe.Await(probe.Session.SetPlayingAsync(true));
+        probe.WaitFor(() => probe.Session.Position >= pausedAt + TimeSpan.FromMilliseconds(150));
+        probe.Await(probe.Session.SetPlayingAsync(false));
+        Require(probe.Snapshot().Skip(before).All(item => item.Position >= pausedAt.Ticks * 100),
+            "Mixed-source pause/resume must preserve the saved time.");
+        write($"mixed-seek: source={Path.GetFileName(path)}; reference={reference.Kind}; reverse={reverse}; " +
+            $"requestMs={requested.TotalMilliseconds:F4}; actualMs={actual.TotalMilliseconds:F4}; pairs={pairs.Length}");
+    }
+
     internal static void Run(string runtime, string cache, string fixtures, Action<string> write)
     {
         foreach (var reverse in new[] { false, true })
@@ -111,14 +203,16 @@ internal static class PlaybackRegressionChecks
 
         using (var probe = new Probe(runtime, cache))
         {
-            probe.Open(new(Path.Combine(fixtures, "video-gap.mkv")), new(Path.Combine(fixtures, "input.png")));
-            probe.Await(probe.Session.SetPlayingAsync(true));
+            probe.Open(new(Path.Combine(fixtures, "video-gap.mkv")), new(Path.Combine(fixtures, "video24.mp4")));
             var watch = Stopwatch.StartNew();
-            var failure = probe.WaitForFailure();
-            Require(watch.Elapsed >= TimeSpan.FromMilliseconds(70) && watch.Elapsed < TimeSpan.FromMilliseconds(900),
-                "A known frame gap must fail at its first expired boundary, not immediately or at the successor PTS.");
-            Require(failure.Message.Contains("时间", StringComparison.Ordinal), "The discontinuity must have a meaningful timing error.");
-            write($"gap-deadline: elapsedMs={watch.Elapsed.TotalMilliseconds:F1}; error={failure.Message}");
+            probe.PlayTo(TimeSpan.FromSeconds(1.2));
+            var pairs = probe.Snapshot().Where(item => item.Playing).ToArray();
+            Require(pairs.Any(item => item.Position > 500_000_000 && item.Position < 1_000_000_000) &&
+                pairs.Any(item => item.Position >= 1_000_000_000) &&
+                pairs.All(item => item.A == (item.Position < 1_000_000_000 ? 0 : 1_000_000_000)),
+                "Sparse video PTS must hold the last picture until its real successor while the other side keeps advancing.");
+            write($"sparse-presentation: elapsedMs={watch.Elapsed.TotalMilliseconds:F1}; pairs={pairs.Length}; " +
+                "native duration=100ms; actual PTS=0/1/2s; held and switched at real PTS");
         }
     }
 
@@ -243,17 +337,6 @@ internal static class PlaybackRegressionChecks
 
         internal Observation[] Snapshot() { lock (_gate) return _observations.ToArray(); }
 
-        internal Exception WaitForFailure()
-        {
-            var watch = Stopwatch.StartNew();
-            while (watch.Elapsed < TimeSpan.FromSeconds(3))
-            {
-                lock (_gate) { if (_failure is { } error) return error; }
-                Thread.Sleep(5);
-            }
-            throw new InvalidOperationException("Expected timeline discontinuity was not reported.");
-        }
-
         private void Receive(FramePair pair)
         {
             using (pair)
@@ -270,8 +353,8 @@ internal static class PlaybackRegressionChecks
             }
         }
 
-        private void Failed(string error) { lock (_gate) _failure ??= new InvalidOperationException(error); }
-        private void CheckFailure() { lock (_gate) { if (_failure is { } error) throw error; } }
+        private void Failed(Exception error) { lock (_gate) _failure ??= error; }
+        private void CheckFailure() { lock (_gate) { if (_failure is { } error) ExceptionDispatchInfo.Throw(error); } }
         public void Dispose()
         {
             Session.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();

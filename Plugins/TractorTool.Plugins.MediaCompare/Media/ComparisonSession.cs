@@ -32,7 +32,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     }
 
     public event Action<FramePair>? FrameReady;
-    public event Action<string>? Error;
+    public event Action<Exception>? Error;
     public event Action<bool>? PlayingChanged;
     public MediaDescription? A => Volatile.Read(ref _descriptionA);
     public MediaDescription? B => Volatile.Read(ref _descriptionB);
@@ -143,7 +143,7 @@ public sealed class ComparisonSession : IAsyncDisposable
                     catch (Exception error)
                     {
                         PauseAfterFailure();
-                        try { Error?.Invoke(error.Message); }
+                        try { Error?.Invoke(error); }
                         catch { /* An observer cannot prevent native resource cleanup. */ }
                     }
                 }
@@ -362,13 +362,6 @@ public sealed class ComparisonSession : IAsyncDisposable
             FrameTiming.CoverageEnd(_pendingB?.EndNanoseconds, _followingB?.TimestampNanoseconds));
         var end = Math.Min(checked(Duration.Ticks * 100),
             Math.Min(PlaybackEnd(_a, _currentA, _pendingA), PlaybackEnd(_b, _currentB, _pendingB)));
-        var gap = Math.Min(FrameTiming.GapDeadline(_currentA?.EndNanoseconds, _pendingA?.TimestampNanoseconds, rateA) ?? long.MaxValue,
-            FrameTiming.GapDeadline(_currentB?.EndNanoseconds, _pendingB?.TimestampNanoseconds, rateB) ?? long.MaxValue);
-        if (gap < end && (target is null || gap <= target))
-        {
-            if (!await WaitForPresentationAsync(gap).ConfigureAwait(false)) return;
-            throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
-        }
         if (target is null || target >= end)
         {
             if (!await WaitForPresentationAsync(end).ConfigureAwait(false)) return;
@@ -419,7 +412,7 @@ public sealed class ComparisonSession : IAsyncDisposable
         var coverage = FrameTiming.Coverage(candidate.TimestampNanoseconds, candidate.EndNanoseconds,
             next?.TimestampNanoseconds, target, decoder.IsEnded);
         if (coverage != FrameCoverage.Covered)
-            throw new InvalidDataException("两路媒体存在不连续时间戳，无法保证当前帧对应。");
+            throw new InvalidDataException("当前解码帧无法覆盖播放位置，已暂停。");
     }
 
     private static void CommitPlaybackFrame(ref MediaFrame? current, ref MediaFrame? pending,
