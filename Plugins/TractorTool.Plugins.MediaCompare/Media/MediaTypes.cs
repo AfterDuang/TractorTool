@@ -2,30 +2,36 @@ namespace TractorTool.Plugins.MediaCompare.Media;
 
 public enum MediaSide { A, B }
 public enum AudioSource { Muted, A, B }
+public enum MediaAudioStatus { Unknown, NoTrack, Ready, Unavailable }
 
-/// <summary>A sequence is explicitly selected by the user; a still is never guessed to be a sequence.</summary>
-public sealed record MediaSource(string Path, bool IsSequence = false, double SequenceFrameRate = 24);
+public enum MediaSourceKind { File, Sequence, Auto }
+
+public sealed record MediaSource(string Path, MediaSourceKind Kind = MediaSourceKind.File, double SequenceFrameRate = 24);
 
 public sealed record MediaDescription(string Name, int Width, int Height, TimeSpan Duration,
-    double FrameRate, bool IsStill, string Format);
+    double FrameRate, bool IsStill, string Format, MediaAudioStatus AudioStatus,
+    string AudioDescription, string PreviewWarning = "");
 
 /// <summary>One owned decoded sample. Texture pointers remain valid until disposal.</summary>
 public sealed class MediaFrame : IDisposable
 {
     private Resource? _resource;
-    public MediaFrame(int width, int height, TimeSpan timestamp, TimeSpan duration,
+    internal MediaFrame(int width, int height, long timestampNanoseconds, long? endNanoseconds,
         nint texture, uint subresource, ReadOnlyMemory<byte> pixels, int stride, Action? release = null,
-        Action? lockDevice = null, Action? unlockDevice = null)
+        Action? lockDevice = null, Action? unlockDevice = null, long? prerollEndNanoseconds = null)
     {
-        Width = width; Height = height; Timestamp = timestamp; Duration = duration;
+        Width = width; Height = height; TimestampNanoseconds = timestampNanoseconds; EndNanoseconds = endNanoseconds;
         Texture = texture; Subresource = subresource; Pixels = pixels; Stride = stride; _resource = new Resource(release);
         LockDevice = lockDevice; UnlockDevice = unlockDevice;
+        PrerollEndNanoseconds = prerollEndNanoseconds ?? endNanoseconds;
     }
     public int Width { get; }
     public int Height { get; }
-    public TimeSpan Timestamp { get; }
-    /// <summary>Zero means unknown; playback uses the next presentation timestamp as its boundary.</summary>
-    public TimeSpan Duration { get; }
+    internal long TimestampNanoseconds { get; }
+    /// <summary>Null means unknown; playback uses the next presentation timestamp as its boundary.</summary>
+    internal long? EndNanoseconds { get; }
+    /// <summary>Preroll may use fixed-rate caps when no native duration is available.</summary>
+    internal long? PrerollEndNanoseconds { get; }
     /// <summary>BGRA8 ID3D11Texture2D, or zero for a BGRA8 system-memory frame.</summary>
     public nint Texture { get; }
     public uint Subresource { get; }
@@ -35,7 +41,8 @@ public sealed class MediaFrame : IDisposable
     public Action? UnlockDevice { get; }
     private MediaFrame(MediaFrame source, Resource resource)
     {
-        Width = source.Width; Height = source.Height; Timestamp = source.Timestamp; Duration = source.Duration;
+        Width = source.Width; Height = source.Height; TimestampNanoseconds = source.TimestampNanoseconds; EndNanoseconds = source.EndNanoseconds;
+        PrerollEndNanoseconds = source.PrerollEndNanoseconds;
         Texture = source.Texture; Subresource = source.Subresource; Pixels = source.Pixels; Stride = source.Stride;
         LockDevice = source.LockDevice; UnlockDevice = source.UnlockDevice; _resource = resource;
     }

@@ -110,7 +110,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
                 if (!IsLoaded || !ReferenceEquals(_attached, model) || files.Count == 0) return;
                 var path = files[0].TryGetLocalPath() ?? throw new NotSupportedException("请选择本地素材。");
                 Preview.Focus();
-                await model.OpenAsync(side, path, sequence);
+                await model.OpenAsync(side, path, sequence ? MediaSourceKind.Sequence : MediaSourceKind.File);
             }
             finally { foreach (var file in files) file.Dispose(); }
         }
@@ -144,7 +144,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         var side = DropSide(e);
         e.DragEffects = DragDropEffects.Copy;
         Preview.Focus();
-        await model.OpenAsync(side, path, false);
+        await model.OpenAsync(side, path, MediaSourceKind.Auto);
     }
 
     private void ClearDropFeedback() => DropIndicatorA.IsVisible = DropIndicatorB.IsVisible = false;

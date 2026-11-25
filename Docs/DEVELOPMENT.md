@@ -10,7 +10,7 @@
 
 **1.1.0 分发包含 Windows x64 宿主和四个 1.1.0 插件。** 产品和插件分别定版，沿用 Avalonia 12.1.6。插件私有扩展、外部工具和发布验证见 [E137](PROJECT_HISTORY.md#evidence-release-110)。正式标签经构建和校验后自动公开附件。
 
-源码新增独立 [AB 审片 0.1.3](#media-compare) 开发版；未改变上述已发布版本。后续整包构建会按现行规则自动发现该插件，不新增名单或框架依赖。
+源码新增独立 [AB 审片 0.1.4](#media-compare) 开发版；未改变上述已发布版本。后续整包构建会按现行规则自动发现该插件，不新增名单或框架依赖。
 
 仍待真实 Windows 环境验收的项目包括跨会话安装、断电恢复、大目录迁移、设备采样和媒体导出。切页末段闪动继续使用官方渲染后端，等待上游修复。详见[下一步](#next)及[精度对照](PROJECT_HISTORY.md#evidence-page-flicker-precision)。
 
@@ -58,13 +58,13 @@
 
 ### AB 审片开发版
 
-- 实现：双视频/单图/显式编号序列、共同时间轴、静音/A/B 声音、联动缩放平移、空格播放。0.1.3 扩大拖放区域至整个 A/B 画布，新增单侧移除和清空对比；只保留底部“适合画面”，采用 Fluent 彩色 Image 图标。GStreamer 1.28.9 随插件提供，未改框架。
-- 时间处理：连续播放允许帧时长未知，以相邻 PTS 配对；已知帧端点统一换算，防止纳秒截断产生假间隙。副路预读不修改最后已发布画面；定位失败恢复有效位置，后续成功仅清定位错误，旧定位帧不覆盖最新滑块请求。保留 [0.1.2 的解码设备锁修正](PROJECT_HISTORY.md#evidence-media-compare-playback-lock)。
-- 验证：Release 构建、纯托管检查、独立 SDK 打包及两路 GPT-6.2-SOL/high 复核通过。获授权的隔离原生/GPU 回归覆盖 CFR/CFR、CFR/VFR、VFR/CFR 合成素材，最终混合组合检查多点定位、取消、播放中移除、清空、重开与停止；UI 心跳无超过 1 秒停顿。空拖放路由检查通过，尚不等于真实 Explorer 拖入。证据与限制见 [E141](PROJECT_HISTORY.md#evidence-media-compare-interaction)。
-- 限制：若素材同时缺帧时长和固定帧率，非零准确定位可能改变原始 PTS，当前明确拒绝无法证明对应关系的帧并提示从头播放；包括非零暂停后的续播，完整 VFR 随机定位未完成。当前为未校准 SDR 8 位、同 GPU 预览，没有邻帧索引、长 GOP 代理/邻域缓存、跨 GPU 或专业 HDR/Log 色彩链。容器音频尾段可能没有对应视频帧。
-- 独立包：[TractorTool.MediaCompare-0.1.3.zip](../artifacts/media-compare-0.1.3-final/TractorTool.MediaCompare-0.1.3.zip)。在插件页安装后显式退出重启；无需另装运行库。只交付该 final 包。
-- 产物静态核对：[package-check.json](../artifacts/media-compare-0.1.3-final/package-check.json)，ZIP 20,484,783 字节、展开 51,818,050 字节；142 项中 121 项私有运行库哈希全部匹配，图标及许可齐全，无共享框架 DLL 副本。
-- 接续：用户实测原问题素材的拖动后播放、整个画布拖放、清空与单侧移除、静态图空格、音画/联动及退出。实际宿主、可见 UI、完整 GPU 释放与 PR 式长 GOP 拖动性能仍待验；不把本次合成素材结果扩写为全面验收。运行库统一申请须先交架构侧分析。方法见[插件文档](Plugins/MediaCompare.md)。
+- 实现：双素材共同时间轴、试听选择、联动视图、空格播放、整侧拖放及清空。0.1.4 拖入编号首帧可自动识别连续序列，普通“打开”仍按单图处理；已支持的高位深 SDR 可降至 8 位预览并持续提示精度限制。GStreamer 1.28.9 随插件提供，补齐 Blu-ray LPCM 解码模块及许可，增加无音轨/缺解码器状态；未改框架。
+- 时间处理：帧区间与内部位置保留纳秒，合法亚 tick 帧不再被判无效；缺时长播放使用后继 PTS，序列使用生成器的有理数网格。MP4 原生定位可能向上取整，仅在已知区间与固定帧率的亚帧前移内，统一重定位两路一次并反馈实际落点；不能严格覆盖则失败。切回页面重新发布保留帧，不经 UI 时间截断重定位。保留 [0.1.2 设备锁](PROJECT_HISTORY.md#evidence-media-compare-playback-lock)。
+- 验证：Release 构建、纯托管检查、独立 SDK 打包和 GPT-6.2-SOL/high 复核通过。授权隔离回归覆盖定位边界、视频/序列双向配对、PNG/JPG/16 位 PNG、10 位 SDR、独立 HDR SEI 拒绝、AC3/LPCM 非静音解码；CFR/VFR 双向 GPU 组合覆盖多点定位、取消、清空、重开和停止。NuGet 漏洞数据请求失败产生 NU1900，不能视为漏洞扫描通过。证据见 [E142](PROJECT_HISTORY.md#evidence-media-compare-input-formats)。
+- 限制：未知帧时长且无固定帧率的非零准确定位/续播仍受限，完整 VFR 索引未实现。预览为未校准 SDR 8 位、同 GPU；没有 HDR/Log、邻帧索引、长 GOP 代理/邻域缓存或跨 GPU 支持。容器音频尾段可能没有视频帧；无标记素材不能推定色彩准确。
+- 独立包：[TractorTool.MediaCompare-0.1.4.zip](../artifacts/media-compare-0.1.4-final/TractorTool.MediaCompare-0.1.4.zip)。在插件页安装后显式退出重启；无需另装运行库。
+- 产物静态核对：[package-check.json](../artifacts/media-compare-0.1.4-final/package-check.json)，ZIP 20,516,781 字节、展开 51,892,732 字节；144 项中 123 项私有运行库哈希匹配，图标/许可齐全，无共享框架 DLL 副本。
+- 接续：用户复测原错误素材的定位后播放、序列首帧拖入、10 位限制提示及 M2TS 试听。合成 LPCM 的修复不证明用户 M2TS 使用同一编码；实际扬声器、音画同步、Explorer 拖放、可见 UI、完整 GPU 释放及长 GOP 性能仍待验。方法见[插件文档](Plugins/MediaCompare.md)。运行库统一申请仍须交架构侧。
 
 <a id="workflow"></a>
 
@@ -219,7 +219,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A26 | HUD 方案与预览 | 旧配置继承、方案增删复制/保存/撤销、轮播停启、模板及规则验证、左侧草稿示例预览、提醒打断/到期恢复（E95 已删除桌面草稿预览）、保存失败不丢数据 | 纯逻辑、Windows UI | E86 选色保存/旧色值兼容、轮播独立保存/失败回退、定时循环/详情暂停/长条恢复与草稿隔离已在内存离屏检查通过；默认逻辑套件、原生窗口/磁盘保存/重启、提醒/真实采样专项仍待验证 |
 | A27 | HUD 首版数据源与页面 | 原方案兼容、传感器权限/缺失/释放、网络限时/取消/频率、余额凭据隔离、编辑可达性、三态内容/单双击/拖动、形变/动画偏好/透明命中、跨屏/DPI/穿透 | 逻辑、HTTP、Windows UI/硬件 | E96 硬件类型/编辑示例/缺失前置条件的离屏与纯数据检查、0.4.17 包通过，保留独立采样等原回归。本机未发现 PawnIO 注册/服务，温度实读恢复未验；真实 5Hz 硬件耗用/网络/桌面交互未测，托盘方案列表及原生窗口/DPI/DPAPI 等缺口保留 |
 | A28 | [文件夹版本历史](Plugins/FolderHistory.md#7-验收方法) | 文件状态、文本与 Office 内容比较、选区恢复与发布、原件保留、中断撤销、自动保护与清理 | 逻辑、真实 CLI、Windows UI | [0.6.2](PROJECT_HISTORY.md#evidence-folder-history-preview-cancellation) 快速切换、迟到错误、引擎取消、模拟事务与离屏工作区回归通过。[0.6.1 全插件审查](PROJECT_HISTORY.md#evidence-folder-history-full-review) 记录其余覆盖。真实 CLI 与正式窗口的当前版本验收、高 DPI、故障及性能场景待验 |
-| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.3 构建、纯托管、合成 CFR/VFR 组合回归、打包及审查通过。实际宿主拖放/画面/声音、完整 GPU 释放与长 GOP 性能仍待验；未知帧时长非零定位受限，见[当前状态](#media-compare) |
+| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.4 构建、纯托管、合成输入及 CFR/VFR 双向 GPU 回归、打包和审查通过；NU1900 漏洞扫描未完成。实际宿主拖放/画面/声音、完整 GPU 释放与长 GOP 性能仍待验；未知帧时长非零定位受限，见[当前状态](#media-compare) |
 
 
 ## 5. 验证与发布要求

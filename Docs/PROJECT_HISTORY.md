@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片输入格式 | [E142 · 纳秒定位、自动序列、SDR 预览及 LPCM（2026-11-26）](#evidence-media-compare-input-formats) |
 | AB 审片交互与时间处理 | [E141 · 拖放、清空、帧边界及图标（2026-11-26）](#evidence-media-compare-interaction) |
 | AB 审片播放阻塞 | [E140 · 原生转储与解码设备同步（2026-11-26）](#evidence-media-compare-playback-lock) |
 | AB 审片用户反馈 | [E139 · 纹理原点、暂停定位与操作界面（2026-11-26）](#evidence-media-compare-feedback) |
@@ -178,6 +179,33 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-input-formats"></a>
+
+## E142：AB 审片定位、序列与音频输入（2026-11-26）
+
+用户报告 0.1.3 定位后播放出现时间精度错误、10 位 MKV 被拒、拖入序列首帧失败，以及选择对应侧后 M2TS 仍无声。用户明确要求拖入首帧自动识别序列，允许 SDR 降至 8 位并标注限制，授权合成素材及新临时目录独立回归；未授权使用真实素材或启动真实宿主。本轮仅修改 MediaCompare、专属检查和文档，保留用户 `.vscode/settings.json`。
+
+原因与实现：
+
+- 合法 accurate-seek preroll 可只剩 1–99 ns，原先转为 100 ns tick 后被误判为无效。帧区间与内部位置改为纳秒，切页重新发布已持有帧；播放缺时长时使用真实后继 PTS，名义 FPS 仅供定位验证。图片序列的 [1.28.9 生成器](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-good/gst/multifile/gstimagesequencesrc.c#L664) 对 PTS 向上、时长向下取整，本插件按同一有理数网格恢复下一边界，未给普通视频增加时间容差。
+- 新诊断复现请求 1.0009999 秒返回 1.001 秒关键帧。[qtdemux](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-good/gst/isomp4/qtdemux.c#L898) 向上换算轨道时间基。仅在固定 FPS、明确帧区间、前移小于两者所限的一帧内，取两路实际起点最大值统一重定位一次，严格验证后发布实际时间；未知/过远或第二次仍不对应则失败。Open、Seek、续播复用流程，旧代定位不得启动播放。
+- 拖入编号图片按相同前缀、扩展名和最小编号宽度识别连续后续帧，包含自然进位；缺号报错，普通“打开”仍开单图。CPU PNG 的 ARGB64/GRAY16 等格式先经 `videoconvert` 适配上传；允许已支持的高位深 SDR 降至 BGRA8并持续标注，HDR 色彩标记及独立 mastering/content-light 元数据仍拒绝，不宣称高精度或校色。
+- 补入官方固定 wheel 的 `gstdvdlpcmdec.dll` 与 Ugly COPYING；旧子集确实缺少 `audio/x-private-ts-lpcm` 解码器。[模块契约](https://gstreamer.freedesktop.org/documentation/dvdlpcmdec/index.html)。统一读取 Bus 区分无音轨、缺解码器及输出协商状态，保留原生错误细节；试听先验证、静音原侧再启用目标，在途禁止重入，失败不提交选择。输出设备实际故障仍暂停播放。Ready 只表明可尝试试听，不证明实际扬声器输出。
+
+验证证据位于 `artifacts/media-compare-diagnostics/20261126-formats`（Git 忽略）：
+
+| 检查 | 结果 |
+| --- | --- |
+| Release 构建、默认纯托管检查 | 成功；最后检查构建 0 错误、1 条 NU1900，独立打包 0 错误、2 条 NU1900，NuGet 漏洞数据因网络不可达未完成。`managed-final.out.log` |
+| 旧运行库基线 | `baseline-old-runtime/inputs.log`：PNG/JPG/16 位 PNG 与视频/序列配对成功；LPCM 模块缺失、音轨不可用、PCM 样本为零；另复现 MP4 关键帧边界失败。`updated-runtime-1` 确认补模块后 LPCM 成功、定位问题仍在；保留失败证据 |
+| 最终输入回归 | `final-inputs/inputs.log`，退出 0、failures=0。12 个纳秒边界、共同实际落点、24fps 视频/序列两个方向播放与续播、保帧重发、PNG/JPG/16 位 PNG 单图和自动/显式序列、SDR10位与独立 HDR SEI 拒绝；AC3/LPCM 实际 GstDecoder 报 Ready，独立 PCM 管线各解出至少 1 秒非零音频 |
+| 最终离屏 GPU 回归 | `final-gpu-cfr-vfr`、`final-gpu-vfr-cfr` 均退出 0，stderr 为空；多点定位、取消、试听命令、播放中移除、清空、重开与停止完成，心跳未见超过 1 秒停顿。仅用此前生成的 12 秒固定/可变帧率素材 |
+| 独立 SDK ZIP | `Build-Plugin.ps1` 引用 `artifacts/plugin-host-20261123-235028-9d9de9/host` 生成 0.1.4；144 文件、ZIP 20,516,781 字节、展开 51,892,732 字节。123 项运行库哈希全部匹配，图标、LPCM 及许可齐全，无共享框架 DLL；见[产物报告](../artifacts/media-compare-0.1.4-final/package-check.json) |
+
+ZIP SHA256：`92A04B9A9CB4425292F884CC06A8AB15B29A5B29FB0762B58A799BBDCA7D56D4`。运行库生成目录为 50,255,532 字节；初次静态包校验误用了图标许可路径，改为实际 `Assets/LICENSE-FluentSystemIcons.txt` 后核验通过，未改交付内容掩盖错误。
+
+GPT-6.2-SOL/high 分别审查时间/序列与音频/原生/精度路径，发现并修正切页时间截断、序列 1ns 间隙、自然进位漏识别、试听重入、独立 HDR SEI 漏检、过期播放请求及重复音轨验证；终审未发现剩余交付阻断。纯托管不等于原生验收，非零 PCM 不等于用户 M2TS 的音轨编码已确认，更不等于扬声器和音画同步通过；真实 Explorer、原错误素材、可见窗口、完整 GPU 释放和长 GOP 性能仍由用户验证。未推送。
 
 <a id="evidence-media-compare-interaction"></a>
 

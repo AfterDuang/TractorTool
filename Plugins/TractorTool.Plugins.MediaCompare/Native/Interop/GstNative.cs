@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace TractorTool.Plugins.MediaCompare.Native.Interop;
 
 // Public GStreamer 1.x C ABI, pinned to the packaged Windows x64 1.28.9 runtime.
-// Headers: gstminiobject.h, gstbuffer.h, gstmemory.h, gstd3d11memory.h.
+// Headers: gstminiobject.h, gstbuffer.h, gstmessage.h, gstmemory.h, gstd3d11memory.h.
 // Only public fields behind upstream access macros are read; reserved fields are layout padding.
 internal static partial class GstNative
 {
@@ -11,6 +11,7 @@ internal static partial class GstNative
     internal const string App = "gstapp-1.0-0.dll";
     internal const string Video = "gstvideo-1.0-0.dll";
     internal const string D3D = "gstd3d11-1.0-0.dll";
+    internal const string PbUtils = "gstpbutils-1.0-0.dll";
     internal const string GObject = "gobject-2.0-0.dll";
     internal const string GLib = "glib-2.0-0.dll";
     internal const ulong None = ulong.MaxValue;
@@ -33,6 +34,14 @@ internal static partial class GstNative
         internal MiniObject MiniObject;
         internal nint Pool;
         internal ulong Pts, Dts, Duration, Offset, OffsetEnd;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MessageHeader
+    {
+        internal MiniObject MiniObject;
+        internal uint Type;
+        internal ulong Timestamp;
+        internal nint Source;
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct Memory
@@ -79,6 +88,7 @@ internal static partial class GstNative
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_parse_bin_from_description([MarshalAs(UnmanagedType.LPUTF8Str)] string description, int ghostUnlinkedPads, out nint error);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_bin_get_by_name(nint bin, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_element_get_static_pad(nint element, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_pad_get_current_caps(nint pad);
     // gulong is unsigned long, 32-bit in the pinned Windows MSVC ABI, including x64.
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern uint gst_pad_add_probe(nint pad, int mask, PadProbeCallback callback, nint data, DestroyNotify destroy);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_pad_remove_probe(nint pad, uint id);
@@ -98,8 +108,14 @@ internal static partial class GstNative
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_system_clock_obtain();
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern ulong gst_clock_get_time(nint clock);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_element_get_bus(nint element);
-    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_bus_timed_pop_filtered(nint bus, ulong timeout, uint types);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_bus_pop(nint bus);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_message_parse_error(nint message, out nint error, out nint debug);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_message_parse_warning(nint message, out nint error, out nint debug);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_message_parse_stream_collection(nint message, out nint collection);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_message_get_structure(nint message);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern uint gst_stream_collection_get_size(nint collection);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_stream_collection_get_stream(nint collection, uint index);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern uint gst_stream_get_stream_type(nint stream);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_object_unref(nint obj);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_object_ref_sink(nint obj);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_mini_object_unref(nint obj);
@@ -109,6 +125,9 @@ internal static partial class GstNative
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_sample_get_segment(nint sample);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern ulong gst_segment_to_stream_time(nint segment, int format, ulong position);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_caps_get_structure(nint caps, uint index);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern uint gst_caps_get_size(nint caps);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_structure_get_name(nint structure);
+    [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_structure_get_value(nint structure, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern int gst_structure_get_int(nint structure, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out int value);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern int gst_structure_get_fraction(nint structure, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, out int numerator, out int denominator);
     [DllImport(Core, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_structure_get_string(nint structure, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
@@ -128,10 +147,13 @@ internal static partial class GstNative
     [DllImport(D3D, CallingConvention = CallingConvention.Cdecl)] internal static extern void gst_d3d11_device_unlock(nint device);
     [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)] internal static extern nint g_value_init(ref Value value, nuint type);
     [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)] internal static extern void g_value_set_object(ref Value value, nint obj);
+    [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)] internal static extern nint g_value_get_boxed(nint value);
     [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)] internal static extern void g_object_set_property(nint obj, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, ref Value value);
     [DllImport(GObject, CallingConvention = CallingConvention.Cdecl)] internal static extern void g_value_unset(ref Value value);
     [DllImport(GLib, CallingConvention = CallingConvention.Cdecl)] internal static extern void g_error_free(nint error);
     [DllImport(GLib, CallingConvention = CallingConvention.Cdecl)] internal static extern void g_free(nint memory);
+    [DllImport(PbUtils, CallingConvention = CallingConvention.Cdecl)] internal static extern int gst_is_missing_plugin_message(nint message);
+    [DllImport(PbUtils, CallingConvention = CallingConvention.Cdecl)] internal static extern nint gst_missing_plugin_message_get_description(nint message);
 
     internal static string TakeError(nint error, string fallback)
     {

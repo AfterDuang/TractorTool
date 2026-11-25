@@ -61,6 +61,8 @@ internal static class GstRuntime
                 throw new InvalidOperationException("另一个组件已初始化 GStreamer。为避免混用插件运行库，请显式退出后重试。");
             if (Marshal.SizeOf<GstNative.MiniObject>() != 64 ||
                 Marshal.OffsetOf<GstNative.Buffer>(nameof(GstNative.Buffer.Pts)).ToInt32() != 72 ||
+                Marshal.OffsetOf<GstNative.MessageHeader>(nameof(GstNative.MessageHeader.Type)).ToInt32() != 64 ||
+                Marshal.OffsetOf<GstNative.MessageHeader>(nameof(GstNative.MessageHeader.Source)).ToInt32() != 80 ||
                 Marshal.OffsetOf<GstNative.D3DMemory>(nameof(GstNative.D3DMemory.Device)).ToInt32() != 112 ||
                 Marshal.SizeOf<GstNative.MapInfo>() != 104 || Marshal.OffsetOf<GstNative.MapInfo>(nameof(GstNative.MapInfo.Data)).ToInt32() != 16)
                 throw new PlatformNotSupportedException("原生媒体接口的结构布局不匹配。");

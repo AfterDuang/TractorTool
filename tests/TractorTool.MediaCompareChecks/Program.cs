@@ -2,7 +2,7 @@ using TractorTool.Plugins.MediaCompare.Media;
 using TractorTool.Plugins.MediaCompare.Rendering;
 
 if (args.Length != 0)
-    return GpuPlaybackDiagnostic.Run(args);
+    return args[0] == "--media-inputs" ? MediaInputDiagnostic.Run(args) : GpuPlaybackDiagnostic.Run(args);
 
 // Pure managed checks: no app, GStreamer initialization, display, or user media.
 FrameOwnership();
@@ -10,6 +10,7 @@ ConcurrentOwnership();
 ViewportGeometry();
 SequenceValidation();
 TimingChecks.Run();
+SequenceChecks.Run();
 Console.WriteLine("MediaCompare managed checks passed.");
 return 0;
 
@@ -82,22 +83,22 @@ static void SequenceValidation()
         var first = Path.Combine(root, "审片 50%_0001.png");
         File.WriteAllBytes(first, []);
         File.WriteAllBytes(Path.Combine(root, "审片 50%_0002.png"), []);
-        var sequence = MediaSourceInfo.Create(new(first, true, 23.976), CancellationToken.None);
+        var sequence = MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence, 23.976), CancellationToken.None);
         Require(Uri.UnescapeDataString(sequence.Uri).Contains("50%%-", StringComparison.Ordinal),
             "Literal percent signs in directories must survive the image-sequence printf template.");
         Require(sequence.SequenceDuration is { } duration && Math.Abs(duration.TotalSeconds - 2 * 1001d / 24000) < 1e-7,
             "Numbered image sequences must use the requested fractional frame rate.");
         File.WriteAllBytes(Path.Combine(root, "审片 50%_0004.png"), []);
-        try { MediaSourceInfo.Create(new(first, true), CancellationToken.None); throw new Exception("Gap accepted."); }
+        try { MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence), CancellationToken.None); throw new Exception("Gap accepted."); }
         catch (InvalidDataException) { }
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
-        try { MediaSourceInfo.Create(new(first, true), cancelled.Token); throw new Exception("Cancellation ignored."); }
+        try { MediaSourceInfo.Create(new(first, MediaSourceKind.Sequence), cancelled.Token); throw new Exception("Cancellation ignored."); }
         catch (OperationCanceledException) { }
     }
     finally { Directory.Delete(root, recursive: true); }
 }
 
-static MediaFrame Frame(Action release) => new(1, 1, TimeSpan.Zero, TimeSpan.FromSeconds(1d / 24),
+static MediaFrame Frame(Action release) => new(1, 1, 0, 41_666_666,
     0, 0, new byte[4], 4, release);
 static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }

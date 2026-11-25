@@ -187,6 +187,11 @@
       "path": "gst-libav-1.0/COPYING",
       "sha256": "10162be9f7ddb9e98c22c3edd0f78d62ab88f0ca8b1cc968bd85d5d665489d90",
       "source": "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.9/subprojects/gst-libav/COPYING"
+    },
+    {
+      "path": "gst-plugins-ugly-1.0/COPYING",
+      "sha256": "6095e9ffa777dd22839f7801aa845b31c9ed07f3d6bf8a26dc5d2dec8ccc0ef3",
+      "source": "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.9/subprojects/gst-plugins-ugly/COPYING"
     }
   ]
 }

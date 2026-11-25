@@ -11,6 +11,8 @@ internal sealed record MediaSourceInfo(string Uri, string Name, bool IsStill, do
 
     internal static MediaSourceInfo Create(MediaSource source, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
+        if (!Enum.IsDefined(source.Kind)) throw new ArgumentOutOfRangeException(nameof(source));
         if (!Path.IsPathFullyQualified(source.Path) || !File.Exists(source.Path))
             throw new FileNotFoundException("请选择存在的本地媒体文件。", source.Path);
         var path = Path.GetFullPath(source.Path);
@@ -18,15 +20,22 @@ internal sealed record MediaSourceInfo(string Uri, string Name, bool IsStill, do
         if (extension.Equals(".exr", StringComparison.OrdinalIgnoreCase) || extension.Equals(".hdr", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".dpx", StringComparison.OrdinalIgnoreCase))
             throw new NotSupportedException("当前预览为 SDR 8 位，尚不支持 EXR、HDR 或 DPX 的高精度审片。");
-        if (!source.IsSequence) return new(new Uri(path).AbsoluteUri, Path.GetFileName(path), Stills.Contains(extension));
-        if (!Stills.Contains(extension)) throw new NotSupportedException("序列帧请选择 PNG、JPEG、BMP、WebP 或 TIFF 图片。");
-        if (!double.IsFinite(source.SequenceFrameRate) || source.SequenceFrameRate is < 1 or > 240)
-            throw new ArgumentOutOfRangeException(nameof(source), "序列帧速率必须在 1–240 fps 之间。");
-        var match = Regex.Match(Path.GetFileNameWithoutExtension(path), @"^(.*?)(\d+)$", RegexOptions.CultureInvariant);
+        var single = new MediaSourceInfo(new Uri(path).AbsoluteUri, Path.GetFileName(path), Stills.Contains(extension));
+        if (source.Kind == MediaSourceKind.File) return single;
+        if (!single.IsStill)
+        {
+            if (source.Kind == MediaSourceKind.Auto) return single;
+            throw new NotSupportedException("序列帧请选择 PNG、JPEG、BMP、WebP 或 TIFF 图片。");
+        }
+        var match = Regex.Match(Path.GetFileNameWithoutExtension(path), @"^(.*?)([0-9]+)$", RegexOptions.CultureInvariant);
         if (!match.Success || !int.TryParse(match.Groups[2].Value, CultureInfo.InvariantCulture, out var start))
+        {
+            if (source.Kind == MediaSourceKind.Auto) return single;
             throw new InvalidDataException("序列文件名须以连续帧号结尾，例如 shot_0001.png。");
+        }
         var prefix = match.Groups[1].Value;
         var digits = match.Groups[2].Length;
+        var numberFormat = "D" + digits.ToString(CultureInfo.InvariantCulture);
         var directory = Path.GetDirectoryName(path)!;
         var indexes = new SortedSet<int>();
         foreach (var file in Directory.EnumerateFiles(directory))
@@ -34,12 +43,17 @@ internal sealed record MediaSourceInfo(string Uri, string Name, bool IsStill, do
             token.ThrowIfCancellationRequested();
             var name = Path.GetFileNameWithoutExtension(file);
             if (!Path.GetExtension(file).Equals(extension, StringComparison.OrdinalIgnoreCase) ||
-                !name.StartsWith(prefix, StringComparison.Ordinal) || name.Length != prefix.Length + digits) continue;
-            if (int.TryParse(name.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var index) && index >= start)
+                !name.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            var suffix = name.AsSpan(prefix.Length);
+            // The native template width is a minimum: 9 -> 10 is continuous,
+            // while 0001 -> 00002 uses inconsistent padding and is not a match.
+            if (int.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var index) && index >= start &&
+                suffix.SequenceEqual(index.ToString(numberFormat, CultureInfo.InvariantCulture)))
                 indexes.Add(index);
             if (indexes.Count > 100_000) throw new InvalidDataException("单条序列最多支持 100,000 帧。");
         }
         if (indexes.Count == 0 || indexes.Min != start) throw new InvalidDataException("无法读取所选序列的起始帧。");
+        if (source.Kind == MediaSourceKind.Auto && indexes.Count == 1) return single;
         var previous = start;
         foreach (var index in indexes)
         {
@@ -47,6 +61,8 @@ internal sealed record MediaSourceInfo(string Uri, string Name, bool IsStill, do
                 throw new InvalidDataException($"序列缺少第 {(long)previous + 1} 帧，不能静默跳过。");
             previous = index;
         }
+        if (!double.IsFinite(source.SequenceFrameRate) || source.SequenceFrameRate is < 1 or > 240)
+            throw new ArgumentOutOfRangeException(nameof(source), "序列帧速率必须在 1–240 fps 之间。");
         var (numerator, denominator) = RationalRate(source.SequenceFrameRate);
         var pattern = Path.Combine(directory.Replace("%", "%%", StringComparison.Ordinal),
             prefix.Replace("%", "%%", StringComparison.Ordinal) + $"%0{digits}d" + extension);

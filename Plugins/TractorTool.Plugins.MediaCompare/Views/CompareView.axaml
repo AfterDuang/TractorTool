@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:TractorTool.Plugins.MediaCompare.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:views="using:TractorTool.Plugins.MediaCompare.Views"
              x:Class="TractorTool.Plugins.MediaCompare.Views.CompareView" x:DataType="vm:CompareViewModel"
              Focusable="True">
@@ -24,6 +25,7 @@
               <StackPanel Width="300" Spacing="10">
                 <TextBlock Text="画面对比" FontWeight="SemiBold" />
                 <TextBlock Text="滚轮缩放，拖动画面联动平移；双击恢复完整画面。空格播放或暂停视频与序列帧。" TextWrapping="Wrap" />
+                <TextBlock Text="拖入编号首帧会识别同目录的连续图片序列，使用素材选项中的序列帧率。若只需单张图片，请使用“打开”。" TextWrapping="Wrap" />
                 <TextBlock Text="当前为 SDR 8 位预览，未做显示器色彩校准，不适用于 HDR / Log 色彩评判。" Classes="caption" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding RendererStatus}" Classes="caption" TextWrapping="Wrap" />
                 <Separator />
@@ -44,6 +46,7 @@
               <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                 <TextBlock Text="{Binding AName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding AName}" />
                 <TextBlock Text="{Binding ASummary}" Classes="caption" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ADetails}" />
+                <TextBlock Text="{Binding APreviewWarning}" IsVisible="{Binding APreviewWarning, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Classes="caption" Foreground="{DynamicResource AppLogWarningBrush}" TextWrapping="Wrap" />
               </StackPanel>
               <Button Grid.Column="2" Content="打开" Classes="compareAction" Tag="A" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 A 素材" />
               <Button x:Name="SourceAOptions" Grid.Column="3" Content="⋯" Classes="compareAction" VerticalAlignment="Center" ToolTip.Tip="A 素材选项" AutomationProperties.Name="A 素材选项">
@@ -73,6 +76,7 @@
               <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                 <TextBlock Text="{Binding BName}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding BName}" />
                 <TextBlock Text="{Binding BSummary}" Classes="caption" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding BDetails}" />
+                <TextBlock Text="{Binding BPreviewWarning}" IsVisible="{Binding BPreviewWarning, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" Classes="caption" Foreground="{DynamicResource AppLogWarningBrush}" TextWrapping="Wrap" />
               </StackPanel>
               <Button Grid.Column="2" Content="打开" Classes="compareAction" Tag="B" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" VerticalAlignment="Center" AutomationProperties.Name="打开 B 素材" />
               <Button x:Name="SourceBOptions" Grid.Column="3" Content="⋯" Classes="compareAction" VerticalAlignment="Center" ToolTip.Tip="B 素材选项" AutomationProperties.Name="B 素材选项">
@@ -141,7 +145,7 @@
       </StackPanel>
       <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasTimeline}">
         <TextBlock Text="声音" VerticalAlignment="Center" />
-        <ComboBox x:Name="AudioChoice" SelectedIndex="{Binding SelectedAudio, Mode=OneWay}" IsEnabled="{Binding CanOperate}" SelectionChanged="AudioChanged" MinWidth="112" AutomationProperties.Name="试听声音">
+        <ComboBox x:Name="AudioChoice" SelectedIndex="{Binding SelectedAudio, Mode=OneWay}" IsEnabled="{Binding CanSelectAudio}" SelectionChanged="AudioChanged" MinWidth="112" AutomationProperties.Name="试听声音">
           <ComboBoxItem Content="静音" /><ComboBoxItem Content="只听 A" IsEnabled="{Binding HasA}" /><ComboBoxItem Content="只听 B" IsEnabled="{Binding HasB}" />
         </ComboBox>
       </StackPanel>

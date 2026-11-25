@@ -42,11 +42,14 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     [ObservableProperty] private string _bDetails = "视频、图片或序列帧";
     [ObservableProperty] private string _aSummary = "视频、图片或序列帧";
     [ObservableProperty] private string _bSummary = "视频、图片或序列帧";
+    [ObservableProperty] private string _aPreviewWarning = "";
+    [ObservableProperty] private string _bPreviewWarning = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PositionText))] private double _positionSeconds;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(DurationText), nameof(TimelineMaximum), nameof(CanSeek), nameof(CanPlay), nameof(HasTimeline))]
     private double _durationSeconds;
     [ObservableProperty] private double _sequenceFrameRate = 24;
     [ObservableProperty] private int _selectedAudio;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanSelectAudio))] private bool _isAudioChanging;
     [ObservableProperty] private string _rendererStatus = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek))] private bool _rendererAvailable;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay)), NotifyCanExecuteChangedFor(nameof(TogglePlayCommand))]
@@ -67,6 +70,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     public bool ShowStatus => IsBusy || HasError;
     public bool HasTimeline => DurationSeconds > 0;
     public bool CanOperate => !IsBusy && !_stopped;
+    public bool CanSelectAudio => CanOperate && !IsAudioChanging;
     public bool ShowClear => HasMedia || Error.Length != 0 || SeekError.Length != 0;
     public bool CanClear => CanOperate && ShowClear;
     public bool CanClearA => CanOperate && HasA;
@@ -81,6 +85,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanPlay)); OnPropertyChanged(nameof(CanSeek));
+        OnPropertyChanged(nameof(CanSelectAudio));
         OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanClearA)); OnPropertyChanged(nameof(CanClearB));
         TogglePlayCommand.NotifyCanExecuteChanged();
         ClearAllCommand.NotifyCanExecuteChanged();
@@ -93,10 +98,10 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         TogglePlayCommand.NotifyCanExecuteChanged();
     }
 
-    public async Task OpenAsync(MediaSide side, string path, bool sequence)
+    public async Task OpenAsync(MediaSide side, string path, MediaSourceKind kind)
     {
         if (!CanOperate) return;
-        if (sequence && (!double.IsFinite(SequenceFrameRate) || SequenceFrameRate is < 1 or > 240))
+        if (kind == MediaSourceKind.Sequence && (!double.IsFinite(SequenceFrameRate) || SequenceFrameRate is < 1 or > 240))
         { ReportError("序列帧帧率必须在 1–240 之间。"); return; }
         IsBusy = true;
         IsScrubbing = false; _resumeAfterScrub = false;
@@ -106,9 +111,9 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             await ExecuteAsync(async (session, token) =>
             {
                 Status = "正在打开素材…";
-                await session.OpenAsync(side, new(path, sequence, SequenceFrameRate), token);
-                await session.SetAudioAsync((AudioSource)SelectedAudio, token);
+                await session.OpenAsync(side, new(path, kind, SequenceFrameRate), token);
                 RefreshDescription(session);
+                await session.SetAudioAsync((AudioSource)SelectedAudio, token);
                 Status = "滚轮缩放 · 拖动联动平移 · 空格播放/暂停";
             }, create: true);
         }
@@ -157,9 +162,22 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
 
     public async Task SetAudioAsync(int selected)
     {
-        if (selected is < 0 or > 2 || _stopped) return;
-        SelectedAudio = selected;
-        await ExecuteAsync((session, token) => session.SetAudioAsync((AudioSource)selected, token));
+        if (selected is < 0 or > 2 || selected == SelectedAudio || !CanSelectAudio) return;
+        IsAudioChanging = true;
+        try
+        {
+            await ExecuteAsync(async (session, token) =>
+            {
+                await session.SetAudioAsync((AudioSource)selected, token);
+                SelectedAudio = selected;
+            });
+        }
+        finally
+        {
+            // Restore failed selections before accepting another user request.
+            OnPropertyChanged(nameof(SelectedAudio));
+            IsAudioChanging = false;
+        }
     }
 
     public void BeginScrub()
@@ -261,7 +279,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     public async Task EnterViewAsync()
     {
         await _navigationPause;
-        await ExecuteAsync((session, token) => session.SeekAsync(session.Position, token));
+        await ExecuteAsync((session, token) => session.RefreshPreviewAsync(token));
     }
 
     private async Task PauseForNavigationAsync()
@@ -311,10 +329,13 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         BName = session.B?.Name ?? "未选择素材";
         ADetails = Describe(session.A); BDetails = Describe(session.B);
         ASummary = DescribeSummary(session.A); BSummary = DescribeSummary(session.B);
+        APreviewWarning = session.A?.PreviewWarning ?? ""; BPreviewWarning = session.B?.PreviewWarning ?? "";
         DurationSeconds = Math.Max(0, session.Duration.TotalSeconds);
         PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
         HasA = session.A is not null; HasB = session.B is not null;
         HasMedia = HasA || HasB;
+        if ((SelectedAudio == 1 && session.A?.AudioStatus != MediaAudioStatus.Ready) ||
+            (SelectedAudio == 2 && session.B?.AudioStatus != MediaAudioStatus.Ready)) SelectedAudio = 0;
         IsPlaying = session.IsPlaying;
     }
 
@@ -372,7 +393,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     }
 
     private static string Describe(MediaDescription? media) => media is null ? "视频、图片或序列帧"
-        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{DescribeFrameRate(media.FrameRate)} · {FormatTime(media.Duration.TotalSeconds)}")} · {media.Format}";
+        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{DescribeFrameRate(media.FrameRate)} · {FormatTime(media.Duration.TotalSeconds)}")} · {media.Format}" +
+            (media.IsStill ? "" : "\n" + media.AudioDescription);
     private static string DescribeSummary(MediaDescription? media) => media is null ? "视频、图片或序列帧"
         : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : DescribeFrameRate(media.FrameRate))}";
     private static string DescribeFrameRate(double frameRate) => frameRate > 0 ? $"{frameRate:0.###} fps" : "可变或未标记帧率";
