@@ -54,7 +54,13 @@ static void ViewportGeometry()
     var portrait = PreviewView.Fit.ImageSize(1080, 1920, 960, 540);
     Require(Math.Abs(portrait.Width / portrait.Height - 1080d / 1920) < 1e-10 && portrait.Height == 540,
         "Fit must preserve aspect ratio without stretching.");
-    var pixels = (PreviewView.Fit with { ActualPixels = true }).ImageSize(3840, 2160, 960, 540);
+    var fill = PreviewView.Fill.ImageSize(1920, 1080, 960, 720);
+    Require(Math.Abs(fill.Width - 1280) < 1e-10 && fill.Height == 720,
+        "Fill must cover the canvas by cropping, without stretching the image.");
+    var fillPortrait = PreviewView.Fill.ImageSize(1080, 1920, 960, 540);
+    Require(fillPortrait.Width == 960 && fillPortrait.Height > 540,
+        "Portrait fill must cover both axes.");
+    var pixels = PreviewView.ActualPixels.ImageSize(3840, 2160, 960, 540);
     Require(pixels == (3840d, 2160d), "One-to-one must use source pixels, not fit pixels.");
     var zoom = (PreviewView.Fit with { Zoom = 2 }).ImageSize(1920, 1080, 960, 540);
     Require(zoom == (1920d, 1080d), "Zoom must scale both axes equally.");
@@ -67,6 +73,9 @@ static void ViewportGeometry()
     Require(Math.Abs(panned.CenterX - (anchored.CenterX - .1)) < 1e-10 &&
         Math.Abs(panned.CenterY - (anchored.CenterY - .1)) < 1e-10,
         "Pan must use source-relative coordinates shared by both panes.");
+    var fillPan = PreviewView.Fill.Pan(1920, 1080, 960, 720, 128, 72);
+    Require(Math.Abs(fillPan.CenterX - .4) < 1e-10 && Math.Abs(fillPan.CenterY - .4) < 1e-10,
+        "Fill panning must move the image with the pointer in both axes.");
 }
 
 static void SequenceValidation()

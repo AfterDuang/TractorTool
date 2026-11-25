@@ -26,27 +26,45 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
 
     public event Action<FramePair>? FrameReady;
 
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanOperate))] private bool _isBusy;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanOperate), nameof(ShowStatus))] private bool _isBusy;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PlayLabel))] private bool _isPlaying;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek))] private bool _hasMedia;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError))] private string _error = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek), nameof(PlaybackHint))] private bool _hasMedia;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus))] private string _error = "";
     [ObservableProperty] private string _status = "选择或拖入 A、B 素材。滚轮缩放，拖动画面联动平移。";
     [ObservableProperty] private string _aName = "A · 未选择素材";
     [ObservableProperty] private string _bName = "B · 未选择素材";
     [ObservableProperty] private string _aDetails = "视频、图片或序列帧";
     [ObservableProperty] private string _bDetails = "视频、图片或序列帧";
+    [ObservableProperty] private string _aSummary = "视频、图片或序列帧";
+    [ObservableProperty] private string _bSummary = "视频、图片或序列帧";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(PositionText))] private double _positionSeconds;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(DurationText), nameof(TimelineMaximum), nameof(CanSeek), nameof(CanPlay))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(DurationText), nameof(TimelineMaximum), nameof(CanSeek), nameof(CanPlay), nameof(HasTimeline), nameof(PlaybackHint))]
     private double _durationSeconds;
     [ObservableProperty] private double _sequenceFrameRate = 24;
     [ObservableProperty] private int _selectedAudio;
     [ObservableProperty] private string _rendererStatus = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay), nameof(CanSeek))] private bool _rendererAvailable;
-    public bool IsScrubbing { get; private set; }
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanPlay)), NotifyCanExecuteChangedFor(nameof(TogglePlayCommand))]
+    private bool _isSeeking;
+    private bool _isScrubbing;
+    public bool IsScrubbing
+    {
+        get => _isScrubbing;
+        private set
+        {
+            if (!SetProperty(ref _isScrubbing, value)) return;
+            OnPropertyChanged(nameof(CanPlay));
+            TogglePlayCommand.NotifyCanExecuteChanged();
+        }
+    }
     public bool HasError => Error.Length != 0;
+    public bool ShowStatus => IsBusy || HasError;
+    public bool HasTimeline => DurationSeconds > 0;
+    public string PlaybackHint => HasTimeline ? "空格播放 / 暂停 · 滚轮缩放 · 拖动平移"
+        : HasMedia ? "静态图片 · 滚轮缩放 · 拖动平移" : "打开视频或图片序列后可播放";
     public bool CanOperate => !IsBusy && !_stopped;
-    public bool CanPlay => CanOperate && HasMedia && DurationSeconds > 0 && RendererAvailable;
-    public bool CanSeek => CanPlay;
+    public bool CanPlay => CanSeek && !IsScrubbing && !IsSeeking;
+    public bool CanSeek => CanOperate && HasMedia && DurationSeconds > 0 && RendererAvailable;
     public string PlayLabel => IsPlaying ? "暂停" : "播放";
     public double TimelineMaximum => Math.Max(DurationSeconds, 0.001);
     public string PositionText => FormatTime(PositionSeconds);
@@ -85,9 +103,10 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     [RelayCommand(CanExecute = nameof(CanPlay))]
     private async Task TogglePlayAsync()
     {
-        CancelPendingSeek();
+        var playing = !IsPlaying;
         await _seekWorker;
-        await ExecuteAsync((session, token) => session.SetPlayingAsync(RendererAvailable && CanOperate && !session.IsPlaying, token));
+        await ExecuteAsync((session, token) => CanPlay
+            ? session.SetPlayingAsync(playing, token) : Task.CompletedTask);
     }
 
     public async Task SetAudioAsync(int selected)
@@ -128,31 +147,36 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
 
     private async Task ProcessSeeksAsync()
     {
-        while (!_stopped && _pendingSeek is not null)
+        IsSeeking = true;
+        try
         {
-            // Throttle, rather than debounce: continuous pointer movement must still
-            // produce previews. Keep one decode in flight and only the latest request.
-            try { await Task.Delay(35, _stopping.Token); }
-            catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { break; }
-            if (_pendingSeek is not { } seconds) break;
-            _pendingSeek = null;
-            var version = _seekVersion;
-            using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
-            _seekCancellation = cancellation;
-            try
+            while (!_stopped && _pendingSeek is not null)
             {
-                await _commands.WaitAsync(cancellation.Token);
+                // Throttle, rather than debounce: continuous pointer movement must still
+                // produce previews. Keep one decode in flight and only the latest request.
+                try { await Task.Delay(35, _stopping.Token); }
+                catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { break; }
+                if (_pendingSeek is not { } seconds) break;
+                _pendingSeek = null;
+                var version = _seekVersion;
+                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
+                _seekCancellation = cancellation;
                 try
                 {
-                    if (_session is { } session)
-                        await session.SeekAsync(TimeSpan.FromSeconds(seconds), cancellation.Token);
+                    await _commands.WaitAsync(cancellation.Token);
+                    try
+                    {
+                        if (_session is { } session)
+                            await session.SeekAsync(TimeSpan.FromSeconds(seconds), cancellation.Token);
+                    }
+                    finally { _commands.Release(); }
                 }
-                finally { _commands.Release(); }
+                catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+                catch (Exception ex) { if (version == _seekVersion) ReportError("定位失败：" + ex.Message, ex); }
+                finally { if (ReferenceEquals(_seekCancellation, cancellation)) _seekCancellation = null; }
             }
-            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-            catch (Exception ex) { if (version == _seekVersion) ReportError("定位失败：" + ex.Message, ex); }
-            finally { if (ReferenceEquals(_seekCancellation, cancellation)) _seekCancellation = null; }
         }
+        finally { IsSeeking = false; }
     }
 
     public void LeaveView()
@@ -222,6 +246,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         AName = session.A?.Name ?? "A · 未选择素材";
         BName = session.B?.Name ?? "B · 未选择素材";
         ADetails = Describe(session.A); BDetails = Describe(session.B);
+        ASummary = DescribeSummary(session.A); BSummary = DescribeSummary(session.B);
         DurationSeconds = Math.Max(0, session.Duration.TotalSeconds);
         PositionSeconds = Math.Clamp(session.Position.TotalSeconds, 0, DurationSeconds);
         HasMedia = session.A is not null || session.B is not null;
@@ -283,6 +308,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
 
     private static string Describe(MediaDescription? media) => media is null ? "视频、图片或序列帧"
         : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{media.FrameRate:0.###} fps · {FormatTime(media.Duration.TotalSeconds)}")} · {media.Format}";
+    private static string DescribeSummary(MediaDescription? media) => media is null ? "视频、图片或序列帧"
+        : $"{media.Width} × {media.Height} · {(media.IsStill ? "图片" : $"{media.FrameRate:0.###} fps")}";
     private static string FormatTime(double seconds)
     {
         var time = TimeSpan.FromSeconds(Math.Max(0, seconds));

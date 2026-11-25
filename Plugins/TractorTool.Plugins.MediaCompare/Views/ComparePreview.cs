@@ -62,7 +62,13 @@ public sealed class ComparePreview : Control
     public void ActualSize()
     {
         Dispatcher.UIThread.VerifyAccess();
-        _view = new(.5, .5, 1, true); Redraw();
+        _view = PreviewView.ActualPixels; Redraw();
+    }
+
+    public void FillView()
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        _view = PreviewView.Fill; Redraw();
     }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -235,6 +241,7 @@ public sealed class ComparePreview : Control
     {
         base.OnPointerPressed(e);
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        Focus();
         if (e.ClickCount == 2) { ResetView(); e.Handled = true; return; }
         var point = e.GetPosition(this);
         var (image, width, _) = GetActiveImage(point);

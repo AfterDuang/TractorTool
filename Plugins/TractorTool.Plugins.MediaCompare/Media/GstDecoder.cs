@@ -33,6 +33,7 @@ internal sealed class GstDecoder : IDisposable
             var first = decoder.ReadPreroll(token);
             try
             {
+                decoder.WaitPaused(token);
                 var format = decoder.CheckOriginalFormat();
                 var duration = prepared.IsStill ? TimeSpan.Zero : prepared.SequenceDuration ?? decoder.QueryDuration();
                 if (!prepared.IsStill && duration <= TimeSpan.Zero)
@@ -90,12 +91,19 @@ internal sealed class GstDecoder : IDisposable
         if (IsStill) throw new InvalidOperationException("静态图片不需要定位。");
         token.ThrowIfCancellationRequested();
         Pause();
-        WaitPaused(token);
-        // A flushing seek clears the sink/preroll queue. No pre-seek sample can be
-        // relabeled as belonging to the new request, because the worker is serialized.
+        // Flush before waiting: PLAYING -> PAUSED may still need a buffer from the
+        // old segment, while this worker has stopped consuming the bounded appsink.
         if (GstNative.gst_element_seek_simple(_pipeline, GstNative.Time, 1 | 2, checked(position.Ticks * 100)) == 0)
             throw new NotSupportedException("此媒体不支持精确定位。");
-        return ReadPreroll(token, afterSeek: true);
+        // The flush clears the old queue. Wait for both the new video preroll and
+        // the complete pipeline (including audio) before assigning a shared clock.
+        var frame = ReadPreroll(token, afterSeek: true);
+        try
+        {
+            WaitPaused(token);
+            return frame;
+        }
+        catch { frame.Dispose(); throw; }
     }
 
     internal void Play(ulong baseTime)
@@ -250,10 +258,13 @@ internal sealed class GstDecoder : IDisposable
             decoder = (GstDecoder)GCHandle.FromIntPtr(data).Target!;
             lock (decoder._capsGate)
             {
-                if (decoder._disposed || decoder._sourceFormatError is not null) return 0;
-                if ((GstNative.gst_pad_probe_info_get_type(info) & 0x40) == 0) return 1;
-                var ev = GstNative.gst_pad_probe_info_get_event(info);
-                if (ev == 0 || GstNative.gst_event_has_name(ev, "GstEventCaps") == 0) return 1;
+                var isEvent = (GstNative.gst_pad_probe_info_get_type(info) & 0x40) != 0;
+                var ev = isEvent ? GstNative.gst_pad_probe_info_get_event(info) : 0;
+                // A format failure blocks CAPS and buffers, not the stream-control
+                // events needed for SEGMENT/EOS propagation and orderly shutdown.
+                if (isEvent && (ev == 0 || GstNative.gst_event_has_name(ev, "GstEventCaps") == 0)) return 1;
+                if (Volatile.Read(ref decoder._disposed) || decoder._sourceFormatError is not null) return 0;
+                if (!isEvent) return 1;
                 GstNative.gst_event_parse_caps(ev, out var caps);
                 if (caps == 0) throw new InvalidDataException("源媒体缺少图像格式信息。");
                 if (decoder._sourceCaps != 0)
@@ -328,7 +339,7 @@ internal sealed class GstDecoder : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
+        Volatile.Write(ref _disposed, true);
         if (_pipeline != 0) GstNative.gst_element_set_state(_pipeline, GstNative.Null);
         if (_capsProbeId != 0) { GstNative.gst_pad_remove_probe(_sourcePad, _capsProbeId); _capsProbeId = 0; }
         lock (_capsGate)

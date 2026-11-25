@@ -15,12 +15,17 @@ public partial class CompareView : UserControl, IPluginPageLifetime
 {
     private CompareViewModel? _attached;
     private bool _picking;
+    private bool _playbackSpacePressed;
+    private bool _playbackSpaceArmed;
 
     public CompareView()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Unloaded += (_, _) => Detach();
+        AddHandler(KeyDownEvent, OnPlaybackKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, OnPlaybackKeyUp, RoutingStrategies.Tunnel);
+        LostFocus += (_, _) => ResetPlaybackKey();
         WireDrop(SourceA, MediaSide.A); WireDrop(SourceB, MediaSide.B);
         Timeline.AddHandler(PointerPressedEvent, (_, e) =>
         {
@@ -62,12 +67,14 @@ public partial class CompareView : UserControl, IPluginPageLifetime
         _attached = model;
         model.RendererAvailable = Preview.IsAvailable;
         model.FrameReady += Preview.Submit;
+        Preview.Focus();
         await model.EnterViewAsync();
     }
 
     public void OnNavigatedFrom() => Detach();
     private void Detach()
     {
+        ResetPlaybackKey();
         if (_attached is not { } model) return;
         _attached = null;
         model.FrameReady -= Preview.Submit;
@@ -80,6 +87,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
     {
         if (_picking || _attached is not { CanOperate: true } model || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
         var side = sender is Button { Tag: "B" } ? MediaSide.B : MediaSide.A;
+        SourceAOptions.Flyout?.Hide(); SourceBOptions.Flyout?.Hide();
         _picking = true;
         try
         {
@@ -95,6 +103,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
             {
                 if (!IsLoaded || !ReferenceEquals(_attached, model) || files.Count == 0) return;
                 var path = files[0].TryGetLocalPath() ?? throw new NotSupportedException("请选择本地素材。");
+                Preview.Focus();
                 await model.OpenAsync(side, path, sequence);
             }
             finally { foreach (var file in files) file.Dispose(); }
@@ -116,6 +125,7 @@ public partial class CompareView : UserControl, IPluginPageLifetime
             e.Handled = true; e.DragEffects = DragDropEffects.None;
             if (_attached is not { CanOperate: true } model || GetDroppedFile(e.DataTransfer) is not { } path) return;
             e.DragEffects = DragDropEffects.Copy;
+            Preview.Focus();
             await model.OpenAsync(side, path, false);
         });
     }
@@ -133,16 +143,42 @@ public partial class CompareView : UserControl, IPluginPageLifetime
     }
 
     private void FitView(object? sender, RoutedEventArgs e) => Preview.ResetView();
+    private void FillView(object? sender, RoutedEventArgs e) => Preview.FillView();
     private void ActualSize(object? sender, RoutedEventArgs e) => Preview.ActualSize();
+    private void FocusPreview(object? sender, RoutedEventArgs e) => Preview.Focus();
     private async void AudioChanged(object? sender, SelectionChangedEventArgs e)
     { if (IsLoaded && _attached is { } model) await model.SetAudioAsync(AudioChoice.SelectedIndex); }
 
-    protected override async void OnKeyDown(KeyEventArgs e)
+    private bool IsPlaybackKey(KeyEventArgs e) => e.Key == Key.Space && e.KeyModifiers == KeyModifiers.None && !_picking && !AudioChoice.IsDropDownOpen &&
+        SourceAOptions.Flyout?.IsOpen != true && SourceBOptions.Flyout?.IsOpen != true && HelpButton.Flyout?.IsOpen != true &&
+        !(e.Source is Visual source && source.GetSelfAndVisualAncestors().Any(x => x is TextBox or NumericUpDown or ComboBox or ComboBoxItem or MenuItem));
+
+    private void OnPlaybackKeyDown(object? sender, KeyEventArgs e)
     {
-        base.OnKeyDown(e);
-        if (e.Handled || _attached is not { } model) return;
-        if (e.Source is Visual source && source.GetSelfAndVisualAncestors().Any(x => x is TextBox or NumericUpDown or ComboBox or Button)) return;
-        if (e.Key == Key.Space && model.CanPlay)
-        { e.Handled = true; await model.TogglePlayCommand.ExecuteAsync(null); }
+        if (!IsPlaybackKey(e) || _attached is not { } model) return;
+        // Reserve Space before a focused button handles it; Enter still activates buttons.
+        e.Handled = true;
+        if (_playbackSpacePressed) return;
+        _playbackSpacePressed = true;
+        _playbackSpaceArmed = model.TogglePlayCommand.CanExecute(null);
     }
+
+    private async void OnPlaybackKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space) return;
+        var armed = _playbackSpaceArmed;
+        var pressed = _playbackSpacePressed;
+        ResetPlaybackKey();
+        if (!pressed || !IsPlaybackKey(e)) return;
+        e.Handled = true;
+        // One activation on release avoids repeated toggles while Space is held down.
+        if (armed && _attached is { } model && model.TogglePlayCommand.CanExecute(null))
+        {
+            // The async command temporarily disables its button; keep keyboard focus in this page.
+            if (PlayButton.IsKeyboardFocusWithin) Preview.Focus();
+            await model.TogglePlayCommand.ExecuteAsync(null);
+        }
+    }
+
+    private void ResetPlaybackKey() => _playbackSpacePressed = _playbackSpaceArmed = false;
 }

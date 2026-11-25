@@ -109,7 +109,7 @@ internal sealed class D3DPreviewRenderer : IDisposable
             context.VSSetShader(_vertexShader);
             context.PSSetShader(_pixelShader);
             context.PSSetConstantBuffer(0, _constants);
-            context.PSSetSampler(0, view.ActualPixels && view.Zoom >= 1 ? _pointSampler : _linearSampler);
+            context.PSSetSampler(0, view.Scale == PreviewScale.ActualPixels && view.Zoom >= 1 ? _pointSampler : _linearSampler);
             var half = Width / 2;
             Draw(_a, 0, half, view);
             Draw(_b, half, Width - half, view);

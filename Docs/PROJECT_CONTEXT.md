@@ -1,6 +1,6 @@
 # TractorTool 开发上下文
 
-更新日期：2026-11-25。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-11-26。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
 
@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-本轮新增 [AB 审片 0.1.0](DEVELOPMENT.md#media-compare) 开发版，用户授权开始插件开发。GStreamer 私有运行库与 D3D11 合成接入均留在插件；未修改宿主/Core/Contracts/UI。当前先交独立包验收基础 A/B，再按实际素材做性能优化；未经新授权不运行应用或检查程序，不推送。精确邻帧、代理缓存、HDR/Log 专业色彩及跨 GPU 不作为已交付能力。
+当前处理 [AB 审片 0.1.1](DEVELOPMENT.md#media-compare) 用户反馈：0.1.0 画面上下颠倒、拖动反向观感、暂停超时和 segment 警告。已修订纹理原点、定位/预读顺序与事件传递，并新增填满画布、空格控制及紧凑布局；真实媒体/GPU 复测仍归用户。GStreamer 继续随插件提供，未通过 Packages 申请；DLL 运行库若改统一申请须先由架构侧分析，不擅改框架。精确邻帧、代理缓存、HDR/Log 专业色彩及跨 GPU 均未交付；不运行应用或检查程序，不推送。
 
 ## 2. 接续时必须保留
 

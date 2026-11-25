@@ -46,7 +46,9 @@ internal sealed class CompositionPreviewSession : IAsyncDisposable
                 _image = _interop.ImportImage(new PlatformHandle(_renderer.SharedHandle, HandleType),
                     new PlatformGraphicsExternalImageProperties
                     {
-                        Width = width, Height = height, Format = PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm
+                        Width = width, Height = height, Format = PlatformGraphicsExternalImageFormat.B8G8R8A8UNorm,
+                        // D3D rendering and pointer coordinates both use a top-left origin.
+                        TopLeftOrigin = true
                     });
                 await _image.ImportCompleted;
             }

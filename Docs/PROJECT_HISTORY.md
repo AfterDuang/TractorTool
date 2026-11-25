@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片用户反馈 | [E139 · 纹理原点、暂停定位与操作界面（2026-11-26）](#evidence-media-compare-feedback) |
 | AB 审片首版 | [E138 · 独立媒体/GPU 插件（2026-11-25）](#evidence-media-compare-first) |
 | 插件隔离与自动发布 | [E137 · 1.1.0 发布（2026-11-23）](#evidence-release-110) |
 | 插件业务依赖定版 | [E136 · 源码与发布 SDK 构建（2026-11-23）](#evidence-plugin-private-versions) |
@@ -175,6 +176,23 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-feedback"></a>
+
+## E139：AB 审片方向、暂停定位与交互修正（2026-11-26）
+
+用户在 0.1.0 的 Windows 实测反馈上下倒置/拖动反向、`original:sink` 的 `Got data flow before segment event`，以及 `WaitPaused → Seek → SetPlayingAsync` 每次约 10 秒超时；同时要求简化界面、支持空格与快速填满画布。本轮仅修改审片插件、专属检查及文档，未改宿主/Core/Contracts/公共 UI。保留用户 `.vscode/settings.json`。
+
+- 共享 D3D 纹理显式设置 `TopLeftOrigin=true`。Avalonia 12.1.6 默认左下原点，与插件 shader/鼠标左上坐标不一致；不反转 Pan 符号。依据：[上游导入处理](https://github.com/AvaloniaUI/Avalonia/blob/12.1.6/src/Skia/Avalonia.Skia/Gpu/OpenGl/GlSkiaExternalObjectsFeature.cs#L120-L145)。
+- 定位顺序改为请求暂停、FLUSH 精确定位、取新预读帧、等整个管线暂停；首次打开也等待完整暂停。避免先等待旧播放段而不能清空旧队列；失败释放新样本，未提高超时阈值。依据：[状态设计](https://gstreamer.freedesktop.org/documentation/additional/design/states.html)、[定位设计](https://gstreamer.freedesktop.org/documentation/additional/design/seeking.html)、[appsink](https://gstreamer.freedesktop.org/documentation/app/appsink.html)。
+- 格式失败仅阻断 CAPS/图像数据，保留 SEGMENT/EOS 等控制事件。用户 warning 检查发生在 BUFFER probe 之前，截图不足以确认先前是否吞过 SEGMENT；这项协议修正不能证明原警告已消失。
+- 布局参考 Apple [工具栏](https://developer.apple.com/design/human-interface-guidelines/toolbars)和[视频播放](https://developer.apple.com/design/human-interface-guidelines/playing-video)：缩小标题/素材栏、扩大画布、按用途收纳序列帧率/技术资料；增加等比填满模式。空格按下预留、松开执行一次，弹层和输入控件保留原生键盘行为。
+- 两路 GPT-6.2-SOL/high 复核：原生链路未发现可证 P1/P2；交互审查发现并修正异步播放按钮失焦、声音弹层被快捷键拦截、迟到聚焦及拖动/最终定位与空格冲突。最终复核未发现剩余可证 P1/P2，不等于运行验收。
+- 依赖为构建期准备并随插件提供的 GStreamer 私有 DLL，不是宿主首次申请。现有 Packages 面向可执行工具、强制版本进程检查且仅支持 GitHub ZIP，无法直接管理当前 wheel 来源的 DLL-only 运行库；原生占用到进程结束亦需架构侧定义。未绕过契约自建运行时下载器。
+
+验证结果：插件与 `TractorTool.MediaCompareChecks` Release 编译 0 警告/0 错误，新增填满/裁剪与顺向平移的纯数学检查仅编译。过程中填满模式改枚举遗漏 sampler 调用导致一次 CS0176，补齐全部调用后构建通过。使用既有发布 SDK 的 `Build-Plugin.ps1` 独立打包通过，运行库 121 文件哈希全部匹配；ZIP 140 项、20,467,646 字节、展开 51,788,069 字节，无共享框架 DLL，符合安装体积边界。产物见当前台账，SHA256 `E47C9F6EE57EF34E68FC228E080AF07DBF044473ED87D2ED24FF12D94D5D96F8`。
+
+未运行检查程序、应用、真实媒体或 Windows UI；未安装包、未接管用户窗口。新方向、暂停/定位、警告、快捷键与 DPI 均待用户复测；未推送。
 
 <a id="evidence-media-compare-first"></a>
 

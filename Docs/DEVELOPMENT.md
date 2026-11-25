@@ -1,6 +1,6 @@
 # TractorTool 开发与验收
 
-更新日期：2026-11-25。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
+更新日期：2026-11-26。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
 入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
 
@@ -58,12 +58,12 @@
 
 ### AB 审片开发版
 
-- 实现：双视频/单图/显式编号序列、共同时间轴、静音/A/B 声音、归一化联动缩放平移、适合窗口/物理像素 1:1。GStreamer 1.28.9 与 D3D11 为插件私有运行库，仅使用公开 SDK，未修改框架。
-- 验证：插件及纯托管检查工程编译通过；独立 SDK 打包与 ZIP 文件静态核对通过；GPT-6.2-SOL/high 多路审查及修复复核已完成。[E138](PROJECT_HISTORY.md#evidence-media-compare-first)。检查程序、应用和真实媒体未运行，不能视为功能验收。
+- 实现：双视频/单图/显式编号序列、共同时间轴、静音/A/B 声音、归一化联动缩放平移、适合/填满画布/物理像素 1:1、空格播放。0.1.1 修正 GPU 纹理上下原点、定位前暂停等待顺序与异常后控制事件传递；压缩界面并保护键盘焦点、弹层输入及拖动最终定位。GStreamer 1.28.9 随插件提供，不走 Packages 申请；未修改框架。
+- 反馈与验证：用户在 0.1.0 发现画面上下颠倒、拖动反向观感、segment 警告和反复暂停超时。0.1.1 插件/检查工程编译、独立 SDK 打包及 ZIP 静态核对通过；两路 GPT-6.2-SOL/high 审查及发现项修复复核完成。[E139](PROJECT_HISTORY.md#evidence-media-compare-feedback)。未运行检查程序或应用；方向、超时及警告是否消失仍待用户复测，不能以源码修正替代验收。
 - 限制：当前是未校准的 SDR 8 位预览，解码与 Avalonia 须使用同一 GPU；没有精确邻帧索引、长 GOP 代理/邻域缓存、跨 GPU 或专业 HDR/Log 色彩链。源端同步检查首次格式，拒绝已知不支持格式与后续动态变化；元数据缺失仍不能排除未标记的 Log/广色域。容器估计时长可能包含无画面的音频尾段，定位该段会提示。
-- 独立包：[TractorTool.MediaCompare-0.1.0.zip](../artifacts/media-compare-0.1.0-reviewed/TractorTool.MediaCompare-0.1.0.zip)。在插件页安装后显式退出重启；无需安装 Python 或系统 GStreamer。此前 candidate 目录仅用于构建排错，不作为交付。
-- 产物静态核对：[package-check.json](../artifacts/media-compare-0.1.0-reviewed/package-check.json)，ZIP 20,463,292 字节、展开 51,774,373 字节；140 项中 121 项私有运行库文件全部哈希匹配，没有共享框架 DLL 副本。
-- 接续：用户先验收独立包的打开、拖动中间预览/最终位置、声音、缩放、切页与退出，再依据真实素材推进代理/缓存。需求和详细方法见[插件文档](Plugins/MediaCompare.md)。
+- 独立包：[TractorTool.MediaCompare-0.1.1.zip](../artifacts/media-compare-0.1.1-final/TractorTool.MediaCompare-0.1.1.zip)。在插件页安装后显式退出重启；无需另装 Python 或系统 GStreamer。只交付本条链接的 final 包，其他构建目录不代表最终修正。
+- 产物静态核对：[package-check.json](../artifacts/media-compare-0.1.1-final/package-check.json)，ZIP 20,467,646 字节、展开 51,788,069 字节；140 项中 121 项私有运行库文件全部哈希匹配，没有共享框架 DLL 副本。
+- 接续：优先复测方向/联动、空格与弹层、填满/1:1，以及播放→暂停→拖动→再播放；特别检查最终定位不被空格取消、超时及 segment 警告。基础回归和性能验收仍以 A29 为准。运行库若要统一申请，先由架构侧补足 DLL 声明、校验、来源和占用语义。方法见[插件文档](Plugins/MediaCompare.md)。
 
 <a id="workflow"></a>
 
@@ -218,7 +218,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A26 | HUD 方案与预览 | 旧配置继承、方案增删复制/保存/撤销、轮播停启、模板及规则验证、左侧草稿示例预览、提醒打断/到期恢复（E95 已删除桌面草稿预览）、保存失败不丢数据 | 纯逻辑、Windows UI | E86 选色保存/旧色值兼容、轮播独立保存/失败回退、定时循环/详情暂停/长条恢复与草稿隔离已在内存离屏检查通过；默认逻辑套件、原生窗口/磁盘保存/重启、提醒/真实采样专项仍待验证 |
 | A27 | HUD 首版数据源与页面 | 原方案兼容、传感器权限/缺失/释放、网络限时/取消/频率、余额凭据隔离、编辑可达性、三态内容/单双击/拖动、形变/动画偏好/透明命中、跨屏/DPI/穿透 | 逻辑、HTTP、Windows UI/硬件 | E96 硬件类型/编辑示例/缺失前置条件的离屏与纯数据检查、0.4.17 包通过，保留独立采样等原回归。本机未发现 PawnIO 注册/服务，温度实读恢复未验；真实 5Hz 硬件耗用/网络/桌面交互未测，托盘方案列表及原生窗口/DPI/DPAPI 等缺口保留 |
 | A28 | [文件夹版本历史](Plugins/FolderHistory.md#7-验收方法) | 文件状态、文本与 Office 内容比较、选区恢复与发布、原件保留、中断撤销、自动保护与清理 | 逻辑、真实 CLI、Windows UI | [0.6.2](PROJECT_HISTORY.md#evidence-folder-history-preview-cancellation) 快速切换、迟到错误、引擎取消、模拟事务与离屏工作区回归通过。[0.6.1 全插件审查](PROJECT_HISTORY.md#evidence-folder-history-full-review) 记录其余覆盖。真实 CLI 与正式窗口的当前版本验收、高 DPI、故障及性能场景待验 |
-| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖动、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.0 编译、独立打包及静态复核通过；纯托管检查仅编译。全部真实媒体/GPU/UI 场景与 PR 式拖动性能未验收，见[当前状态](#media-compare) |
+| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖动、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.0 用户发现方向/暂停超时等问题；0.1.1 编译、独立打包、静态核对及审查通过，纯托管检查仅编译。修正后的真实媒体/GPU/UI 与 PR 式拖动性能均待验，见[当前状态](#media-compare) |
 
 
 ## 5. 验证与发布要求
