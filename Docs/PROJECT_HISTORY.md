@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片首版 | [E138 · 独立媒体/GPU 插件（2026-11-25）](#evidence-media-compare-first) |
 | 插件隔离与自动发布 | [E137 · 1.1.0 发布（2026-11-23）](#evidence-release-110) |
 | 插件业务依赖定版 | [E136 · 源码与发布 SDK 构建（2026-11-23）](#evidence-plugin-private-versions) |
 | 1.0.0 发布修复 | [E135 · E134 修复和隔离回归（2026-11-23）](#evidence-release-100) |
@@ -174,6 +175,22 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-first"></a>
+
+## E138 AB 审片独立开发版（2026-11-25）
+
+用户授权开始新插件。实现 `TractorTool.MediaCompare` 0.1.0：双素材、共同播放时间、A/B/静音、联动缩放平移、物理像素 1:1、视频/单图/显式编号序列。只新增插件、专属检查、解决方案注册及文档，不修改宿主/Core/Contracts/公共 UI，不安装插件、不触碰用户素材和应用数据。保留既有 `.vscode/settings.json`。
+
+媒体工作线程持有两路 GStreamer 1.28.9 管线和公共时钟；暂停定位后校验时间覆盖再提交双帧。D3D11 将两边一次合成到共享纹理，等待 Avalonia 合成完成后复用，样本在复制后释放。运行库从 5 个固定 SHA256 的官方 wheel 静态读取，使用公开 C ABI，不运行 Python 或安装器，不修改 PATH。普通/延迟 PE 导入闭包与许可原文随包；首次来源调查曾静态提取官方安装包比对 DLL，后续构建无需该安装器或提取工具。NuGet 私有库定版在本插件工程。
+
+三路 GPT-6.2-SOL/high 分别审查交互/GPU、原生解码和运行库打包。修正音频工厂名、GPU staging 映射、共享纹理 bind、播放命令竞态、拖动节流、序列目录 `%`、定位 EOS、原生搜索路径和 CRT 文件名匹配。首个候选包暴露 MSBuild 未限定元数据导致原生文件未正确复制；改用独立运行库项并逐项核对 ZIP，未交付失败候选包。删除按名义 FPS 实现的“逐帧”按钮；精确邻帧、代理/邻域缓存、专业色彩及跨 GPU 保留为未实现能力。
+
+最后的动态格式审查指出“读取当前 pad caps”不能验证队列中更早的样本。补为源端同步探针：首次 CAPS 通过校验后保存引用，任何非等价变更永久锁存错误并阻断后续缓冲；公开 getter 避免依赖探针结构布局，Windows MSVC 的 probe ID 按 32 位 gulong 声明。新入口均做静态 PE 导出核对，未运行原生管线。
+
+构建入口：`dotnet build tests/TractorTool.MediaCompareChecks -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false` 仅编译纯托管所有权/视图/序列检查；`Build-Plugin.ps1` 使用 `artifacts/plugin-host-20261123-235028-9d9de9/host` 的发布 SDK 构建独立 Release 包。构建为 0 警告/0 错误。最终包及静态核对记录见[当前产物](DEVELOPMENT.md#media-compare)。未运行任何检查程序、宿主、GStreamer 媒体管线或真实 Windows UI；这些证据不等于可播放、音画同步或 PR 式拖动性能验收。
+
+最终格式探针由原生审查子代理定向复核，未发现剩余 P0/P1。重建后的 ZIP SHA256 为 `FEC529A1B1EBA4AE08ECE130E0BE977D3CA848C42D580B7384EF4EFE9196DD5D`。主代理对最终 ZIP 再核对全部运行库路径/长度/哈希、安装体积及无共享 DLL；未把此前候选包校验套到新包。
 
 <a id="evidence-release-110"></a>
 

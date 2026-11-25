@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "TractorTool.MediaCompare",
+  "name": "AB 审片",
+  "version": "0.1.0",
+  "entryAssembly": "TractorTool.Plugins.MediaCompare.dll",
+  "entryType": "TractorTool.Plugins.MediaCompare.ComparePlugin",
+  "apiVersion": "1.7",
+  "uiApiVersion": "1.3",
+  "avaloniaVersion": "12.1.6",
+  "supportedPlatforms": ["win-x64"],
+  "dependencies": [],
+  "description": "并排比较视频、图片与序列帧，联动查看细节。",
+  "author": "TractorTool"
+}

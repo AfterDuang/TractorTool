@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "gstreamerVersion": "1.28.9",
+  "rid": "win-x64",
+  "sources": [
+    {
+      "sha256": "624c342cea158a877832fc238adc3223327aaf0f36582f4e3007229de4308157",
+      "url": "https://files.pythonhosted.org/packages/02/59/e1e66a76286e538cb250a7a0bd57656933f5844d8ee77519b67102dcabcf/gstreamer_libs-1.28.9-cp39-abi3-win_amd64.whl",
+      "fileName": "gstreamer_libs-1.28.9-cp39-abi3-win_amd64.whl"
+    },
+    {
+      "sha256": "b2f66ed28b6b45f5390cbe026474dfd7bf152c81218d038e59cff34e95ec5897",
+      "url": "https://files.pythonhosted.org/packages/12/c5/06069d55e4a1c7382db21976485e818e741d8003579f7b806f6eb193796b/gstreamer_plugins-1.28.9-cp39-abi3-win_amd64.whl",
+      "fileName": "gstreamer_plugins-1.28.9-cp39-abi3-win_amd64.whl"
+    },
+    {
+      "sha256": "3d9a213fa62360b7a349d5810c3d4d7d032bd82a78ad1eb82c9c46f7b583902c",
+      "url": "https://files.pythonhosted.org/packages/28/d9/8088074ef54d0cae8581fb1bf982ec47b5d838e2157164ea2733b76ece22/gstreamer_plugins_restricted-1.28.9-cp39-abi3-win_amd64.whl",
+      "fileName": "gstreamer_plugins_restricted-1.28.9-cp39-abi3-win_amd64.whl"
+    },
+    {
+      "sha256": "28d92c207de093461d1711ea2c5f2ca1f66bd62b79017e335f7d751fa1965629",
+      "url": "https://files.pythonhosted.org/packages/51/ce/6e7b0fac572ac563bc99bbd0345c69f470ea6c43ff9ff0bc512e977e048e/gstreamer_plugins_libs-1.28.9-cp39-abi3-win_amd64.whl",
+      "fileName": "gstreamer_plugins_libs-1.28.9-cp39-abi3-win_amd64.whl"
+    },
+    {
+      "sha256": "dd9994cd35777c02a740a09063094021772ac0d2386998d722e65c09e8e0aafd",
+      "url": "https://files.pythonhosted.org/packages/25/e9/1b3d79c7205788cd064c99762f4649ffb57c413c5eb0d48163c1b765ce7a/gstreamer_ext_runtime-1.28.9-cp39-abi3-win_amd64.whl",
+      "fileName": "gstreamer_ext_runtime-1.28.9-cp39-abi3-win_amd64.whl"
+    }
+  ],
+  "modules": [
+    "gstapp",
+    "gstcoreelements",
+    "gstaudioconvert",
+    "gstaudioresample",
+    "gsttypefindfunctions",
+    "gstvideoconvertscale",
+    "gstvolume",
+    "gstd3d11",
+    "gstplayback",
+    "gstlibav",
+    "gstisomp4",
+    "gstmatroska",
+    "gstavi",
+    "gstmultifile",
+    "gstimagefreeze",
+    "gstjpeg",
+    "gstjpegformat",
+    "gstpng",
+    "gstvideoparsersbad",
+    "gstaudioparsers",
+    "gstwasapi2",
+    "gstogg",
+    "gstvorbis",
+    "gstopus",
+    "gstflac",
+    "gstvpx",
+    "gstdav1d",
+    "gstivfparse",
+    "gstwavparse",
+    "gstmpegtsdemux"
+  ],
+  "licenses": [
+    "gstreamer-1.0",
+    "gst-plugins-base-1.0",
+    "gst-plugins-bad-1.0",
+    "ffmpeg",
+    "glib",
+    "libffi",
+    "pcre2",
+    "proxy-libintl",
+    "orc",
+    "libjpeg-turbo",
+    "libpng",
+    "zlib",
+    "bzip2",
+    "flac",
+    "libogg",
+    "libvorbis",
+    "opus",
+    "libvpx",
+    "dav1d",
+    "gst-plugins-good-1.0",
+    "gst-libav-1.0"
+  ],
+  "windowsImports": [
+    "ADVAPI32.dll",
+    "AVRT.dll",
+    "bcrypt.dll",
+    "d2d1.dll",
+    "d3d11.dll",
+    "DNSAPI.dll",
+    "dwmapi.dll",
+    "dxgi.dll",
+    "GDI32.dll",
+    "IPHLPAPI.DLL",
+    "KERNEL32.dll",
+    "MMDevAPI.DLL",
+    "ntdll.dll",
+    "ole32.dll",
+    "SHELL32.dll",
+    "SHLWAPI.dll",
+    "USER32.dll",
+    "WINMM.dll",
+    "WS2_32.dll"
+  ],
+  "msvcLicense": {
+    "path": "licenses/msvc-runtime/license.rtf",
+    "sha256": "8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b",
+    "source": "Official GStreamer installer: tmp/vc_redist.x64.exe (14.44.35211), Burn payload license.rtf (u4)",
+    "redistributableSha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"
+  },
+  "licenseSource": {
+    "fileName": "gstreamer-1.0-msvc-x86_64-1.28.9.exe",
+    "url": "https://gstreamer.freedesktop.org/data/pkg/windows/1.28.9/msvc/gstreamer-1.0-msvc-x86_64-1.28.9.exe",
+    "sha256": "ce4008705e8c6fe92803535b82fb3d6551e183f438e6ef26682ac4d0aca61076"
+  }
+}

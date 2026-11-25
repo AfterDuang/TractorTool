@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "fileName": "gstreamer-1.0-msvc-x86_64-1.28.9.exe",
+    "url": "https://gstreamer.freedesktop.org/data/pkg/windows/1.28.9/msvc/gstreamer-1.0-msvc-x86_64-1.28.9.exe",
+    "sha256": "ce4008705e8c6fe92803535b82fb3d6551e183f438e6ef26682ac4d0aca61076"
+  },
+  "files": [
+    {
+      "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3",
+      "path": "bzip2/LICENSE"
+    },
+    {
+      "sha256": "113ff0fe944e9fcde2a88665cb8fb1d0e0237dead23543e5345319fef799e3ec",
+      "path": "bzip2/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "b327887de263238deaa80c34cdd2ff3e0ba1d35db585ce14a37ce3e74ee389e9",
+      "path": "dav1d/COPYING"
+    },
+    {
+      "sha256": "301699ef9f8d0ea820af5f0feb2f38485189fafd854f2f3af09fae210631f809",
+      "path": "dav1d/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "path": "ffmpeg/LGPL-2.1-or-later.txt"
+    },
+    {
+      "sha256": "c788091cac387a11dcd8043e95739fedb72fafca05b6c0153543f6e068f170fb",
+      "path": "ffmpeg/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+      "path": "flac/bins/GPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "617a441b6940b6ccc645522347e0f7e62c912812878c553c6c5dde121a280632",
+      "path": "flac/bins/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "12600ea1a7affcbf469bd0d8b2cd725e4167114a2ee834b88f5d2857bfd7ddbf",
+      "path": "flac/COPYING.Xiph"
+    },
+    {
+      "sha256": "bf8a42cca8c73381f9c03e218f3650b58be2d0011e8c35e5ac2e7695ed5dd4ca",
+      "path": "flac/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "path": "glib/LGPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "a20dde5819b97ebc8c16bf8dc81748b1cb9fd318c4e17da63916eea1a47c5aa1",
+      "path": "glib/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "fa53711b25af4b9a9b8dadfea3cb38166ec4b96760c8d62b284055554537d9ef",
+      "path": "gst-plugins-bad-1.0/ext_sctp_usrsctp_LICENSE.md"
+    },
+    {
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "path": "gst-plugins-bad-1.0/LGPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "edd921488e2940ee287c3be595b982b3231e87a968ed267f1c558d1ca19b2719",
+      "path": "gst-plugins-bad-1.0/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "path": "gst-plugins-base-1.0/LGPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "a20dde5819b97ebc8c16bf8dc81748b1cb9fd318c4e17da63916eea1a47c5aa1",
+      "path": "gst-plugins-base-1.0/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "path": "gstreamer-1.0/LGPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "a20dde5819b97ebc8c16bf8dc81748b1cb9fd318c4e17da63916eea1a47c5aa1",
+      "path": "gstreamer-1.0/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "0f4d7a0bfb83c37465d42dc305f124189196cc0cc2cc8d6f8461103682aebbc5",
+      "path": "libffi/LICENSE"
+    },
+    {
+      "sha256": "113ff0fe944e9fcde2a88665cb8fb1d0e0237dead23543e5345319fef799e3ec",
+      "path": "libffi/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "96f5b328adbb78eeaaec6980d73fd558cb1e4d62560ed615646bc3cf5e532430",
+      "path": "libjpeg-turbo/LICENSE.md"
+    },
+    {
+      "sha256": "6fd39ac61058bfcaef2a7eb42854010e077934e33ff346c4b6a024ddde3d3b61",
+      "path": "libjpeg-turbo/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814",
+      "path": "libogg/COPYING"
+    },
+    {
+      "sha256": "301699ef9f8d0ea820af5f0feb2f38485189fafd854f2f3af09fae210631f809",
+      "path": "libogg/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526",
+      "path": "libpng/LICENSE"
+    },
+    {
+      "sha256": "113ff0fe944e9fcde2a88665cb8fb1d0e0237dead23543e5345319fef799e3ec",
+      "path": "libpng/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a",
+      "path": "libvorbis/COPYING"
+    },
+    {
+      "sha256": "301699ef9f8d0ea820af5f0feb2f38485189fafd854f2f3af09fae210631f809",
+      "path": "libvorbis/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "8267348d5af1262c11d1a08de2f5afc77457755f1ac658627dd9acf71011d615",
+      "path": "libvpx/LICENSE"
+    },
+    {
+      "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c",
+      "path": "libvpx/PATENTS"
+    },
+    {
+      "sha256": "5e799cec6215eb9524d8ce2a2a8091949cb34ab4ea02ed093e8809d1ebd16f0a",
+      "path": "libvpx/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b",
+      "path": "msvc-runtime/license.rtf"
+    },
+    {
+      "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551",
+      "path": "opus/COPYING"
+    },
+    {
+      "sha256": "301699ef9f8d0ea820af5f0feb2f38485189fafd854f2f3af09fae210631f809",
+      "path": "opus/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "4f5dabb1b44bb6fc5cd53820b1f103147ad61b395a57903991325bd1b85d97bf",
+      "path": "orc/COPYING"
+    },
+    {
+      "sha256": "301699ef9f8d0ea820af5f0feb2f38485189fafd854f2f3af09fae210631f809",
+      "path": "orc/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "87d884eceb7fc54611470ce9f74280d28612b0c877adfc767e9676892a638987",
+      "path": "pcre2/LICENCE"
+    },
+    {
+      "sha256": "9913b6a29b67d9b640680d4d5edf4138d86a09c1949a7309113df2342da9faa2",
+      "path": "pcre2/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+      "path": "proxy-libintl/LGPL-2.0-or-later.txt"
+    },
+    {
+      "sha256": "a20dde5819b97ebc8c16bf8dc81748b1cb9fd318c4e17da63916eea1a47c5aa1",
+      "path": "proxy-libintl/README-LICENSE-INFO.txt"
+    },
+    {
+      "sha256": "d106dcdb2a0b3087cb3a2380b9f00a0bbadc7eb835cd80408f94a2d78d69727d",
+      "path": "zlib/README"
+    },
+    {
+      "sha256": "bbc65991985c32b3a182f239c04a77af29c39ac0594a2b3d1085337abc043d7b",
+      "path": "zlib/README-LICENSE-INFO.txt"
+    },
+    {
+      "path": "gst-plugins-good-1.0/COPYING",
+      "sha256": "10162be9f7ddb9e98c22c3edd0f78d62ab88f0ca8b1cc968bd85d5d665489d90",
+      "source": "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.9/subprojects/gst-plugins-good/COPYING"
+    },
+    {
+      "path": "gst-libav-1.0/COPYING",
+      "sha256": "10162be9f7ddb9e98c22c3edd0f78d62ab88f0ca8b1cc968bd85d5d665489d90",
+      "source": "https://raw.githubusercontent.com/GStreamer/gstreamer/1.28.9/subprojects/gst-libav/COPYING"
+    }
+  ]
+}

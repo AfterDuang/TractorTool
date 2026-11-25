@@ -1,0 +1,2 @@
+# Preserve upstream license text bytes for license-manifest.json verification.
+licenses/** -text

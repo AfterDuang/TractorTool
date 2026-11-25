@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Version>0.1.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <GStreamerRuntimeDir Condition="'$(GStreamerRuntimeDir)' == ''">$(MSBuildThisFileDirectory)../../artifacts/media-compare-runtime/runtime</GStreamerRuntimeDir>
+    <GStreamerCacheDir Condition="'$(GStreamerCacheDir)' == ''">$(MSBuildThisFileDirectory)../../artifacts/media-compare-runtime</GStreamerCacheDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(HostSdkDir)' != ''">
+    <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TractorTool.UI"><HintPath>$(HostSdkDir)/TractorTool.UI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(HostSdkDir)' == ''">
+    <ProjectReference Include="../../TractorTool.Contracts/TractorTool.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../TractorTool.UI/TractorTool.UI.csproj" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TractorTool.MediaCompareChecks" />
+    <PackageReference Include="Avalonia" IncludeAssets="compile;build;buildTransitive" PrivateAssets="all" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Vortice.Direct3D11" VersionOverride="3.8.3" />
+    <PackageReference Include="Vortice.D3DCompiler" VersionOverride="3.8.3" />
+    <None Update="plugin.json;NOTICE.md;Assets/**;Licenses/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
+    <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
+           Text="HostSdkDir 必须包含已发布的 Contracts/UI DLL。" />
+  </Target>
+  <Target Name="PrepareMediaCompareRuntime" BeforeTargets="AssignTargetPaths"
+          Condition="'$(DesignTimeBuild)' != 'true' And '$(SkipMediaCompareRuntime)' != 'true'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildThisFileDirectory)scripts/Prepare-GStreamerRuntime.ps1&quot; -OutputDirectory &quot;$(GStreamerRuntimeDir)&quot; -CacheDirectory &quot;$(GStreamerCacheDir)&quot;" />
+    <ItemGroup>
+      <_GStreamerRuntimeFile Include="$(GStreamerRuntimeDir)/**/*" />
+      <None Include="@(_GStreamerRuntimeFile)" Link="Native/GStreamer/%(_GStreamerRuntimeFile.RecursiveDir)%(_GStreamerRuntimeFile.Filename)%(_GStreamerRuntimeFile.Extension)"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

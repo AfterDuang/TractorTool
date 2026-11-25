@@ -4,6 +4,7 @@
     <Project Path="Plugins/TractorTool.Plugins.VideoExport/TractorTool.Plugins.VideoExport.csproj" />
     <Project Path="Plugins/TractorTool.Plugins.SystemHud/TractorTool.Plugins.SystemHud.csproj" />
     <Project Path="Plugins/TractorTool.Plugins.FolderHistory/TractorTool.Plugins.FolderHistory.csproj" />
+    <Project Path="Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AvaloniaExtensionFixture/AvaloniaExtensionFixture.csproj" />
@@ -16,6 +17,7 @@
     <Project Path="tests/TractorTool.VideoChecks/TractorTool.VideoChecks.csproj" />
     <Project Path="tests/TractorTool.HudChecks/TractorTool.HudChecks.csproj" />
     <Project Path="tests/TractorTool.FolderHistoryChecks/TractorTool.FolderHistoryChecks.csproj" />
+    <Project Path="tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj" />
   </Folder>
   <Project Path="TractorTool.Contracts/TractorTool.Contracts.csproj" />
   <Project Path="TractorTool.Core/TractorTool.Core.csproj" />

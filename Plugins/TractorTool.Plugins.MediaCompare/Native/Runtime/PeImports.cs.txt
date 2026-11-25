@@ -1,0 +1,55 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection.PortableExecutable;
+using System.Text;
+
+// Build-time inspection only: never loads or executes a native library.
+public static class MediaComparePeImports
+{
+    public static string[] Read(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var image = new PEReader(stream);
+        var header = image.PEHeaders.PEHeader;
+        if (header is null || header.Magic != PEMagic.PE32Plus ||
+            image.PEHeaders.CoffHeader.Machine != Machine.Amd64)
+            throw new InvalidDataException($"Expected an x64 PE image: {path}");
+        var imports = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        ReadDirectory(image, header.ImportTableDirectory, false, imports);
+        ReadDirectory(image, header.DelayImportTableDirectory, true, imports);
+        return new List<string>(imports).ToArray();
+    }
+
+    private static void ReadDirectory(PEReader image, DirectoryEntry directory,
+        bool delayed, SortedSet<string> imports)
+    {
+        if (directory.RelativeVirtualAddress == 0) return;
+        var bytes = image.GetSectionData(directory.RelativeVirtualAddress).GetContent();
+        int size = Math.Min(bytes.Length, directory.Size);
+        int stride = delayed ? 32 : 20;
+        for (int offset = 0; offset + stride <= size; offset += stride)
+        {
+            bool empty = true;
+            for (int i = 0; i < stride; ++i) empty &= bytes[offset + i] == 0;
+            if (empty) return;
+            if (delayed && ReadInt(bytes, offset) != 1)
+                throw new InvalidDataException("Expected RVA-based delay imports.");
+            int nameRva = ReadInt(bytes, offset + (delayed ? 4 : 12));
+            if (nameRva <= 0) throw new InvalidDataException("Invalid PE import name RVA.");
+            var nameBytes = image.GetSectionData(nameRva).GetContent();
+            int length = 0;
+            while (length < nameBytes.Length && nameBytes[length] != 0 && length < 260) ++length;
+            if (length == 0 || length >= nameBytes.Length || length >= 260)
+                throw new InvalidDataException("Invalid PE import name.");
+            var name = Encoding.ASCII.GetString(nameBytes.AsSpan(0, length));
+            if (name.IndexOfAny(new[] { '/', '\\', ':' }) >= 0)
+                throw new InvalidDataException("PE import must be a library basename.");
+            imports.Add(name);
+        }
+        throw new InvalidDataException("PE import table has no terminator.");
+    }
+
+    private static int ReadInt(System.Collections.Immutable.ImmutableArray<byte> bytes, int offset) =>
+        bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+}

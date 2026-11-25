@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:TractorTool.Plugins.MediaCompare.ViewModels"
+             xmlns:views="using:TractorTool.Plugins.MediaCompare.Views"
+             x:Class="TractorTool.Plugins.MediaCompare.Views.CompareView" x:DataType="vm:CompareViewModel"
+             Focusable="True">
+  <Grid Margin="24,20,24,20" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="12">
+    <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="4">
+        <TextBlock Text="AB 审片" Classes="pageTitle" />
+        <TextBlock Text="两版画面，同步比较。" Classes="muted" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <Button Content="适合窗口" Click="FitView" ToolTip.Tip="重置联动缩放和平移" />
+        <Button Content="原始像素" Click="ActualSize" ToolTip.Tip="按源图像像素查看；不同分辨率素材分别显示 1:1" />
+      </StackPanel>
+    </Grid>
+    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+      <Border x:Name="SourceA" Classes="card" Padding="12" DragDrop.AllowDrop="True">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock Text="{Binding AName}" Classes="sectionTitle" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding AName}" />
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding ADetails}" Classes="caption" TextWrapping="Wrap" Margin="0,6,0,0" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Button Content="选择 A" Tag="A" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" />
+            <Button Content="序列帧" Tag="A" Click="ChooseSequence" IsEnabled="{Binding CanOperate}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <Border x:Name="SourceB" Grid.Column="1" Classes="card" Padding="12" DragDrop.AllowDrop="True">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock Text="{Binding BName}" Classes="sectionTitle" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" ToolTip.Tip="{Binding BName}" />
+          <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding BDetails}" Classes="caption" TextWrapping="Wrap" Margin="0,6,0,0" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Button Content="选择 B" Tag="B" Click="ChooseMedia" IsEnabled="{Binding CanOperate}" />
+            <Button Content="序列帧" Tag="B" Click="ChooseSequence" IsEnabled="{Binding CanOperate}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+    </Grid>
+    <Border Grid.Row="2" BorderThickness="1" BorderBrush="{DynamicResource AppBorderBrush}" CornerRadius="8" ClipToBounds="True" Background="#111111" MinHeight="160">
+      <Grid>
+        <views:ComparePreview x:Name="Preview" />
+        <Grid ColumnDefinitions="*,*" VerticalAlignment="Top" Margin="12" IsHitTestVisible="False">
+          <Border Background="#B3222222" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="A" Foreground="White" FontWeight="SemiBold" /></Border>
+          <Border Grid.Column="1" Background="#B3222222" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left"><TextBlock Text="B" Foreground="White" FontWeight="SemiBold" /></Border>
+        </Grid>
+        <TextBlock Text="选择素材开始比较" Foreground="#B0B0B0" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasMedia}" IsHitTestVisible="False" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+      <TextBlock Text="{Binding PositionText}" FontFamily="Consolas" VerticalAlignment="Center" />
+      <Slider x:Name="Timeline" Grid.Column="1" Minimum="0" Maximum="{Binding TimelineMaximum}"
+              Value="{Binding PositionSeconds, Mode=OneWay}" IsEnabled="{Binding CanSeek}" SmallChange="0.04" LargeChange="1"
+              AutomationProperties.Name="共同播放时间" ToolTip.Tip="拖动定位；方向键移动 0.1 秒，Page Up/Down 移动 1 秒" />
+      <TextBlock Grid.Column="2" Text="{Binding DurationText}" FontFamily="Consolas" VerticalAlignment="Center" ToolTip.Tip="媒体估计总时长；仅有音频的尾段可能没有可比较画面" />
+    </Grid>
+    <WrapPanel Grid.Row="4" Orientation="Horizontal">
+      <Button Content="{Binding PlayLabel}" Command="{Binding TogglePlayCommand}" Margin="0,0,8,6" MinWidth="72" />
+      <TextBlock Text="声音" VerticalAlignment="Center" Margin="0,0,8,6" />
+      <ComboBox x:Name="AudioChoice" SelectedIndex="{Binding SelectedAudio, Mode=OneWay}" SelectionChanged="AudioChanged" MinWidth="120" Margin="0,0,20,6">
+        <ComboBoxItem Content="静音" /><ComboBoxItem Content="只听 A" /><ComboBoxItem Content="只听 B" />
+      </ComboBox>
+      <TextBlock Text="序列帧率" VerticalAlignment="Center" Margin="0,0,8,6" />
+      <NumericUpDown Value="{Binding SequenceFrameRate}" Minimum="1" Maximum="240" Increment="1" FormatString="0.###" Width="110" Margin="0,0,8,6" IsEnabled="{Binding CanOperate}" />
+      <TextBlock Text="fps（下次打开序列时使用）" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,6" />
+    </WrapPanel>
+    <StackPanel Grid.Row="5" Spacing="4">
+      <TextBlock Text="{Binding Status}" Classes="caption" />
+      <TextBlock Text="{Binding RendererStatus}" Classes="caption" />
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+    </StackPanel>
+  </Grid>
+</UserControl>
