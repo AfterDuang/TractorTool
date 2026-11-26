@@ -1,6 +1,6 @@
 # TractorTool 软件架构
 
-更新日期：2026-11-23。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
+更新日期：2026-11-26。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
 
 ## 1. 当前代码与目标结构
 
@@ -127,6 +127,8 @@ Contracts 不包含控件类型；Avalonia 页面契约只在 UI 工程。宿主
 ### 4.1 包管理
 
 公开接口位于 [Contracts/Packages](../TractorTool.Contracts/Packages/IExternalPackageService.cs)，实现位于 [Core/Packages](../TractorTool.Core/Packages/ExternalPackageService.cs)，管理页面归宿主。私有 .NET 库随插件打包，共享 SDK 由宿主提供，外部可执行工具由包服务提供版本路径及使用租约。
+
+当前包定义必须包含可执行工具，安装时逐个运行版本探测；工具 ZIP 可以附带运行所需的 DLL，但尚无纯 DLL 运行库的独立声明、校验及加载占用契约。插件私有托管/原生库仍按[依赖分类](PLUGIN_DEVELOPMENT.md#dependency-kinds)随插件交付，不能把 DLL 当作可执行工具申请。
 
 **来源**：不维护自有源。默认 GitHub，用户可添加公开 GitHub Enterprise HTTPS API；配置在 `<DataRoot>/Config/dependency-sources.json`。来源移除不删除已装包、不撤销已开始下载；配置损坏保留原件并阻止覆盖。私有认证、pip 等未接入的安装类型不提供空入口。
 
@@ -283,7 +285,7 @@ CI 普通构建只读。标签流程校验版本、提交、干净状态及产�
 
 用户已确认纳入后续计划，尚未排期。保留现有分层与统一依赖入口；只有实际安装能力接入时才开放来源配置、扩展协议，不预建安装器体系，也不重新解释旧 PackageReference。
 
-- pip 负责库版本及间接依赖解析；宿主记录确定的运行时、平台、来源、版本和校验信息，通过受管理进程准备隔离环境，不允许插件追加任意安装命令。
+- 包管理工具负责库版本及间接依赖解析；宿主记录确定的运行时、平台、来源、版本和校验信息，通过受管理进程准备隔离环境，不允许插件追加任意安装命令。
 - 冲突需求不进入可变全局环境；仅完整依赖与运行时兼容时复用环境。引用和租约覆盖环境、解释器及间接依赖，缓存与已装环境分开清理，卸载不联动删除。
 - 环境归 DataRoot，插件代码仍归 AppRoot。不可搬迁环境在迁移目标重建、验证后切换，保留旧环境供恢复，不能直接套用 ZIP 复制事务。用户已有文件/外部服务只建立引用，不取得删除或终止所有权。
-- 解释器来源、锁定格式、复用粒度及源码分发支持在实施时决定；本节不构成已交付能力。计划依据见 [E28](PROJECT_HISTORY.md#evidence-python-plan)。
+- 安装工具、解释器来源、锁定格式、复用粒度及源码分发支持仍待确定；本节不构成已交付能力。计划依据见 [E28](PROJECT_HISTORY.md#evidence-python-plan)。

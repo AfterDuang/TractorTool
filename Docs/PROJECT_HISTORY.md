@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 旧开发产物 | [E99 文档归并中的历史路径快照](#historical-artifacts) |
 | AB 审片拖动优化 | [E145 · 请求调度、双路准备与定位复用（2026-11-26）](#evidence-media-compare-scrub-optimization) |
 | AB 审片定位后播放 | [E144 · 容器时间量化与呈现区间（2026-11-26）](#evidence-media-compare-seek-playback) |
 | AB 审片审查修复 | [E143 · 共同时间、显示几何与预览生命周期（2026-11-26）](#evidence-media-compare-review-fixes) |
@@ -194,6 +195,7 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 - 打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj -HostSdkDir artifacts/plugin-host-20261123-235028-9d9de9/host -Output artifacts/media-compare-0.1.7-final`，0 错误、2 条 NU1900（漏洞数据源不可达，扫描未完成）。ZIP 144 个文件，20,522,692 字节，展开 51,906,232 字节；123 项运行库逐文件 SHA-256 匹配，无共享框架 DLL，宿主 SDK 247 个文件哈希/数量未变。
 - 证据：[编译日志](../artifacts/media-compare-diagnostics/20261126-scrub-optimization/build-final.log)、[打包日志](../artifacts/media-compare-diagnostics/20261126-scrub-optimization/package-build.log)、[静态包核对](../artifacts/media-compare-0.1.7-final/package-check.json)。[0.1.7 ZIP](../artifacts/media-compare-0.1.7-final/TractorTool.MediaCompare-0.1.7.zip) SHA-256：`A43A40D151DBDD46B67B36448D9D3B8A2CD096EE31FE4C6452427AEB87182A70`。
 - 待验：用户安装并重启后比较连续正倒拖、松手续播和普通暂停续播的响应、两路画面及音频同步。长 GOP、硬件驱动及可见 UI 性能未确认，不宣称达到 PotPlayer/PR 水平。
+- 后续：2026-11-26 已按授权完成本地提交 `e025a04`（`perf: reduce media compare seek latency`），随后已推送；本地 `origin/main` reflog 记录当日 22:40 的成功推送。文档整理未追加运行验证。
 
 <a id="evidence-media-compare-seek-playback"></a>
 
@@ -363,6 +365,7 @@ GPT-6.2-SOL/high 分别审查时间/序列与音频/原生/精度路径，发现
 宿主与四个随包插件分别定版为 1.1.0，沿用 Avalonia 12.1.6、Contracts API 1.7 和原程序集绑定版本。UI API 1.6 新增私有 Avalonia 扩展交付能力，已有插件可保留原 UI API 声明。分发校验从清单读取外部工具路径和归档摘要。标签工作流在附件校验和上传完成后公开 Release，预发行标签单独标记。
 
 - `Verify-PluginHost.ps1` 的 18 工程 Release 构建零警告、零错误。核心 217 项、离屏集成 90 项通过，实测私有扩展在插件上下文加载、旧 UI 1.5 插件兼容及共享 DLL 副本拒绝。独立插件构建、安装和检查前后，234 个宿主文件的哈希一致。隔离证据目录为 `artifacts/plugin-host-20261123-235028-9d9de9`。
+- 离屏集成日志 `artifacts/plugin-host-20261123-235028-9d9de9/integration-checks.txt` 记录 `PASS Shell header bindings survive presenter clearing and failure recovery without errors`：E113 当轮只编译的页头绑定回归在本次已执行通过。覆盖呈现器清空与失败恢复，不等于真实 Windows 退出、页头动效或末段闪动已验收。
 - 首轮核心检查有两项在子进程刚创建 PID 文件时遇到 Windows 共享冲突。测试子进程改为写完并关闭同目录临时文件后再改名，以完整文件通知父进程就绪。上述通过结果来自修正后的全量复跑。
 - `DistributionPluginsChecks.ps1` 通过。新版校验器也完整验证了 1.0.0 的 399 个文件、4 个插件及原标签/提交身份。证据覆盖构建、归档和离屏装载，真实安装器升级及硬件场景仍按 A22 等验收项记录。
 
@@ -3260,6 +3263,22 @@ Test.Independent-1.0.1.zip（10 文件）与 Test.PackageProbe-1.1.0.zip（9 文
 按用户要求只整理文档：DEVELOPMENT 合并逐轮开场摘要，区分实现、证据和未关闭项，A19/A22/A24 同步当前进程、分发及托盘验证边界；PROJECT_CONTEXT 缩为接续摘要和入口，不重复数值证据。架构明确三秒限制只针对原生通知等待，宿主与插件的许可收集职责分开，脚本说明同步。根 README 和插件规范核对后保留，不增加具体插件内部说明。
 
 只读确认 E99 宿主/核心检查输出、两份机制 ZIP 及 E96 HUD ZIP 仍存在；旧 E51 分发、E52 视频包、E56 夹具、E58 沙盒、E63/E64 托盘副本及 E67 隔离宿主已不存在，从当前入口移除，旧证据留在各 E 记录。本轮没有删除、重建或重新校验产物内容。十份框架相关文档的 403 个本地链接、其中 212 个 Markdown 锚点全部通过；改动文件 diff 空白检查通过。未构建、运行检查程序或启动应用，E99 P2 回归和其他未完成验收保持未关闭。
+
+<a id="historical-artifacts"></a>
+
+#### 历史开发产物路径快照
+
+2026-11-26 从 DEVELOPMENT 迁入。以下是 E99 文档归并时记录的 E96/E99 本地路径与验证范围，保留原观察结论；本次只归档文字，没有重新检查这些旧文件的存在性或内容，也没有删除产物。
+
+| 产物 | 路径 | 用途与限制 |
+| --- | --- | --- |
+| E99 宿主构建 | `artifacts/e99-framework/host-build/TractorTool.exe` | E99 Release 编译输出及当轮打包 SDK，不是当前修复版本或自包含完整分发 |
+| E99 核心检查 | `artifacts/e99-framework/checks-build/TractorTool.Checks.dll` | E99 当轮用例编译输出，未运行，不包含后续存储回归 |
+| E99 无 MVVM 机制插件 | `artifacts/e99-framework/no-mvvm-package/Test.Independent-1.0.1.zip` | 独立打包/哈希证据，未安装或加载 |
+| E99 含 MVVM 机制插件 | `artifacts/e99-framework/mvvm-package/Test.PackageProbe-1.1.0.zip` | 独立打包/许可分支证据，未安装或加载 |
+| E96 HUD 插件 | `artifacts/e96-hud-hardware/plugin/TractorTool.SystemHud-0.4.17.zip` | 已有独立构建及离屏证据，未自动安装；插件问题继续暂缓 |
+
+E99 当时已确认 E51 完整分发、E52 视频包、E56 依赖夹具、E58 沙盒、E63/E64 托盘副本及 E67 隔离宿主不存在；E60 产物在 E62 已确认不存在。具体命令与证据留在原 E 记录。E102 的 12.1.4 对照副本和 E103 的剪贴板 1.1.3 / Avalonia 12.1.2 包也已退出当前升级入口，不能与新版产物拼用。当前下载和验证入口见[开发台账](DEVELOPMENT.md#local-artifacts)。
 
 <a id="evidence-page-entrance"></a>
 
