@@ -1,3 +1,4 @@
+using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Pipes;
@@ -73,8 +74,15 @@ internal sealed partial class WindowsProcessSession : IProcessSession
             };
             // No shell. CreateProcessW requires a command line; quote the argument vector using Windows CRT rules.
             var command = BuildCommandLine(request.ExecutablePath, request.Arguments);
-            Check(CreateProcessW(request.ExecutablePath, command, IntPtr.Zero, IntPtr.Zero, true,
-                0x08080000, IntPtr.Zero, request.WorkingDirectory, ref startup, out var info)); // NO_WINDOW | EXTENDED_STARTUPINFO
+            var environment = request.EnvironmentVariables is { Count: > 0 } changes
+                ? Marshal.StringToHGlobalUni(BuildEnvironmentBlock(changes, ReadInheritedEnvironment())) : IntPtr.Zero;
+            ProcessInformation info;
+            try
+            {
+                Check(CreateProcessW(request.ExecutablePath, command, IntPtr.Zero, IntPtr.Zero, true,
+                    0x08080400, environment, request.WorkingDirectory, ref startup, out info)); // NO_WINDOW | EXTENDED_STARTUPINFO | UNICODE_ENVIRONMENT
+            }
+            finally { if (environment != IntPtr.Zero) Marshal.FreeHGlobal(environment); }
             process = new(info.Process, ownsHandle: true);
             using var thread = new SafeWaitHandle(info.Thread, ownsHandle: true);
             output.DisposeLocalCopyOfClientHandle();
@@ -177,6 +185,53 @@ internal sealed partial class WindowsProcessSession : IProcessSession
         }
         if (command.Length >= 32767) throw new ArgumentException("Windows 工具参数超过命令行长度限制。");
         return command;
+    }
+
+    internal static string BuildEnvironmentBlock(IReadOnlyDictionary<string, string?> changes, IDictionary inherited)
+    {
+        // Never set Environment variables on the host: concurrent invocations must remain independent.
+        var variables = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in inherited) variables.Add((string)entry.Key, (string)entry.Value!);
+        foreach (var (name, value) in changes)
+        {
+            if (value is null) variables.Remove(name);
+            else variables[name] = value;
+        }
+        var block = new StringBuilder();
+        foreach (var (name, value) in variables)
+        {
+            // A resource bound, not the smaller ANSI CreateProcess limit. Unicode blocks may exceed 32 KiB.
+            if ((long)block.Length + name.Length + value.Length + 3 > 1024 * 1024)
+                throw new ArgumentException("子进程环境超过 1 Mi 字符。", nameof(changes));
+            block.Append(name).Append('=').Append(value).Append('\0');
+        }
+        if (block.Length == 0) block.Append('\0');
+        return block.Append('\0').ToString();
+    }
+
+    private static IDictionary ReadInheritedEnvironment()
+    {
+        // Environment.GetEnvironmentVariables omits the Windows =C: / =D: drive-directory entries.
+        // An explicit child block must preserve them as well as ordinary inherited variables.
+        var pointer = GetEnvironmentStringsW();
+        if (pointer == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        try
+        {
+            var variables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var offset = 0;
+            while (Marshal.ReadInt16(pointer, offset * sizeof(char)) != 0)
+            {
+                var start = offset;
+                while (Marshal.ReadInt16(pointer, offset * sizeof(char)) != 0)
+                    if (++offset >= 1024 * 1024) throw new InvalidOperationException("继承的进程环境超过 1 Mi 字符。");
+                var entry = Marshal.PtrToStringUni(IntPtr.Add(pointer, start * sizeof(char)), offset - start)!;
+                var separator = entry.IndexOf('=', entry[0] == '=' ? 1 : 0);
+                if (separator > 0) variables.TryAdd(entry[..separator], entry[(separator + 1)..]);
+                offset++;
+            }
+            return variables;
+        }
+        finally { _ = FreeEnvironmentStringsW(pointer); }
     }
 
     private static void Check(bool success) { if (!success) throw new Win32Exception(Marshal.GetLastWin32Error()); }

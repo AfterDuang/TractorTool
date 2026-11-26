@@ -1,48 +1,88 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="using:TractorTool.ViewModels"
              x:Class="TractorTool.Views.ExternalToolsView" x:DataType="vm:ExternalToolsViewModel">
-  <ScrollViewer Classes="pageScroll">
-    <StackPanel Classes="pageBody" Spacing="16">
-      <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
-      <WrapPanel>
-        <TextBox Text="{Binding SearchText}" PlaceholderText="搜索名称、标识或版本" Width="240" Margin="0,0,16,8" />
-        <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" IsVisible="{Binding HasCleanup}" Margin="0,0,16,8" />
-        <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
-      </WrapPanel>
-      <Border Classes="card" IsVisible="{Binding IsEmpty}">
-        <StackPanel Spacing="8">
-          <TextBlock Text="{Binding EmptyMessage}" FontWeight="SemiBold" TextWrapping="Wrap" />
-        </StackPanel>
-      </Border>
-      <ItemsControl ItemsSource="{Binding VisibleCards}">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:PackageCardViewModel">
-            <Border Classes="card" Margin="0,0,0,8">
+  <Grid RowDefinitions="Auto,*">
+    <TabStrip x:Name="Categories" ItemsSource="{Binding PackageCategories}" SelectedIndex="{Binding SelectedCategoryIndex}"
+              SelectionChanged="CategoryChanged" Margin="0,0,8,16" FontSize="16" AutomationProperties.Name="依赖分类" />
+    <ScrollViewer x:Name="PackagesScroll" Grid.Row="1" Classes="pageScroll">
+      <StackPanel Classes="pageBody" Spacing="16">
+        <TextBlock Text="{Binding Error}" Classes="caption" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+        <WrapPanel>
+          <TextBox Text="{Binding SearchText}" PlaceholderText="搜索名称、标识或版本" Width="240" Margin="0,0,16,8" />
+          <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" IsVisible="{Binding HasCleanup}" Margin="0,0,16,8"
+                  ToolTip.Tip="仅清理当前分类及搜索结果中未被引用、未在使用的依赖；确认时会列出清单。" />
+          <Button Content="清理 Python 下载缓存" Command="{Binding CleanPythonCacheCommand}" IsVisible="{Binding HasPythonCache}" Margin="0,0,16,8" />
+          <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
+        </WrapPanel>
+        <Border Classes="card" IsVisible="{Binding IsEmpty}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="{Binding EmptyMessage}" FontWeight="SemiBold" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <ItemsControl ItemsSource="{Binding VisibleCards}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PackageCardViewModel">
+              <Border Classes="card" Margin="0,0,0,8">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
+                    <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap" />
+                    <WrapPanel>
+                      <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
+                      <TextBlock Text="{Binding StatusText}" Classes="caption" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding SourceSummary}" Classes="caption" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding SizeText}" Classes="caption" />
+                    <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding RetentionMessage}" IsVisible="{Binding IsRetained}" Classes="caption" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+                    <WrapPanel>
+                      <Button Content="查看详情" Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).OpenCommand}"
+                              CommandParameter="{Binding}" Margin="0,4,8,0" />
+                      <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" Margin="0,4,8,0" />
+                      <Button Content="取消下载" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" Margin="0,4,8,0" />
+                      <Button Content="清理" Command="{Binding RemoveCommand}" IsVisible="{Binding IsInstalled}" Margin="0,4,0,0"
+                              ToolTip.Tip="仅可清理没有插件引用且未在使用的依赖。" />
+                    </WrapPanel>
+                  </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ItemsControl ItemsSource="{Binding VisiblePythonCards}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PythonEnvironmentCardViewModel">
+              <Border Classes="card" Margin="0,0,0,8">
                 <StackPanel Spacing="6">
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />
                   <TextBlock Text="{Binding Description}" Classes="caption" TextWrapping="Wrap" />
-                  <WrapPanel>
-                    <TextBlock Text="{Binding Attribution}" Classes="caption" Margin="0,0,16,0" />
-                    <TextBlock Text="{Binding StatusText}" Classes="caption" />
-                  </WrapPanel>
-                  <TextBlock Text="{Binding SourceSummary}" Classes="caption" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding SizeText}" Classes="caption" />
+                  <TextBlock Text="{Binding Attribution}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding StatusText}" />
                   <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding RetentionMessage}" IsVisible="{Binding IsRetained}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding SizeText}" Classes="caption" />
                   <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
-                  <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+                  <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
                   <WrapPanel>
-                    <Button Content="查看详情" Command="{Binding $parent[UserControl].((vm:ExternalToolsViewModel)DataContext).OpenCommand}"
-                            CommandParameter="{Binding}" Margin="0,4,8,0" />
                     <Button Content="{Binding InstallLabel}" Command="{Binding InstallCommand}" IsVisible="{Binding CanInstall}" Classes="accent" Margin="0,4,8,0" />
-                    <Button Content="取消下载" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" Margin="0,4,8,0" />
-                    <Button Content="清理" Command="{Binding RemoveCommand}" IsVisible="{Binding IsInstalled}" Margin="0,4,0,0"
-                            ToolTip.Tip="仅可清理没有插件引用且未在使用的依赖。" />
+                    <Button Content="取消准备" Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" Margin="0,4,8,0" />
+                    <Button Content="清理" Command="{Binding RemoveCommand}" IsVisible="{Binding IsInstalled}" Margin="0,4,0,0" />
                   </WrapPanel>
+                  <Expander Header="查看详情" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8" Margin="0,8,0,0">
+                      <TextBlock Text="来源" FontWeight="SemiBold" />
+                      <SelectableTextBlock Text="{Binding Source}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Users}" TextWrapping="Wrap" />
+                      <SelectableTextBlock Text="{Binding IdentityText}" TextWrapping="Wrap" />
+                      <TextBlock Text="存储位置" FontWeight="SemiBold" />
+                      <SelectableTextBlock Text="{Binding Directory}" TextWrapping="Wrap" />
+                      <TextBlock Text="按原锁文件修复；清理仅对未引用、未使用的环境开放。" Classes="caption" TextWrapping="Wrap" />
+                    </StackPanel>
+                  </Expander>
                 </StackPanel>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
-    </StackPanel>
-  </ScrollViewer>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
 </UserControl>

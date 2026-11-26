@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
+using System.Text.Json;
 using TractorTool.Contracts;
 using TractorTool.Core.Plugins;
+using TractorTool.Core.Packages.Python;
 
 namespace TractorTool.Core.Storage;
 
@@ -20,7 +22,8 @@ public sealed record DataMigrationResult(AppPaths Paths, InstanceLease? TargetLe
 
 // A startup transaction, not a live path switch. The caller holds the bootstrap/source leases
 // and installation manager, and must not start services until this method has returned.
-public sealed class DataRootMigration(AppPaths paths)
+public sealed partial class DataRootMigration(AppPaths paths,
+    Func<string, PythonMigrationEnvironment, CancellationToken, Task>? rebuildPythonEnvironment = null)
 {
     private const string MarkerName = ".tractortool-migration.json";
     private const string MarkerBackupName = MarkerName + ".bak";
@@ -87,15 +90,30 @@ public sealed class DataRootMigration(AppPaths paths)
                 if (!committed)
                 {
                     token.ThrowIfCancellationRequested();
-                    if (!File.Exists(Path.Combine(request.Target, MarkerName)) && TargetContentIssue(request.Target) is { } occupied)
+                    if (!File.Exists(Path.Combine(request.Target, MarkerName)) && TargetContentIssue(request.Target, MarkerPendingName(request)) is { } occupied)
                         throw new InvalidDataException(occupied);
                     targetLease = new InstanceLease(request.Target);
                     var marker = CheckTargetOwner(request, create: true);
-                    var (cleanup, hashes) = CopyAndVerify(request, progress, token);
+                    if (marker.PythonRebuilds is null)
+                    {
+                        // Discover before copying. An invalid owned environment must not become an
+                        // apparently portable copy merely because its files can be read.
+                        var environments = PythonEnvironmentService.ReadMigrationEnvironments(Path.Combine(request.Source, "Packages"), validatePayload: true, token);
+                        var (cleanup, hashes) = CopyAndVerify(request, progress, token);
+                        marker = marker with { Cleanup = cleanup, TargetHashes = hashes };
+                        if (environments.Count != 0)
+                        {
+                            marker = marker with { PythonRebuilds = environments.Select(e => new PythonRebuild(e, null, null)).ToList() };
+                            // Persist the verified source/copy baseline before any generated file differs.
+                            SaveTargetMarker(request, marker);
+                        }
+                    }
+                    if (marker.PythonRebuilds is not null)
+                        marker = RebuildPythonEnvironments(request, marker, progress, token);
                     progress?.Report("正在校验插件回退快照…");
                     manager.ValidateDataRootMigration(request.Source, new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target), token);
                     token.ThrowIfCancellationRequested();
-                    SaveTargetMarker(request, marker with { Cleanup = cleanup, TargetHashes = hashes });
+                    SaveTargetMarker(request, marker);
                     token.ThrowIfCancellationRequested();
                     var switched = state with { DataRoot = request.Target, PreviousDataRoot = request.Source };
                     Save(switched); // Commit point: all copied files verified; cleanup remains restartable.
@@ -162,11 +180,11 @@ public sealed class DataRootMigration(AppPaths paths)
         return null;
     }
 
-    private static string? TargetContentIssue(string target)
+    private static string? TargetContentIssue(string target, string? ownedPending = null)
     {
         CheckPath(target);
         if (File.Exists(target) || (Directory.Exists(target) && Directory.EnumerateFileSystemEntries(target)
-            .Any(p => Path.GetFileName(p) != "host.lock")))
+            .Any(p => Path.GetFileName(p) != "host.lock" && Path.GetFileName(p) != ownedPending)))
             return "请选择空目录；不会合并或覆盖目标中的已有数据。";
         return null;
     }
@@ -179,8 +197,8 @@ public sealed class DataRootMigration(AppPaths paths)
         if (!File.Exists(markerPath))
         {
             if (!create) throw new InvalidDataException("迁移目标归属标记缺失。");
-            if (TargetContentIssue(request.Target) is { } occupied) throw new InvalidDataException(occupied);
-            marker.Save(new() { Request = request with { Error = null }, BootstrapRoot = paths.BootstrapRoot });
+            if (TargetContentIssue(request.Target, MarkerPendingName(request)) is { } occupied) throw new InvalidDataException(occupied);
+            SaveTargetMarker(request, new() { Request = request with { Error = null }, BootstrapRoot = paths.BootstrapRoot });
         }
         var saved = marker.Load();
         if (saved.Request != (request with { Error = null }) || !Same(saved.BootstrapRoot, paths.BootstrapRoot))
@@ -191,9 +209,20 @@ public sealed class DataRootMigration(AppPaths paths)
     private static void SaveTargetMarker(DataMigrationRequest request, TargetMarker marker)
     {
         var path = Path.Combine(request.Target, MarkerName);
-        CheckPath(path); CheckPath(path + ".bak");
-        new JsonFileStore<TargetMarker>(path).Save(marker);
+        var pending = Path.Combine(request.Target, MarkerPendingName(request));
+        CheckPath(path); CheckPath(path + ".bak"); CheckPath(pending);
+        // This filename belongs to the persisted bootstrap request. A crash during a
+        // marker write can be retried without accepting arbitrary root-level temp files.
+        using (var stream = new FileStream(pending, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(stream, marker, JsonOptions.Value);
+            stream.Flush(true);
+        }
+        if (File.Exists(path)) File.Replace(pending, path, path + ".bak");
+        else File.Move(pending, path);
     }
+
+    private static string MarkerPendingName(DataMigrationRequest request) => MarkerName + "." + request.Id + ".tmp";
 
     private static (List<MigrationEntry> Cleanup, Dictionary<string, string> Hashes) CopyAndVerify(
         DataMigrationRequest request, IProgress<string>? progress, CancellationToken token)
@@ -206,7 +235,8 @@ public sealed class DataRootMigration(AppPaths paths)
         {
             CheckPath(entry);
             if (!DataDirectories.PersistentNames.Contains(Path.GetFileName(entry), StringComparer.Ordinal) &&
-                Path.GetFileName(entry) is not (MarkerName or MarkerBackupName or "host.lock" or TempName))
+                Path.GetFileName(entry) is not (MarkerName or MarkerBackupName or "host.lock" or TempName) &&
+                Path.GetFileName(entry) != MarkerPendingName(request))
                 throw new IOException("目标目录出现不属于此次迁移的内容，请选择新的空目录。");
         }
         foreach (var entry in Inventory(request.Target, token))
@@ -309,10 +339,19 @@ public sealed class DataRootMigration(AppPaths paths)
         var saveHashes = marker.TargetHashes is null;
         if (!saveHashes && hashes.Count != cleanup.Count(e => !e.IsDirectory && RequiresCopy(e.Relative)))
             throw new InvalidDataException("迁移清单与目标摘要的文件数量不一致，已停止清理。");
+        // Generated Python files have different paths/content after rebuilding. Their target
+        // evidence is independent of the original source hashes, and stays read-locked until cleanup ends.
+        using var rebuiltTargets = OpenRebuiltPythonTargets(request, marker, token);
         foreach (var entry in cleanup)
         {
             token.ThrowIfCancellationRequested();
             if (!RequiresCopy(entry.Relative)) continue;
+            if (IsPythonRebuildPath(marker, entry.Relative))
+            {
+                if (!entry.IsDirectory && remainingPaths.Contains(entry.Relative))
+                    VerifyRebuildSource(request, entry.Relative, hashes, buffer, token);
+                continue;
+            }
             var output = Path.Combine(request.Target, entry.Relative);
             CheckPath(output);
             if (entry.IsDirectory)
@@ -347,9 +386,11 @@ public sealed class DataRootMigration(AppPaths paths)
             else
             {
                 // Keep the verified target read-locked through deletion; earlier files may take time to clean.
-                using var copy = RequiresCopy(entry.Relative)
+                var rebuilt = IsPythonRebuildPath(marker, entry.Relative);
+                using var copy = RequiresCopy(entry.Relative) && !rebuilt
                     ? OpenVerifiedCopy(request, entry.Relative, true, hashes[entry.Relative], manager, buffer, token, out _)
                     : null;
+                if (rebuilt) VerifyRebuildSource(request, entry.Relative, hashes, buffer, token);
                 var current = new FileInfo(path);
                 if (current.Length != entry.Length || current.LastWriteTimeUtc != entry.Modified)
                     throw new IOException("旧文件在清理过程中发生变化，已保留：" + entry.Relative);
@@ -444,5 +485,6 @@ public sealed class DataRootMigration(AppPaths paths)
         public string BootstrapRoot { get; init; } = "";
         public List<MigrationEntry>? Cleanup { get; init; }
         public Dictionary<string, string>? TargetHashes { get; init; }
+        public List<PythonRebuild>? PythonRebuilds { get; init; }
     }
 }

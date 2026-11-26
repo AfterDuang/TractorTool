@@ -33,6 +33,9 @@ public interface IExternalPackageService
     /// <summary>Request a package; null means the user declined installation. Token cancellation still throws. API 1.4.</summary>
     Task<IPackageLease?> TryRequestAsync(PackageReference package, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("此宿主尚不支持可拒绝的依赖安装申请。");
+    /// <summary>Request the plugin's declared, locked Python environment. Null means installation was declined. API 1.9.</summary>
+    Task<IPythonEnvironmentLease?> TryRequestPythonAsync(string environmentId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("此宿主尚不支持 Python 环境。");
 }
 
 /// <summary>Hold while using package files. Native libraries additionally require process-lifetime retention before loading.</summary>

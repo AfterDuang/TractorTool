@@ -1,4 +1,6 @@
 using TractorTool.Contracts.Packages;
+using TractorTool.Core.Packages.Python;
+using TractorTool.Core.Storage;
 
 namespace TractorTool.Core.Packages;
 
@@ -23,6 +25,9 @@ public sealed partial class ExternalPackageService
             else if (string.Equals(definition.Package.Id, "DLL", StringComparison.OrdinalIgnoreCase) &&
                 IsNativeRoot(PackageFiles.SafePath(_root, "DLL")))
                 throw new InvalidDataException("依赖标识 DLL 与运行库分类目录冲突，请使用独立标识。");
+            else if (definition.Kind == PackageKind.Tool && string.Equals(definition.Package.Id, "uv", StringComparison.OrdinalIgnoreCase) &&
+                PythonEnvironmentService.IsOwnedRoot(PackageFiles.SafePath(_root, "uv")))
+                throw new InvalidDataException("依赖标识 uv 与 Python 环境分类目录冲突，请使用独立标识。");
             var directory = PackageFiles.SafePath(parent, $"{definition.Package.Id}/{definition.Package.Version}/{definition.Rid}");
             if (_installedLocations.TryGetValue(definition.Package, out var existing) && !string.Equals(existing, directory,
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
@@ -46,6 +51,9 @@ public sealed partial class ExternalPackageService
     private void PreparePackageParent(PackageDefinition definition, string work)
     {
         // Different packages can finish downloading concurrently. Claim the shared category once.
+        var categoryGate = definition.Kind == PackageKind.Tool && definition.Package.Id.Equals("uv", StringComparison.OrdinalIgnoreCase)
+            ? FileLocks.For(Path.Combine(_root, "uv")) : _gate;
+        lock (categoryGate)
         lock (_gate)
         {
             var directory = PackageDirectory(definition);

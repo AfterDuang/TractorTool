@@ -5,6 +5,7 @@ using TractorTool.Contracts;
 using TractorTool.Contracts.Packages;
 using TractorTool.Contracts.Processes;
 using TractorTool.Core.Storage;
+using TractorTool.Core.Packages.Python;
 
 namespace TractorTool.Core.Packages;
 
@@ -24,6 +25,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     private const string WorkMarker = "TractorTool.PackageWork.v1";
     private const string RepairMarker = "TractorTool.PackageRepair.v1";
     public event Action? Changed;
+    public PythonEnvironmentService Python { get; }
 
     public ExternalPackageService(string root, string rid, HttpClient http, IProcessRunner processes, IAppLog log,
         IEnumerable<PackageDefinition>? definitions = null, string? sourcesFile = null)
@@ -51,6 +53,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             catch (Exception ex) { entry.Phase = PackagePhase.Failed; entry.Error = ex.Message; }
         }
         RestoreInstalledDefinitions();
+        Python = new(_root, rid, http, processes, log, IsPythonSourceAllowed);
+        Python.Changed += Notify;
         _recovery = Task.Run(RecoverWork);
         _operations.Add(_recovery);
     }
@@ -203,6 +207,15 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         new(this, owner, allowed, stoppingToken);
     public PackageScope CreateScope(string owner, IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken, bool supportsNativeLibraries) =>
         new(this, owner, allowed, stoppingToken, supportsNativeLibraries);
+    public PackageScope CreateScope(string owner, IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken,
+        bool supportsNativeLibraries, IReadOnlyList<PythonEnvironmentDefinition> pythonEnvironments, IProcessRunner pythonProcesses) =>
+        new(this, owner, allowed, stoppingToken, supportsNativeLibraries, pythonEnvironments, pythonProcesses);
+
+    internal bool IsPythonSourceAllowed(string source)
+    {
+        lock (_gate) return _settingsError.Length == 0 && _sources.Any(s => s.Kind == DependencySourceKind.PythonIndex &&
+            DependencySource.IndexUri(s.Url).AbsoluteUri == source);
+    }
 
     private Task StartOperation(Func<Task> action, Entry e)
     {
@@ -485,6 +498,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             return new(_shutdown ??= Task.Run(async () =>
             {
                 await _stopping.CancelAsync();
+                await Python.DisposeAsync().ConfigureAwait(false);
+                Python.Changed -= Notify;
                 Task[] active; lock (_gate) active = _operations.ToArray();
                 try { await Task.WhenAll(active).ConfigureAwait(false); }
                 catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { _log.Write("Packages", "退出时已取消工具操作。"); }

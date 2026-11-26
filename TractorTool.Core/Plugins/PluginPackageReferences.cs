@@ -1,5 +1,6 @@
 using TractorTool.Core.Packages;
 using TractorTool.Core.Storage;
+using TractorTool.Core.Packages.Python;
 
 namespace TractorTool.Core.Plugins;
 
@@ -10,7 +11,7 @@ public sealed class PluginPackageReferences : IDisposable
     private readonly PluginManager? _manager;
     private readonly ExternalPackageService _packages;
     private readonly object _gate = new();
-    private PluginManifest[] _active = [];
+    private PluginRecord[] _active = [];
     private string _scanError = "正在读取插件依赖。";
     private bool _disposed;
 
@@ -24,7 +25,7 @@ public sealed class PluginPackageReferences : IDisposable
     {
         lock (_gate)
         {
-            _active = records.Where(r => r.Manifest is not null).Select(r => r.Manifest!).ToArray();
+            _active = records.Where(r => r.Manifest is not null).ToArray();
             _scanError = _manager is null ? "插件管理不可用，暂停清理依赖。" : !string.IsNullOrEmpty(directoryError) ? directoryError :
                 records.Any(r => r.Manifest is null) ? "部分插件清单无法读取，暂停清理依赖。" : "";
         }
@@ -45,7 +46,8 @@ public sealed class PluginPackageReferences : IDisposable
         lock (_gate)
         {
             if (_disposed) return;
-            var manifests = new List<PluginManifest>(_active);
+            var manifests = _active.Select(r => (Manifest: r.Manifest!, r.Directory)).ToList();
+            var python = new List<PythonEnvironmentDefinition>();
             var error = _scanError;
             try
             {
@@ -54,24 +56,33 @@ public sealed class PluginPackageReferences : IDisposable
                     if (item.Error.Length != 0) error = "部分插件变更尚未恢复，暂停清理依赖。";
                     if (item.ActiveVersion is { } activeVersion)
                     {
-                        if (error.Length == 0 && !_active.Any(m => m.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase) && m.Version == activeVersion))
+                        if (error.Length == 0 && !_active.Any(r => r.Manifest!.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase) && r.Manifest.Version == activeVersion))
                             error = $"未发现已登记的插件 {item.Id} {activeVersion}，暂停清理依赖。";
                         if (item.Recovery is { } recovery) manifests.Add(Read(item.Id, recovery.Version));
                     }
                     if (item.Pending is { Kind: PluginChangeKind.Activate, Version: { } version } pending)
                     {
                         var staging = PluginFiles.Under(_paths.PluginRoot, ".management", "staging", pending.Token, item.Id, version);
-                        manifests.Add(Directory.Exists(staging) ? ManifestValidator.Read(staging) : Read(item.Id, version));
+                        manifests.Add(Directory.Exists(staging) ? (ManifestValidator.Read(staging), staging) : Read(item.Id, version));
                     }
                 }
+                foreach (var (manifest, directory) in manifests)
+                    foreach (var declaration in manifest.PythonEnvironments)
+                        python.Add(PythonEnvironmentDefinitions.Snapshot(declaration, manifest.Id, manifest.Version,
+                            manifest.Name, directory, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
             }
             catch (Exception ex) { error = "无法确认全部插件依赖，暂停清理：" + ex.Message; }
-            _packages.UpdateReferences(new(manifests.SelectMany(m => m.Dependencies.Select(p => new PackageDependency(p.Package, m.Id, m.Name, p.Downloads)))
-                .Distinct().ToArray(), error.Length == 0, error));
+            _packages.UpdateReferences(new(manifests.SelectMany(p => p.Manifest.Dependencies.Select(d =>
+                    new PackageDependency(d.Package, p.Manifest.Id, p.Manifest.Name, d.Downloads)))
+                .Distinct().ToArray(), error.Length == 0, error) { PythonEnvironments = python.DistinctBy(p => p.Identity).ToArray() });
         }
     }
 
-    private PluginManifest Read(string id, string version) => ManifestValidator.Read(PluginFiles.Under(_paths.PluginRoot, id, version));
+    private (PluginManifest Manifest, string Directory) Read(string id, string version)
+    {
+        var directory = PluginFiles.Under(_paths.PluginRoot, id, version);
+        return (ManifestValidator.Read(directory), directory);
+    }
 
     public void Dispose()
     {

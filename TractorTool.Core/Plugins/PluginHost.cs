@@ -139,9 +139,12 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 lock (_lifecycleGate) _instances.Add(lifetime);
                 var token = lifetime.Stopping.Token;
                 lifetime.Packages = packages?.CreateScope(manifest.Id, manifest.Dependencies.Select(d => d.Package).ToArray(), token,
-                    supportsNativeLibraries: manifest.ApiVersion == "1.8");
+                    supportsNativeLibraries: manifest.ApiVersion is "1.8" or "1.9",
+                    pythonEnvironments: manifest.PythonEnvironments.Select(d =>
+                        Packages.Python.PythonEnvironmentDefinitions.Snapshot(d, manifest.Id, manifest.Version, manifest.Name,
+                            record.Directory, compatibility.Rid)).ToArray(), pythonProcesses: lifetime.Processes);
                 lifetime.Tasks = tasks?.CreateScope(manifest.Id, token);
-                if (manifest.Dependencies.Length != 0 && lifetime.Packages is null)
+                if ((manifest.Dependencies.Length != 0 || manifest.PythonEnvironments.Length != 0) && lifetime.Packages is null)
                     throw new InvalidOperationException("宿主未组装外部工具服务。");
                 if (Volatile.Read(ref _disposed)) throw new OperationCanceledException("宿主正在退出。");
                 var data = paths.GetPluginDataDirectory(manifest.Id);

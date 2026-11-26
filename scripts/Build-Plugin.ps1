@@ -53,6 +53,7 @@ foreach ($package in $assets.libraries.Keys) {
 }
 foreach ($file in Get-ChildItem -LiteralPath $files -Recurse -File) {
     Assert-PluginSdkFile $sdkPolicy $file.Name $builtManifest.uiApiVersion
+    Assert-PluginPythonFile $builtManifest $file.Name
 }
 $licenses = Join-Path $files 'Licenses'
 # Only collect this known license when the package actually ships; MVVM is not an SDK requirement.

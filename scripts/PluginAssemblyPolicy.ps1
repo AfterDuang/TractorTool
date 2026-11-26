@@ -38,3 +38,11 @@ function Assert-PluginSdkFile($Policy, [string]$Path, [string]$UiApiVersion) {
         throw "私有 Avalonia 扩展 $Path 需要在清单声明 UI API 1.6 或更高。"
     }
 }
+
+# A declared Python environment is prepared in DataRoot; its interpreter and venv are not plugin payload.
+function Assert-PluginPythonFile($Manifest, [string]$Path) {
+    if ($Manifest.PythonEnvironments.Count -eq 0) { return }
+    if ([IO.Path]::GetFileName($Path.Replace('\', '/')) -in @('pyvenv.cfg', 'python.exe', 'pythonw.exe', 'uv.exe', 'uvw.exe', 'uvx.exe')) {
+        throw "Python 插件不能携带受管理解释器、uv 或已安装环境：$Path"
+    }
+}

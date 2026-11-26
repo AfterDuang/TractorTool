@@ -9,7 +9,9 @@ namespace TractorTool.Core.Packages;
 public sealed partial class ExternalPackageService
 {
     private readonly string _sourcesFile;
-    private DependencySource[] _sources = [new("GitHub", DependencySource.GitHubUrl)];
+    private static DependencySource[] DefaultSources => [new("GitHub", DependencySource.GitHubUrl),
+        new("PyPI", DependencySource.PyPiUrl) { Kind = DependencySourceKind.PythonIndex }];
+    private DependencySource[] _sources = DefaultSources;
     private readonly Dictionary<PackageReference, Task> _resolutions = [];
     private string _sourceError = "";
     private string _settingsError = "";
@@ -19,11 +21,7 @@ public sealed partial class ExternalPackageService
     {
         try
         {
-            PackageFiles.CheckPath(_sourcesFile);
-            if (File.Exists(_sourcesFile) && new FileInfo(_sourcesFile).Length > 32768)
-                throw new InvalidDataException("依赖来源配置过大。");
-            var settings = new JsonFileStore<SourceSettings>(_sourcesFile, ValidateSources).Load();
-            _sources = [new("GitHub", DependencySource.GitHubUrl), .. settings.Sources];
+            _sources = ReadConfiguredSources(_sourcesFile).ToArray();
         }
         catch (Exception ex)
         {
@@ -32,22 +30,35 @@ public sealed partial class ExternalPackageService
         }
     }
 
-    public void AddSource(string name, string address)
+    /// <summary>Read-only source policy used before services start, including data-root migration.</summary>
+    public static IReadOnlyList<DependencySource> ReadConfiguredSources(string file)
     {
-        var source = new DependencySource(name.Trim(), DependencySource.ApiUri(address.Trim()).AbsoluteUri);
+        PackageFiles.CheckPath(file);
+        if (File.Exists(file) && new FileInfo(file).Length > 32768)
+            throw new InvalidDataException("依赖来源配置过大。");
+        var settings = new JsonFileStore<SourceSettings>(file, ValidateSources).Load();
+        return [.. DefaultSources, .. settings.Sources];
+    }
+
+    public void AddSource(string name, string address)
+        => AddSource(name, address, DependencySourceKind.GitHub);
+
+    public void AddSource(string name, string address, DependencySourceKind kind)
+    {
+        var source = new DependencySource(name.Trim(), DependencySource.Address(kind, address.Trim()).AbsoluteUri) { Kind = kind };
         lock (_gate)
         {
             EnsureRunning();
             SaveSources([.. _sources.Where(s => !s.IsDefault), source]);
         }
-        _log.Write("Packages", $"已添加 GitHub 依赖来源：{source.Name}。"); Notify();
+        _log.Write("Packages", $"已添加依赖来源：{source.Name}。"); Notify();
     }
     public void RemoveSource(DependencySource source)
     {
         lock (_gate)
         {
             EnsureRunning();
-            if (source.IsDefault) throw new InvalidOperationException("默认 GitHub 来源不能删除。");
+            if (source.IsDefault) throw new InvalidOperationException("默认来源不能删除。");
             SaveSources(_sources.Where(s => !s.IsDefault && s.Url != source.Url).ToArray());
         }
         _log.Write("Packages", $"已移除依赖来源：{source.Name}；保留已安装包。"); Notify();
@@ -58,16 +69,18 @@ public sealed partial class ExternalPackageService
         PackageFiles.CheckPath(_sourcesFile);
         // ponytail: tiny, infrequent settings writes share the service lock; split if write latency becomes measurable.
         new JsonFileStore<SourceSettings>(_sourcesFile, ValidateSources).Save(new() { Sources = sources });
-        _sources = [new("GitHub", DependencySource.GitHubUrl), .. sources];
+        _sources = [.. DefaultSources, .. sources];
     }
     private static void ValidateSources(SourceSettings settings)
     {
         if (settings.Sources is null || settings.Sources.Length > 32) throw new InvalidDataException("依赖来源数量无效。");
-        var urls = new HashSet<string>(StringComparer.Ordinal) { DependencySource.GitHubUrl };
+        var urls = DefaultSources.Select(s => s.Url).ToHashSet(StringComparer.Ordinal);
+        // Existing schema-1 GitHub entries may legitimately be named "PyPI". Adding the
+        // built-in index must not invalidate that saved configuration.
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GitHub" };
         foreach (var source in settings.Sources)
             if (source is null || string.IsNullOrWhiteSpace(source.Name) || source.Name.Length > 80 || source.Name.Any(char.IsControl) ||
-                !urls.Add(DependencySource.ApiUri(source.Url).AbsoluteUri) || !names.Add(source.Name))
+                !urls.Add(DependencySource.Address(source.Kind, source.Url).AbsoluteUri) || !names.Add(source.Name))
                 throw new InvalidDataException("依赖来源名称或地址无效、重复。");
     }
     private sealed class SourceSettings : IVersionedSettings
@@ -110,7 +123,7 @@ public sealed partial class ExternalPackageService
             {
                 if (recipe is null)
                     throw new NotSupportedException($"{package.Id} {package.Version} 尚无 {_rid} 的 GitHub 安装资料，请更新或联系插件作者。");
-                if (!_sources.Any(s => DependencySource.ApiUri(s.Url).AbsoluteUri == recipe.Source))
+                if (!_sources.Any(s => s.Kind == DependencySourceKind.GitHub && DependencySource.ApiUri(s.Url).AbsoluteUri == recipe.Source))
                     throw new InvalidOperationException($"请先在依赖来源中添加 {recipe.Source}。");
                 var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 task = completion.Task; _resolutions.Add(package, task); _operations.Add(task);

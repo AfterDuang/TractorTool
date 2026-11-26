@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 外部依赖分类导航 | [E149 · 分类与可见范围清理（2026-11-27）](#evidence-package-categories) |
+| Python 环境接入 | [E148 · 锁定环境、来源与迁移重建（2026-11-27）](#evidence-python-environments) |
 | DLL 运行库接入 | [E147 · 完整载荷、旧插件兼容与进程期保护（2026-11-27）](#evidence-native-library-packages) |
 | 外部依赖扩展方案 | [E146 · uv、Node、DLL 目录与实施边界（2026-11-26）](#evidence-dependency-extension-plan) |
 | 旧开发产物 | [E99 文档归并中的历史路径快照](#historical-artifacts) |
@@ -185,6 +187,32 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-package-categories"></a>
+
+## E149：Packages 分类导航（2026-11-27）
+
+- 用户反馈不同类型依赖混排难以浏览。Packages 面包屑下新增固定标签“外部工具、DLL 运行库、Python 环境”，沿用 TabStrip 与原卡片，切类回到列表顶部；来源保持条目信息，未接入的 Node 不展示空标签。
+- 搜索、计数、空状态、清理按钮均按当前分类和搜索结果更新。批量清理在确认前快照可见候选，确认期间切换分类不改变待清理清单，服务继续复核引用与租约；Python 确认条目补齐插件版本及环境 ID。Python 下载缓存按钮仅在对应分类显示。未修改安装协议、目录或插件接口。
+- GPT-6.2-SOL/high 只读复核未发现本轮新增阻断。宿主 Release 构建 0 警告/0 错误；增加一项真实服务/临时合成记录的清理范围回归，检查隐藏工具、DLL 和确认期间切类，另修旧默认来源单项断言。IntegrationChecks 编译通过、0 错误、6 条 NU1900（漏洞数据查询未完成），日志 `artifacts/package-categories-20261127/build.log`；检查程序和原生 UI 未执行。
+- 交付时文档已同步并保持未提交；E148 的预编译宿主不含本轮 UI 调整。2026-11-27 用户随后反馈“这版暂时没有遇到什么问题，可以提交”，授权将 uv/Python、CLI 修正和分类导航一并保存为本地 `Dev` 提交，不推送。反馈未逐项列出分类、搜索、长列表、清理及故障测试范围，不将 A31/A33 全项标为通过。
+
+<a id="evidence-python-environments"></a>
+
+## E148：uv/Python 环境接入（2026-11-27，待运行验收）
+
+- 授权与基线：用户自行推送 DLL 提交 `4b9f8ce` 后要求继续，按既定顺序实施 uv/Python；本轮不提交或推送，运行验收仍由用户负责。Node/pnpm 不在本轮实现范围，已发布 1.1.0 不变。
+- 实现：API 1.9 新增 `pythonEnvironments`、`TryRequestPythonAsync` / `IPythonEnvironmentLease.RunAsync` 和子进程环境覆盖；默认接口成员与旧构造保持二进制兼容，API 1.8 DLL 能力门槛保留。固定 Windows x64 uv 0.13.10、CPython 3.13.18 / build 20261124，默认 PyPI 及公开 HTTPS Simple 索引进入现有来源页。每个插件/锁定身份在 `Packages/uv` 的最终代次保存原输入、工具链及环境，`Cache/uv` 使用 copy 安装模式。
+- 边界：受管 CPython 的 `tomllib` 解析宿主保存的输入，不加载插件代码；校验单索引、wheel 摘要及受限项目后，先 `uv lock --check --offline`，再冻结同步，禁止本地/Git/直接地址依赖、构建、依赖组和安装钩子。安装时核对解释器与隔离配置、依赖一致性，记录全文件摘要；调用经租约保留进程期占用并采用隔离参数。源删除、未知目录、旧名为 uv 的工具、坏记录及迁移中断保持明确维护边界。
+- 迁移：源清理证据与重建后的目标摘要分开保存；在目标最终路径用原锁重建并验证后才切换数据根，保留其余数据的严格复制校验。迁移可能需要网络，离线复用已安装环境不代表离线重建有保证。旧输入不依赖原插件继续安装。
+- Review：GPT-6.2-SOL/high 多轮核对并发安装/取消、插件进程作用域、来源兼容、输入约束、缓存归属、迁移与故障恢复。已修正最后申请取消窗口、设置发起安装被插件取消、移出前引用变化及旧 Entry 重新安装；缓存损坏校验回退、Windows 隐藏盘符环境、UTF-8、已知 Python minor junction 与凭据继承也已修正。最终定向复核未留下已确认问题，不代表真实运行无缺陷。
+- 恢复记录：空目录先带完整归属/记录再原子进入安装区域，创建代次前记录准备状态；完整文件清单保留在代次载荷树外，载荷删除完成才删清单。`Cache/uv-work` 承担空目录准备与移出后的清理暂存。新增独立 Python 缓存清理，与安装互斥；未知归属和链接拒绝清理，环境采用 copy 模式。
+- 验证：最终宿主 self-contained win-x64 发布、CoreChecks/IntegrationChecks 编译及基于已发布 SDK 的夹具独立打包均成功、0 错误；NuGet 离线漏洞查询产生 NU1900，未完成漏洞数据库核验。5 个变更 PowerShell 脚本 AST、ZIP 的两个输入 SHA256、11 个条目及无共享框架/解释器副本检查通过，`git diff --check` 无差异错误。检查程序均未执行。Release 发布后切回 Debug 的一次 `--no-restore` 构建缺失条件引用 DeveloperTools；正常还原后构建通过，无源码补丁。
+- 产物：[宿主](../artifacts/python-environment-20261127-final/host)、[测试 ZIP](../artifacts/python-environment-20261127-final/plugin/Test.PythonEnvironmentProbe-1.0.0.zip)。同目录 `host-publish.log`、`plugin-build.log`、`checks-build.log`、`integration-build.log` 保存构建输出。ZIP SHA256 为 `bbaa1ae35ff3054641a567a26acca24668466d4fe51c2c45f9ba5c8e96747df2`；宿主 Core / Contracts DLL 分别为 `6ed9b6f8c06271e5d4f92d3415a48458d47ee309436e3ee7825fc824ec6b3dc4` / `04456c77c0979117ccf7ae58a6f9786067e6a4c2ca9693df7da12553e7b4c13d`。
+- 夹具：固定 uv 生成真实 PyPI `idna==3.11` 的项目/锁，插件版本 1.0.0，不随正式分发自动发现；用户确认后通过公开租约执行解释器并验证域名编码。源码与待验步骤见 [PythonEnvironmentProbePlugin](../tests/PythonEnvironmentProbePlugin/README.md)。Agent 未运行宿主、Python 环境安装/业务调用、检查程序或 Windows UI；当前缺口归 A31/A33，不以锁生成或编译成功标记运行通过。
+- 用户复测：首次准备进入 `sync` 后返回退出码 2，明确报告 `--frozen` 不能与 `--no-sources` 同用。与 [uv 0.13.10 固定源码](https://github.com/astral-sh/uv/blob/0.13.10/crates/uv-cli/src/lib.rs#L3395-L3402) 相符，属于宿主命令错误，前轮编译与静态审查漏检。修复仅删除 sync 的 `--no-sources`；保留输入策略、预先 `lock --check --offline --no-sources`、冻结安装及输入未变化复核，不改变源约束或接口。
+- 修正版：[宿主](../artifacts/python-environment-20261127-cli-fix/host)，日志 `artifacts/python-environment-20261127-cli-fix/host-publish.log`，Core SHA256 `072439282e06152e4079882d0318775fc6b4489478df3b0d0ae770050f02b1fb`。self-contained win-x64 发布成功，仍有 NU1900；原测试插件 ZIP 可继续使用。GPT-6.2-SOL/high 定向核对修复与固定 CLI 参数约束；完整下载/安装仍待用户复测，本轮未运行应用或检查程序、未提交。
+- 后续反馈：分类导航完成后，用户确认当前版本暂未遇到问题并授权本地提交，见 E149。此前 CLI 失败和编译/静态覆盖缺口保留为历史证据；用户未逐项确认取消、离线、迁移中断等场景，专项缺口仍由当前台账承载。
 
 <a id="evidence-native-library-packages"></a>
 

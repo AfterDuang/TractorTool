@@ -11,6 +11,10 @@ public sealed record ProcessRequest(string ExecutablePath, IReadOnlyList<string>
 {
     public string? WorkingDirectory { get; init; }
     public TimeSpan? Timeout { get; init; }
+    /// <summary>API 1.9. Overrides inherited variables for this child only. Null removes a variable;
+    /// an empty string sets an empty value. Names are case-insensitive on Windows.
+    /// The host snapshots the collection when RunAsync is called; its own environment is unchanged.</summary>
+    public IReadOnlyDictionary<string, string?>? EnvironmentVariables { get; init; }
     /// <summary>Maximum retained UTF-16 characters per stream. Excess output is drained and discarded.</summary>
     public int OutputLimit { get; init; } = 1024 * 1024;
     /// <summary>API 1.5. Sequential stdout chunks on a worker thread, including output beyond the capture limit.

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text;
 using TractorTool.Contracts;
 using TractorTool.Contracts.Processes;
@@ -181,7 +182,30 @@ public sealed class ProcessRunner(string owner, IAppLog log, Func<ProcessRequest
             throw new ArgumentOutOfRangeException(nameof(request), "工具超时须大于零且不超过约 49 天。");
         if (request.OutputLimit is < 0 or > 16 * 1024 * 1024)
             throw new ArgumentOutOfRangeException(nameof(request), "每路输出保留上限为 0–16 Mi 字符。");
-        return request with { ExecutablePath = executable, Arguments = arguments, WorkingDirectory = Path.GetFullPath(workingDirectory) };
+        return request with
+        {
+            ExecutablePath = executable, Arguments = arguments, WorkingDirectory = Path.GetFullPath(workingDirectory),
+            EnvironmentVariables = SnapshotEnvironment(request.EnvironmentVariables)
+        };
+    }
+
+    private static IReadOnlyDictionary<string, string?>? SnapshotEnvironment(IReadOnlyDictionary<string, string?>? variables)
+    {
+        if (variables is null) return null;
+        var result = new Dictionary<string, string?>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        long characters = 1;
+        foreach (var (name, value) in variables)
+        {
+            if (string.IsNullOrEmpty(name) || name.Length > 32766 || name.Contains('=') || name.Contains('\0') ||
+                value is not null && (value.Length > 32766 || value.Contains('\0')))
+                throw new ArgumentException("环境变量名称不能为空或包含等号/NUL，值不能包含 NUL；每项名称和值各最多 32766 字符。", nameof(variables));
+            characters += name.Length + (value?.Length ?? 0) + 2L;
+            if (result.Count >= 4096 || characters > 1024 * 1024)
+                throw new ArgumentException("环境变量覆盖最多 4096 项、合计 1 Mi 字符。", nameof(variables));
+            if (!result.TryAdd(name, value))
+                throw new ArgumentException("环境变量名称重复，请移除大小写别名。", nameof(variables));
+        }
+        return new ReadOnlyDictionary<string, string?>(result);
     }
 
     public ValueTask DisposeAsync()

@@ -73,7 +73,7 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 `Dev` 为 1.8，仍接受 1.0–1.7；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8。已发布 1.1.0 宿主不支持 API 1.8 |
+| `apiVersion` | 当前 `Dev` 为 1.9，仍接受 1.0–1.8；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9。已发布 1.1.0 宿主不支持 API 1.8/1.9 |
 | `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -113,12 +113,13 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 | 私有托管/原生库 | 插件自身的项目或 NuGet 依赖 | 随插件携带 DLL、必要的 deps.json、平台原生库、资源与许可；不得依赖开发机缓存或包外链接 |
 | 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
 | 独立原生运行库 | API 1.8 声明完整便携包及 DLL 入口，宿主校验全部文件 | 位于 DataRoot/Packages/DLL；插件申请租约、在加载前登记进程期保护，再自行加载和验证 ABI |
+| Python 环境 | API 1.9 的 `pythonEnvironments` 声明项目/锁摘要、Python 版本及来源 | 位于 DataRoot/Packages/uv；插件携带业务代码和锁定输入，通过环境租约运行，不随 ZIP 携带已装解释器或 venv |
 
 `dependencies` 声明外部工具或 API 1.8 原生运行库，空数组不代表插件没有私有 DLL。工具包仍可附带其所需 DLL；独立运行库使用单独的包类型，不把 DLL 当可执行工具探测。Packages 不负责托管 NuGet 库的加载；这些私有库仍随插件交付。边界见[包管理](ARCHITECTURE.md#41-包管理)。
 
-原生运行库的 `Dev` 实现与真实夹具见[DLL 接入](#native-library-packages)，尚待用户运行验证；Python、Node 仍待实现，接入责任见[扩展约定](#dependency-extension-contract)。
+原生运行库与 Python 的声明和真实夹具见[DLL 接入](#native-library-packages)及[Python 接入](#python-environments)；运行验收只以[开发台账](DEVELOPMENT.md#dependency-extension-plan)为准。Node 仍为待实现的[扩展约定](#dependency-extension-contract)。
 
-NuGet 是构建期依赖渠道，GitHub Release 是当前外部依赖安装渠道，两者不是同一种“源”。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
+NuGet 是构建期依赖渠道，GitHub Release、PyPI 是当前外部依赖获取渠道，安装方式分别由包服务或 uv 管理。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
 
 例如，插件可直接引用目标宿主随附的 `Avalonia.Controls.ColorPicker`。若插件另用宿主 SDK 未提供的 `Avalonia.*` 扩展，使用 1.1.0 或更高版本的宿主 SDK 打包，声明 UI API 1.6，并把扩展 DLL 和私有依赖放进插件 ZIP。现有插件可继续声明其实际使用的旧 UI API。
 
@@ -239,7 +240,7 @@ var result = await context.Processes!.RunAsync(
 }
 ```
 
-`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。PyPI/npm 等类型尚未开放，后续安装边界见[扩展约定](#dependency-extension-contract)。
+`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。GitHub 当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。Python 使用独立的[环境声明](#python-environments)，不能把 PyPI URL 填到 GitHub `downloads.source`。
 
 工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
@@ -302,19 +303,41 @@ if (version != 3_002_008) throw new InvalidDataException("SDL 运行库版本不
 真实申请、版本调用、拒绝重试、占用显示、重启清理和损坏修复方法见[夹具 README](../tests/NativeLibraryProbePlugin/README.md)。该项目不进入正式插件自动发现范围；构建和静态审查不代表 Windows 原生加载已验收，结果归 [A30](DEVELOPMENT.md#acceptance)。
 
 <a id="dependency-extension-contract"></a>
+<a id="python-environments"></a>
 
-### Python 与 Node 接入（待实现）
+### Python 环境（API 1.9）
 
-以下是已确认方向，不是现有清单字段或 SDK；具体协议及最低 API 版本随实现定版。已有工具和原生包的声明、租约及安装记录保持兼容，不能仅改名称或路径冒充语言环境。公共设计见[扩展架构](ARCHITECTURE.md#dependency-extension)。
+此能力已进入 `Dev`，尚未发布。首轮仅支持 `win-x64`、CPython **3.13.18**，宿主固定 uv **0.13.10** 与 Python 上游构建 **20261124**；插件无需安装系统 Python，也不能自行换工具链。旧工具、原生包及 API 1.0–1.8 保持原调用；新插件声明 `apiVersion: "1.9"`，在根清单增加 `pythonEnvironments`。实际示例见[测试清单](../tests/PythonEnvironmentProbePlugin/plugin.json)。
 
-| 接入 | 插件交付责任 | 宿主管理范围 |
-| --- | --- | --- |
-| Python / uv | 携带 `pyproject.toml`、`uv.lock` 和业务代码，声明所需 Python 版本；首轮使用预编译 wheel，不依赖现场源码构建 | 准备固定 uv/Python，按锁安装独立环境，提供受管理调用入口 |
-| Node / pnpm | 携带 `package.json`、`pnpm-lock.yaml` 和已构建的入口，声明 Node 版本；编译在插件发布前完成，不依赖安装脚本或自定义钩子 | 准备固定 pnpm/Node，按锁安装独立环境，管理进程及依赖占用 |
+| 环境字段 | 规则 |
+| --- | --- |
+| `id` | 插件内唯一的环境名，用于 `TryRequestPythonAsync`，例如 `worker` |
+| `pythonVersion` | 当前为 `3.13.18`，不接受版本范围 |
+| `project` / `lock` | 插件包内相对路径，须为同目录的 `pyproject.toml` / `uv.lock`；默认 `Python/pyproject.toml` / `Python/uv.lock` |
+| `projectSha256` / `lockSha256` | 随包原始字节的 SHA256；更新内容或换行后重新计算，建议固定 LF |
+| `source` | 默认 `https://pypi.org/simple/`；自定义 HTTPS Simple 索引须已在宿主添加，不能带认证、查询参数或非标准端口 |
+| `description` | 首次安装确认中的用途说明，最长 1000 字符 |
 
-插件通过宿主取得安装路径与环境，不硬编码 `Packages` 内层布局，不搜索系统 `PATH`、自行下载或执行任意安装命令。业务代码仍在 AppRoot，设置、历史和输出不写入安装环境；持久数据使用既有插件数据接口。托管私有库继续随插件交付，Python/npm 包内的原生模块跟随其环境，不拆入独立 DLL 目录。
+交付专门用于环境准备的精简项目：`[project]` 可含 name、version、requires-python、dependencies、description，`[tool.uv]` 只允许 `package = false`；不带 build-system、workspace、额外索引、依赖组或其他工具配置。由固定 uv 生成 `uv.lock`，宿主核对项目/锁一致后冻结同步，只安装普通索引 wheel，不安装项目本身，不接受 editable、本地目录、VCS、直接 URL、源码构建或依赖启动钩子。锁中每个非根包须来自所声明的单一索引并有 wheel/SHA256；默认 PyPI 允许 files.pythonhosted.org，自定义索引附件须同主机。不为适配现有复杂项目放宽安装策略。
 
-锁文件须随插件版本交付并与声明一致，来源和完整性信息接受宿主校验；项目配置不得绕过统一来源策略。环境使用期间持有宿主管理的占用。卸载、修复及迁移由宿主协调；插件不自行搬移环境、修改共享缓存或删除关联运行时。目录约定及环境重建规则统一见[扩展数据管理](ARCHITECTURE.md#dependency-extension-storage)。
+```csharp
+var packages = context.Packages ?? throw new NotSupportedException("需要 API 1.9 宿主。");
+using var environment = await packages.TryRequestPythonAsync("worker", cancellationToken);
+if (environment is null) return; // 用户拒绝，之后仍可重试。
+var result = await environment.RunAsync(new ProcessRequest(environment.PythonPath,
+    ["-c", "import idna; print(idna.__version__)"])
+    { Timeout = TimeSpan.FromSeconds(30) }, cancellationToken);
+```
+
+`IPythonEnvironmentLease.RunAsync` 只接受自身 `PythonPath`，占用持续到插件作用域的进程树清理和输出排空完成；不要改用全局进程服务绕过该占用。宿主强制 `-I -B -X utf8` 隔离运行、统一输出编码并清除 Python/uv 继承配置，因此当前目录、业务脚本目录和 `PYTHONPATH` 不会自动加入模块搜索路径。执行随插件交付的脚本时使用绝对路径；如需导入同目录业务模块，由脚本明确设置自身代码搜索路径。第三方包从受管 venv 导入，不向环境写 pyc、业务输出或新包。
+
+环境按插件版本、原始输入、来源和工具链隔离，目录通过租约获取，不硬编码布局或跨启动保存绝对路径。宿主保留原项目/锁快照，插件卸载后仍可按原资料维护；迁移会在新根重建，不能直接搬 venv。业务数据使用既有插件数据接口；wheel 中的 DLL 留在 Python 环境，不抽入独立 DLL 分类。来源移除不删除已装环境，重建时须重新满足来源策略。归属、引用、修复和迁移规则见[扩展数据管理](ARCHITECTURE.md#dependency-extension-storage)。
+
+真实 PyPI 夹具使用 `idna==3.11`，输入、调用及用户验收方法见 [PythonEnvironmentProbePlugin](../tests/PythonEnvironmentProbePlugin/README.md)；构建成功不代表环境安装、离线复用或迁移已通过。
+
+### Node 接入（待实现）
+
+计划由插件携带 `package.json`、`pnpm-lock.yaml` 和已构建入口，声明固定 Node 版本；宿主准备固定 Node/pnpm、按锁安装并管理占用，不依赖现场编译、生命周期脚本或配置钩子。清单字段、SDK 和 npm 来源尚未开放，不能套用 Python 或 GitHub 字段冒充支持。公共边界见[扩展架构](ARCHITECTURE.md#dependency-extension)。
 
 ## 5. 统一 UI 与设置
 

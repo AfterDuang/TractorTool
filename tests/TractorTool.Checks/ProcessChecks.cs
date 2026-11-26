@@ -12,6 +12,54 @@ internal static class ProcessChecks
         var directory = Path.Combine(root, "process fixtures 中文");
         Directory.CreateDirectory(directory);
         void Case(string name, Func<Task> run) => check(name, () => run().GetAwaiter().GetResult());
+        Case("Process environment overrides are snapshotted before asynchronous creation", async () =>
+        {
+            var changes = new Dictionary<string, string?> { ["TRACTORTOOL_ENV_CHECK"] = "original", ["REMOVE"] = null };
+            var session = new FakeSession();
+            session.Exit.TrySetResult(0);
+            using var release = new ManualResetEventSlim();
+            await using var runner = new ProcessRunner("Test", new TestLog(), request =>
+            {
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("Fixture setup was not released");
+                Assert(request.EnvironmentVariables!["TRACTORTOOL_ENV_CHECK"] == "original");
+                Assert(request.EnvironmentVariables.ContainsKey("REMOVE") && request.EnvironmentVariables["REMOVE"] is null);
+                Assert(((IDictionary<string, string?>)request.EnvironmentVariables).IsReadOnly);
+                return session;
+            });
+            var run = runner.RunAsync(Request("echo") with { EnvironmentVariables = changes });
+            try { changes["TRACTORTOOL_ENV_CHECK"] = "mutated"; changes.Clear(); }
+            finally { release.Set(); }
+            Assert((await run).ExitCode == 0);
+        });
+        Case("Process rejects malformed or oversized environment overrides before creation", async () =>
+        {
+            var starts = 0;
+            await using var runner = new ProcessRunner("Test", new TestLog(), _ => { starts++; throw new InvalidOperationException("Must not start"); });
+            foreach (var name in new[] { "", "=C:", "bad=name", "bad\0name", new string('n', 32767) })
+                await Throws<ArgumentException>(() => runner.RunAsync(Request("echo") with
+                    { EnvironmentVariables = new Dictionary<string, string?> { [name] = "value" } }));
+            foreach (var value in new[] { "bad\0value", new string('v', 32767) })
+                await Throws<ArgumentException>(() => runner.RunAsync(Request("echo") with
+                    { EnvironmentVariables = new Dictionary<string, string?> { ["NAME"] = value } }));
+            var many = Enumerable.Range(0, 4097).ToDictionary(i => "K" + i, _ => (string?)"v");
+            await Throws<ArgumentException>(() => runner.RunAsync(Request("echo") with { EnvironmentVariables = many }));
+            var large = Enumerable.Range(0, 40).ToDictionary(i => "K" + i, _ => (string?)new string('v', 30000));
+            await Throws<ArgumentException>(() => runner.RunAsync(Request("echo") with { EnvironmentVariables = large }));
+            if (OperatingSystem.IsWindows())
+                await Throws<ArgumentException>(() => runner.RunAsync(Request("echo") with
+                    { EnvironmentVariables = new Dictionary<string, string?> { ["PATH"] = "a", ["Path"] = "b" } }));
+            Assert(starts == 0);
+        });
+        check("Windows environment block merges case-insensitively and has an empty-safe double terminator", () =>
+        {
+            var inherited = new Dictionary<string, string> { ["Z"] = "last", ["Path"] = "old", ["REMOVE"] = "gone", ["=C:"] = @"C:\original" };
+            var changes = new Dictionary<string, string?> { ["path"] = "new", ["REMOVE"] = null, ["A"] = "中文", ["EMPTY"] = "" };
+            var block = WindowsProcessSession.BuildEnvironmentBlock(changes, inherited);
+            Assert(block == "=C:=C:\\original\0A=中文\0EMPTY=\0Path=new\0Z=last\0\0");
+            Assert(inherited["Path"] == "old" && inherited["REMOVE"] == "gone");
+            Assert(WindowsProcessSession.BuildEnvironmentBlock(new Dictionary<string, string?> { ["Z"] = null },
+                new Dictionary<string, string> { ["Z"] = "last" }) == "\0\0");
+        });
         Case("Stdout callback receives data before exit and beyond capture limit", async () =>
         {
             var session = new FakeSession { StandardOutput = new(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("一段实时输出"))) };
@@ -97,6 +145,26 @@ internal static class ProcessChecks
             finally { release.Set(); await runner.DisposeAsync(); }
         });
         if (!OperatingSystem.IsWindows()) { Console.WriteLine("SKIP Windows process adapter checks on this platform"); return; }
+        Case("Concurrent Windows children inherit, override and remove variables without changing the host", async () =>
+        {
+            await using var runner = NewRunner();
+            var name = "TRACTORTOOL_ENV_CHECK_" + Guid.NewGuid().ToString("N");
+            var parentPath = Environment.GetEnvironmentVariable("PATH");
+            var first = runner.RunAsync(Request("environment", [name, "PATH", "SystemRoot", "EMPTY"]) with
+            {
+                EnvironmentVariables = new Dictionary<string, string?> { [name] = "中文=first", ["pAtH"] = null, ["EMPTY"] = "" }
+            });
+            var second = runner.RunAsync(Request("environment", [name, "PATH"]) with
+            {
+                EnvironmentVariables = new Dictionary<string, string?> { [name] = "second" }
+            });
+            var a = JsonSerializer.Deserialize<Dictionary<string, string?>>((await first).StandardOutput)!;
+            var b = JsonSerializer.Deserialize<Dictionary<string, string?>>((await second).StandardOutput)!;
+            Assert(a[name] == "中文=first" && a["PATH"] is null && a["EMPTY"] == "");
+            Assert(a["SystemRoot"] == Environment.GetEnvironmentVariable("SystemRoot"));
+            Assert(b[name] == "second" && b["PATH"] == parentPath);
+            Assert(Environment.GetEnvironmentVariable(name) is null && Environment.GetEnvironmentVariable("PATH") == parentPath);
+        });
         Case("Process arguments, Unicode and working directory roundtrip without shell expansion", async () =>
         {
             await using var runner = NewRunner();
@@ -244,6 +312,10 @@ internal static class ProcessChecks
         {
             case "echo":
                 Console.Write(JsonSerializer.Serialize(new Echo(args[1..], Environment.CurrentDirectory)));
+                return 0;
+            case "environment":
+                var environment = Environment.GetEnvironmentVariables();
+                Console.Write(JsonSerializer.Serialize(args[1..].ToDictionary(name => name, name => (string?)environment[name])));
                 return 0;
             case "flood":
                 for (var i = 0; i < 128; i++)

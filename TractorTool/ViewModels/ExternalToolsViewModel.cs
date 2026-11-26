@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Contracts.Packages;
 using TractorTool.Core.Packages;
+using TractorTool.Core.Packages.Python;
 
 namespace TractorTool.ViewModels;
 
@@ -21,21 +22,47 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     private string _sourceName = "";
     private string _sourceAddress = "";
     private string _searchText = "";
+    private int _selectedCategoryIndex;
+    private int _sourceKindIndex;
     private Func<string, string, CancellationToken, Task<bool>>? _confirm;
     public ObservableCollection<PackageCardViewModel> Cards { get; } = [];
     public ObservableCollection<PackageCardViewModel> VisibleCards { get; } = [];
     public ObservableCollection<DependencySource> Sources { get; } = [];
+    public ObservableCollection<PythonEnvironmentCardViewModel> PythonCards { get; } = [];
+    public ObservableCollection<PythonEnvironmentCardViewModel> VisiblePythonCards { get; } = [];
+    public IReadOnlyList<string> PackageCategories { get; } = ["外部工具", "DLL 运行库", "Python 环境"];
+    public int SelectedCategoryIndex
+    {
+        get => _selectedCategoryIndex;
+        set
+        {
+            if (value < 0 || value >= PackageCategories.Count || !SetProperty(ref _selectedCategoryIndex, value)) return;
+            FilterCards();
+        }
+    }
+    public IReadOnlyList<string> SourceKinds { get; } = ["GitHub Releases", "Python 包索引"];
+    public int SourceKindIndex
+    {
+        get => _sourceKindIndex;
+        set { if (value is < 0 or > 1 || !SetProperty(ref _sourceKindIndex, value)) return; OnPropertyChanged(nameof(SourceHelp)); OnPropertyChanged(nameof(SourcePlaceholder)); }
+    }
+    public string SourceHelp => SourceKindIndex == 0 ? "公开 GitHub Enterprise Release 的 ZIP 附件。" :
+        "公开 PyPI 兼容索引；锁文件必须使用此索引，附件须来自同一主机。";
+    public string SourcePlaceholder => SourceKindIndex == 0 ? "https://github.example.com/api/v3/" : "https://packages.example.com/simple/";
     public bool ShowSourceForm { get => _showSourceForm; set => SetProperty(ref _showSourceForm, value); }
     public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
     public string SourceAddress { get => _sourceAddress; set { if (SetProperty(ref _sourceAddress, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
     public string SearchText { get => _searchText; set { if (SetProperty(ref _searchText, value)) FilterCards(); } }
-    public bool IsEmpty => VisibleCards.Count == 0;
-    public string EmptyMessage => !string.IsNullOrWhiteSpace(SearchText) ? "没有找到匹配的依赖。" : "尚未安装依赖。插件首次使用时会提示安装。";
-    public string Summary => $"{Cards.Count(c => c.IsInstalled)} 个已安装 · {Cards.Count(c => c.CanRemove)} 个可清理";
-    public bool HasCleanup => Cards.Any(c => c.CanRemove);
-    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _status }.Where(s => !string.IsNullOrEmpty(s)));
+    public bool IsEmpty => VisibleCards.Count == 0 && VisiblePythonCards.Count == 0;
+    public string EmptyMessage => !string.IsNullOrWhiteSpace(SearchText) ? "当前分类没有找到匹配的依赖。" :
+        $"尚未安装{PackageCategories[SelectedCategoryIndex]}。插件首次使用时会提示准备。";
+    public string Summary => $"{VisibleCards.Count(c => c.IsInstalled) + VisiblePythonCards.Count(c => c.IsInstalled)} 个已安装 · {VisibleCards.Count(c => c.CanRemove) + VisiblePythonCards.Count(c => c.CanRemove)} 个可清理";
+    public bool HasCleanup => VisibleCards.Any(c => c.CanRemove) || VisiblePythonCards.Any(c => c.CanRemove);
+    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _service?.Python.Error, _status }.Where(s => !string.IsNullOrEmpty(s)));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }
+    public IAsyncRelayCommand CleanPythonCacheCommand { get; }
+    public bool HasPythonCache => SelectedCategoryIndex == 2 && _service?.Python.CanCleanCache == true;
     public IAsyncRelayCommand AddSourceCommand { get; }
     public IAsyncRelayCommand<DependencySource> RemoveSourceCommand { get; }
     public IRelayCommand<PackageCardViewModel> OpenCommand { get; }
@@ -44,7 +71,8 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     {
         _service = service;
         OpenCommand = new RelayCommand<PackageCardViewModel>(card => { if (!_disposed && card is not null) open(card); });
-        CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && Cards.Any(c => c.CanRemove));
+        CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && HasCleanup);
+        CleanPythonCacheCommand = new AsyncRelayCommand(CleanPythonCacheAsync, () => !_disposed && !_cleaning && HasPythonCache);
         AddSourceCommand = new AsyncRelayCommand(() => SaveSourceAsync(null), () => !_disposed && !_savingSource && _service is not null &&
             !string.IsNullOrWhiteSpace(SourceName) && !string.IsNullOrWhiteSpace(SourceAddress));
         RemoveSourceCommand = new AsyncRelayCommand<DependencySource>(s => SaveSourceAsync(s),
@@ -61,6 +89,11 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             $"来源：{prompt.Definition.SourceUri.AbsoluteUri}\n许可：{prompt.Definition.License}\n" +
             (prompt.IsRepair ? "将替换此版本损坏的依赖文件。\n" : "") +
             "安装后供插件共用，卸载插件时会保留。是否继续？", token);
+        if (_service is not null) _service.Python.ConfirmInstallAsync = confirm is null ? null : (prompt, token) => confirm(
+            prompt.IsRepair ? "重新准备 Python 环境" : "准备 Python 环境",
+            $"{prompt.Definition.PluginName} 需要独立的 Python {prompt.Definition.PythonVersion} 环境。\n{prompt.Definition.Description}\n\n" +
+            $"来源：{prompt.Definition.Source}\n由 uv {prompt.Definition.UvVersion} 按插件锁文件安装；Python 和 uv 从官方 GitHub 下载。\n" +
+            "环境仅供此插件版本使用，不改变系统 Python。卸载插件时保留，可在 Packages 中清理。是否继续？", token);
     }
     private void OnChanged()
     {
@@ -82,16 +115,27 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
                 (title, message, token) => _confirm?.Invoke(title, message, token) ?? Task.FromResult(false)));
             else card.Refresh(snapshot);
         }
+        var environments = _service?.Python.GetEnvironments() ?? [];
+        foreach (var stale in PythonCards.Where(c => !environments.Any(e => e.Definition.Identity == c.Identity)).ToArray())
+        { stale.MarkUnavailable(); PythonCards.Remove(stale); }
+        foreach (var item in environments)
+        {
+            var card = PythonCards.FirstOrDefault(c => c.Identity == item.Definition.Identity);
+            if (card is null) PythonCards.Add(new(_service!.Python, item, _stopping.Token,
+                (title, message, token) => _confirm?.Invoke(title, message, token) ?? Task.FromResult(false)));
+            else card.Refresh(item);
+        }
         var sources = _service?.GetSources() ?? [];
         if (!Sources.SequenceEqual(sources)) { Sources.Clear(); foreach (var source in sources) Sources.Add(source); }
         FilterCards();
         OnPropertyChanged(string.Empty);
-        CleanCommand.NotifyCanExecuteChanged(); AddSourceCommand.NotifyCanExecuteChanged(); RemoveSourceCommand.NotifyCanExecuteChanged();
+        AddSourceCommand.NotifyCanExecuteChanged(); RemoveSourceCommand.NotifyCanExecuteChanged();
     }
     private void FilterCards()
     {
         var query = SearchText.Trim();
-        var visible = Cards.Where(c => (c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || c.Key.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+        var visible = Cards.Where(c => SelectedCategoryIndex == (c.Kind == PackageKind.NativeLibrary ? 1 : 0) &&
+            (c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || c.Key.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
              c.Key.Version.Contains(query, StringComparison.OrdinalIgnoreCase))).ToArray();
         foreach (var card in VisibleCards.Except(visible).ToArray()) VisibleCards.Remove(card);
         // ponytail: quadratic reconciliation for small installed lists; use a keyed diff if package counts become large.
@@ -101,16 +145,27 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             if (existing < 0) VisibleCards.Insert(i, visible[i]);
             else if (existing != i) VisibleCards.Move(existing, i);
         }
+        var python = PythonCards.Where(c => SelectedCategoryIndex == 2 && c.SearchText.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        foreach (var card in VisiblePythonCards.Except(python).ToArray()) VisiblePythonCards.Remove(card);
+        for (var i = 0; i < python.Length; i++)
+        {
+            var existing = VisiblePythonCards.IndexOf(python[i]);
+            if (existing < 0) VisiblePythonCards.Insert(i, python[i]);
+            else if (existing != i) VisiblePythonCards.Move(existing, i);
+        }
         OnPropertyChanged(nameof(IsEmpty)); OnPropertyChanged(nameof(EmptyMessage));
+        OnPropertyChanged(nameof(Summary)); OnPropertyChanged(nameof(HasCleanup)); OnPropertyChanged(nameof(HasPythonCache));
+        CleanCommand.NotifyCanExecuteChanged(); CleanPythonCacheCommand.NotifyCanExecuteChanged();
     }
     private async Task SaveSourceAsync(DependencySource? remove)
     {
         if (_disposed || _savingSource || _service is null) return;
         var name = SourceName; var address = SourceAddress;
+        var kind = SourceKindIndex == 0 ? DependencySourceKind.GitHub : DependencySourceKind.PythonIndex;
         _savingSource = true; _status = ""; Refresh();
         try
         {
-            await Task.Run(() => { if (remove is null) _service.AddSource(name, address); else _service.RemoveSource(remove); });
+            await Task.Run(() => { if (remove is null) _service.AddSource(name, address, kind); else _service.RemoveSource(remove); });
             if (remove is null && SourceName == name && SourceAddress == address)
             { SourceName = ""; SourceAddress = ""; ShowSourceForm = false; }
         }
@@ -120,14 +175,20 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     private async Task CleanAsync()
     {
         if (_service is null || _confirm is null || _disposed) return;
-        var candidates = _service.GetPackages().Where(p => p.CanRemove).ToArray();
-        if (candidates.Length == 0) return;
+        // Freeze the visible selection before confirmation; never clean another category or hidden search result.
+        var visiblePackages = VisibleCards.Select(c => c.Key).ToHashSet();
+        var visiblePython = VisiblePythonCards.Select(c => c.Identity).ToHashSet(StringComparer.Ordinal);
+        var candidates = _service.GetPackages().Where(p => p.CanRemove && visiblePackages.Contains(p.Package)).ToArray();
+        var pythonCandidates = _service.Python.GetEnvironments().Where(p => p.CanRemove && visiblePython.Contains(p.Identity)).ToArray();
+        if (candidates.Length == 0 && pythonCandidates.Length == 0) return;
         _cleaning = true; _status = ""; Refresh();
         try
         {
-            var size = candidates.Sum(p => p.Status.InstalledBytes ?? 0) / 1048576d;
-            if (!await _confirm("清理未引用的依赖", string.Join("\n", candidates.Select(p => $"{p.Definition?.Name ?? p.Package.Id} {p.Package.Version}")) +
-                $"\n\n共 {candidates.Length} 个，约 {size:0.0} MiB。以后需要时可以重新下载。", _stopping.Token)) return;
+            var size = (candidates.Sum(p => p.Status.InstalledBytes ?? 0) + pythonCandidates.Sum(p => p.InstalledBytes ?? 0)) / 1048576d;
+            var names = candidates.Select(p => $"{p.Definition?.Name ?? p.Package.Id} {p.Package.Version}")
+                .Concat(pythonCandidates.Select(p => $"{p.Definition.PluginName} {p.Definition.PluginVersion} · 环境 {p.Definition.Id} · Python {p.Definition.PythonVersion}"));
+            if (!await _confirm("清理未引用的依赖", string.Join("\n", names) +
+                $"\n\n共 {candidates.Length + pythonCandidates.Length} 个，约 {size:0.0} MiB。以后需要时可以重新下载。", _stopping.Token)) return;
             foreach (var item in candidates)
             {
                 _stopping.Token.ThrowIfCancellationRequested();
@@ -135,9 +196,25 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
                 if (_service.GetPackages().Any(p => p.Package == item.Package && p.CanRemove))
                     await _service.RemoveAsync(item.Package);
             }
+            foreach (var item in pythonCandidates)
+            {
+                _stopping.Token.ThrowIfCancellationRequested();
+                if (_service.Python.GetEnvironments().Any(p => p.Definition.Identity == item.Definition.Identity && p.CanRemove))
+                    await _service.Python.RemoveAsync(item.Definition.Identity);
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { _status = "清理未完成：" + ex.Message; }
+        finally { _cleaning = false; if (!_disposed) Refresh(); }
+    }
+    private async Task CleanPythonCacheAsync()
+    {
+        if (_service is null || _confirm is null || _disposed) return;
+        if (!await _confirm("清理 Python 下载缓存", "保留已安装环境和插件业务数据。以后准备依赖可能需要重新下载。是否继续？", _stopping.Token)) return;
+        _cleaning = true; _status = ""; Refresh();
+        try { await _service.Python.CleanCacheAsync(_stopping.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _status = ex.Message; }
         finally { _cleaning = false; if (!_disposed) Refresh(); }
     }
     public void Dispose()
@@ -148,7 +225,9 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         if (_service is not null) _service.Changed -= OnChanged;
         _stopping.Cancel();
         foreach (var card in Cards) card.RefreshStopped();
+        foreach (var card in PythonCards) card.MarkUnavailable();
         CleanCommand.NotifyCanExecuteChanged(); AddSourceCommand.NotifyCanExecuteChanged(); RemoveSourceCommand.NotifyCanExecuteChanged();
+        CleanPythonCacheCommand.NotifyCanExecuteChanged();
     }
 }
 
@@ -161,8 +240,9 @@ public sealed class PackageCardViewModel : ObservableObject
     private bool _operating;
     private string _operationError = "";
     public PackageReference Key => _item.Package;
+    public PackageKind Kind => _item.Status.Kind;
     public string Name => _item.Definition?.Name ?? Key.Id;
-    private bool IsNativeLibrary => _item.Status.Kind == PackageKind.NativeLibrary;
+    private bool IsNativeLibrary => Kind == PackageKind.NativeLibrary;
     public string Attribution => $"{(IsNativeLibrary ? "DLL 运行库" : "外部工具")} · 版本 {Key.Version} · {_item.Status.Rid}" +
         (_item.Definition is { } d ? $" · {d.License}" : "");
     public string Directory => _item.Status.Directory;

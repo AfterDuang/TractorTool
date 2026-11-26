@@ -12,6 +12,7 @@
     <Project Path="tests/IndependentPlugin/IndependentPlugin.csproj" />
     <Project Path="tests/PackageProbePlugin/PackageProbePlugin.csproj" />
     <Project Path="tests/NativeLibraryProbePlugin/NativeLibraryProbePlugin.csproj" />
+    <Project Path="tests/PythonEnvironmentProbePlugin/PythonEnvironmentProbePlugin.csproj" />
     <Project Path="tests/TractorTool.Checks/TractorTool.Checks.csproj" />
     <Project Path="tests/TractorTool.ClipboardChecks/TractorTool.ClipboardChecks.csproj" />
     <Project Path="tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj" />

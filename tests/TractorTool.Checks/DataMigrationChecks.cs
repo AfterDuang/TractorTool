@@ -1,5 +1,9 @@
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
+using TractorTool.Core.Packages.Python;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 internal static class DataMigrationChecks
 {
@@ -366,10 +370,156 @@ internal static class DataMigrationChecks
             Assert(migration.ApplyAtStartup(manager, null, default).Error is not null && migration.Snapshot.DataRoot is null);
             Assert(File.ReadAllText(Path.Combine(Target(paths), "Packages", ".work", "foreign.txt")) == "foreign download");
         });
+        foreach (var existingMarker in new[] { false, true })
+            check(existingMarker ? "Migration resumes an existing marker with an interrupted pending update" : "Migration recreates its initial marker after an interrupted write", () =>
+            {
+                var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+                File.WriteAllBytes(Path.Combine(paths.ConfigRoot, "marker-fixture.bin"), new byte[1024 * 1024]);
+                var migration = new DataRootMigration(paths);
+                Assert(migration.Queue(Target(paths), manager) is null);
+                var request = migration.Snapshot.Migration!;
+                if (existingMarker)
+                {
+                    using var cancel = new CancellationTokenSource();
+                    Reject<OperationCanceledException>(() => migration.ApplyAtStartup(manager,
+                        new CallbackProgress(_ => cancel.Cancel()), cancel.Token));
+                    Assert(File.Exists(Path.Combine(Target(paths), ".tractortool-migration.json")));
+                }
+                var pending = ".tractortool-migration.json." + request.Id + ".tmp";
+                Write(Target(paths), pending, "{ interrupted metadata");
+                var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
+                Assert(result.Error is null && migration.Snapshot.Migration is null && migration.Snapshot.DataRoot == Target(paths));
+                Assert(!File.Exists(Path.Combine(Target(paths), pending)));
+                Assert(new FileInfo(Path.Combine(result.Paths.ConfigRoot, "marker-fixture.bin")).Length == 1024 * 1024);
+            });
+        check("Python migration rebuilds at the final path and records independent generated-file evidence", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var environment = PythonFixture(paths);
+            Write(paths.ConfigRoot, "business.txt", "ordinary data");
+            var rebuilds = 0;
+            var migration = new DataRootMigration(paths, (packages, item, token) =>
+            {
+                token.ThrowIfCancellationRequested(); rebuilds++;
+                WritePythonFixture(packages, item); return Task.CompletedTask;
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            var result = migration.ApplyAtStartup(manager, null, default); using var lease = result.TargetLease;
+            Assert(result.Error is null && rebuilds == 1 && migration.Snapshot.DataRoot == Target(paths));
+            Assert(!Directory.Exists(paths.PackageRoot));
+            Assert(File.ReadAllText(Path.Combine(result.Paths.ConfigRoot, "business.txt")) == "ordinary data");
+            var targetEnvironment = Path.Combine(result.Paths.PackageRoot, environment.RelativeDirectory);
+            var record = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(targetEnvironment, "environment.json")))!;
+            var generation = record["generation"]!.GetValue<string>();
+            Assert(File.ReadAllText(Path.Combine(targetEnvironment, generation, "runtime.txt")) == Path.Combine(targetEnvironment, generation));
+            var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
+            Assert(journal["pythonRebuilds"]!.AsArray().Count == 1 && journal["pythonRebuilds"]![0]!["targetHashes"] is not null);
+        });
+        check("Interrupted Python rebuilding preserves source and resumes from retained original inputs", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var environment = PythonFixture(paths);
+            Write(paths.ConfigRoot, "business.txt", "ordinary data");
+            var attempts = 0;
+            var migration = new DataRootMigration(paths, (packages, item, token) =>
+            {
+                token.ThrowIfCancellationRequested(); attempts++;
+                if (attempts == 1)
+                {
+                    var partial = Path.Combine(packages, item.RelativeDirectory, Guid.NewGuid().ToString("N"));
+                    Write(partial, ".owner", "TractorTool.PythonEnvironment.v1\n" + item.Definition.Identity);
+                    Write(partial, "partial.bin", "interrupted");
+                    throw new IOException("fixture interrupted rebuild");
+                }
+                WritePythonFixture(packages, item); return Task.CompletedTask;
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            var failed = migration.ApplyAtStartup(manager, null, default);
+            Assert(failed.Error is not null && migration.Snapshot.DataRoot is null);
+            Assert(Directory.Exists(Path.Combine(paths.PackageRoot, environment.RelativeDirectory)));
+            Assert(File.ReadAllText(Path.Combine(paths.ConfigRoot, "business.txt")) == "ordinary data");
+            migration.Retry();
+            var resumed = migration.ApplyAtStartup(manager, null, default); using var lease = resumed.TargetLease;
+            Assert(resumed.Error is null && attempts == 2 && migration.Snapshot.Migration is null);
+        });
+        check("A changed rebuilt Python target blocks source cleanup after the bootstrap commit", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var environment = PythonFixture(paths);
+            Write(paths.ConfigRoot, "business.txt", "keep until validated");
+            var migration = new DataRootMigration(paths, (packages, item, token) =>
+            { WritePythonFixture(packages, item); return Task.CompletedTask; });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            using var cancel = new CancellationTokenSource();
+            Reject<OperationCanceledException>(() => migration.ApplyAtStartup(manager,
+                new CallbackProgress(message => { if (message == "正在清理旧应用数据…") cancel.Cancel(); }), cancel.Token));
+            var next = new AppPaths(paths.AppRoot, paths.BootstrapRoot, Target(paths));
+            Assert(migration.Snapshot.DataRoot == next.DataRoot);
+            var targetEnvironment = Path.Combine(next.PackageRoot, environment.RelativeDirectory);
+            var record = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(targetEnvironment, "environment.json")))!;
+            var runtime = Path.Combine(targetEnvironment, record["generation"]!.GetValue<string>(), "runtime.txt");
+            var original = File.ReadAllText(runtime); var modified = File.GetLastWriteTimeUtc(runtime);
+            File.WriteAllText(runtime, new string('x', original.Length)); File.SetLastWriteTimeUtc(runtime, modified);
+            var reopened = new DataRootMigration(next);
+            Reject<IOException>(() => reopened.ApplyAtStartup(manager, null, default));
+            Assert(File.ReadAllText(Path.Combine(paths.ConfigRoot, "business.txt")) == "keep until validated");
+            Assert(Directory.Exists(Path.Combine(paths.PackageRoot, environment.RelativeDirectory)));
+            File.WriteAllText(runtime, original); File.SetLastWriteTimeUtc(runtime, modified);
+            Assert(reopened.ApplyAtStartup(manager, null, default).Error is null && reopened.Snapshot.Migration is null);
+        });
     }
 
     private static void Write(string directory, string file, string text)
     { Directory.CreateDirectory(directory); File.WriteAllText(Path.Combine(directory, file), text); }
+
+    // A synthetic installation record exercises the storage transaction without starting Python.
+    // Actual installation/version/process validation belongs to the separate Python checks.
+    private static PythonMigrationEnvironment PythonFixture(AppPaths paths)
+    {
+        var input = Path.Combine(paths.AppRoot, "python-input");
+        var project = "[project]\nname = \"migration-fixture\"\nversion = \"1.0.0\"\n";
+        var locked = "version = 1\nrevision = 3\n";
+        Write(input, "pyproject.toml", project); Write(input, "uv.lock", locked);
+        var declaration = new PythonEnvironmentDeclaration
+        {
+            Id = "worker", PythonVersion = PythonEnvironmentDefinitions.SupportedPythonVersion,
+            Project = "pyproject.toml", Lock = "uv.lock", ProjectSha256 = Digest(project), LockSha256 = Digest(locked)
+        };
+        var definition = PythonEnvironmentDefinitions.Snapshot(declaration, "MigrationFixture", "1.0.0", "迁移夹具", input, "win-x64");
+        var environment = new PythonMigrationEnvironment(Path.Combine("uv", "Environments", definition.PluginId, definition.Identity), definition);
+        WritePythonFixture(paths.PackageRoot, environment);
+        return environment;
+    }
+
+    private static void WritePythonFixture(string packages, PythonMigrationEnvironment environment)
+    {
+        Write(Path.Combine(packages, "uv"), ".python-packages", "TractorTool.PythonPackages.v1");
+        var identity = Path.Combine(packages, environment.RelativeDirectory);
+        var owner = "TractorTool.PythonEnvironment.v1\n" + environment.Definition.Identity;
+        Write(identity, ".owner", owner);
+        // The fixture owns this exact subtree. Keep deletion narrow even in generated test data.
+        foreach (var previous in Directory.EnumerateDirectories(identity))
+        {
+            Assert(Guid.TryParseExact(Path.GetFileName(previous), "N", out _));
+            Assert(File.ReadAllText(Path.Combine(previous, ".owner")) == owner);
+            Directory.Delete(previous, recursive: true);
+            var oldManifest = Path.Combine(identity, Path.GetFileName(previous) + ".files.json");
+            if (File.Exists(oldManifest)) File.Delete(oldManifest);
+        }
+        var generation = Guid.NewGuid().ToString("N"); var directory = Path.Combine(identity, generation);
+        Write(directory, ".owner", owner); Write(directory, "runtime.txt", directory);
+        var length = Encoding.UTF8.GetByteCount(directory);
+        var inventory = JsonSerializer.Serialize(new[] { new { Path = "runtime.txt", Length = length, Sha256 = Digest(directory) } }, JsonOptions.Value);
+        Write(identity, generation + ".files.json", inventory);
+        Write(identity, "environment.json", JsonSerializer.Serialize(new
+        {
+            SchemaVersion = 1, environment.Definition, Generation = generation, InstalledRoot = directory,
+            ManifestHash = Digest(inventory), InstalledBytes = length,
+            GenerationHashes = new Dictionary<string, string> { [generation] = Digest(inventory) }
+        }, JsonOptions.Value));
+    }
+
+    private static string Digest(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     private static void Assert(bool value) { if (!value) throw new Exception("Assertion failed"); }
     private static void Reject<T>(Action action) where T : Exception
     { try { action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }

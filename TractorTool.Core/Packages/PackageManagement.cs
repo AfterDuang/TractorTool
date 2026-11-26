@@ -2,11 +2,15 @@ using System.Text.Json;
 using TractorTool.Core.Storage;
 using TractorTool.Contracts.Packages;
 using TractorTool.Contracts;
+using TractorTool.Core.Packages.Python;
 
 namespace TractorTool.Core.Packages;
 
 public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName, IReadOnlyList<GitHubPackage>? Downloads = null);
-public sealed record PackageReferenceSnapshot(IReadOnlyList<PackageDependency> Dependencies, bool Complete, string Error = "");
+public sealed record PackageReferenceSnapshot(IReadOnlyList<PackageDependency> Dependencies, bool Complete, string Error = "")
+{
+    public IReadOnlyList<PythonEnvironmentDefinition> PythonEnvironments { get; init; } = [];
+}
 public sealed record PackageListItem(PackageReference Package, PackageDefinition? Definition, PackageStatus Status,
     IReadOnlyList<string> RequiredBy, bool IsInstalled, bool CanInstall, bool CanRemove);
 public sealed record PackageInstallPrompt(PackageDefinition Definition, string RequestedBy, bool IsRepair);
@@ -33,11 +37,13 @@ public sealed partial class ExternalPackageService
                 _references = _references with { Complete = false, Error = "依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写；暂不可清理。" };
             RestoreDeclaredInstallations();
         }
+        Python.UpdateReferences(snapshot.PythonEnvironments, snapshot.Complete, snapshot.Error);
         Notify();
     }
     internal void InvalidateReferences()
     {
         lock (_gate) _references = _references with { Complete = false, Error = "插件依赖正在变更，暂不可清理。" };
+        Python.InvalidateReferences();
         Notify();
     }
     public string ReferenceError { get { lock (_gate) return _references.Complete ? "" : _references.Error; } }
@@ -161,6 +167,8 @@ public sealed partial class ExternalPackageService
             {
                 try
                 {
+                    if (string.Equals(Path.GetFileName(id), "uv", StringComparison.OrdinalIgnoreCase) &&
+                        PythonEnvironmentService.IsOwnedRoot(id)) continue;
                     if (string.Equals(Path.GetFileName(id), "DLL", StringComparison.OrdinalIgnoreCase) && IsNativeRoot(id))
                     {
                         foreach (var nativeId in ReadDirectories(id).Where(p => !Path.GetFileName(p).StartsWith('.')))

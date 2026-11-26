@@ -1,2 +1,5 @@
 # Preserve the upstream rich-text license byte-for-byte, including its formatting.
 Plugins/TractorTool.Plugins.ClipboardHistory/Licenses/WindowsSDK.rtf binary
+# Plugin declarations hash these locked build inputs; preserve bytes across Windows/Linux checkouts.
+tests/PythonEnvironmentProbePlugin/Python/pyproject.toml text eol=lf
+tests/PythonEnvironmentProbePlugin/Python/uv.lock text eol=lf

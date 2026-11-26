@@ -323,7 +323,7 @@ internal static class PackageChecks
                 request.RequestUri!.AbsolutePath.StartsWith("/api/v3/") ? Release(recipe) : bytes))));
             await using (var service = GitHub(path, http, recipe))
             {
-                Require(service.GetSources().Single().IsDefault);
+                Require(service.GetSources().Single(s => s.Kind == DependencySourceKind.GitHub).IsDefault);
                 await Throws<InvalidOperationException>(async () => { using var denied = await service.TryRequestAsync(Key, "A"); });
                 foreach (var bad in new[] { "http://git.example.com/api/v3/", "https://user:password@git.example.com/api/v3/", "https://git.example.com/api/v3/?token=bad" })
                     await Throws<InvalidDataException>(() => { service.AddSource("Team", bad); return Task.CompletedTask; });
@@ -334,10 +334,10 @@ internal static class PackageChecks
             }
             using var offline = new HttpClient(new Handler((_, _) => throw new Exception("Installed packages must remain offline")));
             await using var restored = GitHub(path, offline, recipe);
-            Require(restored.GetSources().Count == 2);
+            Require(restored.GetSources().Count(s => s.Kind == DependencySourceKind.GitHub) == 2);
             restored.RemoveSource(restored.GetSources().Single(s => !s.IsDefault));
             using var reused = await restored.TryRequestAsync(Key, "A"); Require(reused is not null);
-            Require(restored.GetPackages().Single().IsInstalled && restored.GetSources().Single().IsDefault);
+            Require(restored.GetPackages().Single().IsInstalled && restored.GetSources().Single(s => s.Kind == DependencySourceKind.GitHub).IsDefault);
         });
         Test("legacy receipt recovers from matching plugin instructions without a catalog", async path =>
         {

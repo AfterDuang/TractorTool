@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "Test.PythonEnvironmentProbe",
+  "name": "Python 环境测试",
+  "version": "1.0.0",
+  "entryAssembly": "PythonEnvironmentProbePlugin.dll",
+  "entryType": "PythonEnvironmentProbePlugin.ProbePlugin",
+  "apiVersion": "1.9",
+  "uiApiVersion": "1.6",
+  "avaloniaVersion": "12.1.6",
+  "supportedPlatforms": [
+    "win-x64"
+  ],
+  "pythonEnvironments": [
+    {
+      "id": "worker",
+      "pythonVersion": "3.13.18",
+      "project": "Python/pyproject.toml",
+      "lock": "Python/uv.lock",
+      "projectSha256": "7f92f75a204b05229fc36f75aea4336264448766ba6d1496a77e129d76016fc9",
+      "lockSha256": "c315f3a712dcebf625b0fa1d33295d7abec4695c15fb4d5b01f920a07c3edd89",
+      "source": "https://pypi.org/simple/",
+      "description": "用 idna 3.11 的真实 PyPI wheel 验证独立 Python 环境与调用。"
+    }
+  ],
+  "description": "按锁准备 Python 3.13.18 并调用 idna；仅供隔离验收，不随正式分发。"
+}

@@ -10,7 +10,11 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-当前 `Dev` 已实现首阶段 DLL 外部运行库：Contracts API 1.8、`Packages/DLL` 分类、完整载荷校验、进程期占用和管理页说明；旧工具清单、路径及收据保持兼容。真实 SDL 测试插件、构建及 Review 记录见 [E147](PROJECT_HISTORY.md#evidence-native-library-packages)。**2026-11-27 用户反馈目前测试没问题并授权本地提交，未授权推送或发布。** Agent 未运行应用或检查程序，用户反馈不外推为故障场景和全部自动检查通过。后续 uv/Python、pnpm/Node 仍为已确认方案，未开放对应来源。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，当前验收以 [A30–A33](DEVELOPMENT.md#dependency-extension-plan) 为准。
+`Dev` 的 DLL 基线为 `4b9f8ce`。本轮完成 uv/Python 接入、安装参数修正与 Packages 分类；2026-11-27 用户反馈“这版暂时没有遇到什么问题，可以提交”，授权保存为本地 `Dev` 提交，未授权推送。Contracts API 1.9、私有工具链、原锁快照、受管调用、PyPI 来源、缓存清理及目标重建已实现，保留旧工具/DLL 和 API 1.0–1.8；宿主及检查项目构建、夹具独立打包和 SOL/high 静态复核见 [E148](PROJECT_HISTORY.md#evidence-python-environments)。用户反馈不外推为专项故障恢复、兼容或自动检查全部通过；Agent 未执行检查程序，NU1900 漏洞数据查询仍未完成，状态以 [A31/A33](DEVELOPMENT.md#dependency-extension-plan) 为准。
+
+uv 0.13.10 的 `--frozen` / `--no-sources` 互斥已修正，保留锁及来源校验。Packages 导航分“外部工具、DLL 运行库、Python 环境”，搜索/统计/批量清理限定可见范围，Python 缓存按钮归对应分类；证据见 [E149](PROJECT_HISTORY.md#evidence-package-categories)。最新源码包含分类；`artifacts/python-environment-20261127-cli-fix/host` 只含此前 CLI 修正，测试插件沿用原 ZIP。
+
+Python 首轮限定 Windows x64、CPython 3.13.18、uv 0.13.10 / Python build 20261124，普通单索引 wheel；运行追加 `-I -B -X utf8`，业务脚本不依赖隐式模块搜索目录。环境按锁在目标最终位置重建，不能把 venv 当便携文件直接搬迁。Node/pnpm 尚未实现，npm 来源未开放；设计与接入规则见[架构 7.3](ARCHITECTURE.md#dependency-extension) / [Python 规范](PLUGIN_DEVELOPMENT.md#python-environments)。已发布 1.1.0 不变。
 
 [AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。
 
@@ -32,4 +36,5 @@
 | 装载与公共接口 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[接入规范](PLUGIN_DEVELOPMENT.md) |
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 外部依赖扩展 | [公开包契约](../TractorTool.Contracts/Packages/IExternalPackageService.cs)、[包定义](../TractorTool.Core/Packages/PackageDefinitions.cs)、[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs)、[清单投影](../scripts/Read-PluginManifest.ps1)；新增设计与目录见[架构 7.3](ARCHITECTURE.md#dependency-extension) |
+| Python 环境 | [声明与工具链](../TractorTool.Core/Packages/Python/PythonEnvironmentDefinitions.cs)、[安装](../TractorTool.Core/Packages/Python/PythonEnvironmentInstaller.cs)、[服务与占用](../TractorTool.Core/Packages/Python/PythonEnvironmentService.cs)、[迁移重建](../TractorTool.Core/Packages/Python/PythonEnvironmentMigration.cs)、[真实夹具](../tests/PythonEnvironmentProbePlugin/README.md) |
 | 分发与维护 | [Build-Distribution](../scripts/Build-Distribution.ps1)、[自动检查入口](DEVELOPMENT.md#automated-checks) |

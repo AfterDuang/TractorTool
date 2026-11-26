@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot
 $readPlugins = Join-Path $repo 'scripts/Get-DistributionPlugins.ps1'
 $verify = Join-Path $repo 'scripts/Verify-Distribution.ps1'
+$readManifest = Join-Path $repo 'scripts/Read-PluginManifest.ps1'
 $tempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $scratch = Join-Path $tempParent ('TractorTool-distribution-checks-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
@@ -19,7 +20,8 @@ function Expect-Rejection([scriptblock]$Action, [string]$Message) {
     throw "应拒绝但未拒绝：$Message"
 }
 function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate, [switch]$Unlisted, [switch]$MisCasedId,
-    [hashtable]$Dependencies = @{}, [string[]]$ExtraPaths = @(), [string[]]$HostNativeFiles = @(), [string]$ApiVersion = '1.8') {
+    [hashtable]$Dependencies = @{}, [string[]]$ExtraPaths = @(), [string[]]$HostNativeFiles = @(), [string]$ApiVersion = '1.8',
+    [hashtable]$PythonEnvironments = @{}, [hashtable]$PythonInputs = @{}) {
     $fixture = Join-Path $scratch $Name
     $layout = Join-Path $fixture 'Bundle'
     $assets = Join-Path $fixture 'assets'
@@ -54,7 +56,13 @@ function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate,
         $manifest = @{ id = $id; version = '1.2.3'; apiVersion = $ApiVersion; uiApiVersion = '1.6' }
         if ($MisCasedId) { $manifest.id = $id.ToLowerInvariant() }
         if ($Dependencies.ContainsKey($i)) { $manifest['DePeNdEnCiEs'] = $Dependencies[$i] }
+        if ($PythonEnvironments.ContainsKey($i)) { $manifest['PythonEnvironments'] = $PythonEnvironments[$i] }
         Write-Json (Join-Path $directory 'plugin.json') $manifest
+        foreach ($inputPath in $PythonInputs.Keys) {
+            $outputPath = Join-Path $directory $inputPath
+            New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
+            [IO.File]::WriteAllText($outputPath, $PythonInputs[$inputPath], [Text.UTF8Encoding]::new($false))
+        }
         Set-Content -LiteralPath (Join-Path $directory "$id.dll") -Value 'Static fixture, not an assembly.'
         $archive = "$id-1.2.3.zip"
         [IO.Compression.ZipFile]::CreateFromDirectory($directory, (Join-Path $assets $archive))
@@ -169,6 +177,7 @@ try {
         2 = @(@{ id = 'Example.Native'; version = '2.0.0' })
     }
     & $verify -AssetsDir (New-DistributionFixture 'native-package-declaration' 3 -Dependencies $nativeDeps)
+    & $verify -AssetsDir (New-DistributionFixture 'native-current-api' 3 -Dependencies $nativeDeps -ApiVersion '1.9')
     & $verify -AssetsDir (New-DistributionFixture 'unrelated-private-native' 3 -Dependencies $nativeDeps `
         -ExtraPaths 'Plugins/Example.Plugin2/1.2.3/native-probe.dll')
     foreach ($path in @('native-probe.dll', 'Plugins/Example.Plugin0/1.2.3/native/NATIVE-PROBE.DLL',
@@ -202,6 +211,38 @@ try {
     $download.sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Fixture payload')))
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'renamed-archive' 3 -Dependencies $deps -ExtraPaths 'other.bin') } '外部下载归档：other.bin'
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'package-store' 0 -ExtraPaths 'Packages/unknown/receipt.json') } '混入用户数据'
+
+    # Lock inputs are plugin files, while interpreters and installed environments stay outside the distribution.
+    $projectText = "[project]`nname = 'fixture'`nversion = '1.0.0'`n"
+    $lockText = "version = 1`nrevision = 5`n"
+    $pythonDeclaration = @{
+        id = 'worker'; pythonVersion = '3.13.18'; project = 'Python/pyproject.toml'; lock = 'Python/uv.lock'
+        projectSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($projectText)))
+        lockSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($lockText)))
+        source = 'https://pypi.org/simple/'
+    }
+    $pythonDeclarations = @{ 0 = @($pythonDeclaration) }
+    $pythonInputs = @{ 'Python/pyproject.toml' = $projectText; 'Python/uv.lock' = $lockText }
+    & $verify -AssetsDir (New-DistributionFixture 'python-locked-inputs' 1 -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs)
+    foreach ($payload in @('Python/.venv/pyvenv.cfg', 'Python/runtime/PYTHON.EXE', 'Python/tools/uv.exe')) {
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture ('python-installed-' + [guid]::NewGuid().ToString('N')) 1 `
+            -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs -ExtraPaths "Plugins/Example.Plugin0/1.2.3/$payload") } '不能携带受管理解释器'
+    }
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-missing-lock' 1 -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations `
+        -PythonInputs @{ 'Python/pyproject.toml' = $projectText }) } 'Python 项目或锁文件缺失'
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-mutated-lock' 1 -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations `
+        -PythonInputs @{ 'Python/pyproject.toml' = $projectText; 'Python/uv.lock' = $lockText + '# changed' }) } 'Python 项目或锁文件缺失'
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-old-api' 1 -ApiVersion '1.8' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs) } 'Python 环境需要 API 1.9'
+    $pythonManifest = @{ apiVersion = '1.9'; pythonEnvironments = @($pythonDeclaration) }
+    $pythonDeclaration.project = '../pyproject.toml'
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $pythonManifest -Depth 8) } '安全的包内相对路径'
+    $pythonDeclaration.project = 'Python/pyproject.toml'
+    $pythonDeclaration.source = 'https://user:secret@pypi.org/simple/'
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $pythonManifest -Depth 8) } 'HTTPS Simple API'
+    $pythonDeclaration.source = 'https://pypi.org/simple/'
+    $pythonManifest.pythonEnvironments += @($pythonDeclaration.Clone())
+    $pythonManifest.pythonEnvironments[1].id = 'WORKER'
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $pythonManifest -Depth 8) } '标识无效或重复'
     Write-Output '随包插件自动发现与 ZIP 静态回归通过；未编译或运行应用。'
 } finally {
     $resolved = [IO.Path]::GetFullPath($scratch)

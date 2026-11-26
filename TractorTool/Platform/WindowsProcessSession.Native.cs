@@ -6,6 +6,12 @@ namespace TractorTool.Platform;
 
 internal sealed partial class WindowsProcessSession
 {
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetEnvironmentStringsW();
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool FreeEnvironmentStringsW(IntPtr environment);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct StartupInfo
     {

@@ -157,6 +157,15 @@ try {
             $pluginFiles = Get-ZipFiles $pluginZip ''
             $manifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Json (Read-ZipText $pluginFiles['plugin.json'])
             if ($manifest.id -cne $plugin.id -or $manifest.version -cne $plugin.version) { throw '插件清单与发布记录的 ID 或版本不一致。' }
+            foreach ($environment in $manifest.PythonEnvironments) {
+                foreach ($descriptor in @(@($environment.Project, $environment.ProjectSha256), @($environment.Lock, $environment.LockSha256))) {
+                    $inputPath = $descriptor[0].Replace('\', '/')
+                    if (!$pluginFiles.ContainsKey($inputPath) -or $pluginFiles[$inputPath].Length -le 0 -or
+                        $pluginFiles[$inputPath].Length -gt 2MB -or (Get-ZipHash $pluginFiles[$inputPath]) -ne $descriptor[1]) {
+                        throw "Python 项目或锁文件缺失、过大或摘要不符：$inputPath"
+                    }
+                }
+            }
             $manifests.Add($manifest)
             $prefix = "$($plugin.path)/"
             if (@($listed.Keys | Where-Object { $_.StartsWith($prefix, [StringComparison]::Ordinal) }).Count -ne $pluginFiles.Count) { throw '整包与独立插件文件数量不一致。' }
@@ -164,6 +173,7 @@ try {
             foreach ($path in $pluginFiles.Keys) {
                 if ((Get-ZipHash $pluginFiles[$path]) -ne $listed["$prefix$path"]) { throw "整包与独立插件不一致：$path" }
                 Assert-PluginSdkFile $sdkPolicy $path $manifest.uiApiVersion
+                Assert-PluginPythonFile $manifest $path
             }
         } finally { $pluginZip.Dispose() }
     }
