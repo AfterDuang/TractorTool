@@ -21,7 +21,7 @@ internal static class PythonContractsChecks
                 "Runtime", "Fixture", "MIT", new Dictionary<string, PackageTool>())
             { Kind = PackageKind.NativeLibrary, Libraries = new Dictionary<string, string> { ["runtime"] = "runtime.dll" } };
             var compatible = new HostCompatibility("windows", "win-x64", "1.6", "12.1.6");
-            foreach (var api in new[] { "1.8", "1.9" })
+            foreach (var api in new[] { "1.8", "1.9", "1.10" })
             {
                 var withNative = manifest with { ApiVersion = api, PythonEnvironments = [], Dependencies = [new("Fixture.Runtime", "1.0.0") { Downloads = [native] }] };
                 ManifestValidator.Validate(withNative, directory);
@@ -99,7 +99,7 @@ internal static class PythonContractsChecks
             await using (var service = Create(path, http, settings))
             {
                 var sources = service.GetSources();
-                Require(sources.Count == 3 && sources.Count(s => s.IsDefault) == 2);
+                Require(sources.Count == 4 && sources.Count(s => s.IsDefault) == 3);
                 Require(sources.Single(s => s.Name == "Enterprise").Kind == DependencySourceKind.GitHub);
                 Require(sources.Single(s => s.Url == DependencySource.PyPiUrl).Kind == DependencySourceKind.PythonIndex);
                 service.AddSource("Mirror", "https://packages.example.com/simple/", DependencySourceKind.PythonIndex);

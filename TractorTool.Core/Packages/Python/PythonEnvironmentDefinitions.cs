@@ -20,7 +20,7 @@ public sealed record PythonEnvironmentDeclaration
 
 public sealed record PythonEnvironmentDefinition(string Identity, string PluginId, string PluginVersion,
     string PluginName, string Id, string PythonVersion, string Rid, string Source, string Description,
-    string ProjectText, string LockText, string UvVersion, string PythonBuild);
+    string ProjectText, string LockText, string UvVersion, string PythonBuild) : Environments.IEnvironmentDefinition;
 
 public static class PythonEnvironmentDefinitions
 {

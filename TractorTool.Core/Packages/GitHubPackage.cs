@@ -48,13 +48,27 @@ public sealed record DependencySource(string Name, string Url)
 {
     public const string GitHubUrl = "https://api.github.com/";
     public const string PyPiUrl = "https://pypi.org/simple/";
+    public const string NpmUrl = "https://registry.npmjs.org/";
     public DependencySourceKind Kind { get; init; }
-    [JsonIgnore] public bool IsDefault => Kind == DependencySourceKind.GitHub ? Url == GitHubUrl : Url == PyPiUrl;
-    [JsonIgnore] public string KindLabel => Kind == DependencySourceKind.GitHub ? "GitHub Releases" : "Python 包索引";
+    [JsonIgnore] public bool IsDefault => Kind switch
+    {
+        DependencySourceKind.GitHub => Url == GitHubUrl,
+        DependencySourceKind.PythonIndex => Url == PyPiUrl,
+        DependencySourceKind.NpmRegistry => Url == NpmUrl,
+        _ => false
+    };
+    [JsonIgnore] public string KindLabel => Kind switch
+    {
+        DependencySourceKind.GitHub => "GitHub Releases",
+        DependencySourceKind.PythonIndex => "Python 包索引",
+        DependencySourceKind.NpmRegistry => "npm registry",
+        _ => "未知来源"
+    };
     internal static Uri Address(DependencySourceKind kind, string address) => kind switch
     {
         DependencySourceKind.GitHub => ApiUri(address),
         DependencySourceKind.PythonIndex => IndexUri(address),
+        DependencySourceKind.NpmRegistry => Node.NodeEnvironmentDefinitions.RegistryUri(address),
         _ => throw new InvalidDataException("不支持的依赖来源类型。")
     };
     internal static Uri IndexUri(string address)
@@ -76,7 +90,7 @@ public sealed record DependencySource(string Name, string Url)
 }
 
 [JsonConverter(typeof(DependencySourceKindConverter))]
-public enum DependencySourceKind { GitHub, PythonIndex }
+public enum DependencySourceKind { GitHub, PythonIndex, NpmRegistry }
 
 internal sealed class DependencySourceKindConverter : JsonStringEnumConverter<DependencySourceKind>
 {

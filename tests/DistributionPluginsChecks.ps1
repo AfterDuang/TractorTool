@@ -21,7 +21,8 @@ function Expect-Rejection([scriptblock]$Action, [string]$Message) {
 }
 function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate, [switch]$Unlisted, [switch]$MisCasedId,
     [hashtable]$Dependencies = @{}, [string[]]$ExtraPaths = @(), [string[]]$HostNativeFiles = @(), [string]$ApiVersion = '1.8',
-    [hashtable]$PythonEnvironments = @{}, [hashtable]$PythonInputs = @{}) {
+    [hashtable]$PythonEnvironments = @{}, [hashtable]$PythonInputs = @{},
+    [hashtable]$NodeEnvironments = @{}, [hashtable]$NodeInputs = @{}) {
     $fixture = Join-Path $scratch $Name
     $layout = Join-Path $fixture 'Bundle'
     $assets = Join-Path $fixture 'assets'
@@ -57,11 +58,14 @@ function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate,
         if ($MisCasedId) { $manifest.id = $id.ToLowerInvariant() }
         if ($Dependencies.ContainsKey($i)) { $manifest['DePeNdEnCiEs'] = $Dependencies[$i] }
         if ($PythonEnvironments.ContainsKey($i)) { $manifest['PythonEnvironments'] = $PythonEnvironments[$i] }
+        if ($NodeEnvironments.ContainsKey($i)) { $manifest['NodeEnvironments'] = $NodeEnvironments[$i] }
         Write-Json (Join-Path $directory 'plugin.json') $manifest
-        foreach ($inputPath in $PythonInputs.Keys) {
-            $outputPath = Join-Path $directory $inputPath
-            New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
-            [IO.File]::WriteAllText($outputPath, $PythonInputs[$inputPath], [Text.UTF8Encoding]::new($false))
+        foreach ($inputs in @($PythonInputs, $NodeInputs)) {
+            foreach ($inputPath in $inputs.Keys) {
+                $outputPath = Join-Path $directory $inputPath
+                New-Item -ItemType Directory -Path (Split-Path $outputPath) -Force | Out-Null
+                [IO.File]::WriteAllText($outputPath, $inputs[$inputPath], [Text.UTF8Encoding]::new($false))
+            }
         }
         Set-Content -LiteralPath (Join-Path $directory "$id.dll") -Value 'Static fixture, not an assembly.'
         $archive = "$id-1.2.3.zip"
@@ -229,9 +233,9 @@ try {
             -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs -ExtraPaths "Plugins/Example.Plugin0/1.2.3/$payload") } '不能携带受管理解释器'
     }
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-missing-lock' 1 -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations `
-        -PythonInputs @{ 'Python/pyproject.toml' = $projectText }) } 'Python 项目或锁文件缺失'
+        -PythonInputs @{ 'Python/pyproject.toml' = $projectText }) } '环境项目或锁文件缺失'
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-mutated-lock' 1 -ApiVersion '1.9' -PythonEnvironments $pythonDeclarations `
-        -PythonInputs @{ 'Python/pyproject.toml' = $projectText; 'Python/uv.lock' = $lockText + '# changed' }) } 'Python 项目或锁文件缺失'
+        -PythonInputs @{ 'Python/pyproject.toml' = $projectText; 'Python/uv.lock' = $lockText + '# changed' }) } '环境项目或锁文件缺失'
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'python-old-api' 1 -ApiVersion '1.8' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs) } 'Python 环境需要 API 1.9'
     $pythonManifest = @{ apiVersion = '1.9'; pythonEnvironments = @($pythonDeclaration) }
     $pythonDeclaration.project = '../pyproject.toml'
@@ -243,6 +247,28 @@ try {
     $pythonManifest.pythonEnvironments += @($pythonDeclaration.Clone())
     $pythonManifest.pythonEnvironments[1].id = 'WORKER'
     Expect-Rejection { & $readManifest -Json (ConvertTo-Json $pythonManifest -Depth 8) } '标识无效或重复'
+    $nodeProject = '{"name":"fixture","version":"1.0.0"}'
+    $nodeLock = "lockfileVersion: '9.0'"
+    $nodeDeclaration = @{
+        id = 'worker'; nodeVersion = '24.22.3'; project = 'Node/package.json'; lock = 'Node/pnpm-lock.yaml'
+        projectSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($nodeProject)))
+        lockSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($nodeLock)))
+        source = 'https://registry.npmjs.org/'
+    }
+    $nodeDeclarations = @{ 0 = @($nodeDeclaration) }
+    $nodeInputs = @{ 'Node/package.json' = $nodeProject; 'Node/pnpm-lock.yaml' = $nodeLock }
+    & $verify -AssetsDir (New-DistributionFixture 'node-locked-inputs' 1 -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs)
+    & $verify -AssetsDir (New-DistributionFixture 'python-current-api' 1 -ApiVersion '1.10' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs)
+    foreach ($payload in @('Node/runtime/NODE.EXE', 'Node/pnpm/pnpm.cjs', 'Node/node_modules/package/index.js')) {
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture ('node-installed-' + [guid]::NewGuid().ToString('N')) 1 `
+            -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs -ExtraPaths "Plugins/Example.Plugin0/1.2.3/$payload") } '不能携带受管理 Node'
+    }
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'node-old-api' 1 -ApiVersion '1.9' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs) } 'Node 环境需要 API 1.10'
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'node-missing-lock' 1 -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations `
+        -NodeInputs @{ 'Node/package.json' = $nodeProject }) } '环境项目或锁文件缺失'
+    $nodeManifest = @{ apiVersion = '1.10'; nodeEnvironments = @($nodeDeclaration) }
+    $nodeDeclaration.source = 'https://user:secret@registry.npmjs.org/'
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $nodeManifest -Depth 8) } '公开的 HTTPS 地址'
     Write-Output '随包插件自动发现与 ZIP 静态回归通过；未编译或运行应用。'
 } finally {
     $resolved = [IO.Path]::GetFullPath($scratch)

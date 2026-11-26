@@ -51,9 +51,10 @@ foreach ($package in $assets.libraries.Keys) {
         throw "插件还原了 $package，目标宿主使用 $($hostAvalonia[0])。请按目标宿主基线重新编译。"
     }
 }
-foreach ($file in Get-ChildItem -LiteralPath $files -Recurse -File) {
+foreach ($file in Get-ChildItem -LiteralPath $files -Force -Recurse -File) {
     Assert-PluginSdkFile $sdkPolicy $file.Name $builtManifest.uiApiVersion
     Assert-PluginPythonFile $builtManifest $file.Name
+    Assert-PluginNodeFile $builtManifest ([IO.Path]::GetRelativePath($files, $file.FullName))
 }
 $licenses = Join-Path $files 'Licenses'
 # Only collect this known license when the package actually ships; MVVM is not an SDK requirement.

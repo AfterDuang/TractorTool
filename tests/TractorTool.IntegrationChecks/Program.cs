@@ -593,14 +593,14 @@ Check("Dependency settings separate installed packages and persistent GitHub sou
     using var model = new ExternalToolsViewModel(service, _ => { });
     try
     {
-        Assert(model.IsEmpty && model.Sources.Count == 2 && model.Sources.All(s => s.IsDefault));
+        Assert(model.IsEmpty && model.Sources.Count == 3 && model.Sources.All(s => s.IsDefault));
         Assert(!model.RemoveSourceCommand.CanExecute(model.Sources[0]));
         model.SourceName = "Team"; model.SourceAddress = "https://github.example.com/api/v3/";
         Pump(model.AddSourceCommand.ExecuteAsync(null)); Dispatcher.UIThread.RunJobs();
-        Assert(model.Sources.Count == 3 && model.Error.Length == 0 && model.IsEmpty);
+        Assert(model.Sources.Count == 4 && model.Error.Length == 0 && model.IsEmpty);
         var source = model.Sources.Single(s => !s.IsDefault);
         Pump(model.RemoveSourceCommand.ExecuteAsync(source)); Dispatcher.UIThread.RunJobs();
-        Assert(model.Sources.Count == 2 && model.IsEmpty);
+        Assert(model.Sources.Count == 3 && model.IsEmpty);
         model.Dispose(); Assert(!model.AddSourceCommand.CanExecute(null));
     }
     finally { model.Dispose(); Pump(service.DisposeAsync().AsTask()); Pump(runner.DisposeAsync().AsTask()); }

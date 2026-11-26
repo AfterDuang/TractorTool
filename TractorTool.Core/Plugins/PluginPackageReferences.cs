@@ -1,6 +1,7 @@
 using TractorTool.Core.Packages;
 using TractorTool.Core.Storage;
 using TractorTool.Core.Packages.Python;
+using TractorTool.Core.Packages.Node;
 
 namespace TractorTool.Core.Plugins;
 
@@ -48,6 +49,7 @@ public sealed class PluginPackageReferences : IDisposable
             if (_disposed) return;
             var manifests = _active.Select(r => (Manifest: r.Manifest!, r.Directory)).ToList();
             var python = new List<PythonEnvironmentDefinition>();
+            var node = new List<NodeEnvironmentDefinition>();
             var error = _scanError;
             try
             {
@@ -67,14 +69,20 @@ public sealed class PluginPackageReferences : IDisposable
                     }
                 }
                 foreach (var (manifest, directory) in manifests)
+                {
                     foreach (var declaration in manifest.PythonEnvironments)
                         python.Add(PythonEnvironmentDefinitions.Snapshot(declaration, manifest.Id, manifest.Version,
                             manifest.Name, directory, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
+                    foreach (var declaration in manifest.NodeEnvironments)
+                        node.Add(NodeEnvironmentDefinitions.Snapshot(declaration, manifest.Id, manifest.Version,
+                            manifest.Name, directory, System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier));
+                }
             }
             catch (Exception ex) { error = "无法确认全部插件依赖，暂停清理：" + ex.Message; }
             _packages.UpdateReferences(new(manifests.SelectMany(p => p.Manifest.Dependencies.Select(d =>
                     new PackageDependency(d.Package, p.Manifest.Id, p.Manifest.Name, d.Downloads)))
-                .Distinct().ToArray(), error.Length == 0, error) { PythonEnvironments = python.DistinctBy(p => p.Identity).ToArray() });
+                .Distinct().ToArray(), error.Length == 0, error)
+                { PythonEnvironments = python.DistinctBy(p => p.Identity).ToArray(), NodeEnvironments = node.DistinctBy(p => p.Identity).ToArray() });
         }
     }
 

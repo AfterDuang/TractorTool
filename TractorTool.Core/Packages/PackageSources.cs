@@ -10,7 +10,8 @@ public sealed partial class ExternalPackageService
 {
     private readonly string _sourcesFile;
     private static DependencySource[] DefaultSources => [new("GitHub", DependencySource.GitHubUrl),
-        new("PyPI", DependencySource.PyPiUrl) { Kind = DependencySourceKind.PythonIndex }];
+        new("PyPI", DependencySource.PyPiUrl) { Kind = DependencySourceKind.PythonIndex },
+        new("npm", DependencySource.NpmUrl) { Kind = DependencySourceKind.NpmRegistry }];
     private DependencySource[] _sources = DefaultSources;
     private readonly Dictionary<PackageReference, Task> _resolutions = [];
     private string _sourceError = "";
@@ -37,7 +38,8 @@ public sealed partial class ExternalPackageService
         if (File.Exists(file) && new FileInfo(file).Length > 32768)
             throw new InvalidDataException("依赖来源配置过大。");
         var settings = new JsonFileStore<SourceSettings>(file, ValidateSources).Load();
-        return [.. DefaultSources, .. settings.Sources];
+        return [.. DefaultSources, .. settings.Sources.Select(source => source with
+            { Url = DependencySource.Address(source.Kind, source.Url).AbsoluteUri })];
     }
 
     public void AddSource(string name, string address)
@@ -75,8 +77,7 @@ public sealed partial class ExternalPackageService
     {
         if (settings.Sources is null || settings.Sources.Length > 32) throw new InvalidDataException("依赖来源数量无效。");
         var urls = DefaultSources.Select(s => s.Url).ToHashSet(StringComparer.Ordinal);
-        // Existing schema-1 GitHub entries may legitimately be named "PyPI". Adding the
-        // built-in index must not invalidate that saved configuration.
+        // Existing entries may be named after newly added defaults; keep saved configurations valid.
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GitHub" };
         foreach (var source in settings.Sources)
             if (source is null || string.IsNullOrWhiteSpace(source.Name) || source.Name.Length > 80 || source.Name.Any(char.IsControl) ||

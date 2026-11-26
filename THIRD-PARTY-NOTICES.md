@@ -27,6 +27,12 @@ GitHub Release asset and downloads it after user confirmation, separately from
 the host and plugin DLLs. Each plugin's NOTICE.md identifies its external tools;
 original license and notice files remain in the downloaded package.
 
+Managed Python and Node environments use host-pinned toolchains (uv/CPython and
+Node.js/pnpm). They are downloaded on demand, with their original license and
+notice files retained in each environment. Plugin-supplied project and lock files
+declare the environment's third-party packages; their notices remain with the
+installed packages. These downloads are not bundled in the host distribution.
+
 ## UI dependencies
 
 TractorTool uses FluentAvaloniaUI 3.1.0 (including its bundled symbol font).

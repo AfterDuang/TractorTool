@@ -73,7 +73,7 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 `Dev` 为 1.9，仍接受 1.0–1.8；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9。已发布 1.1.0 宿主不支持 API 1.8/1.9 |
+| `apiVersion` | 当前 `Dev` 为 1.10，仍接受 1.0–1.9；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10。已发布 1.1.0 宿主不支持 API 1.8–1.10 |
 | `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -114,12 +114,13 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 | 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
 | 独立原生运行库 | API 1.8 声明完整便携包及 DLL 入口，宿主校验全部文件 | 位于 DataRoot/Packages/DLL；插件申请租约、在加载前登记进程期保护，再自行加载和验证 ABI |
 | Python 环境 | API 1.9 的 `pythonEnvironments` 声明项目/锁摘要、Python 版本及来源 | 位于 DataRoot/Packages/uv；插件携带业务代码和锁定输入，通过环境租约运行，不随 ZIP 携带已装解释器或 venv |
+| Node 环境 | API 1.10 的 `nodeEnvironments` 声明项目/锁摘要、Node 版本及来源 | 位于 DataRoot/Packages/Node；插件携带已构建业务入口，通过环境租约调用，不携带 node_modules 或全局工具链 |
 
 `dependencies` 声明外部工具或 API 1.8 原生运行库，空数组不代表插件没有私有 DLL。工具包仍可附带其所需 DLL；独立运行库使用单独的包类型，不把 DLL 当可执行工具探测。Packages 不负责托管 NuGet 库的加载；这些私有库仍随插件交付。边界见[包管理](ARCHITECTURE.md#41-包管理)。
 
-原生运行库与 Python 的声明和真实夹具见[DLL 接入](#native-library-packages)及[Python 接入](#python-environments)；运行验收只以[开发台账](DEVELOPMENT.md#dependency-extension-plan)为准。Node 仍为待实现的[扩展约定](#dependency-extension-contract)。
+声明和真实夹具见[DLL 接入](#native-library-packages)、[Python 接入](#python-environments)及[Node 接入](#node-environments)；运行验收只以[开发台账](DEVELOPMENT.md#dependency-extension-plan)为准。
 
-NuGet 是构建期依赖渠道，GitHub Release、PyPI 是当前外部依赖获取渠道，安装方式分别由包服务或 uv 管理。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
+NuGet 是构建期依赖渠道；GitHub Release、PyPI、npm 是外部依赖获取渠道，分别由包服务、uv、pnpm 准备对应载荷。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
 
 例如，插件可直接引用目标宿主随附的 `Avalonia.Controls.ColorPicker`。若插件另用宿主 SDK 未提供的 `Avalonia.*` 扩展，使用 1.1.0 或更高版本的宿主 SDK 打包，声明 UI API 1.6，并把扩展 DLL 和私有依赖放进插件 ZIP。现有插件可继续声明其实际使用的旧 UI API。
 
@@ -240,7 +241,7 @@ var result = await context.Processes!.RunAsync(
 }
 ```
 
-`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。GitHub 当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。Python 使用独立的[环境声明](#python-environments)，不能把 PyPI URL 填到 GitHub `downloads.source`。
+`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。GitHub 当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。[Python](#python-environments) 和 [Node](#node-environments) 使用独立的环境声明，不能把 PyPI/npm 地址填到 GitHub `downloads.source`。
 
 工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
@@ -335,9 +336,34 @@ var result = await environment.RunAsync(new ProcessRequest(environment.PythonPat
 
 真实 PyPI 夹具使用 `idna==3.11`，输入、调用及用户验收方法见 [PythonEnvironmentProbePlugin](../tests/PythonEnvironmentProbePlugin/README.md)；构建成功不代表环境安装、离线复用或迁移已通过。
 
-### Node 接入（待实现）
+<a id="node-environments"></a>
 
-计划由插件携带 `package.json`、`pnpm-lock.yaml` 和已构建入口，声明固定 Node 版本；宿主准备固定 Node/pnpm、按锁安装并管理占用，不依赖现场编译、生命周期脚本或配置钩子。清单字段、SDK 和 npm 来源尚未开放，不能套用 Python 或 GitHub 字段冒充支持。公共边界见[扩展架构](ARCHITECTURE.md#dependency-extension)。
+### Node 环境（API 1.10）
+
+此能力位于 `Dev`，尚未发布。首轮仅支持 `win-x64`、Node.js **24.22.3**，宿主固定 pnpm **10.34.9**。插件声明 `apiVersion: "1.10"`，在根清单增加 `nodeEnvironments`，最多 8 项，ID 在插件内不重复。普通旧插件无需改清单或重新编译。
+
+| 字段 | 要求 |
+| --- | --- |
+| `id` / `description` | 插件内环境名及用途，用于 `TryRequestNodeAsync` 与安装确认 |
+| `nodeVersion` | 当前固定为 `24.22.3` |
+| `project` / `lock` | 包内同目录 `package.json` / `pnpm-lock.yaml`；默认 `Node/package.json` / `Node/pnpm-lock.yaml` |
+| `projectSha256` / `lockSha256` | 原文件字节的 SHA256；各不超过 2 MiB，构建时不得改换行后继续使用旧摘要 |
+| `source` | 默认 `https://registry.npmjs.org/`；其他无认证 HTTPS npm registry 先在来源页登记 |
+
+`package.json` 只接受普通单项目的名称、版本、private、type、description、license、固定 `packageManager: "pnpm@10.34.9"`、engines、dependencies 和 optionalDependencies；不需要的可选字段省略。依赖使用普通 semver 约束，锁文件必须为 pnpm 10 的 `lockfileVersion: '9.0'`、唯一 `.` importer，每个 registry 包附 SHA512 或 SHA256 完整性摘要。禁用开发依赖、workspace、本地/Git/直接 URL、alias、patch、catalog、脚本及配置钩子；首轮不接受显式 tarball 来源。宿主先校验原始 YAML，再由固定 Node 随附的 node-semver 验证版本约束，最后以 frozen 模式安装；项目与锁不一致直接失败，不自动解锁或修改输入。
+
+Node/pnpm 下载使用宿主固定摘要；安装配置由宿主生成，不读取插件 `.npmrc`、`.pnpmfile.cjs` 或用户 pnpm 配置。`hoisted + copy` 使已装环境不依赖下载缓存，安装后仍拒绝链接并记录完整文件集合。依赖的安装脚本不会执行；需要 node-gyp、下载型 postinstall 或现场构建的包不在首轮支持范围，插件应提供已有可直接运行的依赖。
+
+```csharp
+using var environment = await context.Packages!.TryRequestNodeAsync("worker", cancellationToken);
+if (environment is null) return; // 用户拒绝
+var result = await environment.RunAsync(new ProcessRequest(environment.NodePath,
+    ["--input-type=commonjs", "-e", script, Path.Combine(environment.Directory, "package.json")]), cancellationToken);
+```
+
+`INodeEnvironmentLease.RunAsync` 只运行自身 `NodePath`，强制 `--no-global-search-paths`，清除 NODE/npm/pnpm 配置变量，并保护环境直到进程树与输出排空。不要把路径脱离租约交给全局进程调用。`Directory` 是环境项目目录；外部业务脚本不会仅因工作目录改变就从这里导入包。CJS 入口显式用 `require('node:module').createRequire(环境 package.json 绝对路径)` 导入依赖；ESM 可用 `createRequire` 或由它解析后动态导入，不依赖 `NODE_PATH`。业务代码、输出和数据仍归插件，不能写入受管环境。
+
+身份、修复和迁移与 Python 遵循同一生命周期；迁移在目标最终路径按保留输入重建，缓存独立清理。单一 registry 是输入/配置策略，不是对可信插件或 HTTP 重定向的网络沙箱。真实 npm 夹具、操作入口及预期输出见 [NodeEnvironmentProbePlugin](../tests/NodeEnvironmentProbePlugin/README.md)。
 
 ## 5. 统一 UI 与设置
 

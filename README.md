@@ -13,18 +13,22 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 
 > **Windows x64** · [下载最新正式版](https://github.com/AfterDuang/TractorTool/releases/latest)（自包含 ZIP、用户级安装器和独立插件包） · [构建与验收记录](Docs/DEVELOPMENT.md#current-status)
 
+当前 `Dev` 已接入 DLL 运行库、uv/Python 和 pnpm/Node 环境；这些扩展尚未发布，正式版 1.1.0 不包含。下文框架能力描述当前源码，接口与验收状态见[外部依赖扩展](Docs/DEVELOPMENT.md#dependency-extension-plan)。
+
 ## 框架能力
 
 | 能力 | 使用方式 |
 | --- | --- |
 | 插件管理 | 拖入或选择本地 ZIP 安装、更新，支持启停和卸载；变更在退出并重启后生效 |
-| 外部依赖 | 从 GitHub Release 按需下载、校验和复用可执行工具包；统一管理已安装包与依赖来源 |
+| 外部依赖 | GitHub 工具包与 DLL 运行库、uv/Python 与 pnpm/Node 锁定环境；统一确认、校验、复用和占用保护 |
 | 后台任务 | 切换页面、隐藏到托盘后继续；在“日志 → 任务进度”查看状态与取消 |
 | 运行记录 | INFO / WARNING / ERROR 分级高亮，搜索筛选、底部跟随、未读错误提醒 |
 | 外观与设置 | 浅色、深色、跟随系统和主题色；软件设置与插件设置分开组织 |
 | 数据管理 | 可自定义数据目录，重启迁移并安全清理旧业务数据；插件程序留在软件目录 |
 
 插件面向可信开发者，运行于宿主进程内；当前不提供不可信插件沙箱或在线插件商店。各工具的使用与业务说明见[插件文档目录](Docs/Plugins)。
+
+外部依赖在首次使用时由用户确认准备，无需预装系统 Python、Node 或修改系统 `PATH`。“设置 → 软件设置 → 外部依赖”提供 **Packages / 依赖来源**：按工具、DLL、Python、Node 分类管理，默认使用 GitHub、PyPI、npm，可添加公开兼容来源；不维护自有包源。语言环境使用插件提供的项目与锁文件，当前不开放源码构建、安装脚本或私有源认证。接入规则见[依赖分类](Docs/PLUGIN_DEVELOPMENT.md#dependency-kinds)。
 
 ## 开始使用
 
@@ -52,7 +56,9 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 | 插件程序及私有依赖 | `<软件目录>/Plugins/<PluginId>/<Version>` |
 | 配置、插件数据、日志和下载的依赖 | `%LOCALAPPDATA%\TractorTool` |
 
-ZIP 版也使用上述数据目录。数据迁移不移动插件程序；卸载插件不删除下载的依赖包，可在“设置 → 外部依赖”清理未引用且未在使用的包。
+ZIP 版也使用上述数据目录。数据迁移不移动插件程序；卸载插件不删除下载的依赖包，可在“设置 → 软件设置 → 外部依赖”清理未引用且未在使用的包。
+
+下载内容与插件业务数据分开：工具沿用 `Packages/<包标识>`，DLL、Python、Node 分别位于 `Packages/DLL`、`Packages/uv`、`Packages/Node`。语言缓存放在对应 `Cache` 子目录；迁移时按原锁在新位置重建环境，验证成功后再切换。
 
 迁移成功后清理旧业务数据，默认位置保留启动定位信息。确认自定义数据目录已删除且没有未完成迁移时，下次启动在默认位置重新初始化；权限或磁盘故障不会触发重置。完整规则见[数据与持久化](Docs/TractorTool.md#7-数据与持久化)。
 
@@ -125,7 +131,10 @@ TractorTool/
 │  └─ Tasks/                          有限任务、进度与取消接口
 ├─ TractorTool.Core/                   宿主公共服务实现
 │  ├─ Plugins/                        发现、装载隔离、生命周期与安装/更新管理
-│  ├─ Packages/                       GitHub 来源解析、下载校验、安装与引用保护
+│  ├─ Packages/                       来源管理、工具/DLL 安装与引用保护
+│  │  ├─ Environments/               Python/Node 共用的环境事务、租约和迁移保护
+│  │  ├─ Python/                     uv/CPython 固定工具链与按锁安装
+│  │  └─ Node/                       Node/pnpm 固定工具链与按锁安装
 │  ├─ Processes/                      进程执行协调、输出与取消处理
 │  ├─ Tasks/                          公共任务状态、持久化摘要与取消
 │  ├─ Storage/                        数据路径、JSON 存储、实例锁与数据迁移
@@ -157,7 +166,7 @@ TractorTool/
 | 关注点 | 主要入口 |
 | --- | --- |
 | 插件加载与生命周期 | [PluginHost](TractorTool.Core/Plugins/PluginHost.cs)、[PluginLoadContext](TractorTool.Core/Plugins/PluginLoadContext.cs)；安装/更新事务见 [PluginManager](TractorTool.Core/Plugins/PluginManager.cs) |
-| 外部依赖与工具进程 | [ExternalPackageService](TractorTool.Core/Packages/ExternalPackageService.cs)、[ProcessRunner](TractorTool.Core/Processes/ProcessRunner.cs)；Windows 执行适配见 [WindowsProcessSession](TractorTool/Platform/WindowsProcessSession.cs) |
+| 外部依赖与工具进程 | [ExternalPackageService](TractorTool.Core/Packages/ExternalPackageService.cs)、[共享环境事务](TractorTool.Core/Packages/Environments/ManagedEnvironmentService.cs)、[ProcessRunner](TractorTool.Core/Processes/ProcessRunner.cs)；Windows 执行适配见 [WindowsProcessSession](TractorTool/Platform/WindowsProcessSession.cs) |
 | 日志与任务 | [AppLog](TractorTool.Core/Logging/AppLog.cs)、[BackgroundTaskService](TractorTool.Core/Tasks/BackgroundTaskService.cs)；界面入口见 [LogsViewModel](TractorTool/ViewModels/LogsViewModel.cs) |
 | 配置与数据迁移 | [AppPaths](TractorTool.Core/Storage/AppPaths.cs)、[JsonFileStore](TractorTool.Core/Storage/JsonFileStore.cs)、[DataRootMigration](TractorTool.Core/Storage/DataRootMigration.cs) |
 | 共享 UI 与宿主外观 | [公共控件](TractorTool.UI/Controls)、[共享样式](TractorTool.UI/Styles/SharedStyles.axaml)；宿主导航样式见 [ShellStyles](TractorTool/Styles/ShellStyles.axaml) |
@@ -176,6 +185,6 @@ TractorTool/
 
 ## 许可与致谢
 
-本项目目前尚未附带自身代码的 `LICENSE`，授权方式将在正式发布前确定。
+本仓库尚未附带自身代码的 `LICENSE`。
 
 第三方组件、图标和外部工具的来源及许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)；分发包和各插件也携带各自的许可材料。第三方声明不替代本项目自身的授权。

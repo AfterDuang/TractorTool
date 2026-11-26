@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "Test.NodeEnvironmentProbe",
+  "name": "Node 环境测试",
+  "version": "1.0.0",
+  "entryAssembly": "NodeEnvironmentProbePlugin.dll",
+  "entryType": "NodeEnvironmentProbePlugin.ProbePlugin",
+  "apiVersion": "1.10",
+  "uiApiVersion": "1.6",
+  "avaloniaVersion": "12.1.6",
+  "supportedPlatforms": [
+    "win-x64"
+  ],
+  "nodeEnvironments": [
+    {
+      "id": "worker",
+      "nodeVersion": "24.22.3",
+      "project": "Node/package.json",
+      "lock": "Node/pnpm-lock.yaml",
+      "projectSha256": "17afc199ae36cdabfc81171d48853aae6c8e39615c60e94c56ddaaac52394671",
+      "lockSha256": "88818e6e51b71df8b8120ce055aeb14e3fdccc193f10d1ba65bc0e3b294ed5fc",
+      "source": "https://registry.npmjs.org/",
+      "description": "用 is-number 7.0.0 的真实 npm 包验证独立 Node 环境与调用。"
+    }
+  ],
+  "description": "按锁准备 Node 并调用 is-number；仅供隔离验收，不随正式分发。"
+}

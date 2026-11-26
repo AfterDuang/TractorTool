@@ -206,6 +206,17 @@ internal static class PythonEnvironmentChecks
             return Task.CompletedTask;
         });
 
+        Test("a trailing separator keeps installation and management on the same cache", async path =>
+        {
+            var fixture = WriteFixture(path, ready: false);
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            await using var service = new PythonEnvironmentService(fixture.PackageRoot + Path.DirectorySeparatorChar,
+                "win-x64", http, new NoProcesses(), new Log(), _ => true);
+            await Throws<HttpRequestException>(() => service.InstallAsync(fixture.Definition.Identity));
+            Require(File.Exists(Path.Combine(path, "Cache", "uv", ".python-cache")) && service.CanCleanCache);
+            Require(handler.Calls == 1 && !Directory.Exists(Path.Combine(fixture.PackageRoot, "Cache")));
+        });
+
         foreach (var owned in new[] { true, false })
             Test(owned ? "owned cache without a ready interpreter can be cleared independently" : "unknown cache is preserved", async path =>
             {
@@ -295,7 +306,7 @@ internal static class PythonEnvironmentChecks
     {
         public int Calls;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
-        { Interlocked.Increment(ref Calls); throw new Exception("Unexpected network request."); }
+        { Interlocked.Increment(ref Calls); throw new HttpRequestException("Python environment fixture network sentinel."); }
     }
     private sealed class BlockingDownload : HttpMessageHandler
     {

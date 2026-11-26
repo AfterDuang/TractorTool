@@ -36,6 +36,9 @@ public interface IExternalPackageService
     /// <summary>Request the plugin's declared, locked Python environment. Null means installation was declined. API 1.9.</summary>
     Task<IPythonEnvironmentLease?> TryRequestPythonAsync(string environmentId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("此宿主尚不支持 Python 环境。");
+    /// <summary>Request the plugin's declared, locked Node environment. Null means installation was declined. API 1.10.</summary>
+    Task<INodeEnvironmentLease?> TryRequestNodeAsync(string environmentId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("此宿主尚不支持 Node 环境。");
 }
 
 /// <summary>Hold while using package files. Native libraries additionally require process-lifetime retention before loading.</summary>

@@ -46,3 +46,12 @@ function Assert-PluginPythonFile($Manifest, [string]$Path) {
         throw "Python 插件不能携带受管理解释器、uv 或已安装环境：$Path"
     }
 }
+
+function Assert-PluginNodeFile($Manifest, [string]$Path) {
+    if ($Manifest.NodeEnvironments.Count -eq 0) { return }
+    $normalized = $Path.Replace('\', '/')
+    if ([IO.Path]::GetFileName($normalized) -in @('node.exe', 'pnpm.exe', 'pnpm.cjs', 'pnpm.cmd') -or
+        $normalized -match '(^|/)node_modules(/|$)') {
+        throw "Node 插件不能携带受管理 Node、pnpm 或已安装环境：$Path"
+    }
+}

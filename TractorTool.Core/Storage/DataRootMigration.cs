@@ -3,6 +3,7 @@ using System.Text.Json;
 using TractorTool.Contracts;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Packages.Python;
+using TractorTool.Core.Packages.Node;
 
 namespace TractorTool.Core.Storage;
 
@@ -23,7 +24,8 @@ public sealed record DataMigrationResult(AppPaths Paths, InstanceLease? TargetLe
 // A startup transaction, not a live path switch. The caller holds the bootstrap/source leases
 // and installation manager, and must not start services until this method has returned.
 public sealed partial class DataRootMigration(AppPaths paths,
-    Func<string, PythonMigrationEnvironment, CancellationToken, Task>? rebuildPythonEnvironment = null)
+    Func<string, PythonMigrationEnvironment, CancellationToken, Task>? rebuildPythonEnvironment = null,
+    Func<string, NodeMigrationEnvironment, CancellationToken, Task>? rebuildNodeEnvironment = null)
 {
     private const string MarkerName = ".tractortool-migration.json";
     private const string MarkerBackupName = MarkerName + ".bak";
@@ -94,22 +96,27 @@ public sealed partial class DataRootMigration(AppPaths paths,
                         throw new InvalidDataException(occupied);
                     targetLease = new InstanceLease(request.Target);
                     var marker = CheckTargetOwner(request, create: true);
-                    if (marker.PythonRebuilds is null)
+                    if (marker.PythonRebuilds is null && marker.NodeRebuilds is null)
                     {
                         // Discover before copying. An invalid owned environment must not become an
                         // apparently portable copy merely because its files can be read.
                         var environments = PythonEnvironmentService.ReadMigrationEnvironments(Path.Combine(request.Source, "Packages"), validatePayload: true, token);
+                        var nodeEnvironments = NodeEnvironmentService.ReadMigrationEnvironments(Path.Combine(request.Source, "Packages"), validatePayload: true, token);
                         var (cleanup, hashes) = CopyAndVerify(request, progress, token);
                         marker = marker with { Cleanup = cleanup, TargetHashes = hashes };
-                        if (environments.Count != 0)
+                        if (environments.Count != 0 || nodeEnvironments.Count != 0)
                         {
-                            marker = marker with { PythonRebuilds = environments.Select(e => new PythonRebuild(e, null, null)).ToList() };
+                            marker = marker with
+                            {
+                                PythonRebuilds = environments.Count == 0 ? null : environments.Select(e => new PythonRebuild(e, null, null)).ToList(),
+                                NodeRebuilds = nodeEnvironments.Count == 0 ? null : nodeEnvironments.Select(e => new NodeRebuild(e, null, null)).ToList()
+                            };
                             // Persist the verified source/copy baseline before any generated file differs.
                             SaveTargetMarker(request, marker);
                         }
                     }
-                    if (marker.PythonRebuilds is not null)
-                        marker = RebuildPythonEnvironments(request, marker, progress, token);
+                    if (marker.PythonRebuilds is not null || marker.NodeRebuilds is not null)
+                        marker = RebuildLanguageEnvironments(request, marker, progress, token);
                     progress?.Report("正在校验插件回退快照…");
                     manager.ValidateDataRootMigration(request.Source, new AppPaths(paths.AppRoot, paths.BootstrapRoot, request.Target), token);
                     token.ThrowIfCancellationRequested();
@@ -339,14 +346,14 @@ public sealed partial class DataRootMigration(AppPaths paths,
         var saveHashes = marker.TargetHashes is null;
         if (!saveHashes && hashes.Count != cleanup.Count(e => !e.IsDirectory && RequiresCopy(e.Relative)))
             throw new InvalidDataException("迁移清单与目标摘要的文件数量不一致，已停止清理。");
-        // Generated Python files have different paths/content after rebuilding. Their target
+        // Generated environment files have different paths/content after rebuilding. Their target
         // evidence is independent of the original source hashes, and stays read-locked until cleanup ends.
-        using var rebuiltTargets = OpenRebuiltPythonTargets(request, marker, token);
+        using var rebuiltTargets = OpenRebuiltLanguageTargets(request, marker, token);
         foreach (var entry in cleanup)
         {
             token.ThrowIfCancellationRequested();
             if (!RequiresCopy(entry.Relative)) continue;
-            if (IsPythonRebuildPath(marker, entry.Relative))
+            if (IsLanguageRebuildPath(marker, entry.Relative))
             {
                 if (!entry.IsDirectory && remainingPaths.Contains(entry.Relative))
                     VerifyRebuildSource(request, entry.Relative, hashes, buffer, token);
@@ -386,7 +393,7 @@ public sealed partial class DataRootMigration(AppPaths paths,
             else
             {
                 // Keep the verified target read-locked through deletion; earlier files may take time to clean.
-                var rebuilt = IsPythonRebuildPath(marker, entry.Relative);
+                var rebuilt = IsLanguageRebuildPath(marker, entry.Relative);
                 using var copy = RequiresCopy(entry.Relative) && !rebuilt
                     ? OpenVerifiedCopy(request, entry.Relative, true, hashes[entry.Relative], manager, buffer, token, out _)
                     : null;
@@ -486,5 +493,6 @@ public sealed partial class DataRootMigration(AppPaths paths,
         public List<MigrationEntry>? Cleanup { get; init; }
         public Dictionary<string, string>? TargetHashes { get; init; }
         public List<PythonRebuild>? PythonRebuilds { get; init; }
+        public List<NodeRebuild>? NodeRebuilds { get; init; }
     }
 }

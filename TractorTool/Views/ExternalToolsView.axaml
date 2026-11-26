@@ -10,7 +10,7 @@
           <TextBox Text="{Binding SearchText}" PlaceholderText="搜索名称、标识或版本" Width="240" Margin="0,0,16,8" />
           <Button Content="清理未引用依赖" Command="{Binding CleanCommand}" IsVisible="{Binding HasCleanup}" Margin="0,0,16,8"
                   ToolTip.Tip="仅清理当前分类及搜索结果中未被引用、未在使用的依赖；确认时会列出清单。" />
-          <Button Content="清理 Python 下载缓存" Command="{Binding CleanPythonCacheCommand}" IsVisible="{Binding HasPythonCache}" Margin="0,0,16,8" />
+          <Button Content="{Binding CleanCacheLabel}" Command="{Binding CleanEnvironmentCacheCommand}" IsVisible="{Binding HasEnvironmentCache}" Margin="0,0,16,8" />
           <TextBlock Text="{Binding Summary}" Classes="caption" VerticalAlignment="Center" Margin="0,0,0,8" />
         </WrapPanel>
         <Border Classes="card" IsVisible="{Binding IsEmpty}">
@@ -48,9 +48,9 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <ItemsControl ItemsSource="{Binding VisiblePythonCards}">
+        <ItemsControl ItemsSource="{Binding VisibleEnvironmentCards}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:PythonEnvironmentCardViewModel">
+            <DataTemplate x:DataType="vm:EnvironmentCardViewModel">
               <Border Classes="card" Margin="0,0,0,8">
                 <StackPanel Spacing="6">
                   <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="16" />

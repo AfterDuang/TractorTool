@@ -415,6 +415,33 @@ internal static class DataMigrationChecks
             var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
             Assert(journal["pythonRebuilds"]!.AsArray().Count == 1 && journal["pythonRebuilds"]![0]!["targetHashes"] is not null);
         });
+        check("Mixed Python and Node migration resumes without rebuilding an already verified environment", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var python = PythonFixture(paths);
+            var node = NodeEnvironmentChecks.WriteFixture(paths.DataRoot).Environment;
+            Write(paths.ConfigRoot, "mixed-business.txt", "keep until both environments validate");
+            var pythonCalls = 0; var nodeCalls = 0;
+            var migration = new DataRootMigration(paths,
+                (packages, item, token) => { pythonCalls++; WritePythonFixture(packages, item); return Task.CompletedTask; },
+                (packages, item, token) =>
+                {
+                    nodeCalls++;
+                    if (nodeCalls == 1) throw new IOException("fixture Node rebuild interrupted");
+                    NodeEnvironmentChecks.WriteInstalled(packages, item); return Task.CompletedTask;
+                });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            var interrupted = migration.ApplyAtStartup(manager, null, default);
+            Assert(interrupted.Error is not null && pythonCalls == 1 && nodeCalls == 1 && migration.Snapshot.DataRoot is null);
+            Assert(Directory.Exists(Path.Combine(paths.PackageRoot, python.RelativeDirectory)) &&
+                Directory.Exists(Path.Combine(paths.PackageRoot, node.RelativeDirectory)));
+            migration.Retry();
+            var resumed = migration.ApplyAtStartup(manager, null, default); using var lease = resumed.TargetLease;
+            Assert(resumed.Error is null && pythonCalls == 1 && nodeCalls == 2 && !Directory.Exists(paths.PackageRoot));
+            Assert(File.ReadAllText(Path.Combine(resumed.Paths.ConfigRoot, "mixed-business.txt")) == "keep until both environments validate");
+            var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
+            Assert(journal["pythonRebuilds"]![0]!["targetHashes"] is not null && journal["nodeRebuilds"]![0]!["targetHashes"] is not null);
+        });
         check("Interrupted Python rebuilding preserves source and resumes from retained original inputs", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
@@ -426,9 +453,18 @@ internal static class DataMigrationChecks
                 token.ThrowIfCancellationRequested(); attempts++;
                 if (attempts == 1)
                 {
-                    var partial = Path.Combine(packages, item.RelativeDirectory, Guid.NewGuid().ToString("N"));
+                    var identity = Path.Combine(packages, item.RelativeDirectory);
+                    var generation = Guid.NewGuid().ToString("N");
+                    var partial = Path.Combine(identity, generation);
                     Write(partial, ".owner", "TractorTool.PythonEnvironment.v1\n" + item.Definition.Identity);
                     Write(partial, "partial.bin", "interrupted");
+                    var files = JsonSerializer.Serialize(new[] { new { Path = "partial.bin", Length = 11, Sha256 = Digest("interrupted") } }, JsonOptions.Value);
+                    Write(identity, generation + ".files.json", files);
+                    // Model interruption after full-file ownership is saved but before the new generation is published.
+                    var record = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(identity, "environment.json")))!;
+                    record["generationHashes"]![generation] = Digest(files);
+                    record["preparingGenerations"] = JsonSerializer.SerializeToNode(new[] { generation });
+                    Write(identity, "environment.json", record.ToJsonString(JsonOptions.Value));
                     throw new IOException("fixture interrupted rebuild");
                 }
                 WritePythonFixture(packages, item); return Task.CompletedTask;
@@ -441,6 +477,34 @@ internal static class DataMigrationChecks
             migration.Retry();
             var resumed = migration.ApplyAtStartup(manager, null, default); using var lease = resumed.TargetLease;
             Assert(resumed.Error is null && attempts == 2 && migration.Snapshot.Migration is null);
+        });
+        foreach (var changeExisting in new[] { false, true })
+        check("Node migration never adopts " + (changeExisting ? "rewritten" : "unknown") + " files in a copied retired generation", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var fixture = NodeEnvironmentChecks.WriteFixture(paths.DataRoot);
+            Write(paths.ConfigRoot, "node-business.txt", "source stays until target is validated");
+            var attempts = 0;
+            var migration = new DataRootMigration(paths, rebuildNodeEnvironment: (packages, item, token) =>
+            {
+                if (++attempts == 1) throw new IOException("fixture interrupted before Node rebuild");
+                NodeEnvironmentChecks.WriteInstalled(packages, item); return Task.CompletedTask;
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            Assert(migration.ApplyAtStartup(manager, null, default).Error is not null);
+            var copied = Path.Combine(Target(paths), "Packages", fixture.Environment.RelativeDirectory, Path.GetFileName(fixture.Generation));
+            var contaminated = changeExisting
+                ? Path.Combine(copied, "node", $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe")
+                : Path.Combine(copied, "user-added.txt");
+            var content = changeExisting ? "X" + File.ReadAllText(contaminated)[1..] : "do not adopt or delete";
+            File.WriteAllText(contaminated, content);
+            migration.Retry();
+            var rejected = migration.ApplyAtStartup(manager, null, default);
+            Assert(rejected.Error is not null && migration.Snapshot.DataRoot is null && attempts == 2);
+            Assert(File.ReadAllText(contaminated) == content);
+            Assert(Directory.Exists(fixture.Identity) && File.ReadAllText(Path.Combine(paths.ConfigRoot, "node-business.txt")) == "source stays until target is validated");
+            var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
+            Assert(journal["nodeRebuilds"]![0]!["targetHashes"] is null);
         });
         check("A changed rebuilt Python target blocks source cleanup after the bootstrap commit", () =>
         {
@@ -497,25 +561,27 @@ internal static class DataMigrationChecks
         var identity = Path.Combine(packages, environment.RelativeDirectory);
         var owner = "TractorTool.PythonEnvironment.v1\n" + environment.Definition.Identity;
         Write(identity, ".owner", owner);
-        // The fixture owns this exact subtree. Keep deletion narrow even in generated test data.
-        foreach (var previous in Directory.EnumerateDirectories(identity))
+        // Retain retired payload just as production does when cleanup has not completed;
+        // deleting it here would hide migration validation bugs.
+        var hashes = new Dictionary<string, string>();
+        var recordPath = Path.Combine(identity, "environment.json");
+        if (File.Exists(recordPath))
         {
-            Assert(Guid.TryParseExact(Path.GetFileName(previous), "N", out _));
-            Assert(File.ReadAllText(Path.Combine(previous, ".owner")) == owner);
-            Directory.Delete(previous, recursive: true);
-            var oldManifest = Path.Combine(identity, Path.GetFileName(previous) + ".files.json");
-            if (File.Exists(oldManifest)) File.Delete(oldManifest);
+            using var record = JsonDocument.Parse(File.ReadAllText(recordPath));
+            foreach (var entry in record.RootElement.GetProperty("generationHashes").EnumerateObject())
+                hashes.Add(entry.Name, entry.Value.GetString()!);
         }
         var generation = Guid.NewGuid().ToString("N"); var directory = Path.Combine(identity, generation);
         Write(directory, ".owner", owner); Write(directory, "runtime.txt", directory);
         var length = Encoding.UTF8.GetByteCount(directory);
         var inventory = JsonSerializer.Serialize(new[] { new { Path = "runtime.txt", Length = length, Sha256 = Digest(directory) } }, JsonOptions.Value);
         Write(identity, generation + ".files.json", inventory);
+        hashes.Add(generation, Digest(inventory));
         Write(identity, "environment.json", JsonSerializer.Serialize(new
         {
             SchemaVersion = 1, environment.Definition, Generation = generation, InstalledRoot = directory,
             ManifestHash = Digest(inventory), InstalledBytes = length,
-            GenerationHashes = new Dictionary<string, string> { [generation] = Digest(inventory) }
+            GenerationHashes = hashes, PreparingGenerations = Array.Empty<string>()
         }, JsonOptions.Value));
     }
 

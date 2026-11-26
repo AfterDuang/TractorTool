@@ -10,11 +10,11 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-`Dev` 的 DLL 基线为 `4b9f8ce`。本轮完成 uv/Python 接入、安装参数修正与 Packages 分类；2026-11-27 用户反馈“这版暂时没有遇到什么问题，可以提交”，授权保存为本地 `Dev` 提交，未授权推送。Contracts API 1.9、私有工具链、原锁快照、受管调用、PyPI 来源、缓存清理及目标重建已实现，保留旧工具/DLL 和 API 1.0–1.8；宿主及检查项目构建、夹具独立打包和 SOL/high 静态复核见 [E148](PROJECT_HISTORY.md#evidence-python-environments)。用户反馈不外推为专项故障恢复、兼容或自动检查全部通过；Agent 未执行检查程序，NU1900 漏洞数据查询仍未完成，状态以 [A31/A33](DEVELOPMENT.md#dependency-extension-plan) 为准。
+`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入。2026-11-27 用户反馈本轮 Node 测试没有问题，授权文档收尾并本地提交；**未推送、未发布**。Contracts API 1.10 增加 Node 环境租约，保留 API 1.0–1.9；Python/Node 共用环境事务与卡片，保留旧 Python 记录和公开签名。构建、Review 与用户反馈见 [E150](PROJECT_HISTORY.md#evidence-node-environments)；未逐项确认的故障与兼容性场景继续留在 A30–A33。
 
-uv 0.13.10 的 `--frozen` / `--no-sources` 互斥已修正，保留锁及来源校验。Packages 导航分“外部工具、DLL 运行库、Python 环境”，搜索/统计/批量清理限定可见范围，Python 缓存按钮归对应分类；证据见 [E149](PROJECT_HISTORY.md#evidence-package-categories)。最新源码包含分类；`artifacts/python-environment-20261127-cli-fix/host` 只含此前 CLI 修正，测试插件沿用原 ZIP。
+Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源，不恢复自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 
-Python 首轮限定 Windows x64、CPython 3.13.18、uv 0.13.10 / Python build 20261124，普通单索引 wheel；运行追加 `-I -B -X utf8`，业务脚本不依赖隐式模块搜索目录。环境按锁在目标最终位置重建，不能把 venv 当便携文件直接搬迁。Node/pnpm 尚未实现，npm 来源未开放；设计与接入规则见[架构 7.3](ARCHITECTURE.md#dependency-extension) / [Python 规范](PLUGIN_DEVELOPMENT.md#python-environments)。已发布 1.1.0 不变。
+语言环境首轮限定 Windows x64、固定工具链和锁文件，禁用安装脚本；Node 使用 hoisted+copy，业务脚本显式定位环境模块。迁移在目标最终路径按原锁重建，失败保留原数据。版本与接入规则统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。Agent 未执行运行测试，NU1900 导致在线漏洞数据查询未完成；已发布 1.1.0 不变。
 
 [AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。
 
@@ -22,7 +22,7 @@ Python 首轮限定 Windows x64、CPython 3.13.18、uv 0.13.10 / Python build 20
 
 - **测试归用户**：已有常规使用反馈与隔离回归仅覆盖记录中的版本和范围；真实 UI、硬件及未关闭项见[验收台账](DEVELOPMENT.md#acceptance)。闪动保持官方后端，不恢复已撤回的实验；E94 两项 P2 继续暂缓。
 - **工作区与范围**：接续时核对工作区和远端状态，保留其他开发者改动。普通分支 CI 的结果见开发台账中的 A22。
-- **已确认的框架边界**：外部依赖只有 Packages/依赖来源，默认 GitHub，不恢复自有源；发布自动识别 Plugins 一级目录的清单与唯一工程，不恢复额外名单。细节见[架构](ARCHITECTURE.md#packages)及[脚本规则](../scripts/README.md#随包插件自动识别)。
+- **已确认的框架边界**：外部依赖只有 Packages/依赖来源，默认 GitHub/PyPI/npm，不恢复自有源；发布自动识别 Plugins 一级目录的清单与唯一工程，不恢复额外名单。细节见[架构](ARCHITECTURE.md#packages)及[脚本规则](../scripts/README.md#随包插件自动识别)。
 - **工作约定**：子代理选择、框架变更及发布授权遵循根 [AGENTS.md](../AGENTS.md) 和用户当前指示。
 
 ## 3. 代码入口
@@ -37,4 +37,5 @@ Python 首轮限定 Windows x64、CPython 3.13.18、uv 0.13.10 / Python build 20
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
 | 外部依赖扩展 | [公开包契约](../TractorTool.Contracts/Packages/IExternalPackageService.cs)、[包定义](../TractorTool.Core/Packages/PackageDefinitions.cs)、[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs)、[清单投影](../scripts/Read-PluginManifest.ps1)；新增设计与目录见[架构 7.3](ARCHITECTURE.md#dependency-extension) |
 | Python 环境 | [声明与工具链](../TractorTool.Core/Packages/Python/PythonEnvironmentDefinitions.cs)、[安装](../TractorTool.Core/Packages/Python/PythonEnvironmentInstaller.cs)、[服务与占用](../TractorTool.Core/Packages/Python/PythonEnvironmentService.cs)、[迁移重建](../TractorTool.Core/Packages/Python/PythonEnvironmentMigration.cs)、[真实夹具](../tests/PythonEnvironmentProbePlugin/README.md) |
+| Node 与共享环境 | [Node 安装](../TractorTool.Core/Packages/Node/NodeEnvironmentInstaller.cs)、[输入策略](../TractorTool.Core/Packages/Node/NodeInputPolicy.cs)、[共享事务](../TractorTool.Core/Packages/Environments/ManagedEnvironmentService.cs)、[混合迁移](../TractorTool.Core/Storage/LanguageEnvironmentDataMigration.cs)、[真实 npm 夹具](../tests/NodeEnvironmentProbePlugin/README.md) |
 | 分发与维护 | [Build-Distribution](../scripts/Build-Distribution.ps1)、[自动检查入口](DEVELOPMENT.md#automated-checks) |

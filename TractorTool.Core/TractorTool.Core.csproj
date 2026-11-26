@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../TractorTool.Contracts/TractorTool.Contracts.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="YamlDotNet" /></ItemGroup>
   <!-- Use the SDK's framework inventory, not name prefixes or the host's application dependencies.
        Include runtime implementations too; deployed applications do not need an installed SDK. -->
   <Target Name="EmbedPluginFrameworkManifest" BeforeTargets="AssignTargetPaths"

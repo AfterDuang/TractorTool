@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| Node 环境接入 | [E150 · 固定 pnpm、共享环境事务与迁移保护（2026-11-27）](#evidence-node-environments) |
 | 外部依赖分类导航 | [E149 · 分类与可见范围清理（2026-11-27）](#evidence-package-categories) |
 | Python 环境接入 | [E148 · 锁定环境、来源与迁移重建（2026-11-27）](#evidence-python-environments) |
 | DLL 运行库接入 | [E147 · 完整载荷、旧插件兼容与进程期保护（2026-11-27）](#evidence-native-library-packages) |
@@ -187,6 +188,22 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-node-environments"></a>
+
+## E150：pnpm/Node 环境接入与迁移保护（2026-11-27）
+
+- 授权与基线：用户在 Python/分类提交 `83e3765` 后要求继续下一步，按既定顺序实现 Node；实施与交付时保持 `Dev` 未提交或推送，等待用户测试。已发布 1.1.0 不变，Agent 不运行宿主、检查程序或真实依赖安装。
+- 实现：Contracts API 1.10 新增 `nodeEnvironments`、`TryRequestNodeAsync` / `INodeEnvironmentLease`，保留旧接口。固定 Windows x64 Node 24.22.3 / pnpm 10.34.9，官方工具链摘要固定在 Core；默认 npm 和公开兼容 HTTPS registry 接入来源页，Packages 增加 Node 分类和独立缓存清理。插件携带原项目/锁，环境位于 `Packages/Node`，数据与缓存分离。
+- 安装边界：YamlDotNet 18.1.0 解析受限单项目锁；固定 Node 随附的 node-semver 验证语义版本，pnpm 负责冻结安装和 SRI 校验。采用 hoisted+copy，不放宽全局目录链接检查；禁止生命周期脚本、pnpmfile、开发依赖及本地/Git/显式 tarball 等来源。子进程隔离继承配置、全局模块搜索与包管理器切换。HTTP 重定向不构成网络隔离保证，原输入与完整环境文件均核对摘要。
+- 复用与兼容：Python/Node 共用确认、并发申请、取消、租约、代次提交、缓存维护及迁移事务，语言安装策略独立；管理页共用环境卡片。Python 原记录格式、标记、公开签名和迁移日志保持兼容，旧工具同名目录保护保留。迁移在目标最终路径按原输入重建，源复制证据与新目标证据分开保存，异常目标不作为成功结果自动接纳。
+- Review：GPT-6.2-SOL/high 分别审查安装策略/契约/界面/打包和共享环境/迁移。已修正 pnpm 版本探测绕过配置、必需依赖被降为 optional、下载超时与错误输出、BOM 输入、来源规范化、退出并发取消、隐藏文件打包检查、尾分隔符缓存推导及迁移遗留代次污染。最后补齐活动代保存后、旧准备残留清理前退出的无网络续作；清理前验证已登记摘要，只清明确登记的非活动准备项，坏内容仍阻止迁移，提交校验保持只读。最终定向复审未留下已确认阻断；回归源码覆盖对应输入与中断边界，编译和静态审查不替代执行。
+- 真实来源夹具：[NodeEnvironmentProbePlugin](../tests/NodeEnvironmentProbePlugin/README.md) 固定 `is-number@7.0.0`，锁中 SHA512 来自 [npm 元数据](https://registry.npmjs.org/is-number/7.0.0)；按 `lockfileVersion: '9.0'` 格式保存，未宣称用 pnpm 实际安装或生成。插件通过公开租约运行脚本，用 `createRequire` 显式定位环境模块，不依赖系统 NODE_PATH，不随正式分发。
+- 工具链核对：[Node 官方摘要](https://nodejs.org/dist/v24.22.3/SHASUMS256.txt) 对应 ZIP SHA256 `e612af99f626ab415ea225af6bce5c971feb448cb5cae250bb1c3fa50c5f7d9f`；[pnpm 官方元数据](https://registry.npmjs.org/pnpm/10.34.9) 的 SRI 与实际 tgz 一致，tgz SHA256 `7e8a946108e7baab119e51d27c24d6178b46545422643dbc91e34e2f1ee32e0f`。核对官方下载和上游源码不等于宿主安装链运行通过。
+- 最终构建：`dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Release --no-restore -m:1 -nr:false` 与 `TractorTool.IntegrationChecks` 同参数构建通过，后者同时构建宿主。分别为 0 错误/2 条 NU1900 和 0 错误/4 条 NU1900；日志为 `artifacts/node-environment-20261127/build-checks-reviewed.log`、`build-integration-reviewed.log`。未启动检查程序。
+- 最终交付：复用 `Publish-Host.ps1`、`Export-DependencyNotices.ps1` 和 `Build-Plugin.ps1` 生成 `artifacts/node-environment-20261127-reviewed/host` 与 `plugin/Test.NodeEnvironmentProbe-1.0.0.zip`；使用已发布 Contracts/UI 独立打包成功，0 错误/2 条 NU1900。日志同证据目录下 `publish-host-reviewed.log`、`licenses-reviewed.log`、`build-plugin-reviewed.log`。ZIP 共 11 项，两份输入摘要匹配且无宿主 DLL、Node/pnpm 或 node_modules 副本；宿主许可清单含 YamlDotNet 18.1.0 MIT 原文。ZIP SHA256 `57CF914184E1712EF6F50ECA3B8BC77E71F64A74227EEC2BDDBAB2A16574F51A`，宿主 Core SHA256 `C480F4EE51378D55AD5E69DF22019CA70199E26038C9BC9CE1CCFBBCF34EA44B`，核对记录 `artifacts-reviewed.json`。旧同日未带 reviewed 后缀的产物不作为本轮入口。
+- 静态证据：5 份修改的 PowerShell 脚本 AST 解析、10 份源码插件清单投影通过，见 `artifacts/node-environment-20261127/static-checks.json`；7 份日常文档/夹具说明中的 284 个相对文件目标和 E150 锚点核对通过，见 `document-links.json`。`git diff --check` 通过。NU1900 表示在线漏洞数据查询未完成，不关闭审计提示；A31–A33 的真实下载/执行、取消、离线和混合迁移仍由用户验收。
+- 用户反馈与收尾：同日用户确认“测试没有问题”，要求同步整理项目 README、相关文档并提交。记录为本轮用户测试反馈及本地提交授权，不扩写为未报告的故障/兼容性矩阵全部通过。根 README 补齐当前 Dev 三类扩展与正式 1.1.0 的区别；台账、交接、来源说明与分类入口同步，旧产物路径归历史，当前产物集中到开发台账。9 份文档的 393 个本地链接及锚点核对通过（`docs-commit-check.json`），子代理文档一致性复核无阻断。收尾未改程序逻辑，不重复构建或运行测试；不包含推送、打标签或发布授权。
 
 <a id="evidence-package-categories"></a>
 

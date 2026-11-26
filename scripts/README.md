@@ -58,6 +58,8 @@ Build-Plugin 从目标宿主的 `TractorTool.deps.json` 读取 Avalonia 版本�
 
 Build-Plugin 不要求 CommunityToolkit.Mvvm。仅在输出实际包含该 DLL 时，从唯一还原版本复制许可和第三方通知；元数据或原文缺失仍拒绝打包。插件自备 `Licenses/` 始终保留，其他私有 NuGet/原生库的许可由插件作者维护，脚本不声称自动收集全部许可。宿主依赖许可由 Export-DependencyNotices 负责。Verify-PluginHost 使用不依赖 MVVM 的 IndependentPlugin 走同一个打包入口，再验证宿主装载。
 
+语言环境声明由 [Read-PluginManifest](Read-PluginManifest.ps1) 统一读取，核对 API 版本、项目/锁文件路径及摘要。对声明相应语言环境的插件，Build-Plugin 与 Verify-Distribution 拒绝携带对应的已安装解释器、包管理器或 node_modules。这些文件检查不下载或执行 Python/Node 环境，接入规则见[插件依赖分类](../Docs/PLUGIN_DEVELOPMENT.md#dependency-kinds)。
+
 `HostSdkDir` 只切换公开 SDK 的引用来源，插件私有项目与 NuGet 依赖仍正常构建。`files/`、宿主完整 `layout/` 和 `assets/` 是不同产物层级，不能把日常源码模式的 bin 当作独立插件包；依赖归属见[插件规范](../Docs/PLUGIN_DEVELOPMENT.md#dependency-kinds)。
 
 命令示例集中在 [开发入口](../Docs/DEVELOPMENT.md#workflow) 与 [独立插件打包](../Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。本页只解释脚本，当前实现和验收结果统一看 [开发台账](../Docs/DEVELOPMENT.md#current-status)。

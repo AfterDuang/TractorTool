@@ -8,6 +8,7 @@ using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
 using TractorTool.Core.Packages;
 using TractorTool.Core.Packages.Python;
+using TractorTool.Core.Packages.Node;
 using TractorTool.Core.Processes;
 using TractorTool.Core.Tasks;
 using TractorTool.Contracts;
@@ -121,7 +122,8 @@ public partial class App : Application
                 startup.Token.ThrowIfCancellationRequested();
                 var paths = opened.Paths;
                 var migration = new DataRootMigration(paths, (root, environment, token) =>
-                    RebuildPythonEnvironmentAsync(root, environment, progress, token));
+                    RebuildPythonEnvironmentAsync(root, environment, progress, token), (root, environment, token) =>
+                    RebuildNodeEnvironmentAsync(root, environment, progress, token));
                 var requested = migration.Snapshot.Migration is not null;
                 string? managementError = null;
                 try { _pluginManager = new PluginManager(paths, compatibility); }
@@ -209,6 +211,19 @@ public partial class App : Application
         var sources = ExternalPackageService.ReadConfiguredSources(Path.Combine(Path.GetDirectoryName(packageRoot)!, "Config", "dependency-sources.json"));
         await PythonEnvironmentService.RebuildCopiedEnvironmentAsync(packageRoot, environment, http, processes, log,
             source => sources.Any(s => s.Kind == DependencySourceKind.PythonIndex && s.Url == source), token).ConfigureAwait(false);
+    }
+
+    private static async Task RebuildNodeEnvironmentAsync(string packageRoot, NodeMigrationEnvironment environment,
+        IProgress<string>? progress, CancellationToken token)
+    {
+        var log = new MigrationProgressLog(progress);
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        await using var processes = new ProcessRunner("NodeMigration", log,
+            OperatingSystem.IsWindows() ? WindowsProcessSession.Start :
+            _ => throw new PlatformNotSupportedException("当前平台尚未提供 Node 环境迁移进程适配器。"));
+        var sources = ExternalPackageService.ReadConfiguredSources(Path.Combine(Path.GetDirectoryName(packageRoot)!, "Config", "dependency-sources.json"));
+        await NodeEnvironmentService.RebuildCopiedEnvironmentAsync(packageRoot, environment, http, processes, log,
+            source => sources.Any(s => s.Kind == DependencySourceKind.NpmRegistry && s.Url == source), token).ConfigureAwait(false);
     }
 
     private sealed class MigrationProgressLog(IProgress<string>? progress) : IAppLog

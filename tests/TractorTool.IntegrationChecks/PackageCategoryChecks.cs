@@ -32,6 +32,10 @@ internal static class PackageCategoryChecks
             {
                 Require(service.GetPackages().Count == 3 && service.GetPackages().All(p => p.CanRemove));
                 Require(model.VisibleCards.Count == 2);
+                Require(model.PackageCategories.SequenceEqual(["外部工具", "DLL 运行库", "Python 环境", "Node 环境"]));
+                model.SelectedCategoryIndex = 3;
+                Require(model.IsEmpty && model.VisibleCards.Count == 0 && !model.HasEnvironmentCache && !model.CleanCommand.CanExecute(null));
+                model.SelectedCategoryIndex = 0;
                 model.SearchText = "Chosen";
                 Require(model.VisibleCards.Single().Key == chosen.Package && model.CleanCommand.CanExecute(null));
                 cleanup = model.CleanCommand.ExecuteAsync(null);

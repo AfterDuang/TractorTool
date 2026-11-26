@@ -3,3 +3,5 @@ Plugins/TractorTool.Plugins.ClipboardHistory/Licenses/WindowsSDK.rtf binary
 # Plugin declarations hash these locked build inputs; preserve bytes across Windows/Linux checkouts.
 tests/PythonEnvironmentProbePlugin/Python/pyproject.toml text eol=lf
 tests/PythonEnvironmentProbePlugin/Python/uv.lock text eol=lf
+tests/NodeEnvironmentProbePlugin/Node/package.json text eol=lf
+tests/NodeEnvironmentProbePlugin/Node/pnpm-lock.yaml text eol=lf

@@ -1,5 +1,10 @@
 [
   {
+    "repositoryCommit": "748334a8fa7c227740018b284b71ad95cc6b7fc7",
+    "file": "YamlDotNet.txt",
+    "source": "https://raw.githubusercontent.com/aaubry/YamlDotNet/748334a8fa7c227740018b284b71ad95cc6b7fc7/LICENSE.txt"
+  },
+  {
     "repositoryCommit": "1e12211eb0c52a09e314ca57a344147c37d0a26c",
     "file": "Avalonia.DataGrid.txt",
     "source": "https://raw.githubusercontent.com/AvaloniaUI/Avalonia.Controls.DataGrid/1e12211eb0c52a09e314ca57a344147c37d0a26c/licence.md"
