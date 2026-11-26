@@ -101,6 +101,12 @@ internal sealed class GstDecoder : IDisposable
 
     internal MediaFrame Seek(long positionNanoseconds, CancellationToken token)
     {
+        BeginSeek(positionNanoseconds, token);
+        return CompleteSeek(token);
+    }
+
+    internal void BeginSeek(long positionNanoseconds, CancellationToken token)
+    {
         if (IsStill) throw new InvalidOperationException("静态图片不需要定位。");
         token.ThrowIfCancellationRequested();
         Pause();
@@ -108,6 +114,10 @@ internal sealed class GstDecoder : IDisposable
         // old segment, while this worker has stopped consuming the bounded appsink.
         if (GstNative.gst_element_seek_simple(_pipeline, GstNative.Time, 1 | 2, positionNanoseconds) == 0)
             throw new NotSupportedException("此媒体不支持精确定位。");
+    }
+
+    internal MediaFrame CompleteSeek(CancellationToken token)
+    {
         // The flush clears the old queue. Wait for both the new video preroll and
         // the complete pipeline (including audio) before assigning a shared clock.
         var frame = ReadPreroll(token, afterSeek: true);

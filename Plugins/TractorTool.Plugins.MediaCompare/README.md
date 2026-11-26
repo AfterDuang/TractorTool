@@ -58,3 +58,5 @@ TractorTool.MediaCompareChecks.exe --media-inputs <runtimeRoot> <newScratchDirec
 输出 `inputs.log`，检查解码时间与实际像素、混合刷新、帧间暂停/移除、结束重播、稀疏 PTS 保持、PAR、GPU 上传复用、保持原帧的重新发布、持续精度提示及音频 PCM；不创建 Avalonia 窗口。实际像素读回不是显示器最终呈现，音频解码成功和静音命令完成不代表扬声器输出或同步已验收。启动者仍须保存 PID、监控日志并处理原生阻塞，不能把内部取消当作强制中断保证。
 
 仅核对“拖动后播放”用 `--seek-play` 替换 `--media-inputs`，其余参数相同。使用四个 `seek-*` 素材及 `png-sequence`：逐项记录 seek 后真实 PTS/duration、实际定位和续播；包含取整空窗位置、暂停续播以及视频/序列左右互换。完整输入诊断也包含该子集。
+
+完整输入诊断另含 `prepared-seek-reuse` 项，以 `coded.mp4` 与 `coded` 序列检查重复定位的新发布、开始播放时的样本复用，以及播放后重新定位的样本失效和实际 PTS。该项记录重复定位/播放命令耗时，单次耗时不构成优化前后性能结论；`--seek-play` 不包含此项。

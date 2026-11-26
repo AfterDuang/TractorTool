@@ -10,7 +10,7 @@
 
 **1.1.0 分发包含 Windows x64 宿主和四个 1.1.0 插件。** 产品和插件分别定版，沿用 Avalonia 12.1.6。插件私有扩展、外部工具和发布验证见 [E137](PROJECT_HISTORY.md#evidence-release-110)。正式标签经构建和校验后自动公开附件。
 
-源码新增独立 [AB 审片 0.1.6](#media-compare) 开发版；未改变上述已发布版本。后续整包构建会按现行规则自动发现该插件，不新增名单或框架依赖。
+源码新增独立 [AB 审片 0.1.7](#media-compare) 开发版；未改变上述已发布版本。后续整包构建会按现行规则自动发现该插件，不新增名单或框架依赖。
 
 仍待真实 Windows 环境验收的项目包括跨会话安装、断电恢复、大目录迁移、设备采样和媒体导出。切页末段闪动继续使用官方渲染后端，等待上游修复。详见[下一步](#next)及[精度对照](PROJECT_HISTORY.md#evidence-page-flicker-precision)。
 
@@ -58,11 +58,11 @@
 
 ### AB 审片开发版
 
-- 实现：0.1.6 修正正常 MKV/M2TS 拖动后播放的时间量化误判。连续播放保持当前图像至后继真实 PTS，不再用名义 duration 判定缺帧；末帧、倒退 PTS 与准确定位校验保留。错误日志保留完整异常栈。沿用 0.1.5 的共同时间、PAR、上传复用及预览退场，保留 [0.1.2 设备锁](PROJECT_HISTORY.md#evidence-media-compare-playback-lock)、自动序列、SDR 8 位提示与 LPCM；GStreamer 1.28.9 随插件提供，未改框架。
-- 验证：本轮构建 0 错误，纯托管、44 项定位续播专项、66 项完整合成输入回归通过，进程退出码均为 0；GPT-6.2-SOL/high 静态复核完成。独立 SDK 打包与运行库哈希核对通过。检查工程 1 条、打包 2 条 NU1900 表示漏洞数据扫描未完成。证据见 [E144](PROJECT_HISTORY.md#evidence-media-compare-seek-playback)；双向屏幕外 GPU 窗口与退场专项是 0.1.5 的 [E143](PROJECT_HISTORY.md#evidence-media-compare-review-fixes) 证据，本轮未重跑窗口专项。
+- 实现：0.1.7 去掉定位完成后固定 35 ms 等待，拖动改为请求开始间隔至少 16 ms，点击/松手不额外节流；先发出双路准确定位再等待各自 preroll。定位完成后立即播放或重复同一精确位置可复用准备状态，播放开始和状态失效后重新准备。保留共同时钟、配对校验、0.1.6 的真实 PTS 呈现及异常栈、[设备锁](PROJECT_HISTORY.md#evidence-media-compare-playback-lock)、PAR、SDR 8 位提示与 LPCM；未改框架或运行库。
+- 验证：本轮用户明确只允许编译和 Review。检查工程最终 Release 构建 0 警告/0 错误，独立 SDK 打包 0 错误、2 条 NU1900（漏洞数据扫描未完成）；GPT-6.2-SOL/high 静态复核通过，补强重复发布与复用失效断言后再次复核。包内容和运行库哈希已核对。新增及既有运行检查均未执行，没有优化前后时延数据，见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。0.1.6 的 44/66 项合成输入通过仅属 [E144](PROJECT_HISTORY.md#evidence-media-compare-seek-playback)，不能外推本轮通过。
 - 限制：未知帧时长且无固定帧率，或真正长空窗内的非零准确定位/续播仍可能被拒绝；没有邻帧索引。稀疏 PTS 连续播放呈现停帧，不代表已验证素材连续性。预览为未校准 SDR 8 位、同 GPU；没有 HDR/Log、长 GOP 代理/邻域缓存或跨 GPU 支持。容器音频尾段可能没有视频帧；无标记素材不能推定色彩准确。
-- 产物：[TractorTool.MediaCompare-0.1.6.zip](../artifacts/media-compare-0.1.6-final/TractorTool.MediaCompare-0.1.6.zip)，[静态核对](../artifacts/media-compare-0.1.6-final/package-check.json)确认 144 项、123 项运行库哈希匹配，无共享框架 DLL。安装后需显式退出重启，无需另装运行库。
-- 接续：用户已授权将本轮修复提交并推送至 `main`；原素材仍需复测“拖动→播放→暂停→续播”。实际扬声器、音画同步、Explorer 拖放、可见 UI、驱动资源回收及长 GOP 性能仍待验。方法见[插件文档](Plugins/MediaCompare.md)。运行库统一申请仍须交架构侧。
+- 产物：[TractorTool.MediaCompare-0.1.7.zip](../artifacts/media-compare-0.1.7-final/TractorTool.MediaCompare-0.1.7.zip)，[静态核对](../artifacts/media-compare-0.1.7-final/package-check.json)确认 144 项、123 项运行库哈希匹配，无共享框架 DLL；宿主 SDK 的 247 个文件未变。安装后需显式退出重启，无需另装运行库。
+- 接续：0.1.6 已推送 `1448d7c`；用户对 0.1.7 手感反馈“也还行”，已授权本地提交，尚未要求推送。此反馈不等于连续正倒拖、松手后续播、暂停再播放及 A/B 音画对应逐项通过，也不能宣称达到 PotPlayer/PR 流畅度。实际扬声器、Explorer 拖放、可见 UI、驱动资源回收及长 GOP 性能仍待验。方法见[插件文档](Plugins/MediaCompare.md)。运行库统一申请仍须交架构侧。
 
 <a id="workflow"></a>
 
@@ -217,7 +217,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A26 | HUD 方案与预览 | 旧配置继承、方案增删复制/保存/撤销、轮播停启、模板及规则验证、左侧草稿示例预览、提醒打断/到期恢复（E95 已删除桌面草稿预览）、保存失败不丢数据 | 纯逻辑、Windows UI | E86 选色保存/旧色值兼容、轮播独立保存/失败回退、定时循环/详情暂停/长条恢复与草稿隔离已在内存离屏检查通过；默认逻辑套件、原生窗口/磁盘保存/重启、提醒/真实采样专项仍待验证 |
 | A27 | HUD 首版数据源与页面 | 原方案兼容、传感器权限/缺失/释放、网络限时/取消/频率、余额凭据隔离、编辑可达性、三态内容/单双击/拖动、形变/动画偏好/透明命中、跨屏/DPI/穿透 | 逻辑、HTTP、Windows UI/硬件 | E96 硬件类型/编辑示例/缺失前置条件的离屏与纯数据检查、0.4.17 包通过，保留独立采样等原回归。本机未发现 PawnIO 注册/服务，温度实读恢复未验；真实 5Hz 硬件耗用/网络/桌面交互未测，托盘方案列表及原生窗口/DPI/DPAPI 等缺口保留 |
 | A28 | [文件夹版本历史](Plugins/FolderHistory.md#7-验收方法) | 文件状态、文本与 Office 内容比较、选区恢复与发布、原件保留、中断撤销、自动保护与清理 | 逻辑、真实 CLI、Windows UI | [0.6.2](PROJECT_HISTORY.md#evidence-folder-history-preview-cancellation) 快速切换、迟到错误、引擎取消、模拟事务与离屏工作区回归通过。[0.6.1 全插件审查](PROJECT_HISTORY.md#evidence-folder-history-full-review) 记录其余覆盖。真实 CLI 与正式窗口的当前版本验收、高 DPI、故障及性能场景待验 |
-| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.6 构建、托管、44 项定位续播及 66 项完整合成输入检查、SOL 复核和独立打包通过；NU1900 漏洞扫描未完成。原素材复测、真实 UI/声音、资源回收与长 GOP 性能待验；未知时长和长空窗非零定位受限，见[当前状态](#media-compare) |
+| A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.7 构建、SOL 静态复核及独立打包通过；按用户要求未运行测试，性能与定位后续播由用户验证。打包 NU1900 漏洞扫描未完成。0.1.6 的 44/66 项检查为历史证据；真实 UI/声音、资源回收与长 GOP 性能待验，未知时长和长空窗非零定位受限，见[当前状态](#media-compare) |
 
 
 ## 5. 验证与发布要求

@@ -102,6 +102,45 @@ internal static class PlaybackRegressionChecks
             $"requestMs={requested.TotalMilliseconds:F4}; actualMs={actual.TotalMilliseconds:F4}; pairs={pairs.Length}");
     }
 
+    internal static void CheckPreparedSeekReuse(string runtime, string cache, string fixtures, Action<string> write)
+    {
+        using (var probe = new Probe(runtime, cache))
+        {
+            probe.Open(new(Path.Combine(fixtures, "coded.mp4")),
+                new(Path.Combine(fixtures, "coded/frame_0001.png"), MediaSourceKind.Sequence, 24));
+            var target = TimeSpan.FromMilliseconds(500);
+            probe.Await(probe.Session.SeekAsync(target));
+            var prepared = probe.Snapshot()[^1];
+            var count = probe.Snapshot().Length;
+            var watch = Stopwatch.StartNew();
+            probe.Await(probe.Session.SeekAsync(target));
+            var observations = probe.Snapshot();
+            Require(observations.Length == count + 1, "Repeating a prepared position must publish a new observation.");
+            var repeated = observations[^1];
+            var repeatMs = watch.Elapsed.TotalMilliseconds;
+            Require(repeated.Position == prepared.Position && repeated.SampleA == prepared.SampleA &&
+                repeated.SampleB == prepared.SampleB,
+                "Repeating a fully prepared position must retain both decoded samples and publish the pair again.");
+            count = observations.Length;
+            watch.Restart();
+            probe.Await(probe.Session.SetPlayingAsync(true));
+            var playMs = watch.Elapsed.TotalMilliseconds;
+            var starting = probe.Snapshot()[count];
+            Require(starting.SampleA == prepared.SampleA && starting.SampleB == prepared.SampleB,
+                "Play immediately after seek must use the prepared prerolls instead of decoding them again.");
+            probe.WaitFor(() => probe.Session.Position >= TimeSpan.FromMilliseconds(700));
+            probe.Await(probe.Session.SetPlayingAsync(false));
+            var paused = probe.Snapshot()[^1];
+            probe.Await(probe.Session.SeekAsync(target));
+            var restored = probe.Snapshot()[^1];
+            Require(restored.Position == prepared.Position && restored.A == prepared.A && restored.B == prepared.B &&
+                restored.SampleA != prepared.SampleA && restored.SampleB != prepared.SampleB &&
+                restored.SampleA != paused.SampleA && restored.SampleB != paused.SampleB,
+                "Playback must invalidate prepared-state reuse before a later seek restores its position.");
+            write($"prepared-seek-reuse: repeatMs={repeatMs:F3}; playCommandMs={playMs:F3}; sample identity and invalidation verified");
+        }
+    }
+
     internal static void Run(string runtime, string cache, string fixtures, Action<string> write)
     {
         foreach (var reverse in new[] { false, true })
@@ -230,7 +269,8 @@ internal static class PlaybackRegressionChecks
         write($"pixel-aspect: texture={frame.Width}x{frame.Height}; display={frame.DisplayWidth}x{frame.DisplayHeight}");
     }
 
-    private readonly record struct Observation(long A, long B, long Position, bool Playing, byte PixelA, byte PixelB);
+    private readonly record struct Observation(long A, long B, long Position, bool Playing, byte PixelA, byte PixelB,
+        long SampleA, long SampleB);
 
     internal static void CheckUploadReuse(string path, nint clock, Action<string> write)
     {
@@ -347,7 +387,7 @@ internal static class PlaybackRegressionChecks
                     var pixelA = _readPixels ? ReadBlue(a) : (byte)0;
                     var pixelB = _readPixels && pair.B is { } b ? ReadBlue(b) : (byte)0;
                     lock (_gate) _observations.Add(new(a.TimestampNanoseconds, pair.B?.TimestampNanoseconds ?? 0,
-                        pair.PositionNanoseconds, Session.IsPlaying, pixelA, pixelB));
+                        pair.PositionNanoseconds, Session.IsPlaying, pixelA, pixelB, a.SampleId, pair.B?.SampleId ?? 0));
                 }
                 catch (Exception error) { lock (_gate) _failure ??= error; }
             }

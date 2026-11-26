@@ -18,6 +18,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     private MediaFrame? _currentA, _currentB, _pendingA, _pendingB, _followingA, _followingB;
     private MediaDescription? _descriptionA, _descriptionB;
     private long _positionNanoseconds, _durationTicks, _seekGeneration, _playbackStart;
+    private long? _preparedPositionNanoseconds;
     private ulong _playbackBaseTime;
     private bool _playing, _ended;
     private int _disposing;
@@ -75,6 +76,7 @@ public sealed class ComparisonSession : IAsyncDisposable
             var generation = Interlocked.Increment(ref _seekGeneration);
             if (!Seek(_ended ? 0 : Interlocked.Read(ref _positionNanoseconds), ct, generation)) return;
             ct.ThrowIfCancellationRequested();
+            _preparedPositionNanoseconds = null;
             _playbackStart = Interlocked.Read(ref _positionNanoseconds);
             _playbackBaseTime = GstNative.gst_clock_get_time(_clock) + 30_000_000;
             _a?.Play(_playbackBaseTime);
@@ -170,6 +172,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     {
         if (!Enum.IsDefined(side)) throw new ArgumentOutOfRangeException(nameof(side));
         Pause(capturePosition: true);
+        _preparedPositionNanoseconds = null;
         var (decoder, first) = GstDecoder.Open(source, _clock, token);
         using var initialFrame = first;
         MediaFrame? candidateFrame = null, otherFrame = null;
@@ -213,6 +216,7 @@ public sealed class ComparisonSession : IAsyncDisposable
             Interlocked.Exchange(ref _durationTicks, duration.Ticks);
             Interlocked.Exchange(ref _positionNanoseconds, position);
             previous?.Dispose();
+            _preparedPositionNanoseconds = position;
             Publish(position);
         }
         finally
@@ -267,13 +271,28 @@ public sealed class ComparisonSession : IAsyncDisposable
 
     private bool Seek(long requestedNanoseconds, CancellationToken token, long generation)
     {
+        token.ThrowIfCancellationRequested();
+        if (generation != Interlocked.Read(ref _seekGeneration)) return false;
+        var target = ClampPosition(requestedNanoseconds, Duration);
+        if (_preparedPositionNanoseconds == target)
+        {
+            _a?.CheckError(); _b?.CheckError();
+            token.ThrowIfCancellationRequested();
+            if (generation != Interlocked.Read(ref _seekGeneration)) return false;
+            Publish(target);
+            return true;
+        }
+        // A failed or superseded preparation may move native pipelines without
+        // replacing the visible pair. Never reuse that pair as a ready preroll.
+        _preparedPositionNanoseconds = null;
         DiscardPendingFrames();
-        var prepared = PrepareFrames(_a, _b, _currentA, _currentB, requestedNanoseconds, Duration, token, generation);
+        var prepared = PrepareFrames(_a, _b, _currentA, _currentB, target, Duration, token, generation);
         if (prepared is not { } frames) return false;
         DisposeFrame(ref _currentA); DisposeFrame(ref _currentB);
         _currentA = frames.A; _currentB = frames.B;
         _ended = false;
         Interlocked.Exchange(ref _positionNanoseconds, frames.Position);
+        _preparedPositionNanoseconds = frames.Position;
         Publish(frames.Position);
         return true;
     }
@@ -288,10 +307,14 @@ public sealed class ComparisonSession : IAsyncDisposable
         {
             for (var attempt = 0; attempt < 2; attempt++)
             {
-                nextA = a is null ? null : a.IsStill ? heldA?.Retain() : a.Seek(position, token);
+                // Start both pipelines before collecting either preroll, allowing
+                // native decoding to overlap while this worker retains ownership.
+                if (a is { IsStill: false }) a.BeginSeek(position, token);
+                if (b is { IsStill: false }) b.BeginSeek(position, token);
+                nextA = a is null ? null : a.IsStill ? heldA?.Retain() : a.CompleteSeek(token);
                 token.ThrowIfCancellationRequested();
                 if (generation is { } current && current != Interlocked.Read(ref _seekGeneration)) return null;
-                nextB = b is null ? null : b.IsStill ? heldB?.Retain() : b.Seek(position, token);
+                nextB = b is null ? null : b.IsStill ? heldB?.Retain() : b.CompleteSeek(token);
                 token.ThrowIfCancellationRequested();
                 if (generation is { } latest && latest != Interlocked.Read(ref _seekGeneration)) return null;
                 if (attempt == 0)
@@ -479,6 +502,7 @@ public sealed class ComparisonSession : IAsyncDisposable
     }
     private void PauseAfterFailure()
     {
+        _preparedPositionNanoseconds = null;
         try { _a?.Pause(); } catch { }
         try { _b?.Pause(); } catch { }
         SetPlaying(false);

@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| AB 审片拖动优化 | [E145 · 请求调度、双路准备与定位复用（2026-11-26）](#evidence-media-compare-scrub-optimization) |
 | AB 审片定位后播放 | [E144 · 容器时间量化与呈现区间（2026-11-26）](#evidence-media-compare-seek-playback) |
 | AB 审片审查修复 | [E143 · 共同时间、显示几何与预览生命周期（2026-11-26）](#evidence-media-compare-review-fixes) |
 | AB 审片输入格式 | [E142 · 纳秒定位、自动序列、SDR 预览及 LPCM（2026-11-26）](#evidence-media-compare-input-formats) |
@@ -181,6 +182,18 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-media-compare-scrub-optimization"></a>
+
+## E145：AB 审片请求调度、双路准备与定位复用（2026-11-26）
+
+- 范围：用户要求改善拖动手感，并明确“只编译和 Review，我来运行测试”。基于已推送的 `1448d7c`，插件升为 0.1.7；用户随后反馈手感“也还行”并授权本地提交，未要求推送，不外推专项验收通过。未改宿主、Core、Contracts、公共 UI 或 GStreamer 运行库，保留 `.vscode/settings.json`。
+- 实现：用 16 ms 请求开始间隔替代每次固定等待 35 ms，解码耗时已占用间隔时直接处理最新位置，点击/松手不额外节流。单个 worker 先发出两路 `FLUSH | ACCURATE` 再等待 preroll，保留两侧严格配对及音频暂停就绪。准确准备后的同一纳秒位置可复用；开始播放、替换、清空、新位置准备及失败/取消使准备态失效。它不是关键帧近似预览或邻域缓存。
+- Review：GPT-6.2-SOL/high 复核生产路径，未发现阻断问题；指出新增用例需要确认重复定位实际新增发布，并与播放后暂停样本比较以验证失效，已补强并二次复核。`prepared-seek-reuse` 独立接入完整 `--media-inputs`，不在 `--seek-play` 子集中。
+- 编译：`dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true -m:1 -nr:false -v minimal`，初编及断言补强后复编均 0 警告/0 错误。未执行检查程序、合成输入、宿主或窗口；没有优化前后耗时数据，旧 E144 运行证据不外推。
+- 打包：`pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj -HostSdkDir artifacts/plugin-host-20261123-235028-9d9de9/host -Output artifacts/media-compare-0.1.7-final`，0 错误、2 条 NU1900（漏洞数据源不可达，扫描未完成）。ZIP 144 个文件，20,522,692 字节，展开 51,906,232 字节；123 项运行库逐文件 SHA-256 匹配，无共享框架 DLL，宿主 SDK 247 个文件哈希/数量未变。
+- 证据：[编译日志](../artifacts/media-compare-diagnostics/20261126-scrub-optimization/build-final.log)、[打包日志](../artifacts/media-compare-diagnostics/20261126-scrub-optimization/package-build.log)、[静态包核对](../artifacts/media-compare-0.1.7-final/package-check.json)。[0.1.7 ZIP](../artifacts/media-compare-0.1.7-final/TractorTool.MediaCompare-0.1.7.zip) SHA-256：`A43A40D151DBDD46B67B36448D9D3B8A2CD096EE31FE4C6452427AEB87182A70`。
+- 待验：用户安装并重启后比较连续正倒拖、松手续播和普通暂停续播的响应、两路画面及音频同步。长 GOP、硬件驱动及可见 UI 性能未确认，不宣称达到 PotPlayer/PR 水平。
 
 <a id="evidence-media-compare-seek-playback"></a>
 

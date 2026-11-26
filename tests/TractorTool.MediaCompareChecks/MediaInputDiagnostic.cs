@@ -86,6 +86,8 @@ internal static class MediaInputDiagnostic
                 Check("audio-lpcm", () => CheckAudio(Fixture("audio-lpcm.m2ts"), Write));
                 Check("pixel-aspect-ratio", () => PlaybackRegressionChecks.CheckPixelAspect(Fixture("video-par.mp4"), clock, Write));
                 Check("gpu-upload-reuse", () => PlaybackRegressionChecks.CheckUploadReuse(Fixture("input.png"), clock, Write));
+                Check("prepared-seek-reuse", () => PlaybackRegressionChecks.CheckPreparedSeekReuse(args[1],
+                    Path.Combine(args[2], "session-cache"), args[3], Write));
                 Check("common-timeline-and-replay", () => PlaybackRegressionChecks.Run(args[1],
                     Path.Combine(args[2], "session-cache"), args[3], Write));
             }

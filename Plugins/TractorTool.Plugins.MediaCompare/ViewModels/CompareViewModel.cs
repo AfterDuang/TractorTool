@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -19,6 +20,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     private Task? _disposeTask;
     private double? _pendingSeek;
     private int _seekVersion;
+    private long _lastSeekStarted;
     private bool _resumeAfterScrub;
     private long _reportedPosition;
     private int _positionQueued;
@@ -186,8 +188,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     {
         if (!IsScrubbing) return;
         _seekCancellation?.Cancel();
-        RequestSeek(seconds);
         IsScrubbing = false;
+        RequestSeek(seconds);
         var version = _seekVersion;
         await _seekWorker;
         if (_resumeAfterScrub && !_stopped && !IsScrubbing && version == _seekVersion && !HasError)
@@ -200,32 +202,44 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         PositionSeconds = Math.Clamp(seconds, 0, DurationSeconds);
         _pendingSeek = PositionSeconds;
         _seekVersion++;
-        if (_seekWorker.IsCompleted) _seekWorker = ProcessSeeksAsync();
+        if (_seekWorker.IsCompleted)
+        {
+            _seekWorker = ProcessSeeksAsync();
+            IsSeeking = true;
+        }
     }
 
     private async Task ProcessSeeksAsync()
     {
-        IsSeeking = true;
+        // Publish the worker before any synchronous completion or property notification
+        // can submit another request.
+        await Task.Yield();
         try
         {
             while (!_stopped && _pendingSeek is not null)
             {
-                // Throttle, rather than debounce: continuous pointer movement must still
-                // produce previews. Keep one decode in flight and only the latest request.
-                try { await Task.Delay(35, _stopping.Token); }
-                catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { break; }
-                if (_pendingSeek is not { } seconds) break;
-                _pendingSeek = null;
                 var version = _seekVersion;
                 using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
                 _seekCancellation = cancellation;
                 try
                 {
+                    // Limit request starts, not the gap after decoding. Slow decodes already
+                    // consume this interval; release/click requests bypass the drag throttle.
+                    if (IsScrubbing && _lastSeekStarted != 0)
+                    {
+                        var remaining = TimeSpan.FromMilliseconds(16) - Stopwatch.GetElapsedTime(_lastSeekStarted);
+                        if (remaining > TimeSpan.Zero) await Task.Delay(remaining, cancellation.Token);
+                    }
                     await _commands.WaitAsync(cancellation.Token);
                     try
                     {
+                        cancellation.Token.ThrowIfCancellationRequested();
+                        if (_pendingSeek is not { } seconds) continue;
+                        _pendingSeek = null;
+                        version = _seekVersion;
                         if (_session is { } session)
                         {
+                            _lastSeekStarted = Stopwatch.GetTimestamp();
                             await session.SeekAsync(TimeSpan.FromSeconds(seconds), cancellation.Token);
                             if (version == _seekVersion)
                             {
@@ -251,7 +265,13 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
                 finally { if (ReferenceEquals(_seekCancellation, cancellation)) _seekCancellation = null; }
             }
         }
-        finally { IsSeeking = false; }
+        finally
+        {
+            // Observers of IsSeeking may synchronously enqueue another position.
+            // Mark this drained worker idle before notifying them.
+            _seekWorker = Task.CompletedTask;
+            IsSeeking = false;
+        }
     }
 
     public void LeaveView()
