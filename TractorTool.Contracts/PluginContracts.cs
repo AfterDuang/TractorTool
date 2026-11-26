@@ -2,7 +2,7 @@ namespace TractorTool.Contracts;
 
 public static class PluginApi
 {
-    public const string Version = "1.7";
+    public const string Version = "1.8";
 }
 
 public interface IPlugin : IAsyncDisposable

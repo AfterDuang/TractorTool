@@ -138,7 +138,8 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                     throw new PlatformNotSupportedException("当前平台尚未提供受管理的工具进程适配器。")));
                 lock (_lifecycleGate) _instances.Add(lifetime);
                 var token = lifetime.Stopping.Token;
-                lifetime.Packages = packages?.CreateScope(manifest.Id, manifest.Dependencies.Select(d => d.Package).ToArray(), token);
+                lifetime.Packages = packages?.CreateScope(manifest.Id, manifest.Dependencies.Select(d => d.Package).ToArray(), token,
+                    supportsNativeLibraries: manifest.ApiVersion == "1.8");
                 lifetime.Tasks = tasks?.CreateScope(manifest.Id, token);
                 if (manifest.Dependencies.Length != 0 && lifetime.Packages is null)
                     throw new InvalidOperationException("宿主未组装外部工具服务。");

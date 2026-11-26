@@ -1,6 +1,6 @@
 # TractorTool 软件架构
 
-更新日期：2026-11-26。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
+更新日期：2026-11-27。本文维护框架的模块职责、资源所有权、事务与失败边界；具体业务归插件，参数限制及 SDK 接入规则见[插件开发规范](PLUGIN_DEVELOPMENT.md)。目录导航见[项目首页](../README.md#设计与结构)，需求见[产品说明](TractorTool.md)，实现与验收状态只以[开发台账](DEVELOPMENT.md#current-status)为准。
 
 ## 1. 当前代码与目标结构
 
@@ -122,25 +122,27 @@ Contracts 不包含控件类型；Avalonia 页面契约只在 UI 工程。宿主
 
 <a id="packages"></a>
 
-## 4. 外部工具与进程管理
+## 4. 外部依赖与进程管理
 
 ### 4.1 包管理
 
-公开接口位于 [Contracts/Packages](../TractorTool.Contracts/Packages/IExternalPackageService.cs)，实现位于 [Core/Packages](../TractorTool.Core/Packages/ExternalPackageService.cs)，管理页面归宿主。私有 .NET 库随插件打包，共享 SDK 由宿主提供，外部可执行工具由包服务提供版本路径及使用租约。
+公开接口位于 [Contracts/Packages](../TractorTool.Contracts/Packages/IExternalPackageService.cs)，实现位于 [Core/Packages](../TractorTool.Core/Packages/ExternalPackageService.cs)，管理页面归宿主。私有 .NET 库随插件打包，共享 SDK 由宿主提供，可执行工具和独立原生运行库由包服务提供版本路径及使用保护。
 
-当前包定义必须包含可执行工具，安装时逐个运行版本探测；工具 ZIP 可以附带运行所需的 DLL，但尚无纯 DLL 运行库的独立声明、校验及加载占用契约。插件私有托管/原生库仍按[依赖分类](PLUGIN_DEVELOPMENT.md#dependency-kinds)随插件交付，不能把 DLL 当作可执行工具申请。
+工具包保留版本命令验证；原生运行库通过静态 PE 和完整文件校验，不在安装时执行 DLL。新类型已进入 `Dev` 代码，当前验收见[开发台账](DEVELOPMENT.md#dependency-extension-plan)，未改变已发布 1.1.0。接口与示例见[原生运行库接入](PLUGIN_DEVELOPMENT.md#native-library-packages)；uv/Python、Node/pnpm 仍属 [7.3](#dependency-extension) 的待实现方案。
 
 **来源**：不维护自有源。默认 GitHub，用户可添加公开 GitHub Enterprise HTTPS API；配置在 `<DataRoot>/Config/dependency-sources.json`。来源移除不删除已装包、不撤销已开始下载；配置损坏保留原件并阻止覆盖。私有认证、pip 等未接入的安装类型不提供空入口。
 
-**声明与解析**：插件清单的 id/version 指定包，downloads 按 RID 固定仓库、tag、ZIP 附件、SHA256、许可和工具契约，格式见[接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 仅在缺包/修复时查精确 Release，不跟随 latest、不持久缓存远程索引。旧清单可复用已装包；缺下载资料时报告需更新声明。同身份的声明、已装摘要与工具契约必须一致，不能暗中替换同版内容；Windows 大小写别名冲突同时暂停清理。
+**声明与解析**：插件清单的 id/version 指定包，downloads 按 RID 固定仓库、tag、ZIP 附件、SHA256、许可、包类型和入口契约，格式见[接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 仅在缺包/修复时查精确 Release，不跟随 latest、不持久缓存远程索引。旧清单缺省类型仍是工具包，可复用已装包；缺下载资料时报告需更新声明。同身份的类型、已装摘要与入口契约必须一致，不能暗中替换同版内容；Windows 大小写别名冲突同时暂停清理。
 
-**申请事务**：`TryRequestAsync` → 校验声明/复用或查询 → 首次确认 → 下载校验 → 安全解压 → 工具版本探测 → 写 receipt 并原子提交 → 返回租约。拒绝返回 null；旧 `AcquireAsync` 仅复用已装包，初始化不自动下载。并发同包请求合并确认/安装，调用方取消仅停止自己的等待，设置页取消才停止共享下载。
+**申请事务**：`TryRequestAsync` → 校验声明/复用或查询 → 首次确认 → 下载校验 → 安全解压 → 按类型验证 → 写 receipt 并原子提交 → 校验已安装内容并返回租约。拒绝返回 null；旧 `AcquireAsync` 仅复用已装包，初始化不自动下载。并发同包请求合并确认/安装，调用方取消仅停止自己的等待，设置页取消才停止共享下载。
 
-**校验边界**：API/下载/展开均有时间或体积上限；验证精确标签、唯一已上传附件、同仓库地址及可用的 GitHub digest，拒绝跨站/降级 API 重定向。下载后独立核对声明 SHA256；拒绝 ZIP 越界、链接、特殊文件、重名及大小写冲突。按受限参数向量探测工具版本，非零退出或选定输出截断即失败；不执行 shell/安装脚本。校验值证明内容一致，不替代来源可信性。
+**校验边界**：API/下载/展开均有时间或体积上限；验证精确标签、唯一已上传附件、同仓库地址及可用的 GitHub digest，拒绝跨站/降级 API 重定向。下载后独立核对声明 SHA256；拒绝 ZIP 越界、链接、特殊文件、重名及大小写冲突。工具按受限参数向量探测版本，非零退出或选定输出截断即失败。原生入口须为匹配 Windows RID 的非 CLR DLL；[NativePackageIntegrity](../TractorTool.Core/Packages/NativePackageIntegrity.cs) 为全部载荷文件生成路径、长度和 SHA256 清单，每次取得租约复验文件集合及内容。宿主不执行 DLL、shell 或安装脚本；ABI、传递依赖搜索策略及业务能力由插件负责。校验值证明内容一致，不替代来源可信性。
 
-**记录与恢复**。收据保存包定义、下载摘要和工具哈希，来源离线仍可核验已安装版本。修复先在 `Packages/.work` 下载并验证替代包；提交时在同卷保留旧目录，待新目录就位再清理。启动时先恢复中断的目录切换再读收据。未知归属的文件保留并提示处理。Packages 页面展示首次下载和修复的进度，允许停止共享下载。
+**记录与恢复**：工具继续使用 schema 2 收据并兼容 schema 1；原生包使用 schema 3，保存包定义、下载摘要和独立 `.package-files.json` 的 `ManifestHash`。完整载荷清单与收据均位于安装目录，不因来源离线而失效。修复先在 `Packages/.work` 下载并验证替代包；提交时在同卷保留旧目录，待新目录就位再清理。启动时先恢复中断的目录切换再读收据。未知归属的文件保留并提示处理。Packages 页面展示类型、来源、首次下载和修复进度，允许停止共享下载。
 
 **引用与清理**：引用从持久清单和管理日志重建，包括禁用/失败、待激活及可回退版本。管理提交与引用同步受锁保护；记录不可读或管理日志的活动版本未被发现时暂停清理，不能视为零引用。同一服务锁内检查引用、请求预留、安装事务和运行租约，无占用才允许用户清理；卸载只解除生效后的引用，不联动删除包。插件作用域限定可申请依赖，退出封闭新操作并取消/等待在途工作，插件清理完成后回收遗漏租约。
+
+**原生加载保护**：插件在第一次可能加载前调用 `RetainUntilProcessExit()`，包括可能部分成功后失败的调用。[NativePackageRetention](../TractorTool.Core/Packages/NativePackageRetention.cs) 按安装路径保存进程期占用，租约、插件作用域或服务 Dispose 均不解除；修复和删除同时检查普通租约与此占用。页面通过 `RetainedBy` 解释退出前不可维护的原因。插件负责原生句柄和搜索路径，不修改全局 PATH；框架不保证原生热卸载或同名 DLL 的进程内隔离。
 
 ### 4.2 进程服务
 
@@ -173,6 +175,7 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 <DataRoot>/
   Config/                          # 宿主配置、依赖来源
   Packages/<PackageId>/<Version>/<RID>/
+  Packages/DLL/<PackageId>/<Version>/<RID>/  # 独立原生运行库
   Data/Plugins/<PluginId>/          # 插件配置及持久数据
   Data/tasks.json                  # 公共任务摘要
   Data/.plugin-backups/<Token>/    # 更新/回退快照
@@ -181,6 +184,8 @@ stdin 关闭为 EOF；stdout/stderr 并发排空并有界保留，超限返回�
 ```
 
 固定 `%LOCALAPPDATA%/TractorTool/bootstrap.json` 只保存数据根指针、版本与迁移状态，不随业务数据搬迁，也不经公开 IAppPaths 暴露。`--profile-root <绝对路径>` 隔离测试启动位置与默认数据，不改变插件代码位置。用户输入/输出不属于缓存，不由清理功能删除。
+
+上图为当前代码的目录布局；`Packages/DLL` 仅在首次安装时创建并标记归属。`Packages/uv`、`Packages/Node` 和语言环境重建仍待实现，分类冲突及迁移规则见[扩展目录约定](#dependency-extension-storage)。
 
 配置采用带 `schemaVersion` 的 JSON，[JsonFileStore](../TractorTool.Core/Storage/JsonFileStore.cs) 按完整路径串行保存，同目录临时文件落盘后原子替换并备份。读取先探测属性，文件缺失时再核对父路径，仅正常缺失返回默认值；目录占位、祖先文件占位、访问故障、损坏或未知版本均报错，不能把坏管理状态作为空状态装载插件。保存失败保留原数据。内部位置以所属根下相对路径保存，用户路径保持原语义；格式升级通过模型迁移，不对所有 JSON 作字符串替换。目录缺失与不可访问分别处理，不以 `Directory.Exists=false` 授权重置。
 
@@ -280,12 +285,65 @@ UI 选型、参考源码与历史比较归[参考调研](PROJECT_HISTORY.md#ui-r
 CI 普通构建只读。标签流程校验版本、提交、干净状态及产物后，由独立写权限作业上传附件并公开 Release。预发行标签单独标记，正式版由 GitHub 选择 Latest。工具版本、命令和失败恢复见[脚本说明](../scripts/README.md)及[发布入口](../README.md#github-release)。
 
 <a id="python-dependencies"></a>
+<a id="dependency-extension"></a>
 
-### 7.3 Python / pip 依赖扩展（后续计划，未实现）
+### 7.3 外部依赖扩展
 
-用户已确认纳入后续计划，尚未排期。保留现有分层与统一依赖入口；只有实际安装能力接入时才开放来源配置、扩展协议，不预建安装器体系，也不重新解释旧 PackageReference。
+在 `Dev` 分支依次接入独立原生运行库、uv/Python 和 pnpm/Node。原生包的现行事务见 [4.1](#41-包管理)，语言环境仍是下述待实现方案。保留 Core 实现、Contracts 公共契约、宿主统一交互的分层；不自研依赖求解器，不引入 Pixi/mise 或通用脚本平台。当前实现及阶段出口只见[开发台账](DEVELOPMENT.md#dependency-extension-plan)，选型与目录确认记录见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)。旧 `python-dependencies` 锚点保留。
 
-- 包管理工具负责库版本及间接依赖解析；宿主记录确定的运行时、平台、来源、版本和校验信息，通过受管理进程准备隔离环境，不允许插件追加任意安装命令。
-- 冲突需求不进入可变全局环境；仅完整依赖与运行时兼容时复用环境。引用和租约覆盖环境、解释器及间接依赖，缓存与已装环境分开清理，卸载不联动删除。
-- 环境归 DataRoot，插件代码仍归 AppRoot。不可搬迁环境在迁移目标重建、验证后切换，保留旧环境供恢复，不能直接套用 ZIP 复制事务。用户已有文件/外部服务只建立引用，不取得删除或终止所有权。
-- 安装工具、解释器来源、锁定格式、复用粒度及源码分发支持仍待确定；本节不构成已交付能力。计划依据见 [E28](PROJECT_HISTORY.md#evidence-python-plan)。
+**来源与安装方式分开。** GitHub Releases、PyPI/兼容索引、npm registry 是获取渠道；ZIP 校验展开、uv 环境同步、pnpm 依赖安装是不同操作。默认 GitHub 保留，只在对应安装能力可用时开放 PyPI/npm 来源配置；来源配置变更不暗中改变已装版本或重写插件锁文件。锁中下载地址、摘要及项目配置须符合所选来源策略，不能靠新增一个 URL 绕过类型校验。
+
+| 接入 | 插件交付 | 工具与宿主的职责 |
+| --- | --- | --- |
+| 独立原生运行库 | 固定版本、平台、摘要、许可和完整布局的发布包 | 框架下载并验证完整交付文件集合，保存可复核清单；插件按返回路径加载，负责 ABI 与业务能力验证 |
+| uv / Python | `pyproject.toml`、`uv.lock` 和运行入口 | uv 准备指定 Python 并按锁创建环境；宿主记录安装身份、确认、目录、运行占用和恢复状态 |
+| pnpm / Node | `package.json`、`pnpm-lock.yaml` 和已构建运行入口 | pnpm 按锁安装依赖；宿主准备指定 Node/pnpm，管理整体环境与调用路径 |
+
+语言环境实施时，安装工具与解释器按固定版本、平台、受认可的上游来源及校验资料私有部署，首次需要时确认并自动准备，不要求用户手工安装或修改全局 PATH。逐子进程传递必要环境配置，不修改宿主全局环境变量；沿用受管理进程的取消、超时和进程树清理。uv/Node 的工具版本、清单字段及公开方法尚未定版；原生包接入使用现行 API 1.8，见[插件规范](PLUGIN_DEVELOPMENT.md#native-library-packages)。
+
+首轮 Python 使用预编译 wheel，Node 使用已构建入口和无需安装脚本的依赖；不开放源码构建、editable/VCS/本地目录依赖、任意安装命令和项目安装钩子。pnpm 的生命周期脚本及配置钩子分别禁用；工具的环境变量和项目配置不能绕过宿主策略。需要额外二进制或编译的包须另行确定支持方式，不以安装成功掩盖缺失功能。可信插件仍非安全沙箱，不能把声明校验宣称为恶意代码隔离。
+
+<a id="dependency-extension-storage"></a>
+
+#### 分类目录与所有权
+
+分类名称固定为 `uv`、`Node`、`DLL`，其中 `DLL` 已实现，语言环境目录仍待实现；版本、平台和环境身份由宿主组织，不由插件拼接路径：
+
+```text
+<DataRoot>/
+  Packages/
+    <PackageId>/<Version>/<RID>/   # 既有可执行工具的兼容布局
+    DLL/
+      .native-packages            # 分类归属标记，与旧名为 DLL 的工具包区分
+      <PackageId>/<Version>/<RID>/ # 原生载荷、receipt.json、.package-files.json
+    .work/                        # 当前便携包下载及安装暂存
+    uv/                           # 待实现：uv、Python 及环境
+    Node/                         # 待实现：pnpm、Node 及环境
+  Cache/uv/                       # 待实现：可重建安装缓存
+  Cache/Node/                     # 待实现
+  Config/dependency-sources.json  # 来源配置，扩展时兼容旧格式
+  Data/Plugins/<PluginId>/        # 业务数据，依赖修复和清理不得删除
+```
+
+目录按接入方式而非下载网站分类：来自 GitHub 的 uv 仍归 `uv`；Python/npm 包自带的 DLL 留在其环境中，不抽走放入 `DLL`。私有托管 DLL 仍随插件代码交付。缓存、下载暂存、已安装代次和业务数据分别记录所有权；业务数据不能写入可重建环境。已装环境必须自足，或将其直接依赖的共享内容纳入安装资产保护，不能因名为缓存就允许删除仍被环境引用的文件。
+
+既有工具路径、声明与收据保持兼容，不在升级时强行搬迁。新分类的扫描、身份和清理须与旧 `PackageId` 分离；遇到旧包或未知目录已占用 `uv`/`Node`/`DLL`（含 Windows 大小写别名），保留原件并报告冲突，不覆盖、不误判为新分类。只有需要新能力的插件声明新的最低接口版本，旧插件不因缺省新增字段被要求改写。
+
+当前 [PackageStorageLayout](../TractorTool.Core/Packages/PackageStorageLayout.cs) 只在不存在或为空的 `Packages/DLL` 写入 `.native-packages` 标记；未标记的旧包按旧布局识别，标记损坏或归属冲突保留现场。运行库来自 GitHub 仍归 `DLL`；没有独立 DLL 缓存功能，不预建 `Cache/DLL`，下载暂存继续使用 `.work`。
+
+#### 已实现的原生保护与待实现的语言环境管理
+
+- **语言环境按插件隔离。** 环境身份包含插件、运行时/平台、安装工具、清单/锁摘要及来源策略；相同身份才复用，不共享可变的全局环境。允许复用合格的工具链和下载缓存；锁或运行时变化产生新环境，准备失败保留旧环境。
+- **重建资料随环境保留。** 宿主管理记录保存通过校验的原清单、锁文件、必要安装配置及来源/安装身份，不能只有摘要或指向插件代码的路径；修复和迁移不得借用新版插件的锁。原插件卸载后仍保留这些资料和所需工具链引用，直到用户清理环境，避免安装目录还在却无法重建。
+- **两类提交方式分别处理。** 便携归档继续使用暂存、完整校验及目录提交；语言环境直接在最终代次位置创建，验证成功后发布安装记录，不把安装好的 venv/带链接环境随意改名。记录准备、可用和中断状态；只清理确属该事务且未使用的失败代次。
+- **引用覆盖完整运行条件。** 持久引用包含禁用、失败、待激活及可回退插件；运行租约覆盖环境、运行时和所属进程直至退出及输出排空。卸载插件只解除引用，用户主动清理；损坏或无法确认归属的记录不能按零引用处理。
+- **原生库增加进程期保护。** 第一次可能加载 DLL 前登记，部分加载失败也保留；页面关闭、插件停止或普通租约释放不能解除。修复与删除均检查，进程结束后才可处理，不承诺原生库热卸载或同名 DLL 的进程内隔离。
+- **维护使用统一页面。** Packages 展示整体环境/运行库的类型、来源、版本、占用和引用，提供进度、重试、修复及安全清理；间接依赖可供查看，不要求用户逐包维护。修复环境不触碰插件业务数据，缓存按各工具支持的机制单独清理，不遍历链接删除外部目标。
+
+#### 迁移与故障恢复
+
+继续在显式退出后的下次启动迁移，成功前不启动插件。当前原生运行库是自足的便携载荷，连同分类标记、收据和文件清单沿用 Packages 子树复制校验，不热迁移已加载 DLL。插件不得把运行库内路径作为跨启动有效的绝对路径持久化，重启后重新申请。
+
+以下语言环境恢复尚待实现：需要重建的解释器/环境按原锁和安装身份在目标分类目录准备，验证成功后才提交新数据根。生成文件可能含新绝对路径，须记录重建清单和验证结果，不能伪造为源文件的逐字节复制摘要。
+
+缓存不作为必须复制的持久数据；重建可利用可用缓存或重新下载，离线且材料不足时明确失败并保留旧环境及数据。切换后清理仍需复验目标可用性、源归属与源未变化，按记录恢复中断，不扩大删除范围。pnpm 的合法链接仅在受管理环境/安装资产边界内处理，不全局放宽现有重解析点检查。自定义数据根确实删除后的默认初始化、权限/离线故障不重置及固定 bootstrap 规则继续遵守[第 5 节](#storage)。

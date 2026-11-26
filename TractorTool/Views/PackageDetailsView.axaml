@@ -11,6 +11,7 @@
           <TextBlock Text="{Binding SizeText}" Classes="caption" />
           <TextBlock Text="{Binding RequiredBy}" />
           <TextBlock Text="{Binding Users}" IsVisible="{Binding HasUsers}" />
+          <TextBlock Text="{Binding RetentionMessage}" IsVisible="{Binding IsRetained}" TextWrapping="Wrap" />
           <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
           <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" />
           <WrapPanel>
@@ -23,8 +24,8 @@
       </Border>
       <Border Classes="card">
         <StackPanel Spacing="8">
-          <TextBlock Text="提供的工具" FontWeight="SemiBold" />
-          <SelectableTextBlock Text="{Binding ToolNames}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding ContentsTitle}" FontWeight="SemiBold" />
+          <SelectableTextBlock Text="{Binding ContentsNames}" TextWrapping="Wrap" />
           <TextBlock Text="当前下载地址" FontWeight="SemiBold" Margin="0,8,0,0" />
           <SelectableTextBlock Text="{Binding DownloadUri}" TextWrapping="Wrap" />
           <TextBlock Text="SHA256 校验值" FontWeight="SemiBold" Margin="0,8,0,0" />

@@ -36,7 +36,8 @@
 
 - **需求 → 设计 → 接入**：产品说明定义行为，架构定义框架如何实现，插件规范定义调用方必须遵守的协议；互相链接，不复制整段规则。具体插件只描述自身业务并引用公共规范。
 - **源码与版本**：工程引用见各 `.csproj`；框架 NuGet 版本集中在 `Directory.Packages.props`，业务私有库由对应插件工程定版。SDK 工具链见 `global.json`，产品版本见 `Directory.Build.props`，接口版本见公开 API 定义，插件身份与外部工具资料见 `plugin.json`。解决方案分组不建立程序集依赖。
-- **依赖分类**：[架构分层](ARCHITECTURE.md#1-当前代码与目标结构)解释工程依赖方向；[插件依赖表](PLUGIN_DEVELOPMENT.md#dependency-kinds)区分 .NET 运行时、共享 SDK、私有库和外部工具；[脚本说明](../scripts/README.md)解释构建工具及许可收集边界。
+- **依赖分类**：[架构分层](ARCHITECTURE.md#1-当前代码与目标结构)解释工程依赖方向；[插件依赖表](PLUGIN_DEVELOPMENT.md#dependency-kinds)区分 .NET 运行时、共享 SDK、私有库、外部工具和原生运行库；[脚本说明](../scripts/README.md)解释构建工具及许可收集边界。
+- **外部依赖扩展**：[产品要求](TractorTool.md#dependency-extension-requirements) → [架构与分类目录](ARCHITECTURE.md#dependency-extension) → [DLL 接入](PLUGIN_DEVELOPMENT.md#native-library-packages) / [待实现的语言环境约定](PLUGIN_DEVELOPMENT.md#dependency-extension-contract) → [实施与验收](DEVELOPMENT.md#dependency-extension-plan)。代码、发布与运行验收分别确认，不把规划当成可调用接口。
 - **状态 → 证据**：开发台账链接具体历史记录，交接只摘录当前约束和下一步；历史可以说明旧方案，不能成为当前规则的唯一入口。参考项目、截图与调研放历史，不扩充日常必读链。
 
 ## 怎么维护

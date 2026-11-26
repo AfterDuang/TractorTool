@@ -37,7 +37,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         _entries = [];
         foreach (var d in supplied)
         {
-            var entry = new Entry(d, Path.Combine(_root, d.Package.Id, d.Package.Version, d.Rid));
+            var entry = new Entry(d, PackageDirectory(d));
             if (!_entries.TryAdd(d.Package, entry)) throw new InvalidDataException("外部工具目录重复。");
             entry.SourceDefinition = d;
             entry.HasFiles = Directory.Exists(entry.Directory);
@@ -83,7 +83,9 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             _ = DeclaredDownload(package, definition);
             if (e.Operation is null)
             {
-                if (e.Users.Count != 0) throw new InvalidOperationException("工具仍被使用，不能重新安装。");
+                RequireOwnedFiles(e);
+                RequireNotRetained(e);
+                if (e.Users.Count != 0) throw new InvalidOperationException("依赖仍被使用，不能重新安装。");
                 e.InstallCancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
                 e.Phase = PackagePhase.Downloading; e.Error = ""; e.Downloaded = 0; e.Total = null;
                 e.Operation = StartOperation(async () =>
@@ -126,6 +128,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
 
     private void RemoveFiles(Entry e)
     {
+        _ = PackageDirectory(e.Definition);
+        RequireNotRetained(e);
         RecoverReplacement(e.Directory);
         PackageFiles.CheckPath(e.Directory);
         if (Directory.Exists(e.Directory))
@@ -142,7 +146,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         lock (_gate) e.HasFiles = false;
     }
 
-    internal Task<IPackageLease> AcquireAsync(PackageReference package, string owner, CancellationToken token)
+    internal Task<IPackageLease> AcquireAsync(PackageReference package, string owner, CancellationToken token, bool supportsNativeLibraries = true)
     {
         token.ThrowIfCancellationRequested();
         lock (_gate)
@@ -150,6 +154,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             EnsureRunning();
             RecoverBeforeRequest(package);
             var e = Find(package);
+            RequireSupportedKind(e.Definition.Kind, supportsNativeLibraries);
             _ = DeclaredDownload(package, e.Definition);
             if (e.Phase != PackagePhase.Ready || e.Operation is not null) throw new InvalidOperationException("请先在设置中安装所需的外部工具。");
             e.Users[owner] = e.Users.GetValueOrDefault(owner) + 1;
@@ -168,9 +173,14 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                         var path = PackageFiles.SafePath(e.Directory, tool.Path);
                         if (!string.Equals(await HashAsync(path, linked.Token), receipt.Tools[name], StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("工具文件校验失败，请在外部依赖设置中重新安装。");
                     }
+                    if (e.Definition.Kind == PackageKind.NativeLibrary)
+                        await NativePackageIntegrity.ValidateAsync(e.Directory, e.Definition, receipt.ManifestHash!, linked.Token).ConfigureAwait(false);
                     linked.Token.ThrowIfCancellationRequested();
                     completion.TrySetResult(new Lease(e.Directory, new ReadOnlyDictionary<string, string>(e.Definition.Tools.ToDictionary(
-                        p => p.Key, p => PackageFiles.SafePath(e.Directory, p.Value.Path))), () => Release(e, owner)));
+                        p => p.Key, p => PackageFiles.SafePath(e.Directory, p.Value.Path))),
+                        new ReadOnlyDictionary<string, string>(e.Definition.Libraries.ToDictionary(
+                            p => p.Key, p => PackageFiles.SafePath(e.Directory, p.Value))),
+                        () => Release(e, owner), () => Retain(e, owner), Notify));
                 }
                 catch (OperationCanceledException ex) { Release(e, owner); completion.TrySetCanceled(ex.CancellationToken); }
                 catch (Exception ex)
@@ -191,6 +201,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
 
     public PackageScope CreateScope(string owner, IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken) =>
         new(this, owner, allowed, stoppingToken);
+    public PackageScope CreateScope(string owner, IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken, bool supportsNativeLibraries) =>
+        new(this, owner, allowed, stoppingToken, supportsNativeLibraries);
 
     private Task StartOperation(Func<Task> action, Entry e)
     {
@@ -233,6 +245,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         var work = NewWorkDirectory();
         try
         {
+            _ = PackageDirectory(definition);
             RecoverReplacement(e.Directory, work);
             if (!replace && Directory.Exists(e.Directory)) throw new IOException("该版本目录已存在但未通过检查，请先确认修复。");
             var zip = Path.Combine(work, "download.zip");
@@ -276,14 +289,16 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                     throw new InvalidDataException($"{name} 版本检查失败。");
                 hashes[name] = await HashAsync(path, token);
             }
+            var manifestHash = definition.Kind == PackageKind.NativeLibrary
+                ? await NativePackageIntegrity.WriteAsync(staging, definition, token).ConfigureAwait(false) : null;
             await File.WriteAllTextAsync(Path.Combine(staging, "receipt.json"), JsonSerializer.Serialize(
-                new Receipt(2, definition.Sha256, hashes, installedBytes, definition)), token);
+                new Receipt(manifestHash is null ? 2 : 3, definition.Sha256, hashes, installedBytes, definition, manifestHash)), token);
             token.ThrowIfCancellationRequested();
             PackageFiles.CheckPath(e.Directory);
-            Directory.CreateDirectory(Path.GetDirectoryName(e.Directory)!);
+            PreparePackageParent(definition, work);
             if (replace && HasDirectory(e.Directory)) ReplacePackage(work, staging, e.Directory);
             else Directory.Move(staging, e.Directory);
-            lock (_gate) { e.Definition = definition; e.InstalledBytes = installedBytes; e.HasFiles = true; }
+            lock (_gate) { e.Definition = definition; e.InstalledBytes = installedBytes; e.HasFiles = true; e.OwnershipConfirmed = true; }
             SetState(e, PackagePhase.Ready);
         }
         catch (OperationCanceledException ex) when (!callerToken.IsCancellationRequested)
@@ -322,6 +337,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     {
         var transaction = ReplacementDirectory(directory);
         if (!HasDirectory(transaction)) return false;
+        if (NativePackageRetention.IsRetained(directory))
+            throw new InvalidOperationException("运行库已为当前进程保留，请退出软件后再恢复安装。");
         var marker = new FileInfo(PackageFiles.SafePath(transaction, "owner.txt"));
         if (!marker.Exists || marker.Length != RepairMarker.Length || File.ReadAllText(marker.FullName) != RepairMarker)
             throw new InvalidDataException("修复暂存目录身份不明，已保留原文件。");
@@ -390,26 +407,59 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
         return Convert.ToHexString(await SHA256.HashDataAsync(file, token)).ToLowerInvariant();
     }
-    private static Receipt? ReadReceipt(Entry e)
+    private Receipt? ReadReceipt(Entry e)
     {
         PackageFiles.CheckPath(e.Directory);
         if (!Directory.Exists(e.Directory)) return null;
         var path = PackageFiles.SafePath(e.Directory, "receipt.json");
         if (!File.Exists(path) || new FileInfo(path).Length > 65536) throw new InvalidDataException("工具安装记录缺失或过大。");
         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path));
-        if (receipt is null || receipt.Schema is not (1 or 2) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
+        if (receipt is null || receipt.Schema is not (1 or 2 or 3) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
             receipt.Tools.Count != e.Definition.Tools.Count || receipt.InstalledBytes <= 0 || receipt.InstalledBytes > 1024L * 1024 * 1024)
             throw new InvalidDataException("工具安装记录与目录不符。");
-        if (receipt.Schema == 2)
+        if ((e.Definition.Kind == PackageKind.NativeLibrary) != (receipt.Schema == 3))
+            throw new InvalidDataException("依赖类型与安装记录版本不符。");
+        if (receipt.Schema >= 2)
         {
             var definition = receipt.Definition ?? throw new InvalidDataException("安装记录缺少工具资料。");
             PackageDefinitions.Validate(definition);
             RequireSameArtifact(e.Definition, definition);
         }
+        if (receipt.Schema == 3 && (receipt.ManifestHash is not { Length: 64 } || !receipt.ManifestHash.All(Uri.IsHexDigit)))
+            throw new InvalidDataException("运行库安装记录缺少有效的载荷摘要，无法确认目录归属。");
+        lock (_gate) e.OwnershipConfirmed = true;
         foreach (var (name, tool) in e.Definition.Tools)
             if (!receipt.Tools.TryGetValue(name, out var hash) || hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit) ||
                 !File.Exists(PackageFiles.SafePath(e.Directory, tool.Path))) throw new InvalidDataException("工具文件缺失或安装记录无效。");
+        if (receipt.Schema == 3)
+            NativePackageIntegrity.ValidateReceiptMetadata(e.Directory, receipt.ManifestHash!);
         return receipt;
+    }
+    private static void RequireNotRetained(Entry e)
+    {
+        if (NativePackageRetention.IsRetained(e.Directory))
+            throw new InvalidOperationException("运行库已为当前进程保留，请退出软件后再修复或清理。");
+    }
+    private static bool CanManageFiles(Entry e) => e.Definition.Kind == PackageKind.Tool || !e.HasFiles || e.OwnershipConfirmed;
+    private static void RequireOwnedFiles(Entry e)
+    {
+        if (!CanManageFiles(e))
+            throw new InvalidOperationException("无法确认运行库目录归属，已保留文件。请先恢复安装记录，或备份并移走冲突目录后重启软件。");
+    }
+    private static void RequireSupportedKind(PackageKind kind, bool supportsNativeLibraries)
+    {
+        if (kind == PackageKind.NativeLibrary && !supportsNativeLibraries)
+            throw new NotSupportedException("插件须声明 API 1.8 才能申请 DLL 运行库；旧版插件仅支持外部工具。");
+    }
+    private void Retain(Entry e, string owner)
+    {
+        lock (_gate)
+        {
+            EnsureRunning();
+            if (e.Definition.Kind != PackageKind.NativeLibrary)
+                throw new InvalidOperationException("仅 DLL 运行库支持保留到进程退出。");
+            NativePackageRetention.Retain(e.Directory, owner);
+        }
     }
     private void Release(Entry e, string owner)
     {
@@ -457,17 +507,31 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         public PackageDefinition? SourceDefinition;
         public bool SourceAvailable => SourceDefinition is not null;
         public bool HasFiles;
+        public bool OwnershipConfirmed;
         public bool Requested;
         public int Requests;
         public Task<bool>? Preparation;
     }
     private sealed record Receipt(int Schema, string ArchiveHash, Dictionary<string, string> Tools, long InstalledBytes,
-        PackageDefinition? Definition = null);
-    private sealed class Lease(string directory, IReadOnlyDictionary<string, string> tools, Action release) : IPackageLease
+        PackageDefinition? Definition = null, string? ManifestHash = null);
+    private sealed class Lease(string directory, IReadOnlyDictionary<string, string> tools,
+        IReadOnlyDictionary<string, string> libraries, Action release, Action retain, Action notify) : IPackageLease
     {
+        private readonly object _gate = new();
         private Action? _release = release;
         public string Directory => directory;
         public IReadOnlyDictionary<string, string> Tools => tools;
-        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+        public IReadOnlyDictionary<string, string> Libraries => libraries;
+        public void RetainUntilProcessExit()
+        {
+            lock (_gate) { ObjectDisposedException.ThrowIf(_release is null, this); retain(); }
+            notify();
+        }
+        public void Dispose()
+        {
+            Action? action;
+            lock (_gate) { action = _release; _release = null; }
+            action?.Invoke();
+        }
     }
 }

@@ -59,7 +59,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             prompt.IsRepair ? "重新安装依赖" : "安装依赖",
             $"{prompt.RequestedBy} 需要 {prompt.Definition.Name} {prompt.Definition.Package.Version}。\n{prompt.Definition.Description}\n\n" +
             $"来源：{prompt.Definition.SourceUri.AbsoluteUri}\n许可：{prompt.Definition.License}\n" +
-            (prompt.IsRepair ? "将替换此版本损坏的工具文件。\n" : "") +
+            (prompt.IsRepair ? "将替换此版本损坏的依赖文件。\n" : "") +
             "安装后供插件共用，卸载插件时会保留。是否继续？", token);
     }
     private void OnChanged()
@@ -162,7 +162,9 @@ public sealed class PackageCardViewModel : ObservableObject
     private string _operationError = "";
     public PackageReference Key => _item.Package;
     public string Name => _item.Definition?.Name ?? Key.Id;
-    public string Attribution => $"版本 {Key.Version} · {_item.Status.Rid}" + (_item.Definition is { } d ? $" · {d.License}" : "");
+    private bool IsNativeLibrary => _item.Status.Kind == PackageKind.NativeLibrary;
+    public string Attribution => $"{(IsNativeLibrary ? "DLL 运行库" : "外部工具")} · 版本 {Key.Version} · {_item.Status.Rid}" +
+        (_item.Definition is { } d ? $" · {d.License}" : "");
     public string Directory => _item.Status.Directory;
     public string Source => _item.Definition?.SourceUri.AbsoluteUri ?? "来源信息不可用。";
     public string SourceSummary => _item.Definition is { } d ? "来源：" +
@@ -170,13 +172,17 @@ public sealed class PackageCardViewModel : ObservableObject
             $"GitHub · {d.SourceUri.Host} / {string.Join("/", d.SourceUri.AbsolutePath.Split('/').Skip(1).Take(2))}" : d.SourceUri.Host) : "来源信息不可用";
     public string Description => _item.Definition?.Description ?? "安装资料不可用。";
     public string DownloadUri => _item.Definition?.DownloadUri.AbsoluteUri ?? "下载地址不可用。";
-    public string ToolNames => string.Join("、", _item.Definition?.Tools.Keys ?? []);
+    public string ContentsTitle => IsNativeLibrary ? "提供的运行库" : "提供的工具";
+    public string ContentsNames => string.Join("、", IsNativeLibrary ? _item.Definition?.Libraries.Keys ?? [] : _item.Definition?.Tools.Keys ?? []);
     public string Sha256 => _item.Definition?.Sha256 ?? "无校验信息";
     public bool IsInstalled => _item.IsInstalled;
     public string SizeText => _item.Status.InstalledBytes is { } size ? $"{size / 1048576d:0.0} MiB" : "";
     public string RequiredBy => _item.RequiredBy.Count == 0 ? "没有插件引用" : "引用插件：" + string.Join("、", _item.RequiredBy);
     public string Users => _item.Status.Users.Count == 0 ? "" : "正在使用：" + string.Join("、", _item.Status.Users);
     public bool HasUsers => Users.Length != 0;
+    public bool IsRetained => _item.Status.RetainedBy.Count != 0;
+    public string RetentionMessage => !IsRetained ? "" :
+        "本次启动已使用：" + string.Join("、", _item.Status.RetainedBy) + "。退出软件后才可修复或清理。";
     public string Error => _operationError.Length != 0 ? _operationError : _item.Status.Error;
     public bool HasError => Error.Length != 0;
     public bool CanRemove => !_stopping.IsCancellationRequested && !_operating && _item.CanRemove;
@@ -191,7 +197,7 @@ public sealed class PackageCardViewModel : ObservableObject
         PackagePhase.Missing => "未安装",
         PackagePhase.Downloading => $"正在下载 {_item.Status.DownloadedBytes / 1048576d:0.0} MiB",
         PackagePhase.Verifying => "正在校验",
-        PackagePhase.Installing => "正在处理工具文件",
+        PackagePhase.Installing => "正在处理依赖文件",
         PackagePhase.Ready => "已安装",
         _ => "需要处理"
     };

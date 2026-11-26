@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "Test.NativeLibraryProbe",
+  "name": "DLL 运行库测试",
+  "version": "1.0.0",
+  "entryAssembly": "NativeLibraryProbePlugin.dll",
+  "entryType": "NativeLibraryProbePlugin.ProbePlugin",
+  "apiVersion": "1.8",
+  "uiApiVersion": "1.1",
+  "avaloniaVersion": "12.1.6",
+  "supportedPlatforms": ["win-x64"],
+  "dependencies": [
+    {
+      "id": "SDL3",
+      "version": "3.2.8",
+      "downloads": [
+        {
+          "kind": "nativeLibrary",
+          "rid": "win-x64",
+          "repository": "libsdl-org/SDL",
+          "tag": "release-3.2.8",
+          "asset": "SDL3-3.2.8-win32-x64.zip",
+          "sha256": "1a3faf0956a7b98115d79e5b5692c3b2e4bd3b19024e34d76e2e4221c1bcd70d",
+          "name": "SDL 3",
+          "description": "仅用于读取版本，验证原生 DLL 运行库安装和使用。",
+          "license": "Zlib",
+          "libraries": { "SDL3": "SDL3.dll" }
+        }
+      ]
+    }
+  ],
+  "description": "按需申请官方 SDL 3.2.8 DLL 并读取版本；仅供隔离测试。"
+}

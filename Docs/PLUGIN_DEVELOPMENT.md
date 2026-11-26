@@ -73,7 +73,7 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 1.7，仍接受 1.0–1.6；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7 |
+| `apiVersion` | 当前 `Dev` 为 1.8，仍接受 1.0–1.7；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8。已发布 1.1.0 宿主不支持 API 1.8 |
 | `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -97,6 +97,7 @@ TractorTool.Plugins.Example/
 
 <DataRoot>/Data/Plugins/<PluginId>/   # 插件配置和持久数据
 <DataRoot>/Packages/<PackageId>/<Version>/<RID>/  # 外部工具，由宿主管理
+<DataRoot>/Packages/DLL/<PackageId>/<Version>/<RID>/  # 独立原生运行库，由宿主管理
 ```
 
 AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。DataRoot 默认位于 %LOCALAPPDATA%/TractorTool；修改数据根目录不改变插件代码位置。软件目录不可写时明确报错，不改装到数据目录。完整目录和启动指针规则见 [架构：目录与迁移](ARCHITECTURE.md#storage)。
@@ -111,10 +112,13 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 | 共享 SDK | Contracts、UI 及目标宿主提供的 Avalonia、FluentAvalonia、MicroCom.Runtime 共享程序集 | 引用目标 SDK 中的兼容版本；加载器核对共享身份，插件 ZIP 排除这些 DLL |
 | 私有托管/原生库 | 插件自身的项目或 NuGet 依赖 | 随插件携带 DLL、必要的 deps.json、平台原生库、资源与许可；不得依赖开发机缓存或包外链接 |
 | 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
+| 独立原生运行库 | API 1.8 声明完整便携包及 DLL 入口，宿主校验全部文件 | 位于 DataRoot/Packages/DLL；插件申请租约、在加载前登记进程期保护，再自行加载和验证 ABI |
 
-`dependencies` 只声明当前包服务支持的外部工具，空数组不代表插件没有私有 DLL。工具包可以附带 DLL；纯 DLL 运行库尚不能独立通过 Packages 申请，现有声明要求执行工具并校验版本输出，边界见[包管理](ARCHITECTURE.md#41-包管理)。
+`dependencies` 声明外部工具或 API 1.8 原生运行库，空数组不代表插件没有私有 DLL。工具包仍可附带其所需 DLL；独立运行库使用单独的包类型，不把 DLL 当可执行工具探测。Packages 不负责托管 NuGet 库的加载；这些私有库仍随插件交付。边界见[包管理](ARCHITECTURE.md#41-包管理)。
 
-NuGet 是构建期依赖渠道，GitHub Release 是当前外部工具安装渠道，两者不是同一种“源”。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
+原生运行库的 `Dev` 实现与真实夹具见[DLL 接入](#native-library-packages)，尚待用户运行验证；Python、Node 仍待实现，接入责任见[扩展约定](#dependency-extension-contract)。
+
+NuGet 是构建期依赖渠道，GitHub Release 是当前外部依赖安装渠道，两者不是同一种“源”。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
 
 例如，插件可直接引用目标宿主随附的 `Avalonia.Controls.ColorPicker`。若插件另用宿主 SDK 未提供的 `Avalonia.*` 扩展，使用 1.1.0 或更高版本的宿主 SDK 打包，声明 UI API 1.6，并把扩展 DLL 和私有依赖放进插件 ZIP。现有插件可继续声明其实际使用的旧 UI API。
 
@@ -207,6 +211,8 @@ var result = await context.Processes!.RunAsync(
 
 无需建设 TractorTool 包源。插件作者在 `dependencies[].downloads` 指明上游仓库及精确 Release 附件；用户的默认 GitHub 来源即可解析。版本和附件内容固定，变更归档或工具契约应发布新包版本，不能以相同 id/version 覆盖；不同发行方的同名工具使用独立 ID。
 
+省略 `kind` 等同于 `"tool"`，保持旧清单、工具目录和 schema 1/2 安装记录兼容。工具使用 `tools`，原生运行库使用 `kind: "nativeLibrary"` 与 `libraries`；同一包 ID/version 不得跨插件或跨 RID 混用两类身份。
+
 下面示例直接来自 [独立测试插件清单](../tests/PackageProbePlugin/plugin.json)：
 
 ```json
@@ -233,7 +239,7 @@ var result = await context.Processes!.RunAsync(
 }
 ```
 
-`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。pip 等类型尚未开放。
+`source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。PyPI/npm 等类型尚未开放，后续安装边界见[扩展约定](#dependency-extension-contract)。
 
 工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
@@ -246,6 +252,69 @@ var result = await context.Processes!.RunAsync(
 3. Packages 仅列已安装包，显示来源、版本、许可、大小与引用；已装重复申请/重启离线复用不查询 GitHub。修复期间继续显示进度、取消或错误。
 4. 验证来源增删持久化、坏地址/重复拒绝、未配置来源明确提示、API 404/限流/超时、坏 hash/附件拒绝；移除来源不删包，卸载插件重启后保留包，无引用/租约才允许清理。
 5. 单调用方取消不影响其他申请；退出取消查询/下载并等待清理。运行结果登记到 [A07](DEVELOPMENT.md#acceptance)，编译、网络资料核对不算通过。
+
+<a id="native-library-packages"></a>
+
+### 独立原生 DLL 运行库（API 1.8）
+
+此能力已进入 `Dev` 代码，尚未发布或完成运行验收。插件清单声明 `apiVersion: "1.8"`，依赖片段如下，内容来自 [SDL 真实夹具](../tests/NativeLibraryProbePlugin/plugin.json)：
+
+```json
+{
+  "id": "SDL3",
+  "version": "3.2.8",
+  "downloads": [{
+    "kind": "nativeLibrary",
+    "rid": "win-x64",
+    "repository": "libsdl-org/SDL",
+    "tag": "release-3.2.8",
+    "asset": "SDL3-3.2.8-win32-x64.zip",
+    "sha256": "1a3faf0956a7b98115d79e5b5692c3b2e4bd3b19024e34d76e2e4221c1bcd70d",
+    "name": "SDL 3",
+    "description": "仅用于读取版本，验证原生 DLL 运行库安装和使用。",
+    "license": "Zlib",
+    "libraries": { "SDL3": "SDL3.dll" }
+  }]
+}
+```
+
+`libraries` 将逻辑入口名映射到 ZIP 内相对 `.dll` 路径，要求 1–32 项；不能同时声明工具，`tools` 可省略或为空。当前接受 `win-x64`、`win-x86`、`win-arm64`，宿主使用当前 RID；每个声明入口必须是匹配架构的非 CLR PE DLL。纯托管程序集不是这类包。包内应包含完整传递运行库、资源和许可；上游没有合适的完整 ZIP 时由插件发布流程准备，不让宿主拼装业务专属运行时。
+
+宿主安装时不加载 DLL：校验归档、静态检查入口，保存全部载荷文件的长度和 SHA256；每次申请租约复验完整文件集合，包含辅助 DLL 与资源。新增、缺失或损坏文件会使申请失败，可在未占用时修复。安装生成的根 `receipt.json` 和 `.package-files.json` 是保留元数据，不能由归档提供。ABI、初始化、设备或编解码能力仍由插件验证，安装成功不代表这些业务能力通过。
+
+最小申请流程如下；[`SdlVersionProbe.Read`](../tests/NativeLibraryProbePlugin/SdlVersionProbe.cs) 是夹具的插件侧加载器，按绝对路径加载并缓存句柄、读取版本，不是宿主 API：
+
+```csharp
+var packages = context.Packages ?? throw new NotSupportedException("需要 API 1.8 宿主。");
+using var lease = await packages.TryRequestAsync(new("SDL3", "3.2.8"), cancellationToken);
+if (lease is null) return;
+cancellationToken.ThrowIfCancellationRequested();
+lease.RetainUntilProcessExit(); // 必须早于 NativeLibrary.Load、P/Invoke 等首次加载尝试。
+var version = SdlVersionProbe.Read(lease.Libraries["SDL3"]);
+if (version != 3_002_008) throw new InvalidDataException("SDL 运行库版本不符。");
+// using 只释放普通租约；无论加载成功或部分失败，进程期保护仍保留。
+```
+
+`Libraries` 返回已校验入口的绝对路径，`Directory` 可定位同包资源；禁止自行拼接数据根、修改全局 `PATH` 或更改已安装文件。插件负责传递 DLL 的受限搜索路径和句柄生命周期；夹具使用 DLL 自身目录及 System32，不搜索工作目录。进程期保护不能撤销，普通租约、页面关闭、插件停止或服务 Dispose 均不解除；退出后才能修复，清理还须没有持久引用。即使插件认为已释放全部句柄，也不据此开放热替换；本机制不保证同名 DLL 的进程内隔离。
+
+夹具通过 Windows `LoadLibraryExW` 限定搜索范围。不要将外部包路径直接交给带 `Assembly` 参数的 `NativeLibrary.Load`：该重载先调用插件 ALC，而现有 ALC 的私有库解析边界仍限于插件代码目录。外部运行库接入不放宽这一边界。
+
+真实申请、版本调用、拒绝重试、占用显示、重启清理和损坏修复方法见[夹具 README](../tests/NativeLibraryProbePlugin/README.md)。该项目不进入正式插件自动发现范围；构建和静态审查不代表 Windows 原生加载已验收，结果归 [A30](DEVELOPMENT.md#acceptance)。
+
+<a id="dependency-extension-contract"></a>
+
+### Python 与 Node 接入（待实现）
+
+以下是已确认方向，不是现有清单字段或 SDK；具体协议及最低 API 版本随实现定版。已有工具和原生包的声明、租约及安装记录保持兼容，不能仅改名称或路径冒充语言环境。公共设计见[扩展架构](ARCHITECTURE.md#dependency-extension)。
+
+| 接入 | 插件交付责任 | 宿主管理范围 |
+| --- | --- | --- |
+| Python / uv | 携带 `pyproject.toml`、`uv.lock` 和业务代码，声明所需 Python 版本；首轮使用预编译 wheel，不依赖现场源码构建 | 准备固定 uv/Python，按锁安装独立环境，提供受管理调用入口 |
+| Node / pnpm | 携带 `package.json`、`pnpm-lock.yaml` 和已构建的入口，声明 Node 版本；编译在插件发布前完成，不依赖安装脚本或自定义钩子 | 准备固定 pnpm/Node，按锁安装独立环境，管理进程及依赖占用 |
+
+插件通过宿主取得安装路径与环境，不硬编码 `Packages` 内层布局，不搜索系统 `PATH`、自行下载或执行任意安装命令。业务代码仍在 AppRoot，设置、历史和输出不写入安装环境；持久数据使用既有插件数据接口。托管私有库继续随插件交付，Python/npm 包内的原生模块跟随其环境，不拆入独立 DLL 目录。
+
+锁文件须随插件版本交付并与声明一致，来源和完整性信息接受宿主校验；项目配置不得绕过统一来源策略。环境使用期间持有宿主管理的占用。卸载、修复及迁移由宿主协调；插件不自行搬移环境、修改共享缓存或删除关联运行时。目录约定及环境重建规则统一见[扩展数据管理](ARCHITECTURE.md#dependency-extension-storage)。
 
 ## 5. 统一 UI 与设置
 

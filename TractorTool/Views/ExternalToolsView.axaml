@@ -27,6 +27,7 @@
                   <TextBlock Text="{Binding SourceSummary}" Classes="caption" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding SizeText}" Classes="caption" />
                   <TextBlock Text="{Binding RequiredBy}" Classes="caption" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding RetentionMessage}" IsVisible="{Binding IsRetained}" Classes="caption" TextWrapping="Wrap" />
                   <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
                   <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
                   <WrapPanel>

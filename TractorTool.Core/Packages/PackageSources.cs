@@ -93,7 +93,7 @@ public sealed partial class ExternalPackageService
         return recipe;
     }
 
-    private Task EnsureSourceAsync(PackageReference package, CancellationToken token)
+    private Task EnsureSourceAsync(PackageReference package, CancellationToken token, bool supportsNativeLibraries = true)
     {
         token.ThrowIfCancellationRequested();
         lock (_gate)
@@ -101,7 +101,9 @@ public sealed partial class ExternalPackageService
             EnsureRunning();
             RecoverBeforeRequest(package);
             _entries.TryGetValue(package, out var e);
+            if (e is not null && e.Phase != PackagePhase.Ready) { RequireOwnedFiles(e); RequireNotRetained(e); }
             var recipe = DeclaredDownload(package, e?.Definition);
+            RequireSupportedKind(e?.Definition.Kind ?? recipe?.Kind ?? PackageKind.Tool, supportsNativeLibraries);
             if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null ||
                 e.Operation is not null || !HasDownload(package) && e.SourceAvailable)) return Task.CompletedTask;
             if (!_resolutions.TryGetValue(package, out var task))
@@ -129,7 +131,7 @@ public sealed partial class ExternalPackageService
                                 previous.SourceDefinition = definition;
                                 if (!previous.HasFiles && previous.Operation is null && previous.Preparation is null) previous.Definition = definition;
                             }
-                            else _entries.Add(package, new Entry(definition, Path.Combine(_root, package.Id, package.Version, _rid))
+                            else _entries.Add(package, new Entry(definition, PackageDirectory(definition))
                                 { SourceDefinition = definition });
                         }
                     }
@@ -202,8 +204,10 @@ public sealed partial class ExternalPackageService
     private static void RequireSameArtifact(PackageDefinition previous, PackageDefinition next)
     {
         // Legacy receipts may point to an upstream mirror; identical bytes and tool contracts can be reused.
-        if (previous.Package != next.Package || previous.Rid != next.Rid ||
+        if (previous.Package != next.Package || previous.Rid != next.Rid || previous.Kind != next.Kind ||
             !string.Equals(previous.Sha256, next.Sha256, StringComparison.OrdinalIgnoreCase) ||
+            previous.Libraries.Count != next.Libraries.Count || previous.Libraries.Any(p =>
+                !next.Libraries.TryGetValue(p.Key, out var path) || p.Value != path) ||
             previous.Tools.Count != next.Tools.Count || previous.Tools.Any(p => !next.Tools.TryGetValue(p.Key, out var tool) ||
                 p.Value.Path != tool.Path || p.Value.VersionPrefix != tool.VersionPrefix || p.Value.Output != tool.Output ||
                 !(p.Value.Arguments ?? ["-version"]).SequenceEqual(tool.Arguments ?? ["-version"])))

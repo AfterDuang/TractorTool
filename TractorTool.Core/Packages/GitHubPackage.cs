@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using TractorTool.Contracts.Packages;
@@ -14,6 +15,9 @@ public sealed record PluginDependency(string Id, string Version)
 public sealed record GitHubPackage(string Rid, string Repository, string Tag, string Asset,
     string Sha256, string Name, string Description, string License, IReadOnlyDictionary<string, PackageTool> Tools)
 {
+    public IReadOnlyDictionary<string, PackageTool> Tools { get; init; } = Tools ?? ReadOnlyDictionary<string, PackageTool>.Empty;
+    public PackageKind Kind { get; init; }
+    public IReadOnlyDictionary<string, string> Libraries { get; init; } = ReadOnlyDictionary<string, string>.Empty;
     public string Source { get; init; } = DependencySource.GitHubUrl;
 
     internal PackageDefinition Definition(PackageReference package)
@@ -28,13 +32,16 @@ public sealed record GitHubPackage(string Rid, string Repository, string Tag, st
         var release = $"{site}/{Repository}/releases";
         var result = new PackageDefinition(package, Rid, Name, Description,
             new($"{release}/download/{Uri.EscapeDataString(Tag)}/{Uri.EscapeDataString(Asset)}"), Sha256, License,
-            new($"{release}/tag/{Uri.EscapeDataString(Tag)}"), Tools);
+            new($"{release}/tag/{Uri.EscapeDataString(Tag)}"), Tools) { Kind = Kind, Libraries = Libraries };
         PackageDefinitions.Validate(result);
         return result;
     }
 
-    internal GitHubPackage Snapshot(PackageReference package) => this with
-    { Source = DependencySource.ApiUri(Source).AbsoluteUri, Tools = PackageDefinitions.Snapshot(Definition(package)).Tools };
+    internal GitHubPackage Snapshot(PackageReference package)
+    {
+        var definition = PackageDefinitions.Snapshot(Definition(package));
+        return this with { Source = DependencySource.ApiUri(Source).AbsoluteUri, Tools = definition.Tools, Libraries = definition.Libraries };
+    }
 }
 
 public sealed record DependencySource(string Name, string Url)

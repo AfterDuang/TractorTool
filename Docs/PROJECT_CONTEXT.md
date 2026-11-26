@@ -1,6 +1,6 @@
 # TractorTool 开发上下文
 
-更新日期：2026-11-26。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
+更新日期：2026-11-27。本页只保留接续工作所需信息。实现、验收和未关闭项统一看 [DEVELOPMENT](DEVELOPMENT.md#current-status)，命令与逐轮证据归 [PROJECT_HISTORY](PROJECT_HISTORY.md)。
 
 ## 1. 当前工作
 
@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-框架本轮只整理文档。uv、pnpm 和 DLL 运行库接入留待后续单独讨论，尚未确定新方案；当前能力与未实现项见[开发台账](DEVELOPMENT.md#current-status)。
+当前 `Dev` 已实现首阶段 DLL 外部运行库：Contracts API 1.8、`Packages/DLL` 分类、完整载荷校验、进程期占用和管理页说明；旧工具清单、路径及收据保持兼容。真实 SDL 测试插件、构建及 Review 记录见 [E147](PROJECT_HISTORY.md#evidence-native-library-packages)。**2026-11-27 用户反馈目前测试没问题并授权本地提交，未授权推送或发布。** Agent 未运行应用或检查程序，用户反馈不外推为故障场景和全部自动检查通过。后续 uv/Python、pnpm/Node 仍为已确认方案，未开放对应来源。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，当前验收以 [A30–A33](DEVELOPMENT.md#dependency-extension-plan) 为准。
 
 [AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。
 
@@ -31,4 +31,5 @@
 | AB 审片 | [源码入口](../Plugins/TractorTool.Plugins.MediaCompare/README.md)、[需求与验收](Plugins/MediaCompare.md)、[当前状态](DEVELOPMENT.md#media-compare) |
 | 装载与公共接口 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[接入规范](PLUGIN_DEVELOPMENT.md) |
 | GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
+| 外部依赖扩展 | [公开包契约](../TractorTool.Contracts/Packages/IExternalPackageService.cs)、[包定义](../TractorTool.Core/Packages/PackageDefinitions.cs)、[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs)、[清单投影](../scripts/Read-PluginManifest.ps1)；新增设计与目录见[架构 7.3](ARCHITECTURE.md#dependency-extension) |
 | 分发与维护 | [Build-Distribution](../scripts/Build-Distribution.ps1)、[自动检查入口](DEVELOPMENT.md#automated-checks) |

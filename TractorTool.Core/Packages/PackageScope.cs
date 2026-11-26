@@ -4,7 +4,7 @@ namespace TractorTool.Core.Packages;
 
 /// <summary>Plugin ownership; disposed after its processes and plugin cleanup have ended.</summary>
 public sealed class PackageScope(ExternalPackageService service, string owner,
-    IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken) : IExternalPackageService, IDisposable
+    IReadOnlyList<PackageReference> allowed, CancellationToken stoppingToken, bool supportsNativeLibraries = false) : IExternalPackageService, IDisposable
 {
     private readonly HashSet<PackageReference> _allowed = allowed.ToHashSet();
     private readonly object _gate = new();
@@ -22,8 +22,8 @@ public sealed class PackageScope(ExternalPackageService service, string owner,
         Check(package);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stoppingToken);
         var inner = request
-            ? await service.TryRequestAsync(package, owner, linked.Token).ConfigureAwait(false)
-            : await service.AcquireAsync(package, owner, linked.Token).ConfigureAwait(false);
+            ? await service.TryRequestAsync(package, owner, linked.Token, supportsNativeLibraries).ConfigureAwait(false)
+            : await service.AcquireAsync(package, owner, linked.Token, supportsNativeLibraries).ConfigureAwait(false);
         lock (_gate)
         {
             if (_disposed || linked.IsCancellationRequested) { inner?.Dispose(); throw new OperationCanceledException(linked.Token); }
@@ -33,9 +33,13 @@ public sealed class PackageScope(ExternalPackageService service, string owner,
     }
     private void Check(PackageReference package)
     {
+        EnsureUsable();
+        if (!_allowed.Contains(package)) throw new InvalidOperationException("插件必须在清单中声明所需的外部工具及版本。");
+    }
+    private void EnsureUsable()
+    {
         lock (_gate) ObjectDisposedException.ThrowIf(_disposed, this);
         stoppingToken.ThrowIfCancellationRequested();
-        if (!_allowed.Contains(package)) throw new InvalidOperationException("插件必须在清单中声明所需的外部工具及版本。");
     }
     public void Dispose()
     {
@@ -48,6 +52,13 @@ public sealed class PackageScope(ExternalPackageService service, string owner,
         private int _disposed;
         public string Directory => inner.Directory;
         public IReadOnlyDictionary<string, string> Tools => inner.Tools;
+        public IReadOnlyDictionary<string, string> Libraries => inner.Libraries;
+        public void RetainUntilProcessExit()
+        {
+            scope.EnsureUsable();
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            inner.RetainUntilProcessExit();
+        }
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;

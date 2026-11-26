@@ -1,6 +1,6 @@
 # TractorTool 开发与验收
 
-更新日期：2026-11-26。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
+更新日期：2026-11-27。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
 入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
 
@@ -20,7 +20,7 @@
 | --- | --- |
 | 工程与版本 | VS Code，项目清单见 [TractorTool.slnx](../TractorTool.slnx)。SDK 见 [global.json](../global.json)，框架 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，插件业务私有库版本见所属插件的工程文件。宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
 | 系统数据HUD | 硬件按类型显示图标/示例，CPU 访问条件明确提示，重新检测后清读数缓存；E93 独立采样和 E95 精简保持。E96 离屏回归通过。E94 两项 P2 仍待修复，CPU 温度实读/原生交互/DPI/高频性能待验，托盘方案列表暂缓 |
-| 公共接口 | Contracts API 1.7 / UI API 1.6，保留旧注册及方法 ABI。UI 1.6 支持插件私有 Avalonia 扩展。随包插件独立引用发布 SDK，按所需能力声明最低 UI API |
+| 公共接口 | Dev 为 Contracts API 1.8 / UI API 1.6，新增 DLL 入口与进程期保护；旧接口签名保留，旧 API 1.0–1.7 继续支持。旧插件的包作用域只允许工具类型，不能误用其他插件声明的 DLL 包。UI 1.6 支持插件私有 Avalonia 扩展 |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑；软件/插件设置分组可独立折叠，标题区 32 DIP，仅保留小图标和常规字重软件名，专属布局留在各页面 |
 | 插件托盘 | 按插件名分组，注册普通/勾选动作并更新启用/文字状态；重复点击保护、统一日志、停止取消及解绑；切页/隐藏继续存在。只提供公共菜单接入，不实现悬浮球业务或任意深度菜单树 |
 | 剪贴板 | Fluent 彩色剪贴板图标共用于侧栏、主页和插件管理，Avalonia 保持 12.1.6；系统历史、左列表/右预览、复制原项、事件与激活刷新；WinRT 操作完成后检查取消，避免原生 Cancel 中断离页清理。无自建历史库或定时轮询 |
@@ -34,13 +34,32 @@
 | M5 分发 | 随包工程从 Plugins 一级子目录自动识别，ID/版本读取 plugin.json。生成宿主 ZIP、独立插件 ZIP、SHA256SUMS、版本/源码和文件清单，按实际依赖收集宿主许可。本地与 CI 共用打包脚本。标签经独立校验后公开 Release，普通 CI 上传构建产物 |
 | M5 安装器 | Inno Setup 6.7.3，当前用户可写目录；从已校验 ZIP 编译，首次附带插件、升级保留现有 Plugins，卸载保留插件及应用数据。首个文件写入前登记安装事务，同包可在原目录恢复。 |
 | 插件打包边界 | Build-Plugin 支持无 MVVM 的插件；仅随包包含 MVVM DLL 时复制对应许可，缺失仍失败；保留插件自备 Licenses。其他私有库许可由作者维护，不声称全部自动收集；宿主验证也复用该打包入口 |
-| 未实现的扩展 | Python 环境/依赖、Node.js/pnpm 接入和纯 DLL 运行库统一申请均未实现；Python 已有后续计划，uv 尚未选定。私有源认证、其他安装类型、机器级安装、非 Windows 进程适配器及 AI 扩展仍未实现。当前待办见[下一步](#next)，不再有自有源部署任务 |
+| DLL 运行库 | Dev 支持 GitHub 原生 DLL ZIP，分类目录、完整载荷摘要、Windows PE 架构检查、进程期占用与管理页提示；宿主不加载 DLL，插件登记占用后自行加载。旧工具路径与 schema 1/2 收据保留。实现证据及待验边界见 [E147](PROJECT_HISTORY.md#evidence-native-library-packages) |
+| 未实现的扩展 | uv/Python、pnpm/Node 已确认方案及分类目录，尚未实现，见[扩展实施](#dependency-extension-plan)。私有源认证、其他安装类型、机器级安装、非 Windows 进程适配器及 AI 扩展仍未实现，不再有自有源部署任务 |
 
 ### 验证证据入口
 
 框架隔离回归见 [E135](PROJECT_HISTORY.md#evidence-release-100) / [E137](PROJECT_HISTORY.md#evidence-release-110)，官方 Avalonia 升级见 [E117](PROJECT_HISTORY.md#evidence-avalonia-1216-upgrade)；命令、数量、失败过程和产物哈希只保存在对应历史记录。各项当前结论及未覆盖范围统一见[验收台账](#acceptance)，历史通过不自动覆盖新代码。
 
 用户负责真实 Windows 窗口、安装和硬件验收。切页闪动仍未修复，E94 HUD 两项 P2 及 E99 进程清理测试缺口继续留在[下一步](#next)；归档不代表关闭问题。
+
+<a id="dependency-extension-plan"></a>
+
+### 外部依赖扩展
+
+开发分支为 `Dev`，首阶段 DLL 接入已实现，uv/Python 与 pnpm/Node 仍待实施。新增安装资产按 `Packages/uv`、`Packages/Node`、`Packages/DLL` 分类；本阶段只创建实际使用的 DLL 目录。目录与迁移设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，选型见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)，本轮实现及验证见 [E147](PROJECT_HISTORY.md#evidence-native-library-packages)。2026-11-27 用户反馈“目前测试没问题”，授权保存本地提交；不推送或发布，已发布 1.1.0 的能力不变。
+
+| 顺序 | 实施范围与阶段出口 | 当前状态 |
+| --- | --- | --- |
+| 1. 独立原生运行库 | 扩展声明、完整文件校验、收据兼容及进程期保护；以真实消费者验证申请、加载、占用阻止修复/删除和重启后维护 | 已实现，构建通过，SOL/high 最终静态复审无新阻断；用户测试暂未发现问题并同意提交，专项缺口见 A30 |
+| 2. uv / Python | 固定工具链、按锁安装、插件隔离环境及逐进程环境配置；用真实 PyPI 依赖验证首次准备、调用、拒绝重试与离线复用 | 待实施，A31 |
+| 3. pnpm / Node | 固定 Node/pnpm、按锁安装、受控链接和禁用安装钩子；用真实 npm 依赖验证调用、取消及环境维护 | 待实施，A32 |
+
+每阶段同步旧插件/旧安装记录兼容、Packages/依赖来源页面、独立打包和分发校验，不留只有配置没有安装能力的入口。公共改动涉及 Contracts、Core/Packages、Core/Processes 与 Windows 进程适配、Core/Storage、宿主 ViewModels/Views、清单/打包脚本及对应检查；不重写宿主装载架构或引入具体插件业务。新分类与旧包重名保护、环境迁移重建和故障恢复贯穿各阶段，见 A33。具体接口版本与安装工具版本实施时定版。
+
+按现有约定进行必要构建和 GPT-6.2-SOL/high Review；Agent 未执行检查程序或宿主。真实来源夹具为 [NativeLibraryProbePlugin](../tests/NativeLibraryProbePlugin/README.md)，不随正式分发自动打包。用户反馈未逐项列出测试范围，不外推为 A30–A33 全部场景通过。
+
+本轮交付：`artifacts/native-runtime-20261127-final/host` 和[测试插件 ZIP](../artifacts/native-runtime-20261127-final/plugin/Test.NativeLibraryProbe-1.0.0.zip)。宿主与 Core/IntegrationChecks 最终编译通过；独立发布/打包成功，但 NU1900 表明漏洞数据获取未完成。新增 22 项 DLL 检查及分发规则回归未执行，命令与哈希见 E147。
 
 <a id="media-compare"></a>
 
@@ -151,7 +170,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | M4 | 多预设串行与公共有限任务 | 实现补齐；需同源多个正确可播放输出、切页/隐藏继续、取消/退出/中断及持久化证据 |
 | M5 | 可靠性与正式发布 | 日志保留、迁移/同窗启动、ZIP 与用户级安装器已实现；1.1.0 已经标签流程构建、校验并公开发布。隔离恢复回归见 E135，插件隔离及分发校验见 E137；真实安装、专项故障恢复、跨会话及无 SDK 机器验收仍未完成 |
 
-后续 Python 依赖边界见 [扩展计划](ARCHITECTURE.md#python-dependencies)；本地 AI 业务仍归插件。uv、pnpm 和 DLL 运行库接入留待单独讨论，本轮只整理文档，不确定新接口、安装方案或排期。
+外部依赖扩展已确定使用 uv、pnpm 与独立原生运行库包，按[实施顺序](#dependency-extension-plan)推进；本地 AI 等业务仍归插件。方案确认不代表安装能力已经交付。
 
 <a id="acceptance"></a>
 
@@ -192,6 +211,10 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A27 | HUD 首版数据源与页面 | 原方案兼容、传感器权限/缺失/释放、网络限时/取消/频率、余额凭据隔离、编辑可达性、三态内容/单双击/拖动、形变/动画偏好/透明命中、跨屏/DPI/穿透 | 逻辑、HTTP、Windows UI/硬件 | E96 硬件类型/编辑示例/缺失前置条件的离屏与纯数据检查、0.4.17 包通过，保留独立采样等原回归。本机未发现 PawnIO 注册/服务，温度实读恢复未验；真实 5Hz 硬件耗用/网络/桌面交互未测，托盘方案列表及原生窗口/DPI/DPAPI 等缺口保留 |
 | A28 | [文件夹版本历史](Plugins/FolderHistory.md#7-验收方法) | 文件状态、文本与 Office 内容比较、选区恢复与发布、原件保留、中断撤销、自动保护与清理 | 逻辑、真实 CLI、Windows UI | [0.6.2](PROJECT_HISTORY.md#evidence-folder-history-preview-cancellation) 快速切换、迟到错误、引擎取消、模拟事务与离屏工作区回归通过。[0.6.1 全插件审查](PROJECT_HISTORY.md#evidence-folder-history-full-review) 记录其余覆盖。真实 CLI 与正式窗口的当前版本验收、高 DPI、故障及性能场景待验 |
 | A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.7 构建、SOL 静态复核及独立打包通过；按用户要求未运行测试，性能与定位后续播由用户验证。打包 NU1900 漏洞扫描未完成。0.1.6 的 44/66 项检查为历史证据；真实 UI/声音、资源回收与长 GOP 性能待验，未知时长和长空窗非零定位受限，见[当前状态](#media-compare) |
+| A30 | 独立原生运行库 | 完整发布物校验与离线复核；加载前登记进程期占用，部分加载失败仍保护；退出前不可修复/删除，旧工具声明及收据兼容 | 集成、真实 DLL、UI | 已实现，构建/Review 见 E147；2026-11-27 用户反馈目前测试没问题并同意提交。未逐项确认覆盖范围，22 项自动检查、故障及兼容专项仍不记为通过 |
+| A31 | uv / Python | 无全局 Python 前提下自动准备固定工具链，按锁安装并真实调用；拒绝/取消/断网重试、环境隔离、来源约束及清理正确 | 集成、真实网络/进程、UI | 方案已确认，未实现、未验证 |
+| A32 | pnpm / Node | 无全局 Node 前提下自动准备固定工具链，按锁安装并真实调用；安装脚本/钩子不绕过策略，链接不越界，取消无残留进程 | 集成、真实网络/进程、UI | 方案已确认，未实现、未验证 |
+| A33 | 扩展数据与兼容 | uv/Node/DLL 分类及旧同名目录保护；多版本与回退引用、占用保护、缓存独立清理；新根重建验证后切换，失败/中断保留原数据；不修改插件代码和业务数据 | 集成、故障恢复、Windows UI | DLL 分类/冲突保护已实现，迁移复用现有启动事务但未运行验证；uv/Node 环境重建待实施。旧 A06/A07 证据不覆盖新能力 |
 
 
 ## 5. 验证与发布要求
@@ -204,6 +227,8 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 <a id="next"></a>
 
 ## 6. 下一步与维护
+
+当前新增开发任务是 `Dev` 分支的[外部依赖扩展](#dependency-extension-plan)，先以独立原生运行库验证公共契约，再接 uv、pnpm。以下既有未关闭问题继续保留，不因新增计划被标记完成。
 
 E117 用户常规使用反馈暂未发现 Avalonia 升级问题。FFmpeg 安装末尾拒绝移动目录曾偶发一次、重试成功，未作代码修复；若再现，先捕获源/目标路径与所有相关进程的文件访问记录定位原因。以下专项运行缺口保持开放。
 

@@ -70,10 +70,21 @@ function Get-ZipFiles($Archive, [string]$Prefix) {
     }
     return $result
 }
-function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime) {
+function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime, $HostDependencies) {
     # A plugin can reference a package whose download recipe is supplied by a different plugin.
     $requirements = @{}
-    $packagesByTool = @{}
+    $packagesByFile = @{}
+    $toolFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $hostNativeFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    # Published host dependencies establish provenance. A native DLL name alone cannot distinguish
+    # the host's runtime from an independent version requested by a plugin.
+    foreach ($target in $HostDependencies.targets.Values) {
+        foreach ($library in $target.Values) {
+            if ($library.native) {
+                foreach ($path in $library.native.Keys) { $null = $hostNativeFiles.Add([IO.Path]::GetFileName($path)) }
+            }
+        }
+    }
     $archiveHashes = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($manifest in $Manifests) {
         $required = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -84,12 +95,15 @@ function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime) {
             foreach ($download in $dependency.downloads) {
                 $null = $archiveHashes.Add($download.sha256)
                 if ($download.rid -cne $Runtime) { continue }
-                foreach ($tool in $download.Tools.GetEnumerator()) {
-                    $name = [IO.Path]::GetFileName($tool.Value.path.Replace('\', '/'))
-                    if (!$packagesByTool.ContainsKey($name)) {
-                        $packagesByTool[$name] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                foreach ($tool in $download.Tools.GetEnumerator()) { $null = $toolFiles.Add([IO.Path]::GetFileName($tool.Value.Path.Replace('\', '/'))) }
+                $paths = @($download.Tools.GetEnumerator() | ForEach-Object { $_.Value.Path }) +
+                    @($download.Libraries.GetEnumerator() | ForEach-Object Value)
+                foreach ($entryPath in $paths) {
+                    $name = [IO.Path]::GetFileName($entryPath.Replace('\', '/'))
+                    if (!$packagesByFile.ContainsKey($name)) {
+                        $packagesByFile[$name] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
                     }
-                    $null = $packagesByTool[$name].Add($package)
+                    $null = $packagesByFile[$name].Add($package)
                 }
             }
         }
@@ -97,12 +111,13 @@ function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime) {
     foreach ($file in $Inventory.GetEnumerator()) {
         $path = $file.Key
         if ($archiveHashes.Contains($file.Value)) { throw "分发包混入已声明的外部下载归档：$path" }
-        $packages = $packagesByTool[[IO.Path]::GetFileName($path)]
+        $packages = $packagesByFile[[IO.Path]::GetFileName($path)]
         if ($null -eq $packages) { continue }
+        if (!$path.Contains('/') -and $hostNativeFiles.Contains($path) -and !$toolFiles.Contains($path)) { continue }
         # A private file in an unrelated plugin may legitimately have the same name.
         if (!$path.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) -or
             $requirements[$path.Split('/')[1]].Overlaps($packages)) {
-            throw "分发包混入已声明的外部工具：$path"
+            throw "分发包混入已声明的外部依赖入口：$path"
         }
     }
 }
@@ -155,6 +170,6 @@ try {
     if (@($listed.Keys | Where-Object { $_.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) }).Count -ne $pluginFileCount) {
         throw '整包含有未登记的插件文件。'
     }
-    Assert-NoExternalPackages $listed $manifests $release.runtime
+    Assert-NoExternalPackages $listed $manifests $release.runtime $hostDeps
     Write-Output "静态分发校验通过：$($listed.Count) 个文件，$($release.plugins.Count) 个插件；未运行应用。"
 } finally { $zip.Dispose() }

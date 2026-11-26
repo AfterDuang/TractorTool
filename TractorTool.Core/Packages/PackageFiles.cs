@@ -65,7 +65,7 @@ internal static class PackageFiles
             }
             var unixType = (entry.ExternalAttributes >> 16) & 0xF000;
             if (!names.Add(name) || unixType is not (0 or 0x8000 or 0x4000) ||
-                (entry.ExternalAttributes & (int)FileAttributes.ReparsePoint) != 0 || name == "receipt.json")
+                (entry.ExternalAttributes & (int)FileAttributes.ReparsePoint) != 0 || name.Equals("receipt.json", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("工具包包含重名、链接或非普通文件。");
             total = checked(total + entry.Length);
             if (entry.Length < 0 || total > MaxExpanded) throw new InvalidDataException("工具包展开大小超过限制。");

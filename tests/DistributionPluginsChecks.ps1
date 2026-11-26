@@ -19,7 +19,7 @@ function Expect-Rejection([scriptblock]$Action, [string]$Message) {
     throw "应拒绝但未拒绝：$Message"
 }
 function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate, [switch]$Unlisted, [switch]$MisCasedId,
-    [hashtable]$Dependencies = @{}, [string[]]$ExtraPaths = @()) {
+    [hashtable]$Dependencies = @{}, [string[]]$ExtraPaths = @(), [string[]]$HostNativeFiles = @(), [string]$ApiVersion = '1.8') {
     $fixture = Join-Path $scratch $Name
     $layout = Join-Path $fixture 'Bundle'
     $assets = Join-Path $fixture 'assets'
@@ -28,9 +28,15 @@ function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate,
     Write-Json (Join-Path $layout 'TractorTool.runtimeconfig.json') @{ runtimeOptions = @{ configProperties = @{
         'TractorTool.PluginSdk.ReservedAssemblies' = $sdkNames -join '|'
     } } }
-    Write-Json (Join-Path $layout 'TractorTool.deps.json') @{ runtimeTarget = @{ name = 'test' }; targets = @{ test = @{
+    $hostTarget = @{
         'Avalonia/12.1.6' = @{ runtime = @{ 'lib/net10.0/Avalonia.Controls.dll' = @{} } }
-    } } }
+    }
+    if ($HostNativeFiles.Count -gt 0) {
+        $native = @{}
+        foreach ($path in $HostNativeFiles) { $native[$path] = @{} }
+        $hostTarget['Host.Native/1.0.0'] = @{ native = $native }
+    }
+    Write-Json (Join-Path $layout 'TractorTool.deps.json') @{ runtimeTarget = @{ name = 'test' }; targets = @{ test = $hostTarget } }
     foreach ($file in @(($sdkNames | ForEach-Object { "$_.dll" })) + @('TractorTool.exe', 'THIRD-PARTY-NOTICES.md', 'Licenses/dependencies.json')) {
         Set-Content -LiteralPath (Join-Path $layout $file) -Value 'Static fixture, not executable.'
     }
@@ -45,7 +51,7 @@ function New-DistributionFixture([string]$Name, [int]$Count, [switch]$Duplicate,
         $path = "Plugins/$id/1.2.3"
         $directory = Join-Path $layout $path
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
-        $manifest = @{ id = $id; version = '1.2.3'; uiApiVersion = '1.6' }
+        $manifest = @{ id = $id; version = '1.2.3'; apiVersion = $ApiVersion; uiApiVersion = '1.6' }
         if ($MisCasedId) { $manifest.id = $id.ToLowerInvariant() }
         if ($Dependencies.ContainsKey($i)) { $manifest['DePeNdEnCiEs'] = $Dependencies[$i] }
         Write-Json (Join-Path $directory 'plugin.json') $manifest
@@ -127,6 +133,8 @@ try {
     $tools = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
     $tools.Add('PSObject', @{ pAtH = 'upstream\bin\custom-probe.exe' })
     $tools.Add('Values', @{ path = 'values-probe.exe' })
+    $tools.Add('Keys', @{ path = 'keys-probe.exe' })
+    $tools.Add('Count', @{ path = 'count-probe.exe' })
     $tools.Add('RG', @{ path = 'upper-probe.exe' })
     $tools.Add('rg', @{ path = 'lower-probe.exe' })
     $tools.Add('GetEnumerator', @{ path = 'enumerator-probe.exe' })
@@ -140,10 +148,57 @@ try {
     $privatePath = 'Plugins/Example.Plugin2/1.2.3/assets/custom-probe.exe'
     & $verify -AssetsDir (New-DistributionFixture 'private-tool-name' 3 -Dependencies $deps -ExtraPaths $privatePath)
     foreach ($path in @('bin/Custom-Probe.exe', $consumerPath, 'Plugins/Example.Plugin1/1.2.3/custom-probe.exe',
-        'upper-probe.exe', 'lower-probe.exe', 'values-probe.exe', 'enumerator-probe.exe')) {
+        'upper-probe.exe', 'lower-probe.exe', 'values-probe.exe', 'keys-probe.exe', 'count-probe.exe', 'enumerator-probe.exe')) {
         $case = 'external-' + [guid]::NewGuid().ToString('N')
-        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $deps -ExtraPaths $path) } "外部工具：$path"
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $deps -ExtraPaths $path) } "外部依赖入口：$path"
     }
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'host-native-cannot-exempt-tool' 3 -Dependencies $deps `
+        -ExtraPaths 'custom-probe.exe' -HostNativeFiles 'runtimes/win-x64/native/custom-probe.exe') } '外部依赖入口：custom-probe.exe'
+
+    # Native packages use the same cross-plugin reference lookup, including ordinary dictionary-key names.
+    $libraries = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    $libraries.Add('SDL', 'runtime/native-probe.dll')
+    $libraries.Add('Values', 'values-probe.dll')
+    $libraries.Add('Keys', 'keys-probe.dll')
+    $libraries.Add('Count', 'count-probe.dll')
+    $libraries.Add('GetEnumerator', 'enumerator-probe.dll')
+    $nativeDownload = @{ rid = 'win-x64'; sha256 = 'cd' * 32; kind = 'nativeLibrary'; libraries = $libraries }
+    $nativeDeps = @{
+        0 = @(@{ id = 'Example.Native'; version = '1.0.0' })
+        1 = @(@{ id = 'Example.Native'; version = '1.0.0'; downloads = @($nativeDownload) })
+        2 = @(@{ id = 'Example.Native'; version = '2.0.0' })
+    }
+    & $verify -AssetsDir (New-DistributionFixture 'native-package-declaration' 3 -Dependencies $nativeDeps)
+    & $verify -AssetsDir (New-DistributionFixture 'unrelated-private-native' 3 -Dependencies $nativeDeps `
+        -ExtraPaths 'Plugins/Example.Plugin2/1.2.3/native-probe.dll')
+    foreach ($path in @('native-probe.dll', 'Plugins/Example.Plugin0/1.2.3/native/NATIVE-PROBE.DLL',
+        'Plugins/Example.Plugin1/1.2.3/native-probe.dll', 'values-probe.dll', 'keys-probe.dll', 'count-probe.dll', 'enumerator-probe.dll')) {
+        $case = 'external-native-' + [guid]::NewGuid().ToString('N')
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $nativeDeps -ExtraPaths $path) } "外部依赖入口：$path"
+    }
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'native-old-api' 3 -Dependencies $nativeDeps -ApiVersion '1.7') } '原生运行库需要 API 1.8'
+    $badNativeDeps = @{ 0 = @(@{ id = 'Example.Native'; version = '1.0.0'; downloads = @(@{
+        rid = 'win-x64'; sha256 = 'cd' * 32; kind = 'nativeLibrary'; libraries = @{ entry = '../foo.dll' }
+    }) }) }
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'native-unsafe-path' 1 -Dependencies $badNativeDeps) } '安全的包内相对路径：../foo.dll'
+
+    # A declared host native asset may coexist at the host root, but not in its consumer plugin or a nested folder.
+    $skiaDownload = @{ rid = 'win-x64'; sha256 = 'ef' * 32; kind = 'nativeLibrary'; libraries = @{ skia = 'libSkiaSharp.dll' } }
+    $skiaDeps = @{ 0 = @(@{ id = 'Example.Skia'; version = '1.0.0'; downloads = @($skiaDownload) }) }
+    $skiaAsset = 'runtimes/win-x64/native/libSkiaSharp.dll'
+    & $verify -AssetsDir (New-DistributionFixture 'host-owned-native' 1 -Dependencies $skiaDeps `
+        -ExtraPaths 'libSkiaSharp.dll' -HostNativeFiles $skiaAsset)
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'unknown-host-native' 1 -Dependencies $skiaDeps `
+        -ExtraPaths 'libSkiaSharp.dll') } '外部依赖入口：libSkiaSharp.dll'
+    foreach ($path in @('Plugins/Example.Plugin0/1.2.3/libSkiaSharp.dll', 'nested/libSkiaSharp.dll')) {
+        $case = 'host-native-copy-' + [guid]::NewGuid().ToString('N')
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 1 -Dependencies $skiaDeps `
+            -ExtraPaths @('libSkiaSharp.dll', $path) -HostNativeFiles $skiaAsset) } "外部依赖入口：$path"
+    }
+    $skiaDownload.sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Fixture payload')))
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'host-native-cannot-exempt-archive' 1 -Dependencies $skiaDeps `
+        -ExtraPaths 'libSkiaSharp.dll' -HostNativeFiles $skiaAsset) } '外部下载归档：libSkiaSharp.dll'
+
     $download.sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Fixture payload')))
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'renamed-archive' 3 -Dependencies $deps -ExtraPaths 'other.bin') } '外部下载归档：other.bin'
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'package-store' 0 -ExtraPaths 'Packages/unknown/receipt.json') } '混入用户数据'

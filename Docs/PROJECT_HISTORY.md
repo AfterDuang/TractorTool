@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| DLL 运行库接入 | [E147 · 完整载荷、旧插件兼容与进程期保护（2026-11-27）](#evidence-native-library-packages) |
+| 外部依赖扩展方案 | [E146 · uv、Node、DLL 目录与实施边界（2026-11-26）](#evidence-dependency-extension-plan) |
 | 旧开发产物 | [E99 文档归并中的历史路径快照](#historical-artifacts) |
 | AB 审片拖动优化 | [E145 · 请求调度、双路准备与定位复用（2026-11-26）](#evidence-media-compare-scrub-optimization) |
 | AB 审片定位后播放 | [E144 · 容器时间量化与呈现区间（2026-11-26）](#evidence-media-compare-seek-playback) |
@@ -183,6 +185,28 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-native-library-packages"></a>
+
+## E147：DLL 运行库接入与兼容性审查（2026-11-27）
+
+- 范围：在 `Dev` 按用户授权实现 DLL 首阶段，保留此前七份规划文档；不接 uv/Node，不修改具体业务插件或用户数据。实施时用户要求先不提交、运行测试由用户负责；随后同日反馈“目前测试没问题，可以提交一版”，授权本地提交，不包含推送或发布。
+- 实现：API 1.8 增加 `nativeLibrary`、库路径和 `RetainUntilProcessExit`，默认接口成员保留旧实现兼容；旧 API 作用域拒绝新类型，包括仅按 ID/版本引用其他插件资料的路径。DLL 安装进入有明确标记的分类目录，schema 3 收据引用独立全载荷清单，取得租约时复核全部文件；静态 PE 检查不执行 DLL。进程期登记跨普通租约、作用域和服务释放，修复/删除均检查；旧工具仍读 schema 1/2 和原目录。
+- Review：GPT-6.2-SOL/high 找出并推动修正坏收据跨类型占用、分类标记损坏中断扫描、仅按 DLL 同名误判分发、插件 ALC 阻断外部 DLL 加载、旧 API 类型门槛、未知目录归属及旧定义大小上限等问题；相应回归断言同步补齐。最终复审确认分类目录探测与标记发布共锁，旧作用域、未知归属和边界定义断言与代码一致，未发现新的交付阻断；这是静态结论。
+- 构建：宿主 Debug 初次普通多节点调用无诊断失败；单节点共享编译器连接超时，停止后使用 `--no-restore -m:1 -nr:false -p:UseSharedCompilation=false` 构建成功。最终分别构建 `tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj`（含宿主）和 `tests/TractorTool.Checks/TractorTool.Checks.csproj`，均 0 警告/0 错误；新增 22 项 DLL 场景只编译未执行。PowerShell 三份变更脚本的语法、当前文档链接及 `git diff --check` 通过。
+- 交付：设置 `UseSharedCompilation=false`，用 `Publish-Host.ps1 -Output artifacts/native-runtime-20261127-final/host`，再用 `Build-Plugin.ps1 -Project tests/NativeLibraryProbePlugin/NativeLibraryProbePlugin.csproj -HostSdkDir artifacts/native-runtime-20261127-final/host -Output artifacts/native-runtime-20261127-final/plugin`。两者成功；NuGet 漏洞服务不可达出现 NU1900，漏洞扫描未完成。日志为同目录 `host-build.log` / `plugin-build.log`。插件构建前后宿主 SDK 234 个文件哈希未变，静态 ZIP 核对为 9 文件、106,105 字节，无 SDL 或共享 SDK DLL；SHA256 `DDCD65562A90E35DFB4049BEA65F137BB31A7F490999CB843EE59E4F32980FB3`，记录在 `static-package-check.json`。宿主及夹具均未启动。
+- 真实上游：测试插件声明官方 `libsdl-org/SDL`、`release-3.2.8` 的 `SDL3-3.2.8-win32-x64.zip`，只读核验 1,006,892 字节，SHA256 `1a3faf0956a7b98115d79e5b5692c3b2e4bd3b19024e34d76e2e4221c1bcd70d`；只调用 `SDL_GetVersion`，不启动媒体设备。插件自身版本 1.0.0，与宿主产品版本独立；未纳入正式随包插件。
+- 验收边界：Agent 未执行 Core 检查、分发回归脚本、宿主、SDL DLL 加载、Windows UI、实际迁移与故障恢复。用户已反馈目前测试没问题，但没有逐项说明覆盖范围；新增 22 项自动检查及故障专项仍不记为通过。用户方法见[测试插件说明](../tests/NativeLibraryProbePlugin/README.md)，当前验收状态归开发台账 A30/A33。提交轮只更新反馈与核对差异，不改已交付代码或重复构建。
+
+<a id="evidence-dependency-extension-plan"></a>
+
+## E146：外部依赖扩展选型、分类目录与实施边界（2026-11-26）
+
+- 用户确认在独立 `Dev` 分支推进原生运行库、uv/Python、pnpm/Node；此前文档整理和 VS Code 默认解决方案配置分别保存为 `b8b730c`、`e10ecce`。本地分支改名为 Dev 后已推送并跟踪 `origin/Dev`，同提交的旧远程分支已清理。这是开发基线，不是新功能或版本发布。
+- 选型：复用 uv/pnpm 的锁定安装，不自建包源或依赖求解器；独立原生库按完整发布包交付，业务加载与能力验证归插件。Pixi/mise 未纳入本轮路线。初期 Python 使用 wheel，Node 使用预构建入口，不开放任意源码构建或安装钩子；具体工具及 SDK 版本尚未定版。
+- 用户明确新增安装目录为 `Packages/uv`、`Packages/Node`、`Packages/DLL`；缓存与持久业务数据分开，保留旧工具布局及同名目录保护。语言环境在目标位置重建验证后切换，原生库使用进程期保护。现行方案归[架构 7.3](ARCHITECTURE.md#dependency-extension)，当前实施状态与 A30–A33 归[开发台账](DEVELOPMENT.md#dependency-extension-plan)，不在历史维护第二套规则。
+- Review：GPT-6.2-SOL/high 指出卸载插件后仍需原清单/锁才能修复或迁移保留环境，已补充宿主持久保存重建资料及工具链引用；同时对齐安装资产/缓存目录与 DLL 加载前保护的表述。
+- 验证：六份当前文档及 E146 的 269 个本地链接、122 个 Markdown 锚点检查通过，`git diff --check` 通过。本轮只改七份文档，未改功能代码、安装真实依赖、构建或运行应用/检查程序；静态文档验证不代表三类接入可用。
 
 <a id="evidence-media-compare-scrub-optimization"></a>
 

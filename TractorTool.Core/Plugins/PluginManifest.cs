@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using TractorTool.Contracts;
+using TractorTool.Contracts.Packages;
 using TractorTool.Core.Storage;
 using TractorTool.Core.Packages;
 
@@ -32,7 +33,7 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
         var requiredUi = Array.IndexOf(UiApiVersions, manifest.UiApiVersion);
         var supportedUi = manifest.UiApiVersion == UiApiVersion ||
             requiredUi >= 0 && requiredUi < Array.IndexOf(UiApiVersions, UiApiVersion);
-        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4" or "1.5" or "1.6";
+        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4" or "1.5" or "1.6" or "1.7";
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
@@ -41,6 +42,8 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             !manifest.SupportedPlatforms.Contains(Rid, StringComparer.OrdinalIgnoreCase))
             return $"不支持当前平台 {Rid}";
         if (manifest.Dependencies.Length != 0 && manifest.ApiVersion is "1.0" or "1.1") return "使用外部工具必须声明 API 1.2 或更高。";
+        if (manifest.Dependencies.Any(d => d.Downloads.Any(p => p.Kind == PackageKind.NativeLibrary)) && manifest.ApiVersion != "1.8")
+            return "使用原生运行库必须声明 API 1.8。";
         return null;
     }
 }
@@ -85,6 +88,10 @@ public static class ManifestValidator
                 throw new InvalidDataException("依赖下载平台无效或重复。");
             foreach (var download in dependency.Downloads)
                 _ = (download ?? throw new InvalidDataException("依赖下载资料为空。")).Definition(dependency.Package);
+            if (dependency.Downloads.Select(d => d.Kind).Distinct().Count() > 1)
+                throw new InvalidDataException("同一依赖在不同平台必须声明相同的包类型。");
+            if (dependency.Downloads.Any(d => d.Kind == PackageKind.NativeLibrary) && m.ApiVersion != "1.8")
+                throw new InvalidDataException("使用原生运行库必须声明 API 1.8。");
         }
         _ = EntryPath(m, directory);
     }

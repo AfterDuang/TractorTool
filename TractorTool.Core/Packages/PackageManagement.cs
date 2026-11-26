@@ -58,7 +58,8 @@ public sealed partial class ExternalPackageService
                 var required = _references.Dependencies.Where(d => d.Package == key)
                     .Select(d => $"{d.PluginName} ({d.PluginId})").Distinct().Order().ToArray();
                 return new PackageListItem(key, e?.Definition, Status(key), required, e?.HasFiles == true,
-                    e is { Operation: null, Preparation: null } && (e.SourceAvailable || HasDownload(key)) && e.Users.Count == 0 && e.Phase != PackagePhase.Ready,
+                    e is { Operation: null, Preparation: null } && (e.SourceAvailable || HasDownload(key)) && e.Users.Count == 0 &&
+                        CanManageFiles(e) && !NativePackageRetention.IsRetained(e.Directory) && !_ambiguousInstallations.Contains(key) && e.Phase != PackagePhase.Ready,
                     e is not null && CanRemove(e));
             }).ToArray();
         }
@@ -68,11 +69,13 @@ public sealed partial class ExternalPackageService
         if (!_entries.TryGetValue(key, out var e))
             return new(key, _rid, PackagePhase.Missing, 0, null, "", [], false, "", null);
         return new(key, e.Definition.Rid, e.Phase, e.Downloaded, e.Total, e.Error,
-            Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes);
+            Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes)
+            { Kind = e.Definition.Kind, RetainedBy = NativePackageRetention.GetOwners(e.Directory) };
     }
     private bool CanRemove(Entry e) => _shutdown is null && _references.Complete && e.HasFiles &&
         !_references.Dependencies.Any(d => d.Package == e.Definition.Package) &&
-        e.Operation is null && e.Users.Count == 0 && e.Requests == 0 && e.Preparation is null;
+        e.Operation is null && e.Users.Count == 0 && e.Requests == 0 && e.Preparation is null &&
+        CanManageFiles(e) && !NativePackageRetention.IsRetained(e.Directory) && !_ambiguousInstallations.Contains(e.Definition.Package);
 
     // Preserve the API 1.3 contract for already-built plugins.
     public async Task<IPackageLease> RequestAsync(PackageReference package, string owner, CancellationToken token = default) =>
@@ -80,17 +83,21 @@ public sealed partial class ExternalPackageService
 
     // Reservation spans consent, shared installation and lease acquisition. One caller cancelling
     // its wait must not stop another plugin's download or expose the ready package to cleanup.
-    public async Task<IPackageLease?> TryRequestAsync(PackageReference package, string owner, CancellationToken token = default)
+    public async Task<IPackageLease?> TryRequestAsync(PackageReference package, string owner, CancellationToken token = default,
+        bool supportsNativeLibraries = true)
     {
         token.ThrowIfCancellationRequested();
-        await EnsureSourceAsync(package, token).ConfigureAwait(false);
+        await EnsureSourceAsync(package, token, supportsNativeLibraries).ConfigureAwait(false);
         Entry e; Task<bool> prepare;
         lock (_gate)
         {
             EnsureRunning(); e = Find(package);
+            RequireSupportedKind(e.Definition.Kind, supportsNativeLibraries);
+            RequireOwnedFiles(e);
             _ = DeclaredDownload(package, e.Definition);
             if (e.Operation is not null && e.InstallCancellation is null)
                 throw new InvalidOperationException("此依赖正在清理，请完成后再申请。");
+            if (e.Phase != PackagePhase.Ready) RequireNotRetained(e);
             e.Requests++; e.Requested = true;
             if (e.Phase == PackagePhase.Ready && e.Operation is null) prepare = Task.FromResult(true);
             else prepare = e.Preparation ??= StartPreparation(e, owner);
@@ -101,7 +108,7 @@ public sealed partial class ExternalPackageService
             var accepted = await prepare.WaitAsync(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             if (!accepted) return null;
-            return await AcquireAsync(package, owner, token).ConfigureAwait(false);
+            return await AcquireAsync(package, owner, token, supportsNativeLibraries).ConfigureAwait(false);
         }
         finally { lock (_gate) e.Requests--; Notify(); }
     }
@@ -145,47 +152,75 @@ public sealed partial class ExternalPackageService
 
     private void RestoreInstalledDefinitions()
     {
-        // Enumerate only the three owned directory levels. Never recurse through links or delete
-        // unknown files; damaged/legacy records without usable metadata remain on disk.
+        // The marker adds exactly one owned level for native packages. Legacy DLL/<version>
+        // remains a tool package; unknown files are never recursively adopted or deleted.
         try
         {
             if (!Directory.Exists(_root)) return;
             foreach (var id in ReadDirectories(_root).Where(p => !Path.GetFileName(p).StartsWith('.')))
             {
-                foreach (var version in ReadDirectories(id))
+                try
                 {
-                    var directory = Path.Combine(version, _rid);
-                    var key = new PackageReference(Path.GetFileName(id), Path.GetFileName(version));
-                    try { RecoverReplacement(directory); }
-                    catch (Exception ex) { InvalidInstallation(key, ex); continue; }
-                    ReadInstalledDefinition(key, directory);
+                    if (string.Equals(Path.GetFileName(id), "DLL", StringComparison.OrdinalIgnoreCase) && IsNativeRoot(id))
+                    {
+                        foreach (var nativeId in ReadDirectories(id).Where(p => !Path.GetFileName(p).StartsWith('.')))
+                            RestorePackageVersions(nativeId, PackageKind.NativeLibrary);
+                    }
+                    else RestorePackageVersions(id, PackageKind.Tool);
+                }
+                catch (Exception ex)
+                {
+                    SourceError = "部分依赖目录不可读取，已保留文件：" + ex.Message;
+                    _log.Write(AppLogLevel.Warning, "Packages", SourceError, ex);
                 }
             }
         }
         catch (Exception ex) { SourceError = "读取依赖安装目录失败：" + ex.Message; _log.Write("Packages", SourceError, ex); }
     }
 
+    private void RestorePackageVersions(string id, PackageKind kind)
+    {
+        foreach (var version in ReadDirectories(id).Where(p => !Path.GetFileName(p).StartsWith('.')))
+        {
+            var directory = Path.Combine(version, _rid);
+            var key = new PackageReference(Path.GetFileName(id), Path.GetFileName(version));
+            try { RecoverReplacement(directory); }
+            catch (Exception ex) { InvalidInstallation(key, ex); continue; }
+            ReadInstalledDefinition(key, directory, kind);
+        }
+    }
+
     // Called under _gate, before selecting an install prompt or handing out a lease.
     private void RecoverBeforeRequest(PackageReference key)
     {
+        if (_ambiguousInstallations.Contains(key)) throw new InvalidDataException("同一依赖存在多种安装目录，已保留文件，请先解决标识冲突。");
         if (HasConflictingIdentity(key))
             throw new InvalidDataException("依赖标识或版本的大小写与已有记录冲突，请插件作者统一拼写。");
         _entries.TryGetValue(key, out var known);
         if (known is not null && (known.Phase == PackagePhase.Ready || known.Operation is not null ||
             known.Preparation is not null || known.Requests != 0 || known.Users.Count != 0)) return;
         AppPaths.ValidateId(key.Id); AppPaths.ValidateId(key.Version);
-        var directory = Path.Combine(_root, key.Id, key.Version, _rid);
+        var definition = known?.Definition ?? DeclaredDownload(key)?.Definition(key);
+        var directory = definition is null ? PackageFiles.SafePath(_root, $"{key.Id}/{key.Version}/{_rid}") : PackageDirectory(definition);
         if (!RecoverReplacement(directory)) return;
-        ReadInstalledDefinition(key, directory);
+        ReadInstalledDefinition(key, directory, definition?.Kind ?? PackageKind.Tool);
         if (!_entries.ContainsKey(key)) RestoreDeclaredInstallations();
     }
 
-    private void ReadInstalledDefinition(PackageReference key, string directory)
+    private void ReadInstalledDefinition(PackageReference key, string directory, PackageKind kind)
     {
         _entries.TryGetValue(key, out var known);
         try
         {
             if (!HasDirectory(directory)) return;
+            var previousDirectory = _installedLocations.GetValueOrDefault(key) ?? known?.Directory;
+            if (previousDirectory is not null && !string.Equals(previousDirectory, directory,
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                _ambiguousInstallations.Add(key);
+                throw new InvalidDataException("同一依赖存在多种安装目录，已保留文件，不能复用或清理。");
+            }
+            _installedLocations[key] = directory;
             if (known is not null) known.HasFiles = true;
             _pendingReceipts[key] = null;
             var path = PackageFiles.SafePath(directory, "receipt.json");
@@ -196,7 +231,8 @@ public sealed partial class ExternalPackageService
                 return;
             var definition = receipt.Definition ?? known?.Definition ?? throw new InvalidDataException("旧安装缺少源元数据，已保留文件。");
             PackageDefinitions.Validate(definition);
-            if (definition.Package != key || definition.Rid != _rid || !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
+            if (definition.Package != key || definition.Rid != _rid || definition.Kind != kind ||
+                !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("安装记录与目录身份不符。");
             var entry = new Entry(definition, directory) { HasFiles = true,
                 SourceDefinition = string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
@@ -227,10 +263,10 @@ public sealed partial class ExternalPackageService
             {
                 if (_entries.ContainsKey(key) || HasConflictingIdentity(key)) continue;
                 if (DeclaredDownload(key) is not { } recipe) continue;
-                var directory = Path.Combine(_root, key.Id, key.Version, _rid);
+                var definition = recipe.Definition(key);
+                var directory = PackageDirectory(definition);
                 PackageFiles.CheckPath(directory);
                 if (!Directory.Exists(directory)) continue;
-                var definition = recipe.Definition(key);
                 // A damaged/missing receipt must not hide existing files or bypass repair consent.
                 var entry = new Entry(definition, directory) { HasFiles = true };
                 _entries[key] = entry; _pendingReceipts.Remove(key);
