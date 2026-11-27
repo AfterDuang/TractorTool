@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入，三个实现提交止于 `1848ca2`。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) 外部依赖修复之后，[E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 补齐宿主管理事务/回退现场保护、启动退出收尾、暂时 I/O 重验及 CI 门禁；主代理自审与 SOL 分项复核完成，授权的隔离回归通过，用户已同意本地提交。Contracts API 1.10 / UI API 1.6、旧插件接口及 Python 身份/记录不变。接续由用户确认恢复交互及真实使用效果，A04/A30–A33 未验场景保留；不推送或发版。
+`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入，三个实现提交止于 `1848ca2`。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) 外部依赖修复之后，[E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 补齐宿主管理事务/回退现场保护、启动退出收尾、暂时 I/O 重验及 CI 门禁；主代理自审与 SOL 分项复核完成，授权的隔离回归通过，已本地提交 `789c4f6`，尚未推送。Contracts API 1.10 / UI API 1.6、旧插件接口及 Python 身份/记录不变。接续由用户确认恢复交互及真实使用效果，A04/A30–A33 未验场景保留；不推送或发版。
 
 Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源，不恢复自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 

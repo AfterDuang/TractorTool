@@ -85,7 +85,7 @@ public partial class SettingsViewModel : ViewModelBase
         DependencyPages = [new("Packages", () => new ExternalToolsView { DataContext = ExternalTools }, SoftwareSettings[1],
             "查看已安装的依赖、来源与使用情况", ToolIconKind.Tools),
             new("依赖来源", () => new DependencySourcesView { DataContext = ExternalTools }, SoftwareSettings[1],
-            "管理 GitHub 下载来源", ToolIconKind.Folder)];
+            "管理依赖的下载与安装来源", ToolIconKind.Folder)];
         foreach (var page in SoftwareSettings) Categories.Add(page);
         _selectedPage = Categories[0];
         _enableAnimations = settings.EnableAnimations;

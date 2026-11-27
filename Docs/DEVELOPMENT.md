@@ -51,7 +51,7 @@
 
 2026-11-27 的 Astra 接入审查及后续宿主整体审查修复已完成：外部依赖归属/下载/取消/卸载与迁移重试、管理提交/通知隔离、失败回退现场保护、主记录丢失保护、启动退出收尾和语言环境暂时 I/O 重验。共享下载/输入逻辑已合并，公开接口、旧插件基线与 Python 身份不变。主代理自审和 SOL 分项复核未发现新的阻塞项。
 
-用户授权的 Core **353 项**、最终发布宿主离屏 **100 项**及分发夹具通过，独立插件验证前后 **235 个宿主文件**哈希不变；Debug 已构建。CI 已接入现有框架回归入口，远端执行未验证。**本轮修复已获准本地提交，真实 Windows 专项验收缺口保留**；失败过程、复验命令及证据见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)。
+用户授权的 Core **353 项**、最终发布宿主离屏 **100 项**及分发夹具通过，独立插件验证前后 **235 个宿主文件**哈希不变；Debug 已构建。CI 已接入现有框架回归入口，远端执行未验证。**宿主与依赖修复已提交 `789c4f6`，未推送；真实 Windows 专项验收缺口保留**；失败过程、复验命令及证据见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)。
 
 `Dev` 已完成 DLL、uv/Python 和 pnpm/Node 三类接入。2026-11-27 用户反馈本轮 Node 测试没有问题，授权整理文档并本地提交；**未推送、未发布**，正式版 1.1.0 不变。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，选型与实施证据见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)、[E147](PROJECT_HISTORY.md#evidence-native-library-packages)、[E148](PROJECT_HISTORY.md#evidence-python-environments)、[E150](PROJECT_HISTORY.md#evidence-node-environments)。
 
@@ -136,7 +136,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 | 产物 | 用途与证据 |
 | --- | --- |
-| [当前 Debug 宿主](../TractorTool/bin/Debug/net10.0/TractorTool.exe) | E151/E152 修复已构建，Contracts API 1.10；隔离回归通过，用户已同意本地提交、真实窗口专项待确认，勿用旧 E150 宿主验证新修复 |
+| [当前 Debug 宿主](../TractorTool/bin/Debug/net10.0/TractorTool.exe) | E151/E152 修复已构建，Contracts API 1.10；隔离回归通过，宿主与依赖修复见 `789c4f6`；来源入口及内页说明已同步 GitHub/PyPI/npm，真实窗口专项待确认，勿用旧 E150 宿主验证新修复 |
 | [Node 测试插件](../artifacts/node-environment-20261127-reviewed/plugin/Test.NodeEnvironmentProbe-1.0.0.zip) | 沿用 E150 夹具，可配合当前 API 1.10 宿主，通过“准备环境并执行”调用真实 npm 依赖；[验收方法](../tests/NodeEnvironmentProbePlugin/README.md)，不进入正式分发 |
 | [AB 审片 0.1.7](../artifacts/media-compare-0.1.7-final/TractorTool.MediaCompare-0.1.7.zip) | 插件独立开发包；能力及运行缺口见[当前状态](#media-compare)，证据见 E145 |
 
@@ -248,7 +248,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 ## 6. 下一步与维护
 
-`Dev` 的[三类外部依赖接入](#dependency-extension-plan) 原实现已提交；E151/E152 外部依赖与宿主审查修复、隔离回归完成，用户已同意本地提交；真实使用专项验收仍按台账补齐。A04/A30–A33 下一步补插件恢复交互、真实来源、运行库/语言环境调用、迁移及 Windows UI 的专项证据；临时夹具通过不替代这些验收。推送与发版另行授权，以下既有未关闭问题继续保留。
+`Dev` 的[三类外部依赖接入](#dependency-extension-plan) 原实现已提交；E151/E152 外部依赖与宿主审查修复、隔离回归已随 `789c4f6` 本地提交，尚未推送；真实使用专项验收仍按台账补齐。A04/A30–A33 下一步补插件恢复交互、真实来源、运行库/语言环境调用、迁移及 Windows UI 的专项证据；临时夹具通过不替代这些验收。推送与发版另行授权，以下既有未关闭问题继续保留。
 
 E117 用户常规使用反馈暂未发现 Avalonia 升级问题。FFmpeg 安装末尾拒绝移动目录曾偶发一次、重试成功，未作代码修复；若再现，先捕获源/目标路径与所有相关进程的文件访问记录定位原因。以下专项运行缺口保持开放。
 

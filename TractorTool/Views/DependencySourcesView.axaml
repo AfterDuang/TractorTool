@@ -3,7 +3,7 @@
              x:Class="TractorTool.Views.DependencySourcesView" x:DataType="vm:ExternalToolsViewModel">
   <ScrollViewer Classes="pageScroll">
     <StackPanel Classes="pageBody" Spacing="16">
-      <TextBlock Text="插件声明固定版本和锁文件，软件从已配置来源准备所需依赖。" Classes="caption" TextWrapping="Wrap" />
+      <TextBlock Text="管理 GitHub、PyPI 和 npm 等来源，供插件下载所需依赖。" Classes="caption" TextWrapping="Wrap" />
       <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
       <ItemsControl ItemsSource="{Binding Sources}">
         <ItemsControl.ItemTemplate>
