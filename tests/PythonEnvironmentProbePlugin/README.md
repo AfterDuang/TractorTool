@@ -1,28 +1,41 @@
-# Python 环境夹具
+# Python 环境测试插件
 
-仅用于隔离验收，不随正式分发自动打包。需要 API 1.9、Avalonia 12.1.6 的 Windows x64 宿主。
+1.1.0 是供用户实际操作的隔离夹具，不进入正式分发。需要 Windows x64、Contracts API 1.9 及 Avalonia 12.1.6；当前宿主和安装包入口见[开发产物](../../Docs/DEVELOPMENT.md#development-artifacts)。
 
-`plugin.json` 声明 Python 3.13.18 及 `Python/pyproject.toml` / `Python/uv.lock` 的实际 SHA256。锁由固定 uv 0.13.10 生成，依赖为真实 PyPI `idna==3.11` wheel。插件没有自有下载器、源码构建或安装脚本，也不携带 Python、uv 或已安装环境。
+## 安装和使用
 
-`ProbePlugin` 仅在点击“准备环境并执行”后调用 `TryRequestPythonAsync("worker")`。用户同意后由宿主准备环境；插件通过租约的 `RunAsync` 执行解释器，检查 idna 实际版本、中文域名编码及 stdout/stderr 中文结果。UTF-8 运行参数由宿主注入，插件没有重复设置。初始化、切页和隐藏窗口均不发起下载。
+1. 运行 `artifacts/environment-probes-20261128/Start-TestHost.cmd`，始终使用同一个隔离 profile。
+2. 在插件页安装该目录 `python/Test.PythonEnvironmentProbe-1.1.0.zip`，显式退出托盘程序后再用同一脚本启动。已安装 1.0.0 时直接安装此升级包。
+3. 打开“Python 环境测试”，每行输入一个域名，选择场景后点击“准备环境并执行”。输入会在执行时保存，默认样例含有效和无效域名；无效行只标记该行，不使整个批次失败。
 
-使用 [Build-Plugin](../../scripts/Build-Plugin.ps1) 和本轮发布的宿主 SDK 打包。用户在独立宿主目录中用 `--profile-root` 指向新的隔离数据目录，再安装此 ZIP 并显式退出重启；不在日常数据目录做破坏性检查。步骤见[插件验收](../../Docs/PLUGIN_DEVELOPMENT.md#6-开发构建与安装验证)。
+| 场景 | 实际行为与预期 |
+| --- | --- |
+| 正常处理 | 通过真实 `idna==3.11` 将 Unicode 域名编码为 ASCII；默认 `测试` 应得到 `xn--0zwm56d`，`bad domain` 应显示无效域名 |
+| 持续运行 60 秒 | 同一个 Python 子进程每秒重新处理输入，并输出轮数与 PID；可切页、隐藏窗口、观察 Packages 占用，或从插件页/任务页取消 |
+| 预期进程失败 | Python 主动向 stderr 输出标记并以退出码 17 结束；插件和公共任务显示“预期失败”，随后可切回正常处理重试 |
 
-本轮现成产物为[修正 uv 参数后的宿主](../../artifacts/python-environment-20261127-cli-fix/host)和[原测试 ZIP](../../artifacts/python-environment-20261127-final/plugin/Test.PythonEnvironmentProbe-1.0.0.zip)。原 `python-environment-20261127-final/host` 存在安装参数互斥问题，不再用于验收。在仓库根目录的 PowerShell 中启动（仅供用户执行，Agent 未启动）：
+环境准备被拒绝或取消时不登记公共任务；准备成功后进入“日志 → 任务进度”。长运行的等待发生在真实 Python 进程内，不用宿主延时伪造工作。主动失败会留下带“预期失败”的错误记录，这是此场景的预期结果；正常取消不应记为 Error。
 
-```powershell
-& .\artifacts\python-environment-20261127-cli-fix\host\TractorTool.exe --profile-root H:\ProjH\TractorTool\artifacts\python-environment-20261127-cli-fix\profile
-```
+“进程输出”显示真实 stdout 和完成时的 stderr，最多保留末尾 16,384 个字符。“环境与报告位置”给出实际解释器、环境和报告路径。每次运行的输入、结果写入插件数据目录 `Reports/<随机标识>/request.json` 与 `result.json`，不写 Packages；只有任务成功且结果校验通过时，`result.json` 才代表完成结果。取消或失败可能只留输入或未确认的结果，不自动删除现场或历史报告。
 
-每次重启沿用这个参数。安装 ZIP 后，显式退出托盘程序再启动；首次下载需要访问官方 GitHub 与 PyPI。
+## 建议验收顺序
 
-待执行场景：
+1. **首次准备与拒绝重试**：在新隔离 profile 第一次执行时先拒绝，再执行并同意安装；确认版本、中文结果和进程输出。升级插件会使用对应插件版本的环境，旧版本记录可能仍保留。
+2. **取消与后台运行**：运行 60 秒场景，切页再返回，隐藏到托盘再显示，PID 与轮数应继续；在插件页和任务页分别取消后重试。准备下载过程中也可取消。显式退出时应按公共任务流程停止进程。
+3. **真实失败与恢复**：执行预期失败场景，查看任务失败和退出码；正常场景再次执行应成功，不须重装环境。
+4. **离线复用与缓存**：先完成一次正常运行，再断网重试。连接恢复后，从 Packages → Python 环境清理 Python 下载缓存，再断网重复运行；已装环境应仍可用。清缓存不会证明缺失环境能离线重建。
+5. **占用保护**：长运行期间观察环境的正在使用状态，不能修复或删除使用中的环境；插件仍安装时持久引用也阻止清理。此时先保留插件，继续做迁移测试。
+6. **迁移**：把隔离 profile 的数据迁到新空目录，重启仍使用同一个启动脚本。确认上次输入、历史报告保留，重新执行成功且解释器/环境/新报告指向目标根。迁移会重建环境，须满足真实下载和来源条件；磁盘断连、断网中断恢复单独按[验收台账](../../Docs/DEVELOPMENT.md#acceptance)核验，不操作日常数据。
+7. **最后卸载与清理**：其余场景完成后卸载夹具并重启，再清理未引用环境；业务报告和输入设置应保留。
 
-1. 首次点击后拒绝准备，再次点击仍可申请；同意后显示 `idna 3.11：测试 → xn--0zwm56d`。
-2. Packages 显示整体 Python 环境、插件引用、Python/uv 版本、PyPI 来源及 `Packages/uv` 存储位置；无独立 Python/uv 全局安装要求。
-3. 断网后重复点击仍能复用已安装环境；切页、隐藏窗口不取消已开始的操作。显式取消可重试。
-4. 保持夹具安装时环境不能清理；卸载夹具并重启后，未使用环境允许清理。清理不删除插件业务数据。
-5. 仅针对隔离数据迁移到另一空目录，重启后再次调用；成功说明目标解释器与环境重建可用。中断/离线恢复另按框架验收台账验证。
-6. Packages 的“清理 Python 下载缓存”完成后，已装环境仍能离线调用；环境准备期间不允许并发清理缓存。
+以上为用户操作步骤，不代表已经运行通过；请分别记录拒绝、取消、失败、离线、迁移的实际结果。
 
-修改项目或锁后必须重新计算清单摘要。两文件的 Git 换行固定为 LF，避免不同系统检出改变摘要。构建成功和锁生成成功不等于上述运行场景通过。
+## 代码与依赖
+
+- `ProbePlugin.cs`：插件与页面注册、退出时取消等待；切页不释放正在运行的模型。
+- `ProbeView.cs`：输入、场景、结果和诊断界面，使用公共主题。
+- `ProbeViewModel.cs`：输入持久化、环境预检、公共任务、受管调用及结果核对。
+- `Python/probe.py`：真实域名转换、长运行和退出码 17 夹具；用户数据经 UTF-8 JSON 文件传递，不拼入代码或命令行。
+- `Python/pyproject.toml`、`Python/uv.lock`：保持既有 Python 3.13.18 / idna 3.11 锁定输入，固定 uv 0.13.10；未添加包、安装脚本、自有下载器或随包环境。
+
+脚本通过 `IPythonEnvironmentLease.RunAsync` 调用，宿主提供 UTF-8 和隔离参数；脚本用绝对路径定位，不依赖系统 Python、PATH 或脚本目录的模块搜索。独立打包使用 [Build-Plugin](../../scripts/Build-Plugin.ps1) 及当前发布 SDK；修改项目/锁文件时才需要重新计算清单摘要。构建、静态语法检查不等于真实运行验收。

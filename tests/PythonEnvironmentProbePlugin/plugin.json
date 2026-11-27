@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "Test.PythonEnvironmentProbe",
   "name": "Python 环境测试",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryAssembly": "PythonEnvironmentProbePlugin.dll",
   "entryType": "PythonEnvironmentProbePlugin.ProbePlugin",
   "apiVersion": "1.9",
@@ -23,5 +23,5 @@
       "description": "用 idna 3.11 的真实 PyPI wheel 验证独立 Python 环境与调用。"
     }
   ],
-  "description": "按锁准备 Python 3.13.18 并调用 idna；仅供隔离验收，不随正式分发。"
+  "description": "真实域名批处理、持续运行与失败恢复测试；仅供隔离验收，不随正式分发。"
 }

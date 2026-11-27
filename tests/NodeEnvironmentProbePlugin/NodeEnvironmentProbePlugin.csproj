@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Version>1.1.0</Version>
   </PropertyGroup>
   <ItemGroup Condition="'$(HostSdkDir)' != ''">
     <Reference Include="TractorTool.Contracts"><HintPath>$(HostSdkDir)/TractorTool.Contracts.dll</HintPath><Private>false</Private></Reference>
@@ -14,7 +15,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" IncludeAssets="compile" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
-    <None Update="plugin.json;NOTICE.md;Node/package.json;Node/pnpm-lock.yaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="plugin.json;NOTICE.md;Node/package.json;Node/pnpm-lock.yaml;Node/probe.cjs" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RequirePublishedSdk" BeforeTargets="ResolveReferences" Condition="'$(HostSdkDir)' != ''">
     <Error Condition="!Exists('$(HostSdkDir)/TractorTool.Contracts.dll') Or !Exists('$(HostSdkDir)/TractorTool.UI.dll')"
