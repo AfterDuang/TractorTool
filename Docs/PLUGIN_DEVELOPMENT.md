@@ -352,7 +352,7 @@ var result = await environment.RunAsync(new ProcessRequest(environment.PythonPat
 
 `package.json` 只接受普通单项目的名称、版本、private、type、description、license、固定 `packageManager: "pnpm@10.34.9"`、engines、dependencies 和 optionalDependencies；不需要的可选字段省略。依赖使用普通 semver 约束，锁文件必须为 pnpm 10 的 `lockfileVersion: '9.0'`、唯一 `.` importer，每个 registry 包附 SHA512 或 SHA256 完整性摘要。禁用开发依赖、workspace、本地/Git/直接 URL、alias、patch、catalog、脚本及配置钩子；首轮不接受显式 tarball 来源。宿主先校验原始 YAML，再由固定 Node 随附的 node-semver 验证版本约束，最后以 frozen 模式安装；项目与锁不一致直接失败，不自动解锁或修改输入。
 
-Node/pnpm 下载使用宿主固定摘要；安装配置由宿主生成，不读取插件 `.npmrc`、`.pnpmfile.cjs` 或用户 pnpm 配置。`hoisted + copy` 使已装环境不依赖下载缓存，安装后仍拒绝链接并记录完整文件集合。依赖的安装脚本不会执行；需要 node-gyp、下载型 postinstall 或现场构建的包不在首轮支持范围，插件应提供已有可直接运行的依赖。
+Node/pnpm 下载使用宿主固定摘要；安装配置由宿主生成，不读取插件 `.npmrc`、`.pnpmfile.cjs` 或用户 pnpm 配置。`hoisted + copy` 使已装环境不依赖下载缓存，安装后环境内仍拒绝链接并记录完整文件集合。pnpm 的缓存项目登记由宿主管理，不属于插件可声明的链接。依赖的安装脚本不会执行；需要 node-gyp、下载型 postinstall 或现场构建的包不在首轮支持范围，插件应提供已有可直接运行的依赖。
 
 ```csharp
 using var environment = await context.Packages!.TryRequestNodeAsync("worker", cancellationToken);

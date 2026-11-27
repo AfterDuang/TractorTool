@@ -30,19 +30,48 @@ internal class EnvironmentCacheStorage<TDefinition, TPolicy>
             File.Move(pending, Path.Combine(directory, Marker));
         }
     }
-    internal static void CheckTree(string directory)
+    internal static void PrepareForRemoval(string directory, CancellationToken token)
     {
-        PackageFiles.CheckPath(directory);
-        if (!Directory.Exists(directory)) return;
-        string[] entries;
-        try { entries = Directory.GetFileSystemEntries(directory); }
-        // Concurrent installs can retire their own cache scratch directories.
-        // Link and access errors are still rejected; only an ordinary disappearance is harmless.
-        catch (DirectoryNotFoundException) { return; }
-        foreach (var path in entries)
+        lock (FileLocks.For(directory))
         {
-            PackageFiles.CheckPath(path);
-            if (Directory.Exists(path)) CheckTree(path);
+            if (!IsOwned(directory)) throw new InvalidDataException("依赖缓存归属不明，已保留文件。");
+            // Validate the whole tree before removing any registration. Never recurse through a link.
+            foreach (var entry in CheckTree(directory, token))
+            {
+                token.ThrowIfCancellationRequested();
+                PackageFiles.CheckPath(entry.Parent!.FullName);
+                entry.Refresh();
+                if (entry.Attributes == (FileAttributes)(-1)) continue;
+                if (!Policy.IsCacheRegistration(directory, entry))
+                    throw new InvalidDataException("依赖缓存登记已变化，已保留文件。");
+                entry.Delete(recursive: false);
+            }
+        }
+    }
+
+    private static List<DirectoryInfo> CheckTree(string directory, CancellationToken token = default)
+    {
+        List<DirectoryInfo> registrations = [];
+        Visit(directory);
+        return registrations;
+
+        void Visit(string current)
+        {
+            token.ThrowIfCancellationRequested();
+            PackageFiles.CheckPath(current);
+            if (!Directory.Exists(current)) return;
+            string[] entries;
+            try { entries = Directory.GetFileSystemEntries(current); }
+            // Concurrent installs can retire their own cache scratch directories.
+            catch (DirectoryNotFoundException) { return; }
+            foreach (var path in entries)
+            {
+                token.ThrowIfCancellationRequested();
+                var entry = new DirectoryInfo(path);
+                if (Policy.IsCacheRegistration(directory, entry)) { registrations.Add(entry); continue; }
+                PackageFiles.CheckPath(path);
+                if (Directory.Exists(path)) Visit(path);
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ internal sealed class NodeEnvironmentPolicy : EnvironmentPolicy<NodeEnvironmentD
     internal override string Name => "Node";
     internal override string Folder => "Node";
     internal override string OwnerPrefix => "Node";
+    internal override bool IsCacheRegistration(string cache, DirectoryInfo entry) => NodeCacheStorage.IsProjectRegistration(cache, entry);
     internal override void Validate(NodeEnvironmentDefinition definition) => NodeEnvironmentDefinitions.Validate(definition);
     internal override string RuntimePath(string generation, NodeEnvironmentDefinition definition) =>
         NodeEnvironmentDefinitions.NodeExecutable(generation, definition);

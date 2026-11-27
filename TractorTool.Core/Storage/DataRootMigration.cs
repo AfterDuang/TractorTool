@@ -96,6 +96,7 @@ public sealed partial class DataRootMigration(AppPaths paths,
                         throw new InvalidDataException(occupied);
                     targetLease = new InstanceLease(request.Target);
                     var marker = CheckTargetOwner(request, create: true);
+                    NodeCacheStorage.PrepareForDataRemoval(request.Source, token);
                     if (marker.PythonRebuilds is null && marker.NodeRebuilds is null)
                     {
                         // Discover before copying. An invalid owned environment must not become an

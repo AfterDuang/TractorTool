@@ -136,6 +136,104 @@ internal static class NodeEnvironmentChecks
                 !log.Messages.Any(message => message.Contains("工具链无法用于缓存维护", StringComparison.Ordinal)));
         });
 
+        foreach (var dangling in DirectoryLinkFixture.DanglingCases)
+        Test("preparation accepts " + (dangling ? "dangling" : "live") + " pnpm project registrations without following them", async path =>
+        {
+            var fixture = WriteFixture(path);
+            var cache = Path.Combine(path, "Cache", "Node");
+            Write(Path.Combine(cache, ".node-cache"), "TractorTool.NodeCache.v1");
+            var target = Path.Combine(dangling ? Path.Combine(fixture.Identity, Guid.NewGuid().ToString("N")) : fixture.Generation, "environment");
+            if (!dangling) Write(Path.Combine(target, "keep.txt"), "project data");
+            var link = ProjectRegistration(cache, target);
+            DirectoryLinkFixture.Create(link, target);
+            var ordinary = Path.Combine(cache, "store", "v10", "projects", "ordinary", "keep.txt");
+            Write(ordinary, "ordinary cache content");
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(), _ => true);
+            await Reject<HttpRequestException>(() => service.InstallAsync(fixture.Environment.Definition.Identity));
+            Require(handler.Calls == 1 && new DirectoryInfo(link).LinkTarget is not null);
+            Require(File.ReadAllText(ordinary) == "ordinary cache content");
+            Require(dangling ? !Directory.Exists(target) : File.ReadAllText(Path.Combine(target, "keep.txt")) == "project data");
+            Require(Directory.Exists(fixture.Generation));
+        });
+
+        foreach (var dangling in DirectoryLinkFixture.DanglingCases)
+        Test("cache cleanup unlinks " + (dangling ? "dangling" : "live") + " pnpm registrations and preserves installed payload", async path =>
+        {
+            var fixture = WriteFixture(path);
+            var cache = Path.Combine(path, "Cache", "Node");
+            Write(Path.Combine(cache, ".node-cache"), "TractorTool.NodeCache.v1");
+            var target = Path.Combine(dangling ? Path.Combine(fixture.Identity, Guid.NewGuid().ToString("N")) : fixture.Generation, "environment");
+            if (!dangling) Write(Path.Combine(target, "keep.txt"), "project data");
+            DirectoryLinkFixture.Create(ProjectRegistration(cache, target), target);
+            var runtime = Path.Combine(fixture.Generation, "node", $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe");
+            var original = File.ReadAllBytes(runtime);
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(), _ => true);
+            await service.CleanCacheAsync();
+            Require(!Directory.Exists(cache) && File.ReadAllBytes(runtime).SequenceEqual(original) && handler.Calls == 0);
+            Require(dangling ? !Directory.Exists(target) : File.ReadAllText(Path.Combine(target, "keep.txt")) == "project data");
+        });
+
+        foreach (var kind in new[] { "unknown-owner", "wrong-name", "wrong-hash", "wrong-location", "external-target", "invalid-plugin-id", "ancestor", "cache-root" })
+        Test("preparation and cleanup preserve unrecognized cache links: " + kind, async path =>
+        {
+            var fixture = WriteFixture(path);
+            var cache = Path.Combine(path, "Cache", "Node");
+            var target = kind switch
+            {
+                "external-target" => Path.Combine(path, "linked-project"),
+                "invalid-plugin-id" => Path.Combine(fixture.Packages, "Node", "Environments", "not a plugin id",
+                    fixture.Environment.Definition.Identity, Guid.NewGuid().ToString("N"), "environment"),
+                _ => Path.Combine(fixture.Generation, "environment")
+            };
+            // Keep the invalid ID target absent so environment discovery cannot reject it before the cache check.
+            if (kind != "invalid-plugin-id") Write(Path.Combine(target, "keep.txt"), "do not follow or delete");
+            string link;
+            if (kind == "cache-root")
+            {
+                Write(Path.Combine(target, ".node-cache"), "TractorTool.NodeCache.v1");
+                DirectoryLinkFixture.Create(link = cache, target);
+            }
+            else
+            {
+                Write(Path.Combine(cache, ".node-cache"), kind == "unknown-owner" ? "foreign cache" : "TractorTool.NodeCache.v1");
+                link = kind switch
+                {
+                    "wrong-name" => Path.Combine(cache, "store", "v10", "projects", "not-a-project-hash"),
+                    "wrong-hash" => ProjectRegistration(cache, target + "-different"),
+                    "wrong-location" => Path.Combine(cache, "metadata", Digest(target)[..32].ToLowerInvariant()),
+                    "ancestor" => Path.Combine(cache, "store"),
+                    _ => ProjectRegistration(cache, target)
+                };
+                DirectoryLinkFixture.Create(link, target);
+            }
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(), _ => true);
+            await Reject<InvalidDataException>(() => service.InstallAsync(fixture.Environment.Definition.Identity));
+            await Reject<InvalidDataException>(() => service.CleanCacheAsync());
+            Require(handler.Calls == 0 && new DirectoryInfo(link).LinkTarget is not null && Directory.Exists(fixture.Generation));
+            Require(kind == "invalid-plugin-id" ? !Directory.Exists(target) : File.ReadAllText(Path.Combine(target, "keep.txt")) == "do not follow or delete");
+        });
+
+        Test("an unknown cache link prevents even recognized registrations from being removed", async path =>
+        {
+            var fixture = WriteFixture(path);
+            var cache = Path.Combine(path, "Cache", "Node");
+            Write(Path.Combine(cache, ".node-cache"), "TractorTool.NodeCache.v1");
+            var target = Path.Combine(fixture.Generation, "environment");
+            Write(Path.Combine(target, "keep.txt"), "project data");
+            var registered = ProjectRegistration(cache, target);
+            var unknown = Path.Combine(cache, "unknown-link");
+            DirectoryLinkFixture.Create(registered, target);
+            DirectoryLinkFixture.Create(unknown, target);
+            using var http = new HttpClient(new NoNetwork());
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(), _ => true);
+            await Reject<InvalidDataException>(() => service.CleanCacheAsync());
+            Require(new DirectoryInfo(registered).LinkTarget is not null && new DirectoryInfo(unknown).LinkTarget is not null &&
+                File.ReadAllText(Path.Combine(target, "keep.txt")) == "project data");
+        });
+
         foreach (var interruption in new[] { "before-move", "after-move", "empty-generation", "metadata", "tree-gone", "legacy", "unknown", "changed", "legacy-changed", "unverified" })
             Test("restart resumes only owned removal: " + interruption, async path =>
             {
@@ -441,6 +539,8 @@ internal static class NodeEnvironmentChecks
         Directory.Delete(generation, recursive: true);
     }
     private static string Digest(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    internal static string ProjectRegistration(string cache, string target) =>
+        Path.Combine(cache, "store", "v10", "projects", Digest(target)[..32].ToLowerInvariant());
     private static void Require(bool value) { if (!value) throw new Exception("Node environment assertion failed."); }
     private static async Task Reject<T>(Func<Task> action) where T : Exception
     { try { await action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }

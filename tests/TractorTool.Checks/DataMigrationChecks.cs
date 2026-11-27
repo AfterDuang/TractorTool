@@ -415,6 +415,58 @@ internal static class DataMigrationChecks
             var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
             Assert(journal["pythonRebuilds"]!.AsArray().Count == 1 && journal["pythonRebuilds"]![0]!["targetHashes"] is not null);
         });
+        foreach (var dangling in DirectoryLinkFixture.DanglingCases)
+        check("Node migration retires " + (dangling ? "dangling" : "live") + " cached project registration without traversing its target", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var fixture = NodeEnvironmentChecks.WriteFixture(paths.DataRoot);
+            var cache = Path.Combine(paths.DataRoot, "Cache", "Node");
+            Write(cache, ".node-cache", "TractorTool.NodeCache.v1");
+            var project = Path.Combine(dangling ? Path.Combine(fixture.Identity, Guid.NewGuid().ToString("N")) : fixture.Generation, "environment");
+            var registration = NodeEnvironmentChecks.ProjectRegistration(cache, project);
+            DirectoryLinkFixture.Create(registration, project);
+            Write(paths.ConfigRoot, "business.txt", "preserved application data");
+            var calls = 0;
+            var migration = new DataRootMigration(paths, rebuildNodeEnvironment: (packages, item, token) =>
+            {
+                calls++;
+                Assert(new DirectoryInfo(registration).LinkTarget is null && Directory.Exists(project) == !dangling);
+                NodeEnvironmentChecks.WriteInstalled(packages, item);
+                return Task.CompletedTask;
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            var result = migration.ApplyAtStartup(manager, null, default); using var targetLease = result.TargetLease;
+            Assert(result.Error is null && result.Paths.DataRoot == Target(paths) && calls == 1 && migration.Snapshot.Migration is null);
+            Assert(File.ReadAllText(Path.Combine(result.Paths.ConfigRoot, "business.txt")) == "preserved application data");
+            Assert(!Directory.Exists(cache) && !Directory.Exists(Path.Combine(result.Paths.DataRoot, "Cache", "Node")));
+            Assert(TractorTool.Core.Packages.Node.NodeEnvironmentService.ReadMigrationEnvironments(result.Paths.PackageRoot,
+                validatePayload: true).Single().Definition == fixture.Environment.Definition);
+        });
+
+        check("Node migration preserves unknown cache links and source data", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            NodeEnvironmentChecks.WriteFixture(paths.DataRoot);
+            var cache = Path.Combine(paths.DataRoot, "Cache", "Node");
+            Write(cache, ".node-cache", "TractorTool.NodeCache.v1");
+            var external = paths.DataRoot + "-external-project";
+            Write(external, "keep.txt", "outside migration");
+            var link = NodeEnvironmentChecks.ProjectRegistration(cache, external);
+            DirectoryLinkFixture.Create(link, external);
+            Write(paths.ConfigRoot, "business.txt", "source stays unchanged");
+            var calls = 0;
+            var migration = new DataRootMigration(paths, rebuildNodeEnvironment: (_, _, _) =>
+            {
+                calls++;
+                throw new Exception("Unknown cache links must be rejected before rebuilding.");
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            var result = migration.ApplyAtStartup(manager, null, default); using var targetLease = result.TargetLease;
+            Assert(result.Error is not null && migration.Snapshot.DataRoot is null && calls == 0);
+            Assert(new DirectoryInfo(link).LinkTarget is not null && File.ReadAllText(Path.Combine(external, "keep.txt")) == "outside migration");
+            Assert(File.ReadAllText(Path.Combine(paths.ConfigRoot, "business.txt")) == "source stays unchanged");
+        });
+
         check("Mixed Python and Node migration resumes without rebuilding an already verified environment", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);

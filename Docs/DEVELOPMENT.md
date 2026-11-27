@@ -1,6 +1,6 @@
 # TractorTool 开发与验收
 
-更新日期：2026-11-27。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
+更新日期：2026-11-28。本文是**唯一的当前实现和验收台账**。设计见 [架构](ARCHITECTURE.md)，简短交接见 [开发上下文](PROJECT_CONTEXT.md)，旧命令、实施过程与逐轮证据见 [项目历史](PROJECT_HISTORY.md)。
 
 入口：[当前实现](#current-status) · [开发操作](#workflow) · [本地产物](#local-artifacts) · [验收台账](#acceptance) · [下一步](#next)。
 
@@ -54,6 +54,8 @@
 用户授权的 Core **353 项**、最终发布宿主离屏 **100 项**及分发夹具通过，独立插件验证前后 **235 个宿主文件**哈希不变；Debug 已构建。CI 已接入现有框架回归入口，远端执行未验证。**宿主与依赖修复已提交 `789c4f6`，未推送；真实 Windows 专项验收缺口保留**；失败过程、复验命令及证据见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)。
 
 卸载提示与恢复指引已补齐，沿用现有目录/日志入口及事务保护；Debug 构建和子代理静态复核通过，用户反馈暂未发现问题并授权本地提交，证据见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)。未逐项确认的恢复场景继续保留，不沿用 E152 的回归结果代替本轮运行验收。
+
+Python/Node 测试插件 1.1.0 已完成独立构建、静态包校验及 SOL Review，本地提交为 `31ef180`，见 [E154](PROJECT_HISTORY.md#evidence-environment-probe-workflows)。用户测试暴露的 Node 缓存登记 junction 误拦截已在 Core 修复，保留未知链接保护，覆盖复用、清缓存、迁移和默认数据重置；宿主及新增 18 项回归用例构建通过，SOL 静态复核无阻断，自动回归未执行，见 [E155](PROJECT_HISTORY.md#evidence-node-cache-registration)。后续真实日志确认 Node/Python 预期失败分别以退出码 42/17 进入公共任务 Error，用户已授权本地提交本轮修复，未推送；重复准备、清缓存、迁移及重置仍未逐项验收。旧 E154 宿主不含 Core 修复，DLL 专项仍留到审片插件接入时验证。
 
 `Dev` 已完成 DLL、uv/Python 和 pnpm/Node 三类接入。2026-11-27 用户反馈本轮 Node 测试没有问题，授权整理文档并本地提交；**未推送、未发布**，正式版 1.1.0 不变。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，选型与实施证据见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)、[E147](PROJECT_HISTORY.md#evidence-native-library-packages)、[E148](PROJECT_HISTORY.md#evidence-python-environments)、[E150](PROJECT_HISTORY.md#evidence-node-environments)。
 
@@ -145,10 +147,12 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | 产物 | 用途与证据 |
 | --- | --- |
 | [当前 Debug 宿主](../TractorTool/bin/Debug/net10.0/TractorTool.exe) | E151/E152 修复已构建，Contracts API 1.10；隔离回归通过，宿主与依赖修复见 `789c4f6`；来源入口及内页说明已同步 GitHub/PyPI/npm，真实窗口专项待确认，勿用旧 E150 宿主验证新修复 |
-| [Node 测试插件](../artifacts/node-environment-20261127-reviewed/plugin/Test.NodeEnvironmentProbe-1.0.0.zip) | 沿用 E150 夹具，可配合当前 API 1.10 宿主，通过“准备环境并执行”调用真实 npm 依赖；[验收方法](../tests/NodeEnvironmentProbePlugin/README.md)，不进入正式分发 |
+| [Node 缓存修复 Debug 宿主](../artifacts/node-cache-fix-20261128/host-debug/TractorTool.exe) | 含 E155；本机 .NET 10 环境构建，未启动。可用 [Start-TestHost.cmd](../artifacts/node-cache-fix-20261128/Start-TestHost.cmd) 创建独立 profile 后安装下面两份 ZIP；已有 VS Code 调试环境则结束旧进程、重新构建运行，无需重装测试插件。E154 的旧宿主保留为历史产物 |
+| [Python 测试插件 1.1.0](../artifacts/environment-probes-20261128/python/Test.PythonEnvironmentProbe-1.1.0.zip) | 使用真实 idna 依赖处理用户输入，提供持续运行/失败场景及结果文件；[验收步骤](../tests/PythonEnvironmentProbePlugin/README.md)，不进入正式分发 |
+| [Node 测试插件 1.1.0](../artifacts/environment-probes-20261128/node/Test.NodeEnvironmentProbe-1.1.0.zip) | 使用真实 is-number 依赖处理用户输入，提供持续运行/失败场景及结果文件；[验收步骤](../tests/NodeEnvironmentProbePlugin/README.md)，不进入正式分发 |
 | [AB 审片 0.1.7](../artifacts/media-compare-0.1.7-final/TractorTool.MediaCompare-0.1.7.zip) | 插件独立开发包；能力及运行缺口见[当前状态](#media-compare)，证据见 E145 |
 
-宿主使用独立 `--profile-root`；安装插件后显式退出重启。DLL/Python 的旧交付包与命令保留在 E147/E148，重建时使用当前源码和宿主 SDK。生成产物不入库，路径仅在对应本地工作区可用。
+宿主使用独立 `--profile-root`；安装插件后显式退出重启。DLL/Python/Node 的旧交付包与命令保留在 E147/E148/E150，重建时使用当前源码和宿主 SDK。生成产物不入库，路径仅在对应本地工作区可用。
 
 需要运行或完整分发时按[开发入口](#workflow)从当前源码生成新目录，独立安装插件后显式退出重启；不要拼用历史副本，也不要把机制夹具当正式业务插件。托盘验证方法见[接入规范](PLUGIN_DEVELOPMENT.md#tray-menu)。
 
@@ -241,7 +245,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A29 | [AB 审片](Plugins/MediaCompare.md#验收方法) | 双素材时间对应、声音选择、拖放/清空、联动视图、序列、原生与图形资源、独立安装 | 纯托管、真实媒体、Windows GPU/UI | 0.1.7 构建、SOL 静态复核及独立打包通过；按用户要求未运行测试，性能与定位后续播由用户验证。打包 NU1900 漏洞扫描未完成。0.1.6 的 44/66 项检查为历史证据；真实 UI/声音、资源回收与长 GOP 性能待验，未知时长和长空窗非零定位受限，见[当前状态](#media-compare) |
 | A30 | 独立原生运行库 | 完整发布物校验与离线复核；加载前登记进程期占用，部分加载失败仍保护；退出前不可修复/删除，旧工具声明及收据兼容 | 集成、真实 DLL、UI | E147 用户常规测试未发现问题；E151 原生包隔离检查通过，覆盖完整载荷、收据变化、进程期保护、旧接口及离线类型。真实 DLL 加载/退出与管理页专项仍待逐项确认 |
 | A31 | uv / Python | 无全局 Python 前提下自动准备固定工具链，按锁安装并真实调用；拒绝/取消/断网重试、环境隔离、来源约束及清理正确 | 集成、真实网络/进程、UI | E148/E149 用户常规测试未发现问题；E151 输入/旧来源、共享确认取消及重试、租约和缓存隔离检查通过。真实工具链下载、断网/离线调用及可见确认流程仍待逐项确认 |
-| A32 | pnpm / Node | 无全局 Node 前提下自动准备固定工具链，按锁安装并真实调用；安装脚本/钩子不绕过策略，链接不越界，取消无残留进程 | 集成、真实网络/进程、UI | E150 用户反馈测试没有问题；E151 锁/来源策略、离线复用、生命周期及卸载恢复夹具通过，缓存确认退出离屏检查通过。真实 npm 安装/取消及使用后清缓存等场景仍待逐项确认 |
+| A32 | pnpm / Node | 无全局 Node 前提下自动准备固定工具链，按锁安装并真实调用；安装脚本/钩子不绕过策略，链接不越界，取消无残留进程 | 集成、真实网络/进程、UI | E150 用户常规反馈及 E151 隔离证据保留。E154 暴露 pnpm 正常项目登记 junction 被误拦截；E155 修复已构建并静态复核，新增回归未执行。用户后续运行确认预期进程失败正确进入任务 Error；真实安装/取消、重复准备及清缓存待逐项验收 |
 | A33 | 扩展数据与兼容 | uv/Node/DLL 分类及旧同名目录保护；多版本与回退引用、占用保护、缓存独立清理；新根重建验证后切换，失败/中断保留原数据；不修改插件代码和业务数据 | 集成、故障恢复、Windows UI | E151 分类/冲突、卸载分阶段中断、混合迁移重试及源/目标污染的隔离回归通过；含真实 AppLog 的失败启动日志与过期日志场景。迁移重建使用安装夹具，真实语言环境迁移、磁盘断连及 Windows UI 专项未验，不标全项完成 |
 
 

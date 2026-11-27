@@ -39,7 +39,7 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy>
             try
             {
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _stopping.Token);
-                EnvironmentCacheStorage<TDefinition, TPolicy>.CheckTree(CacheDirectory);
+                EnvironmentCacheStorage<TDefinition, TPolicy>.PrepareForRemoval(CacheDirectory, linked.Token);
                 string? cleaner = null;
                 if (provider is not null)
                 {

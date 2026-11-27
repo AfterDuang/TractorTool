@@ -39,6 +39,7 @@ internal abstract class EnvironmentPolicy<TDefinition> where TDefinition : class
     internal abstract string RuntimePath(string generation, TDefinition definition);
     internal virtual string RuntimeDirectory(string generation) => Path.Combine(generation, "environment");
     internal abstract ProcessRequest PrepareRequest(ProcessRequest request);
+    internal virtual bool IsCacheRegistration(string cache, DirectoryInfo entry) => false;
     internal virtual void PrepareGenerationRemoval(string generation, TDefinition definition) { }
     internal virtual bool CacheCleanerNeedsRuntime => false;
     internal virtual Task CleanCacheAsync(string cache, string generation, IProcessRunner processes, IAppLog log, CancellationToken token)

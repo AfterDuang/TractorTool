@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using TractorTool.Contracts;
+using TractorTool.Core.Packages.Node;
 
 namespace TractorTool.Core.Storage;
 
@@ -88,6 +89,7 @@ public sealed class AppPaths : IAppPaths
         token.ThrowIfCancellationRequested();
         discardPluginDataState(MissingDataRoot);
         discardPluginDataState(BootstrapRoot); // Its stale business data is also being discarded.
+        NodeCacheStorage.PrepareForDataRemoval(BootstrapRoot, token);
         DataDirectories.Clear(BootstrapRoot, token);
         token.ThrowIfCancellationRequested();
         store.Save(new()); // Keep the old pointer until cleanup succeeds, so a failed reset can retry.

@@ -99,6 +99,32 @@ Check("Deleted custom root resets to clean defaults only after startup settles p
     Assert(new JsonFileStore<HostSettings>(Path.Combine(reset.ConfigRoot, "settings.json")).Load().Theme == "System");
     Assert(AppPaths.Open(profile).MissingDataRoot is null);
 });
+foreach (var dangling in DirectoryLinkFixture.DanglingCases)
+Check("Factory reset accepts old Node cache with " + (dangling ? "dangling" : "live") + " project registration", () =>
+{
+    var profile = Path.Combine(root, "reset-node-cache-" + dangling);
+    var fixture = NodeEnvironmentChecks.WriteFixture(profile);
+    var missing = profile + "-deleted-custom-root";
+    var pointer = new JsonFileStore<BootstrapSettings>(Path.Combine(profile, "bootstrap.json"));
+    pointer.Save(new() { DataRoot = missing, PreviousDataRoot = profile });
+    var project = Path.Combine(dangling ? Path.Combine(fixture.Identity, Guid.NewGuid().ToString("N")) : fixture.Generation, "environment");
+    if (!dangling) File.WriteAllText(Path.Combine(project, "old.txt"), "stale owned environment data");
+    var cache = Path.Combine(profile, "Cache", "Node"); Directory.CreateDirectory(cache);
+    File.WriteAllText(Path.Combine(cache, ".node-cache"), "TractorTool.NodeCache.v1");
+    var link = NodeEnvironmentChecks.ProjectRegistration(cache, project);
+    DirectoryLinkFixture.Create(link, project);
+    File.WriteAllText(Path.Combine(profile, "unrelated.txt"), "keep outside owned trees");
+    using var profileLease = new InstanceLease(profile);
+    var reset = AppPaths.Open(profile);
+    var discarded = new List<string>();
+    reset.CompleteDataReset(discarded.Add);
+    reset.EnsureDataDirectories();
+    Assert(discarded.SequenceEqual([missing, profile]) && pointer.Load() is { DataRoot: null, PreviousDataRoot: null, Migration: null });
+    Assert(!Directory.Exists(missing) && !Directory.Exists(project) && !Directory.Exists(cache) && new DirectoryInfo(link).LinkTarget is null);
+    Assert(Directory.Exists(reset.PackageRoot) && !Directory.EnumerateFileSystemEntries(reset.PackageRoot).Any());
+    Assert(File.ReadAllText(Path.Combine(profile, "unrelated.txt")) == "keep outside owned trees");
+    Assert(AppPaths.Open(profile).MissingDataRoot is null);
+});
 Check("Missing custom root during migration never resets either side of the commit", () =>
 {
     foreach (var committed in new[] { false, true })

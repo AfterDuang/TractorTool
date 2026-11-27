@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| Node 缓存兼容 | [E155 · pnpm 项目登记链接（2026-11-28）](#evidence-node-cache-registration) |
+| Python/Node 真实使用夹具 | [E154 · 可编辑输入、持续运行与失败恢复（2026-11-28）](#evidence-environment-probe-workflows) |
 | 插件恢复提示 | [E153 · 卸载阶段与人工恢复指引（2026-11-27）](#evidence-plugin-recovery-guidance) |
 | 宿主整体审查修复 | [E152 · 管理恢复、启动退出及验证门禁（2026-11-27）](#evidence-host-review-fixes) |
 | 外部依赖审查修复 | [E151 · Dev 可靠性与精简（2026-11-27）](#evidence-dependency-review-fixes) |
@@ -191,6 +193,41 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-node-cache-registration"></a>
+
+## E155：Node 缓存项目登记兼容（2026-11-28）
+
+用户确认 E154 诊断后授权修改 Core，要求保留必要路径保护、子代理 Review、不提交且由用户运行。修复沿用 pnpm 10.34.9 的固定行为，不修改工具链、插件接口、安装参数或持久记录：
+
+- 归属明确的 Node 缓存仅接受 `store/v10/projects/<SHA256(目标路径)前32位小写>` 直接目录链接，目标须为同数据根、合法插件/64 位身份/代次的 `environment`。读取第一跳而非最终目标，合法旧代次已消失仍可识别。
+- 安装前扫描把登记当作终端条目，不跟随、不删除正常索引。缓存维护先完整验证目录树，再逐项复核父链/登记并非递归删除链接本身；其他链接继续触发原路径保护。
+- 迁移取得启动/目录租约后、提交前捕获清单之前，以及默认数据目录重置前，复用同一登记处理。失败迁移不复原已解除的可重建登记；已提交事务的严格源清单和目标校验不变。没有增加安装收尾 `finally` 或掩盖取消/安装错误。
+- 新增 18 项 Windows 检查，覆盖真实 junction 的有效/悬空登记、错误归属/位置/名称/摘要/目标/PluginId、未知祖先链接、整树拒绝时不提前删除、迁移及默认重置。`DirectoryLinkFixture` 使用原生 junction，无需管理员符号链接权限；Unix 悬空符号链接不保留目录属性，四组悬空成功用例仅在 Windows 枚举。全部只编译、未执行。
+
+验证：隔离输出 Debug 宿主构建 0 错误/6 个 NU1900 警告；检查工程最终构建 0 错误/1 个 NU1900 警告。日志为 `artifacts/node-cache-fix-20261128/host-build.log` 与 `checks-build.log`；NuGet 在线漏洞数据查询未完成。GPT-6.2-SOL/high 静态 Review 未发现 Core 阻断，回归用例的 Unix 悬空成功预期已按 Review 修正；`git diff --check` 通过。并行 pnpm 创建登记时的瞬时 I/O 仍按原错误/重试语义处理，不承诺无竞争窗口。
+
+Agent 未启动主窗口、执行检查程序、运行 Node/pnpm 或改动用户数据。用户后续测试提供的日志确认：2026-11-28 00:47:18 Node 以预期退出码 42、00:47:34 Python 以预期退出码 17 进入公共任务 Error；Python 插件页普通文字与 Node 日志页红色的差异不代表失败漏报。随后用户授权将测试插件和 Core 修复分成两个本地提交，未推送。重复准备、缓存清理、迁移及默认重置尚无逐项运行结论；当前入口和验收状态见开发台账。
+
+<a id="evidence-environment-probe-workflows"></a>
+
+## E154：Python/Node 真实使用测试插件（2026-11-28）
+
+用户要求仅补齐 Python/Node 测试插件，由用户运行真实场景；DLL 后续随审片插件接入验证。本轮不修改宿主、Core、Contracts、公共 UI 或正式插件。
+
+- 两个测试插件升级到 1.1.0，保持环境声明、工具链、锁文件和第三方依赖版本。Python 调用 idna 批量转换域名，Node 调用 is-number 批量判断并统计数值。
+- 提供可编辑输入、持续运行及预期进程失败场景。环境准备仍为入队前预检，成功后使用公共有限任务和环境租约执行真实脚本，支持本地/任务页取消；切页和隐藏窗口不停止任务。
+- 输入通过 JSON 文件传递，结果写入各自插件数据目录，显示实际进程输出和环境位置；不向受管环境写业务数据、不新增下载器或虚拟来源。
+- 新宿主与插件输出统一位于 `artifacts/environment-probes-20261128`；启动脚本固定隔离 profile。操作与预期结果归两个夹具 README，当前产物入口归开发台账。
+
+验证与交付：
+
+- `Publish-Host.ps1` 生成 Windows x64 宿主；两次最终 `Build-Plugin.ps1` 使用其发布 DLL 作为 SDK 独立构建并打包，均为 0 错误。日志为上述产物目录的 `host-build.log`、`python-final-build.log` 和 `node-final-build.log`。NU1900 表示 NuGet 在线漏洞数据查询未完成，不记作审计通过。
+- 静态检查确认两份 ZIP 均为 12 个条目，根清单/入口存在，业务脚本与源码一致，四个安装输入与清单摘要一致，无宿主共享程序集混入；ZIP 摘要匹配，235 个宿主文件在插件打包前后哈希不变，见 `static-verification.txt`。Python 仅用本机 3.11 的 `ast.parse` 解析语法，Node 仅执行 `--check`；均未执行业务脚本，不代替目标运行时验收。
+- GPT-6.2-SOL/high 最终静态复核未发现阻断问题。Review 后补回 Python 双流中文/截断校验，修正 Node 本轮诊断路径、预期失败识别和累加溢出提示；两份 README 将卸载清理放在迁移验收之后。首次 Node 构建发现 Binding 构造写法不兼容，已改用 `Mode` 属性初始化并通过最终构建；首次输出保留在 `*-initial-build`，不作为交付入口。
+- Agent 未启动宿主、执行 Python/Node 业务脚本、安装真实依赖或运行回归检查程序。真实场景由用户验收；交付时未提交，用户后续授权后保存为本地提交 `31ef180`，未推送。A31/A32/A33 不因构建或 Review 自动标通过。
+
+用户运行反馈与只读诊断：Python 暂未发现问题；Node 在 `NodeEnvironmentInstaller.InstallAsync → NodeCacheStorage.Ensure → CheckTree → PackageFiles.CheckPath` 失败，尚未执行本轮下载或插件脚本。现场 Node 缓存有一个 `store/v10/projects/<32 位哈希>` junction 指向先前代次的 `environment`。固定 pnpm 10.34.9 的 [projectRegistry.ts](https://github.com/pnpm/pnpm/blob/v10.34.9/store/package-store/src/storeController/projectRegistry.ts) 与 [get-context](https://github.com/pnpm/pnpm/blob/v10.34.9/pkg-manager/get-context/src/index.ts) 确认安装会创建这一登记，与 hoisted/copy 配置无关；本机已安装的 pnpm 源码一致。这是宿主缓存规则与工具正常行为不兼容，不是用户手动建立链接或测试脚本异常。该阶段仅诊断并记录，未修改框架、运行测试或删除用户缓存；后续授权修复及验证见 [E155](#evidence-node-cache-registration)。
 
 <a id="evidence-plugin-recovery-guidance"></a>
 
