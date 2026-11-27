@@ -5,7 +5,7 @@ using TractorTool.Core.Storage;
 
 namespace TractorTool.Core.Packages.Environments;
 
-internal class EnvironmentStorage<TDefinition, TPolicy>
+internal partial class EnvironmentStorage<TDefinition, TPolicy>
     where TDefinition : class, IEnvironmentDefinition
     where TPolicy : EnvironmentPolicy<TDefinition>, new()
 {
@@ -63,8 +63,16 @@ internal class EnvironmentStorage<TDefinition, TPolicy>
         var path = Path.Combine(directory, RecordName); PackageFiles.CheckPath(path);
         if (new FileInfo(path).Length is <= 0 or > 12 * 1024 * 1024) throw new InvalidDataException("依赖安装记录大小无效。");
         var record = Store(directory).Load();
-        Policy.Validate(record.Definition!);
+        ValidateRecord(record);
         CheckIdentity(directory, record.Definition!);
+        CheckManifestOwnership(directory, record);
+        return record;
+    }
+
+    private static void ValidateRecord(EnvironmentRecord record)
+    {
+        if (record.SchemaVersion != 1) throw new InvalidDataException("依赖安装记录版本无效。");
+        Policy.Validate(record.Definition!);
         if (record.Generation is not null && (!Guid.TryParseExact(record.Generation, "N", out _) ||
             !EnvironmentPolicy.IsHash(record.ManifestHash) || record.InstalledRoot is null || record.InstalledBytes is null))
             throw new InvalidDataException("依赖环境代次记录无效。");
@@ -75,8 +83,6 @@ internal class EnvironmentStorage<TDefinition, TPolicy>
         if (record.PreparingGenerations is null || record.PreparingGenerations.Count > 128 ||
             record.PreparingGenerations.Any(value => !Guid.TryParseExact(value, "N", out _)))
             throw new InvalidDataException("依赖准备代次记录无效。");
-        CheckManifestOwnership(directory, record);
-        return record;
     }
 
     internal static EnvironmentRecordFile Store(string directory) => new(directory);
@@ -125,10 +131,12 @@ internal class EnvironmentStorage<TDefinition, TPolicy>
         return root;
     }
 
+    private static string WorkDirectory(string root) =>
+        Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(root))!, "Cache", Policy.Folder + "-work");
+
     private static string StageDirectory(string root)
     {
-        var dataRoot = Path.GetDirectoryName(Path.GetDirectoryName(root))!;
-        var work = Path.Combine(dataRoot, "Cache", Policy.Folder + "-work");
+        var work = WorkDirectory(root);
         lock (FileLocks.For(work))
         {
             PackageFiles.CheckPath(work);
@@ -409,25 +417,11 @@ internal class EnvironmentStorage<TDefinition, TPolicy>
         var stage = StageDirectory(ClassificationRoot(directory));
         var parent = Path.Combine(stage, record.Definition!.PluginId);
         Directory.CreateDirectory(parent);
+        PublishRemovalRecord(stage, record);
         return Path.Combine(parent, record.Definition.Identity);
     }
 
-    internal static void DeleteRemovedIdentity(string directory, EnvironmentRecord record)
-    {
-        RequireNoUnknownFiles(directory, record);
-        foreach (var child in Directory.EnumerateDirectories(directory))
-        {
-            if (record.PreparingGenerations.Contains(Path.GetFileName(child), StringComparer.Ordinal))
-                Policy.PrepareGenerationRemoval(child, record.Definition!);
-            PackageFiles.DeleteOwnedTree(directory, child, OwnerFile);
-            DeleteGenerationManifest(child);
-        }
-        // All payload is gone. Only reserved metadata remains, so interruptions here cannot strand installed data.
-        foreach (var file in Directory.EnumerateFiles(directory).OrderBy(file => Path.GetFileName(file) == OwnerFile)) File.Delete(file);
-        Directory.Delete(directory);
-        var parent = Path.GetDirectoryName(directory)!; Directory.Delete(parent);
-        Directory.Delete(Path.GetDirectoryName(parent)!);
-    }
+    internal static void DeleteRemovedIdentity(string directory) => CompleteRemoval(Path.GetDirectoryName(Path.GetDirectoryName(directory)!)!);
 
     internal static void DeleteGenerationManifest(string generation)
     {

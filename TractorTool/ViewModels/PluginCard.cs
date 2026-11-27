@@ -15,6 +15,8 @@ internal sealed record PluginCardState(string Name, string Version, string Descr
     public IRelayCommand? UninstallCommand { get; init; }
     public IRelayCommand? RollbackCommand { get; init; }
     public IRelayCommand? CancelChangeCommand { get; init; }
+    public IRelayCommand? FinishUninstallCommand { get; init; }
+    public IRelayCommand? CleanRetainedFilesCommand { get; init; }
 }
 
 /// <summary>A stable installation row; state refreshes must not replace its animated controls.</summary>
@@ -45,11 +47,15 @@ public sealed class PluginCard : ObservableObject
     public IRelayCommand? UninstallCommand => _state.UninstallCommand;
     public IRelayCommand? RollbackCommand => _state.RollbackCommand;
     public IRelayCommand? CancelChangeCommand => _state.CancelChangeCommand;
+    public IRelayCommand? FinishUninstallCommand => _state.FinishUninstallCommand;
+    public IRelayCommand? CleanRetainedFilesCommand => _state.CleanRetainedFilesCommand;
     public bool CanOpen => OpenCommand is not null;
     public bool HasPending => PendingText.Length != 0;
     public bool CanToggle => ToggleCommand is not null;
     public bool CanManage => UninstallCommand is not null;
     public bool CanRollback => RollbackCommand is not null;
     public bool CanCancelChange => CancelChangeCommand is not null;
-    public bool HasActions => CanOpen || CanManage || CanRollback || CanCancelChange;
+    public bool CanFinishUninstall => FinishUninstallCommand is not null;
+    public bool CanCleanRetainedFiles => CleanRetainedFilesCommand is not null;
+    public bool HasActions => CanOpen || CanManage || CanRollback || CanCancelChange || CanFinishUninstall || CanCleanRetainedFiles;
 }

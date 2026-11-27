@@ -73,11 +73,11 @@ public sealed record DependencySource(string Name, string Url)
     };
     internal static Uri IndexUri(string address)
     {
-        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https" || !uri.IsDefaultPort ||
-            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || !uri.IsDefaultPort ||
             !uri.AbsolutePath.TrimEnd('/').EndsWith("/simple", StringComparison.Ordinal))
-            throw new InvalidDataException("请填写公开 Python 包索引地址：https://主机/simple/。");
-        return new(uri.AbsoluteUri.TrimEnd('/') + "/");
+            throw new InvalidDataException("PyPI 来源须为无认证的 HTTPS Simple API 地址，例如 https://pypi.org/simple/。");
+        return new Uri(uri.AbsoluteUri.TrimEnd('/') + "/");
     }
     internal static Uri ApiUri(string address)
     {

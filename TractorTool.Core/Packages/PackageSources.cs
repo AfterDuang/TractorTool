@@ -9,6 +9,7 @@ namespace TractorTool.Core.Packages;
 public sealed partial class ExternalPackageService
 {
     private readonly string _sourcesFile;
+    private const int MaxSourceSettingsBytes = 32768;
     private static DependencySource[] DefaultSources => [new("GitHub", DependencySource.GitHubUrl),
         new("PyPI", DependencySource.PyPiUrl) { Kind = DependencySourceKind.PythonIndex },
         new("npm", DependencySource.NpmUrl) { Kind = DependencySourceKind.NpmRegistry }];
@@ -35,7 +36,7 @@ public sealed partial class ExternalPackageService
     public static IReadOnlyList<DependencySource> ReadConfiguredSources(string file)
     {
         PackageFiles.CheckPath(file);
-        if (File.Exists(file) && new FileInfo(file).Length > 32768)
+        if (File.Exists(file) && new FileInfo(file).Length > MaxSourceSettingsBytes)
             throw new InvalidDataException("依赖来源配置过大。");
         var settings = new JsonFileStore<SourceSettings>(file, ValidateSources).Load();
         return [.. DefaultSources, .. settings.Sources.Select(source => source with
@@ -69,8 +70,11 @@ public sealed partial class ExternalPackageService
     {
         if (_settingsError.Length != 0) throw new InvalidOperationException(_settingsError);
         PackageFiles.CheckPath(_sourcesFile);
+        var settings = new SourceSettings { Sources = sources };
+        if (JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions.Value).Length > MaxSourceSettingsBytes)
+            throw new InvalidDataException("依赖来源配置过大，请缩短地址或减少来源数量。");
         // ponytail: tiny, infrequent settings writes share the service lock; split if write latency becomes measurable.
-        new JsonFileStore<SourceSettings>(_sourcesFile, ValidateSources).Save(new() { Sources = sources });
+        new JsonFileStore<SourceSettings>(_sourcesFile, ValidateSources).Save(settings);
         _sources = [.. DefaultSources, .. sources];
     }
     private static void ValidateSources(SourceSettings settings)

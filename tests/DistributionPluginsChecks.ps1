@@ -257,6 +257,22 @@ try {
     }
     $nodeDeclarations = @{ 0 = @($nodeDeclaration) }
     $nodeInputs = @{ 'Node/package.json' = $nodeProject; 'Node/pnpm-lock.yaml' = $nodeLock }
+    $mixedAssets = New-DistributionFixture 'mixed-language-native-inputs' 1 -ApiVersion '1.10' `
+        -Dependencies @{ 0 = $nativeDeps[1] } -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs `
+        -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs
+    $mixedSource = Join-Path (Split-Path $mixedAssets) 'Bundle/Plugins/Example.Plugin0/1.2.3'
+    $mixedBuilt = Join-Path $scratch 'mixed-built'
+    Copy-Item -LiteralPath $mixedSource -Destination $mixedBuilt -Recurse
+    $caller = Join-Path $scratch 'mixed-caller'
+    New-Item -ItemType Directory -Path $caller | Out-Null
+    Push-Location -LiteralPath $caller
+    try {
+        & $readManifest -Path (Join-Path $mixedSource 'plugin.json') | Out-Null
+        & $readManifest -Path (Join-Path $mixedBuilt 'plugin.json') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $mixedBuilt 'Node/pnpm-lock.yaml'), 'changed build output')
+        Expect-Rejection { & $readManifest -Path (Join-Path $mixedBuilt 'plugin.json') } 'SHA256'
+        & $readManifest -Path (Join-Path $mixedSource 'plugin.json') | Out-Null
+    } finally { Pop-Location }
     & $verify -AssetsDir (New-DistributionFixture 'node-locked-inputs' 1 -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs)
     & $verify -AssetsDir (New-DistributionFixture 'python-current-api' 1 -ApiVersion '1.10' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs)
     foreach ($payload in @('Node/runtime/NODE.EXE', 'Node/pnpm/pnpm.cjs', 'Node/node_modules/package/index.js')) {

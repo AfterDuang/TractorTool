@@ -24,6 +24,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand))]
     private bool _isBusy;
     public string PluginRoot => paths.PluginRoot;
+    public string RecoveryRoot => Path.Combine(paths.DataRoot, "Data", ".plugin-backups");
     public IRelayCommand ShowLogsCommand { get; } = showLogsCommand;
     public ObservableCollection<PluginCard> Items { get; } = [];
     public ObservableCollection<PluginCard> FilteredItems { get; } = [];
@@ -69,10 +70,10 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         }
         foreach (var management in managed.Where(m => !host.Records.Any(r => r.Manifest?.Id == m.Id ||
             (m.ActiveVersion is not null && string.Equals(r.Directory, Path.Combine(paths.PluginRoot, m.Id, m.ActiveVersion), StringComparison.OrdinalIgnoreCase))) &&
-            (m.ActiveVersion is not null || m.Pending is not null)))
+            (m.ActiveVersion is not null || m.Pending is not null || manager!.RetainedRemovals.Any(r => r.PluginId.Equals(m.Id, StringComparison.OrdinalIgnoreCase)))))
         {
             Add("managed:" + management.Id, WithManagement(new(management.Name, management.ActiveVersion ?? management.Pending?.Version ?? "",
-                "", management.ActiveVersion is null ? "待安装" : "未加载", management.Error,
+                "", management.ActiveVersion is null ? management.Pending is null ? "已卸载" : "待安装" : "未加载", management.Error,
                 management.Error.Length != 0, ToolIconKind.Tools, null), management.Id, management, !management.Enabled, true));
         }
         Synchronize(Items, updated);
@@ -80,6 +81,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         DirectoryError = host.DirectoryError;
         Summary = $"{Items.Count} 个本地插件 · {host.Records.Count(p => p.State == PluginState.Loaded)} 个已启用";
         IsLoading = false;
+        if (!string.IsNullOrEmpty(manager?.StateNotificationError)) OperationStatus = manager.StateNotificationError;
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(NoMatches));
@@ -117,6 +119,9 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
             PluginChangeKind.Disable => "重启后禁用", PluginChangeKind.Uninstall => "重启后卸载（保留数据）",
             PluginChangeKind.Rollback => "重启后回退到 " + item!.Recovery?.Version, _ => "" };
         if (!string.IsNullOrEmpty(item?.Error)) text += (text.Length == 0 ? "" : "\n") + item.Error;
+        var retained = manager.RetainedRemovals.Any(r => r.PluginId.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (retained) text += (text.Length == 0 ? "" : "\n") + "程序残留已保留在卸载回收目录，可稍后重试清理；插件数据与恢复快照不受影响。";
+        var failedRollback = pending?.Kind == PluginChangeKind.Rollback && item!.Error.Length != 0;
         return card with {
             PendingText = text,
             RequestedEnabled = pending?.Kind == PluginChangeKind.Enable || (pending?.Kind != PluginChangeKind.Disable && enabled),
@@ -124,12 +129,16 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
                 ? new AsyncRelayCommand(() => CancelChangeAsync(id))
                 : pending is null && (item is null || item.ActiveVersion is not null)
                     ? new AsyncRelayCommand(() => ChangeAsync(id, enabled ? PluginChangeKind.Disable : PluginChangeKind.Enable)) : null,
-            UninstallCommand = pending is null && (item is null || item.ActiveVersion is not null)
+            UninstallCommand = (pending is null || failedRollback) && (item is null || item.ActiveVersion is not null)
                 ? new AsyncRelayCommand(() => ChangeAsync(id, PluginChangeKind.Uninstall)) : null,
-            RollbackCommand = pending is null && item?.Recovery is not null
+            RollbackCommand = pending is null && item?.ActiveVersion is not null && item.Recovery is not null
                 ? new AsyncRelayCommand(() => ChangeAsync(id, PluginChangeKind.Rollback)) : null,
-            CancelChangeCommand = pending is not null && (item!.Error.Length == 0 || pending.Kind == PluginChangeKind.Activate)
-                ? new AsyncRelayCommand(() => CancelChangeAsync(id)) : null
+            CancelChangeCommand = pending is not null && (pending.Kind == PluginChangeKind.Activate ||
+                pending.Kind is PluginChangeKind.Enable or PluginChangeKind.Disable || pending.DestructiveStarted == false)
+                ? new AsyncRelayCommand(() => CancelChangeAsync(id)) : null,
+            FinishUninstallCommand = pending?.Kind == PluginChangeKind.Uninstall && item!.Error.Length != 0
+                ? new AsyncRelayCommand(() => FinishUninstallAsync(id)) : null,
+            CleanRetainedFilesCommand = retained ? new AsyncRelayCommand(() => CleanRetainedFilesAsync(id)) : null
         };
     }
 
@@ -167,14 +176,30 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     private Task ChangeAsync(string id, PluginChangeKind kind) => RunOperationAsync(async () =>
     {
         var message = kind switch {
-            PluginChangeKind.Uninstall => "卸载此插件？重启后移除程序文件，保留插件数据。",
+            PluginChangeKind.Uninstall => "卸载此插件？重启后移除程序文件，保留插件数据和恢复快照。若回退已失败，将停止回退并保留其数据现场。",
             PluginChangeKind.Rollback => "回退此插件？重启后恢复旧版本及更新前的数据；当前数据另行保留。", _ => "" };
         if (message.Length != 0 && (ConfirmAsync is null || !await ConfirmAsync(message))) return;
         if (_stopping) return;
         var rejection = await Task.Run(() => manager!.QueueChange(id, kind, host.Records));
         if (rejection is not null) { ReportRejection(rejection); return; }
         OperationStatus = "变更已安排，退出并重新打开软件后生效。";
-        log?.Write("Plugins", $"{id} · {kind}：{OperationStatus}");
+        log?.Write("Plugins", $"{id} · {kind}：{OperationStatus}" + (kind == PluginChangeKind.Uninstall ? RecoveryLocation(id) : ""));
+    });
+
+    private Task FinishUninstallAsync(string id) => RunOperationAsync(async () =>
+    {
+        if (ConfirmAsync is null || !await ConfirmAsync("结束失败的卸载？仅当程序已移出安装目录时才能完成。剩余程序文件将保留在回收目录并登记以便后续清理；插件数据和恢复快照保持原样。")) return;
+        if (_stopping) return;
+        await Task.Run(() => manager!.CompleteUninstallKeepingFiles(id));
+        OperationStatus = "卸载已完成；保留的程序残留可稍后重试清理。";
+        log?.Write("Plugins", $"{id}：{OperationStatus}" + RecoveryLocation(id));
+    });
+
+    private Task CleanRetainedFilesAsync(string id) => RunOperationAsync(async () =>
+    {
+        await Task.Run(() => manager!.CleanRetainedFiles(id));
+        OperationStatus = "卸载后的程序残留已清理，插件数据和恢复快照保持原样。";
+        log?.Write("Plugins", $"{id}：{OperationStatus}");
     });
 
     private void ReportRejection(string reason)
@@ -182,6 +207,9 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         OperationStatus = reason;
         log?.Write(AppLogLevel.Error, "Plugins", "插件管理请求未执行：" + reason);
     }
+
+    private string RecoveryLocation(string id) => manager!.Snapshot.FirstOrDefault(p => p.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.Recovery is { } recovery
+        ? $" 恢复文件保留在：{Path.Combine(recovery.DataRoot, "Data", ".plugin-backups", recovery.Token)}" : "";
 
     private Task RunOperationAsync(Func<Task> operation)
     {
@@ -195,10 +223,25 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         catch (Exception ex) { log?.Write("Plugins", "插件管理操作失败", ex); OperationStatus = "插件变更失败：" + ex.Message; }
         finally { IsBusy = false; if (!_stopping) Update(_pages, _navigation); }
     }
-    public Task BeginShutdown() { _stopping = true; InstallCommand.NotifyCanExecuteChanged(); return _operation; }
+    public async Task BeginShutdown()
+    {
+        _stopping = true;
+        try { InstallCommand.NotifyCanExecuteChanged(); }
+        finally { await _operation; }
+    }
     [RelayCommand] private void OpenDirectory()
     {
         try { DesktopActions.OpenDirectory(PluginRoot); OperationStatus = ""; }
         catch (Exception ex) { OperationStatus = "无法打开插件目录：" + ex.Message; }
+    }
+    [RelayCommand] private void OpenRecoveryDirectory()
+    {
+        try
+        {
+            if (!Directory.Exists(RecoveryRoot)) { OperationStatus = "暂无插件恢复文件。"; return; }
+            DesktopActions.OpenDirectory(RecoveryRoot);
+            OperationStatus = "恢复文件按事务保存，snapshot.json 记录对应插件与版本：" + RecoveryRoot;
+        }
+        catch (Exception ex) { OperationStatus = "无法打开恢复文件目录：" + ex.Message; }
     }
 }

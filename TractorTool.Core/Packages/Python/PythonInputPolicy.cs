@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using TractorTool.Core.Packages.Environments;
 
 namespace TractorTool.Core.Packages.Python;
 
@@ -68,13 +70,13 @@ internal static class PythonInputPolicy
         var expected = new Uri(index);
         if (uri!.Host != expected.Host && !(index == PythonEnvironmentDefinitions.PyPiUrl && uri.Host == "files.pythonhosted.org")) Fail();
         var hash = Text(value, "hash");
-        if (!hash.StartsWith("sha256:", StringComparison.Ordinal) || !PythonEnvironmentDefinitions.IsHash(hash[7..])) Fail();
+        if (!hash.StartsWith("sha256:", StringComparison.Ordinal) || !EnvironmentPolicy.IsHash(hash[7..])) Fail();
         if (value.TryGetProperty("size", out var size) && (!size.TryGetInt64(out var length) || length is <= 0 or > 1024L * 1024 * 1024)) Fail();
     }
 
     private static string Text(JsonElement value, string property) => value.TryGetProperty(property, out var item) &&
         item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } text ? text : throw new InvalidDataException("Python 项目或锁文件字段无效。");
-    private static string Normalize(string value) => value.ToLowerInvariant().Replace('_', '-').Replace('.', '-');
+    private static string Normalize(string value) => Regex.Replace(value, "[-_.]+", "-").ToLowerInvariant();
     private static void RequireKeys(JsonElement value, params string[] allowed)
     {
         if (value.ValueKind != JsonValueKind.Object || value.EnumerateObject().Any(p => !allowed.Contains(p.Name, StringComparer.Ordinal))) Fail();

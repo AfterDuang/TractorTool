@@ -606,6 +606,8 @@ Check("Dependency settings separate installed packages and persistent GitHub sou
     finally { model.Dispose(); Pump(service.DisposeAsync().AsTask()); Pump(runner.DisposeAsync().AsTask()); }
 });
 AppearanceChecks.Run(Check, Pump, output);
+HostFailureChecks.Run(Check, Pump, output);
+PluginLifecycleChecks.Run(Check, Pump, output, fixtureDirectory, compatibility);
 PackageCategoryChecks.Run(Check, Pump, output, log);
 Check("First dependency transfer appears in settings and can be cancelled", () =>
 {

@@ -30,6 +30,52 @@ internal static class PythonEnvironmentChecks
             Require(service.GetEnvironments().Single().Phase == PackagePhase.Ready);
         });
 
+        foreach (var changed in new[] { false, true })
+        Test("locked installed environment retries validation " + (changed ? "and still rejects changed bytes" : "without reinstalling"), async path =>
+        {
+            var fixture = WriteFixture(path);
+            var payload = Path.Combine(fixture.Generation!, "environment", "Scripts", "python.exe");
+            var recordPath = Path.Combine(fixture.IdentityDirectory, "environment.json");
+            var originalRecord = File.ReadAllText(recordPath);
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            var runner = new NoProcesses(); var confirmations = 0;
+            await using var service = new PythonEnvironmentService(fixture.PackageRoot, "win-x64", http, runner, new Log(),
+                _ => throw new Exception("Existing generation queried a source."));
+            service.ConfirmInstallAsync = (prompt, _) =>
+            {
+                Require(prompt.IsRepair); confirmations++; return Task.FromResult(false);
+            };
+            using (var held = new FileStream(payload, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                await Throws<IOException>(() => service.TryRequestAsync(fixture.Definition, "Fixture.Plugin"));
+                await Throws<IOException>(() => service.TryRequestAsync(fixture.Definition, "Fixture.Plugin"));
+                var failed = service.GetEnvironments().Single();
+                Require(failed.Phase == PackagePhase.Failed && failed.Error.Length != 0 && failed.Users.Count == 0);
+                Require(confirmations == 0);
+            }
+            using (var cancellation = new CancellationTokenSource())
+            {
+                cancellation.Cancel();
+                await Throws<OperationCanceledException>(() => service.TryRequestAsync(fixture.Definition, "Fixture.Plugin", cancellation.Token));
+            }
+            if (changed)
+            {
+                var timestamp = File.GetLastWriteTimeUtc(payload);
+                Write(payload, "X" + File.ReadAllText(payload)[1..]); File.SetLastWriteTimeUtc(payload, timestamp);
+                await Throws<InvalidDataException>(() => service.TryRequestAsync(fixture.Definition, "Fixture.Plugin"));
+                Require(await service.TryRequestAsync(fixture.Definition, "Fixture.Plugin") is null && confirmations == 1);
+                Require(service.GetEnvironments().Single().Phase == PackagePhase.Failed);
+            }
+            else
+            {
+                using var lease = await service.TryRequestAsync(fixture.Definition, "Fixture.Plugin");
+                Require(lease?.PythonPath == payload && confirmations == 0);
+                var recovered = service.GetEnvironments().Single();
+                Require(recovered.Phase == PackagePhase.Ready && recovered.Error.Length == 0);
+            }
+            Require(handler.Calls == 0 && runner.Calls == 0 && File.ReadAllText(recordPath) == originalRecord);
+        });
+
         Test("last request canceled during source lookup never starts a download", async path =>
         {
             var fixture = WriteFixture(path, ready: false);
@@ -62,6 +108,69 @@ internal static class PythonEnvironmentChecks
                 Require(handler.Calls == 0 && runner.Calls == 0);
             }
             finally { cancellation.Cancel(); releaseSource.TrySetResult(); await Observe(request); }
+        });
+
+        foreach (var faultOnRetirement in new[] { false, true })
+        Test("a later caller starts fresh after canceled consent " + (faultOnRetirement ? "faults" : "retires"), async path =>
+        {
+            var fixture = WriteFixture(path, ready: false);
+            using var http = new HttpClient(new NoNetwork());
+            using var cancellation = new CancellationTokenSource();
+            var entered = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var retire = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var secondConsent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var confirmations = 0;
+            await using var service = Create(fixture, http, new NoProcesses());
+            service.ConfirmInstallAsync = async (_, token) =>
+            {
+                if (Interlocked.Increment(ref confirmations) != 1) { secondConsent.TrySetResult(); return false; }
+                using var registration = token.Register(() => canceled.TrySetResult());
+                entered.TrySetResult(token);
+                await retire.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                if (faultOnRetirement) throw new IOException("retiring consent failed");
+                token.ThrowIfCancellationRequested();
+                return true;
+            };
+            var first = service.TryRequestAsync(fixture.Definition, "first", cancellation.Token);
+            Task<IPythonEnvironmentLease?>? next = null;
+            try
+            {
+                var confirmationToken = await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                cancellation.Cancel();
+                await Throws<OperationCanceledException>(() => first);
+                await canceled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Require(confirmationToken.IsCancellationRequested);
+                next = service.TryRequestAsync(fixture.Definition, "next");
+                Require(!next.IsCompleted && confirmations == 1);
+                retire.TrySetResult();
+                await secondConsent.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Require(await next is null && confirmations == 2 &&
+                    (!faultOnRetirement || service.GetEnvironments().Single().Error == "retiring consent failed"));
+            }
+            finally { cancellation.Cancel(); retire.TrySetResult(); await Observe(first); if (next is not null) await Observe(next); }
+        });
+
+        Test("one caller canceling preserves consent for another waiter", async path =>
+        {
+            var fixture = WriteFixture(path, ready: false);
+            using var http = new HttpClient(new NoNetwork()); using var cancellation = new CancellationTokenSource();
+            var entered = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var decide = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var confirmations = 0;
+            await using var service = Create(fixture, http, new NoProcesses());
+            service.ConfirmInstallAsync = (_, token) =>
+            { Interlocked.Increment(ref confirmations); entered.TrySetResult(token); return decide.Task.WaitAsync(token); };
+            var first = service.TryRequestAsync(fixture.Definition, "first", cancellation.Token);
+            var token = await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var second = service.TryRequestAsync(fixture.Definition, "second");
+            try
+            {
+                cancellation.Cancel(); await Throws<OperationCanceledException>(() => first);
+                Require(!token.IsCancellationRequested && confirmations == 1 && !second.IsCompleted);
+                decide.TrySetResult(false); Require(await second is null);
+            }
+            finally { cancellation.Cancel(); decide.TrySetResult(false); await Observe(first); await Observe(second); }
         });
 
         Test("plugin cancellation does not own a settings installation or ask for consent again", async path =>

@@ -148,13 +148,22 @@ public partial class SettingsViewModel : ViewModelBase
     public Task BeginShutdown()
     {
         Dispatcher.UIThread.VerifyAccess();
-        if (_stopping) return Task.WhenAll(_saveCompletion, Migration.BeginShutdown());
+        var first = !_stopping;
         _stopping = true;
-        ExternalTools.Dispose();
-        RetrySaveCommand.NotifyCanExecuteChanged();
-        // One retry on exit, never an unbounded failure loop; App owns the overall timeout.
-        if (HasSaveError && !IsSaving) QueueSave(_settings);
-        return Task.WhenAll(_saveCompletion, Migration.BeginShutdown());
+        var migration = Migration.BeginShutdown();
+        var notification = Task.CompletedTask;
+        try
+        {
+            if (first)
+            {
+                ExternalTools.Dispose();
+                RetrySaveCommand.NotifyCanExecuteChanged();
+                // One retry on exit, never an unbounded failure loop; App owns the overall timeout.
+                if (HasSaveError && !IsSaving) QueueSave(_settings);
+            }
+        }
+        catch (Exception ex) { notification = Task.FromException(ex); }
+        return Task.WhenAll(_saveCompletion, migration, notification);
     }
 
     private void QueueSave(HostSettings settings)
@@ -165,12 +174,13 @@ public partial class SettingsViewModel : ViewModelBase
         // Register completion before starting work or notifying bindings.
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _saveCompletion = completion.Task;
-        IsSaving = true;
-        _ = SavePendingAsync(completion);
+        try { IsSaving = true; }
+        finally { _ = SavePendingAsync(completion); }
     }
 
     private async Task SavePendingAsync(TaskCompletionSource completion)
     {
+        Exception? failure = null;
         try
         {
             while (_pendingSettings is { } next)
@@ -190,10 +200,13 @@ public partial class SettingsViewModel : ViewModelBase
                 }
             }
         }
+        catch (Exception ex) { failure = ex; }
         finally
         {
-            IsSaving = false;
-            completion.TrySetResult();
+            try { IsSaving = false; }
+            catch (Exception ex) { failure ??= ex; }
+            if (failure is null) completion.TrySetResult();
+            else completion.TrySetException(failure);
         }
     }
     [RelayCommand] private void OpenDirectory(string path)

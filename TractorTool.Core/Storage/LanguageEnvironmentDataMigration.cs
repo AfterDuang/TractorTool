@@ -1,5 +1,6 @@
 using TractorTool.Core.Packages.Python;
 using TractorTool.Core.Packages.Node;
+using TractorTool.Core.Packages.Environments;
 
 namespace TractorTool.Core.Storage;
 
@@ -39,7 +40,6 @@ public sealed partial class DataRootMigration
         IProgress<string>? progress, CancellationToken token)
     {
         ValidateLanguagePlan(marker);
-        VerifyLanguageCopyBaseline(request, marker, token);
         var packageRoot = Path.Combine(request.Source, "Packages");
         var python = PythonEnvironmentService.ReadMigrationEnvironments(packageRoot, validatePayload: true, token);
         var node = NodeEnvironmentService.ReadMigrationEnvironments(packageRoot, validatePayload: true, token);
@@ -49,6 +49,7 @@ public sealed partial class DataRootMigration
                 marker.NodeRebuilds?.Any(p => p.Environment == environment) != true))
             throw new IOException("原依赖环境身份已改变，迁移未提交，原数据已保留。");
 
+        marker = RefreshLanguageCopyBaseline(request, marker, progress, token);
         var regions = RebuildRegions(marker).ToArray();
         for (var index = 0; index < regions.Length; index++)
         {
@@ -103,7 +104,7 @@ public sealed partial class DataRootMigration
                 foreach (var entry in item.Entries)
                     if (entry is null || !Under(root, entry.Relative) || !SafeRelative(entry.Relative) ||
                         !paths.Add(entry.Relative) || entry.Length < 0 || !entry.IsDirectory &&
-                        (!item.Hashes!.TryGetValue(entry.Relative, out var hash) || !PythonEnvironmentDefinitions.IsHash(hash)))
+                        (!item.Hashes!.TryGetValue(entry.Relative, out var hash) || !EnvironmentPolicy.IsHash(hash)))
                         throw new InvalidDataException("依赖重建清单路径或摘要无效。");
                 if (item.Hashes!.Count != item.Entries.Count(e => !e.IsDirectory))
                     throw new InvalidDataException("依赖重建清单与摘要数量不一致。");
@@ -155,6 +156,32 @@ public sealed partial class DataRootMigration
         return result;
     }
 
+    private static TargetMarker RefreshLanguageCopyBaseline(DataMigrationRequest request, TargetMarker marker,
+        IProgress<string>? progress, CancellationToken token)
+    {
+        var current = Inventory(request.Source, token, includeCache: true).ToDictionary(e => e.Relative, StringComparer.Ordinal);
+        var original = marker.Cleanup!.ToDictionary(e => e.Relative, StringComparer.Ordinal);
+        foreach (var entry in original.Values.Where(e => RequiresCopy(e.Relative)))
+            if (!current.TryGetValue(entry.Relative, out var now) || entry != now)
+                throw new IOException("原有数据在依赖环境迁移期间发生变化，未切换数据目录。");
+        if (current.Values.Any(e => !original.ContainsKey(e.Relative) && IsLanguageRebuildPath(marker, e.Relative)))
+            throw new IOException("原依赖环境出现未登记文件，未切换数据目录。");
+
+        var buffer = new byte[1024 * 1024];
+        foreach (var entry in original.Values.Where(e => !e.IsDirectory && RequiresCopy(e.Relative)))
+            VerifyRebuildSource(request, entry.Relative, marker.TargetHashes!, buffer, token);
+
+        // A failed startup may add logs or refresh disposable caches. Reuse the non-overwriting
+        // copy transaction for ordinary files; rebuilt regions retain their original evidence.
+        var (cleanup, hashes) = CopyAndVerify(request, progress, token, marker);
+        if (cleanup.Count != current.Count || cleanup.Any(e => !current.TryGetValue(e.Relative, out var before) || e != before) ||
+            marker.TargetHashes!.Any(p => !hashes.TryGetValue(p.Key, out var hash) || hash != p.Value))
+            throw new IOException("原数据在重试复制期间发生变化，未切换数据目录。");
+        marker = marker with { Cleanup = cleanup, TargetHashes = hashes };
+        SaveTargetMarker(request, marker);
+        return marker;
+    }
+
     private static void VerifyLanguageCopyBaseline(DataMigrationRequest request, TargetMarker marker, CancellationToken token)
     {
         foreach (var path in Directory.EnumerateFileSystemEntries(request.Target))
@@ -195,7 +222,7 @@ public sealed partial class DataRootMigration
         IReadOnlyDictionary<string, string> hashes, byte[] buffer, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (!hashes.TryGetValue(relative, out var expected) || !PythonEnvironmentDefinitions.IsHash(expected))
+        if (!hashes.TryGetValue(relative, out var expected) || !EnvironmentPolicy.IsHash(expected))
             throw new InvalidDataException("迁移缺少原文件摘要：" + relative);
         var path = Path.Combine(request.Source, relative); CheckPath(path);
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);

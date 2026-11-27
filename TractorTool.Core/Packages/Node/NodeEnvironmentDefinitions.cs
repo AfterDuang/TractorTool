@@ -1,8 +1,9 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using TractorTool.Core.Packages.Environments;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
+using static TractorTool.Core.Packages.Environments.EnvironmentPolicy;
 
 namespace TractorTool.Core.Packages.Node;
 
@@ -29,8 +30,6 @@ public static class NodeEnvironmentDefinitions
     public const string PnpmVersion = "10.34.9";
     public const string NodeArchiveSha256 = "e612af99f626ab415ea225af6bce5c971feb448cb5cae250bb1c3fa50c5f7d9f";
     public const string PnpmArchiveSha256 = "7e8a946108e7baab119e51d27c24d6178b46545422643dbc91e34e2f1ee32e0f";
-    internal const int MaxInputBytes = 2 * 1024 * 1024;
-    internal static readonly UTF8Encoding Utf8 = new(false, true);
 
     public static void ValidateDeclaration(NodeEnvironmentDeclaration value)
     {
@@ -57,8 +56,8 @@ public static class NodeEnvironmentDefinitions
         if (rid != "win-x64") throw new NotSupportedException("当前 Node 环境接入支持 Windows x64。");
         var definition = new NodeEnvironmentDefinition("", pluginId, pluginVersion, pluginName, value.Id,
             value.NodeVersion, rid, RegistryUri(value.Source).AbsoluteUri, value.Description,
-            ReadInput(PackageFiles.SafePath(pluginDirectory, value.Project), value.ProjectSha256),
-            ReadInput(PackageFiles.SafePath(pluginDirectory, value.Lock), value.LockSha256), PnpmVersion);
+            EnvironmentInput.Read(PackageFiles.SafePath(pluginDirectory, value.Project), value.ProjectSha256),
+            EnvironmentInput.Read(PackageFiles.SafePath(pluginDirectory, value.Lock), value.LockSha256), PnpmVersion);
         definition = definition with { Identity = Identity(definition) };
         Validate(definition);
         return definition;
@@ -71,7 +70,7 @@ public static class NodeEnvironmentDefinitions
         if (value.Rid != "win-x64" || value.NodeVersion != SupportedNodeVersion || value.PnpmVersion != PnpmVersion ||
             value.ProjectText is null || value.LockText is null || value.PluginName is null || value.PluginName.Length > 256 ||
             value.Description is null || value.Description.Length > 1000 ||
-            Utf8.GetByteCount(value.ProjectText) > MaxInputBytes || Utf8.GetByteCount(value.LockText) > MaxInputBytes ||
+            Utf8.GetByteCount(value.ProjectText) > EnvironmentInput.MaxBytes || Utf8.GetByteCount(value.LockText) > EnvironmentInput.MaxBytes ||
             RegistryUri(value.Source).AbsoluteUri != value.Source || !IsHash(value.Identity) || value.Identity != Identity(value))
             throw new InvalidDataException("Node 环境安装身份或原始锁定资料无效，原文件已保留。");
     }
@@ -86,18 +85,7 @@ public static class NodeEnvironmentDefinitions
 
     internal static string NodeExecutable(string generation, NodeEnvironmentDefinition definition) =>
         Path.Combine(generation, "node", $"node-v{definition.NodeVersion}-win-x64", "node.exe");
-    internal static bool IsHash(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
     private static string Identity(NodeEnvironmentDefinition value) => Convert.ToHexString(SHA256.HashData(
         JsonSerializer.SerializeToUtf8Bytes(new { value.PluginId, value.PluginVersion, value.Id, value.NodeVersion,
             value.Rid, value.Source, value.ProjectText, value.LockText, value.PnpmVersion, NodeArchiveSha256, PnpmArchiveSha256 })));
-
-    private static string ReadInput(string path, string expected)
-    {
-        using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (input.Length is <= 0 or > MaxInputBytes) throw new InvalidDataException("Node 项目或锁文件大小无效。");
-        var bytes = new byte[(int)input.Length]; input.ReadExactly(bytes);
-        if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(expected, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Node 项目或锁文件与声明的 SHA256 不符。");
-        return Utf8.GetString(bytes);
-    }
 }

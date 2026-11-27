@@ -79,10 +79,18 @@ public sealed class PluginPackageReferences : IDisposable
                 }
             }
             catch (Exception ex) { error = "无法确认全部插件依赖，暂停清理：" + ex.Message; }
-            _packages.UpdateReferences(new(manifests.SelectMany(p => p.Manifest.Dependencies.Select(d =>
-                    new PackageDependency(d.Package, p.Manifest.Id, p.Manifest.Name, d.Downloads)))
-                .Distinct().ToArray(), error.Length == 0, error)
-                { PythonEnvironments = python.DistinctBy(p => p.Identity).ToArray(), NodeEnvironments = node.DistinctBy(p => p.Identity).ToArray() });
+            try
+            {
+                _packages.UpdateReferences(new(manifests.SelectMany(p => p.Manifest.Dependencies.Select(d =>
+                        new PackageDependency(d.Package, p.Manifest.Id, p.Manifest.Name, d.Downloads)))
+                    .Distinct().ToArray(), error.Length == 0, error)
+                    { PythonEnvironments = python.DistinctBy(p => p.Identity).ToArray(), NodeEnvironments = node.DistinctBy(p => p.Identity).ToArray() });
+            }
+            catch (Exception ex)
+            {
+                // Publication spans tools, Python and Node. A partial update must not enable any cleanup.
+                _packages.InvalidateReferences("插件依赖刷新失败，暂停清理：" + ex.Message);
+            }
         }
     }
 

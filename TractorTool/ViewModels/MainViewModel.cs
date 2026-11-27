@@ -107,6 +107,27 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private async Task InitializeCoreAsync()
     {
+        try { await LoadPluginsAsync(); }
+        catch (Exception ex)
+        {
+            if (!_detached)
+            {
+                Notice = "初始化失败：" + ex.Message;
+                Home.DirectoryError = Notice;
+                Home.Summary = "插件加载未完成";
+                Plugins.OperationStatus = Notice;
+            }
+            throw;
+        }
+        finally
+        {
+            Home.IsLoading = false;
+            Plugins.IsLoading = false;
+        }
+    }
+
+    private async Task LoadPluginsAsync()
+    {
         if (_detached) return;
         if (_manager is not null)
         {
@@ -128,7 +149,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             if (_detached) return null;
             var registry = new PageRegistry(record.Manifest!.Id);
             if (plugin is IPluginUiModule ui) ui.RegisterPages(registry);
-            var menu = _tray?.Register(record, plugin);
+            if (_detached) return null;
+            var menu = _tray?.Register(record, plugin, () => !_detached);
             if (!_detached) _registered.AddRange(registry.Pages);
             return menu;
         });
@@ -285,9 +307,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
     public void DetachPagePresenter()
     {
-        ClearPresentedPage();
-        _presentPage = null;
-        _clearPage = null;
+        try { ClearPresentedPage(); }
+        finally { _presentPage = null; _clearPage = null; }
     }
     private void ClearPresentedPage()
     {
@@ -295,7 +316,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         catch (Exception ex) { _log.Write("Navigation", "退出页面呈现清理失败", ex); }
     }
     [RelayCommand] private Task ExitAsync() => _exit();
-    public void NotifyTrayUnavailable() => Notice = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
+    public void NotifyTrayUnavailable()
+    {
+        if (!HasNotice) Notice = "系统托盘不可用，窗口将保留；可在设置的关于区域退出。";
+    }
     private void OnLogChanged()
     {
         // Coalesce worker notifications; the bounded log buffer remains the source of truth.
@@ -314,31 +338,45 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
     public Task BeginShutdown()
     {
-        var pendingSave = Settings.BeginShutdown();
-        var pendingManagement = Plugins.BeginShutdown();
-        Detach();
-        return Task.WhenAll(_initialization ?? Task.CompletedTask, pendingSave, pendingManagement);
+        var pendingSave = Start(Settings.BeginShutdown);
+        var pendingManagement = Start(Plugins.BeginShutdown);
+        var detached = Start(() => { Detach(); return Task.CompletedTask; });
+        return Task.WhenAll(_initialization ?? Task.CompletedTask, pendingSave, pendingManagement, detached);
+
+        static Task Start(Func<Task> stop)
+        {
+            try { return stop(); }
+            catch (Exception ex) { return Task.FromException(ex); }
+        }
     }
 
     public void Detach()
     {
         if (_detached) return;
         _detached = true;
-        Settings.ExternalTools.Dispose();
-        Logs.Tasks.Dispose();
-        _packageReferences?.Dispose();
+        List<Exception>? errors = null;
+        Run(Settings.ExternalTools.Dispose);
+        Run(Logs.Tasks.Dispose);
+        Run(() => _packageReferences?.Dispose());
         _log.Changed -= OnLogChanged;
         var previous = CurrentPage;
-        CurrentPage = null;
-        DetachPagePresenter();
-        ReleasePage(previous);
+        Run(() => CurrentPage = null);
+        Run(DetachPagePresenter);
+        Run(() => ReleasePage(previous));
+        if (errors is not null) throw new AggregateException("工作区清理失败", errors);
+
+        void Run(Action cleanup)
+        {
+            try { cleanup(); }
+            catch (Exception ex) { (errors ??= []).Add(ex); }
+        }
     }
 
     // Detach runs when shutdown begins; the disabled window can still render during plugin cleanup.
     // Dispose only after the owning window closes (or for a VM that was never attached to a window).
     public void Dispose()
     {
-        Detach();
-        _icons.Dispose();
+        try { Detach(); }
+        finally { _icons.Dispose(); }
     }
 }

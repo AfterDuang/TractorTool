@@ -1,9 +1,9 @@
 using System.Collections;
 using System.Formats.Tar;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 using TractorTool.Contracts.Processes;
+using TractorTool.Core.Packages.Environments;
 
 namespace TractorTool.Core.Packages.Node;
 
@@ -20,18 +20,18 @@ internal sealed class NodeEnvironmentInstaller(HttpClient http, IProcessRunner p
             NodeCacheStorage.Ensure(cache);
             var project = Path.Combine(generation, "environment"); Directory.CreateDirectory(project);
             var projectFile = Path.Combine(project, "package.json"); var lockFile = Path.Combine(project, "pnpm-lock.yaml");
-            await File.WriteAllTextAsync(projectFile, definition.ProjectText, NodeEnvironmentDefinitions.Utf8, token);
-            await File.WriteAllTextAsync(lockFile, definition.LockText, NodeEnvironmentDefinitions.Utf8, token);
+            await File.WriteAllTextAsync(projectFile, definition.ProjectText, EnvironmentPolicy.Utf8, token);
+            await File.WriteAllTextAsync(lockFile, definition.LockText, EnvironmentPolicy.Utf8, token);
             phase("正在准备 Node.js…");
             var nodeArchive = Path.Combine(generation, "node.zip");
-            await DownloadAsync($"https://nodejs.org/dist/v{definition.NodeVersion}/node-v{definition.NodeVersion}-win-x64.zip",
+            await EnvironmentDownload.DownloadAsync(http, $"https://nodejs.org/dist/v{definition.NodeVersion}/node-v{definition.NodeVersion}-win-x64.zip",
                 nodeArchive, NodeEnvironmentDefinitions.NodeArchiveSha256, token).ConfigureAwait(false);
             await PackageFiles.ExtractAsync(nodeArchive, Path.Combine(generation, "node"), token).ConfigureAwait(false);
             File.Delete(nodeArchive);
             var node = NodeEnvironmentDefinitions.NodeExecutable(generation, definition); PackageFiles.CheckPath(node);
             phase("正在准备 pnpm…");
             var pnpmArchive = Path.Combine(generation, "pnpm.tgz");
-            await DownloadAsync($"https://registry.npmjs.org/pnpm/-/pnpm-{definition.PnpmVersion}.tgz",
+            await EnvironmentDownload.DownloadAsync(http, $"https://registry.npmjs.org/pnpm/-/pnpm-{definition.PnpmVersion}.tgz",
                 pnpmArchive, NodeEnvironmentDefinitions.PnpmArchiveSha256, token).ConfigureAwait(false);
             await ExtractPnpmAsync(pnpmArchive, Path.Combine(generation, "pnpm"), token).ConfigureAwait(false);
             File.Delete(pnpmArchive);
@@ -52,14 +52,14 @@ internal sealed class NodeEnvironmentInstaller(HttpClient http, IProcessRunner p
             var semver = Path.Combine(Path.GetDirectoryName(node)!, "node_modules", "npm", "node_modules", "semver");
             PackageFiles.CheckPath(semver);
             var constraintFile = Path.Combine(config, "version-constraints.json");
-            await File.WriteAllTextAsync(constraintFile, constraints, NodeEnvironmentDefinitions.Utf8, token);
+            await File.WriteAllTextAsync(constraintFile, constraints, EnvironmentPolicy.Utf8, token);
             await RunNode(["--input-type=commonjs", "-e", ValidateVersionsScript, semver, constraintFile]);
             var options = PnpmOptions(generation, cache, definition.Source);
             phase("正在按锁安装 Node 依赖…");
             await RunNode([pnpm, "install", "--frozen-lockfile", "--prod", "--ignore-scripts", "--ignore-pnpmfile",
                 "--reporter=append-only", "--use-stderr", "--loglevel=error", .. options]);
-            if (!(await File.ReadAllBytesAsync(projectFile, token)).AsSpan().SequenceEqual(NodeEnvironmentDefinitions.Utf8.GetBytes(definition.ProjectText)) ||
-                !(await File.ReadAllBytesAsync(lockFile, token)).AsSpan().SequenceEqual(NodeEnvironmentDefinitions.Utf8.GetBytes(definition.LockText)))
+            if (!(await File.ReadAllBytesAsync(projectFile, token)).AsSpan().SequenceEqual(EnvironmentPolicy.Utf8.GetBytes(definition.ProjectText)) ||
+                !(await File.ReadAllBytesAsync(lockFile, token)).AsSpan().SequenceEqual(EnvironmentPolicy.Utf8.GetBytes(definition.LockText)))
                 throw new InvalidDataException("pnpm 修改了冻结输入，未发布环境。");
             phase("正在校验环境文件…");
             // Hoisted + copy keeps installed packages independent from the store. The inventory rejects all links.
@@ -134,36 +134,6 @@ internal sealed class NodeEnvironmentInstaller(HttpClient http, IProcessRunner p
         result["TEMP"] = result["TMP"] = Path.Combine(generation, "config", "temp");
         result["CI"] = "true"; result["NO_UPDATE_NOTIFIER"] = "1";
         return result;
-    }
-
-    private async Task DownloadAsync(string url, string destination, string sha256, CancellationToken callerToken)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(callerToken);
-        timeout.CancelAfter(TimeSpan.FromMinutes(5));
-        try { await DownloadCoreAsync(url, destination, sha256, timeout.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException ex) when (!callerToken.IsCancellationRequested)
-        { throw new TimeoutException("Node 工具链下载超时，请重试。", ex); }
-    }
-
-    private async Task DownloadCoreAsync(string url, string destination, string sha256, CancellationToken token)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url); request.Headers.UserAgent.ParseAdd("TractorTool/1.1");
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        if (response.RequestMessage?.RequestUri?.Scheme != "https" || response.Content.Headers.ContentLength > PackageFiles.MaxDownload)
-            throw new InvalidDataException("Node 工具链下载地址或大小无效。");
-        await using var input = await response.Content.ReadAsStreamAsync(token);
-        await using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[81920]; long length = 0; int count;
-        while ((count = await input.ReadAsync(buffer, token)) != 0)
-        {
-            length += count;
-            if (length > PackageFiles.MaxDownload) throw new InvalidDataException("Node 工具链下载超过大小限制。");
-            hash.AppendData(buffer, 0, count); await output.WriteAsync(buffer.AsMemory(0, count), token);
-        }
-        if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(sha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Node 工具链附件 SHA256 校验失败。");
     }
 
     internal static async Task ExtractPnpmAsync(string archive, string destination, CancellationToken token)

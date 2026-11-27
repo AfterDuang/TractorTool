@@ -27,7 +27,8 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy>
             if (!CanCleanCache) throw new InvalidOperationException("依赖仍在准备或维护，请完成后再清理缓存。");
             if (!EnvironmentCacheStorage<TDefinition, TPolicy>.IsOwned(CacheDirectory)) throw new InvalidDataException("依赖缓存归属不明，已保留文件。");
             _cacheCleaning = true;
-            provider = _entries.Values.FirstOrDefault(e => e.Phase == PackagePhase.Ready && e.Record?.Generation is not null);
+            provider = Policy.CacheCleanerNeedsRuntime
+                ? _entries.Values.FirstOrDefault(e => e.Phase == PackagePhase.Ready && e.Record?.Generation is not null) : null;
             if (provider is not null) Reserve(provider, "缓存维护");
             _operations.Add(completion.Task);
         }

@@ -8,8 +8,9 @@ function Invoke-Recorded([string]$Name, [scriptblock]$Action) {
     & $Action 2>&1 | Tee-Object -FilePath (Join-Path $run ($Name + '.txt'))
     if ($LASTEXITCODE -ne 0) { throw "$Name failed: $LASTEXITCODE" }
 }
-Invoke-Recorded 'environment' { dotnet --info }
-Invoke-Recorded 'build' { dotnet build (Join-Path $repo 'TractorTool.slnx') -c $Configuration -m:1 -nr:false }
+Invoke-Recorded 'sdk' { dotnet --version }
+Invoke-Recorded 'runtimes' { dotnet --list-runtimes }
+Invoke-Recorded 'build' { dotnet build (Join-Path $repo 'tests/TractorTool.Checks/TractorTool.Checks.csproj') -c $Configuration -m:1 -nr:false -p:UseSharedCompilation=false }
 Invoke-Recorded 'core-checks' { dotnet run --project (Join-Path $repo 'tests/TractorTool.Checks') -c $Configuration --no-build }
 & (Join-Path $PSScriptRoot 'Publish-Host.ps1') -Output $publish -Configuration $Configuration 2>&1 | Tee-Object (Join-Path $run 'publish.txt')
 $before = @(Get-ChildItem -LiteralPath $publish -Recurse -File | ForEach-Object { [pscustomobject]@{ Path = [IO.Path]::GetRelativePath($publish, $_.FullName); SHA256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
@@ -23,7 +24,7 @@ $pluginManifest = & (Join-Path $PSScriptRoot 'Read-PluginManifest.ps1') -Path (J
 $install = Join-Path $publish "Plugins/$($pluginManifest.id)/$($pluginManifest.version)"
 New-Item -ItemType Directory -Path $install -Force | Out-Null
 Get-ChildItem -LiteralPath $pluginOutput | Copy-Item -Destination $install -Recurse
-Invoke-Recorded 'integration-build' { dotnet build (Join-Path $repo 'tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj') -t:Rebuild -c $Configuration -m:1 -nr:false "-p:HostSdkDir=$publish" }
+Invoke-Recorded 'integration-build' { dotnet build (Join-Path $repo 'tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj') -t:Rebuild -c $Configuration -m:1 -nr:false -p:UseSharedCompilation=false "-p:HostSdkDir=$publish" }
 Invoke-Recorded 'integration-checks' { dotnet run --project (Join-Path $repo 'tests/TractorTool.IntegrationChecks') -c $Configuration --no-build -- $publish (Join-Path $run 'integration') }
 $after = @($before | ForEach-Object { [pscustomobject]@{ Path = $_.Path; SHA256 = (Get-FileHash -LiteralPath (Join-Path $publish $_.Path) -Algorithm SHA256).Hash } })
 $after | ConvertTo-Json | Set-Content (Join-Path $run 'host-hashes-after.json')

@@ -82,8 +82,8 @@ foreach ($dependency in $manifest.Dependencies) {
             if ($manifest.ApiVersion -cnotin @('1.8', '1.9', '1.10') -or $download.Rid -cnotin @('win-x64', 'win-x86', 'win-arm64') -or
                 $download.Tools.get_Count() -ne 0 -or $download.Libraries.get_Count() -notin 1..32) { throw '原生运行库需要 API 1.8 或更高、Windows 平台和 DLL 入口。' }
             foreach ($library in $download.Libraries.GetEnumerator()) {
-                $path = $library.Value
-                if (!$path -or !$path.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)) { throw '原生运行库入口必须是 DLL。' }
+                $libraryPath = $library.Value
+                if (!$libraryPath -or !$libraryPath.EndsWith('.dll', [StringComparison]::OrdinalIgnoreCase)) { throw '原生运行库入口必须是 DLL。' }
             }
         } else { throw "未知的依赖类型：$($download.Kind)" }
         foreach ($tool in $download.Tools.GetEnumerator()) { Assert-PackageRelativePath $tool.Value.Path }

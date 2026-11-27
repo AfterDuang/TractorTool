@@ -421,6 +421,9 @@ internal static class DataMigrationChecks
             var python = PythonFixture(paths);
             var node = NodeEnvironmentChecks.WriteFixture(paths.DataRoot).Environment;
             Write(paths.ConfigRoot, "mixed-business.txt", "keep until both environments validate");
+            var oldLog = new TractorTool.Core.Logging.AppLog(paths.LogRoot);
+            oldLog.Write("Host", "retention fixture");
+            File.SetLastWriteTimeUtc(oldLog.FilePath, DateTime.UtcNow.AddDays(-30));
             var pythonCalls = 0; var nodeCalls = 0;
             var migration = new DataRootMigration(paths,
                 (packages, item, token) => { pythonCalls++; WritePythonFixture(packages, item); return Task.CompletedTask; },
@@ -435,12 +438,48 @@ internal static class DataMigrationChecks
             Assert(interrupted.Error is not null && pythonCalls == 1 && nodeCalls == 1 && migration.Snapshot.DataRoot is null);
             Assert(Directory.Exists(Path.Combine(paths.PackageRoot, python.RelativeDirectory)) &&
                 Directory.Exists(Path.Combine(paths.PackageRoot, node.RelativeDirectory)));
+            // A failed real startup opens the original root and writes a fresh session log.
+            var startupLog = new TractorTool.Core.Logging.AppLog(paths.LogRoot, pruneFiles: interrupted.Error is null);
+            startupLog.Write("Storage", interrupted.Error!);
+            startupLog.Write("Host", "Started on the original data root");
+            var logName = Path.GetFileName(startupLog.FilePath);
+            var logText = File.ReadAllText(startupLog.FilePath);
+            Assert(File.Exists(oldLog.FilePath));
+            Write(Path.Combine(paths.DataRoot, "Cache"), "after-failure.bin", "disposable cache");
             migration.Retry();
             var resumed = migration.ApplyAtStartup(manager, null, default); using var lease = resumed.TargetLease;
             Assert(resumed.Error is null && pythonCalls == 1 && nodeCalls == 2 && !Directory.Exists(paths.PackageRoot));
             Assert(File.ReadAllText(Path.Combine(resumed.Paths.ConfigRoot, "mixed-business.txt")) == "keep until both environments validate");
+            Assert(File.ReadAllText(Path.Combine(resumed.Paths.LogRoot, logName)) == logText);
             var journal = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(Target(paths), ".tractortool-migration.json")))!;
             Assert(journal["pythonRebuilds"]![0]!["targetHashes"] is not null && journal["nodeRebuilds"]![0]!["targetHashes"] is not null);
+        });
+        foreach (var change in new[] { "source", "target", "new-conflict" })
+        check("Language migration retry protects ordinary data: " + change, () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            _ = PythonFixture(paths);
+            Write(paths.ConfigRoot, "business.txt", "original");
+            var attempts = 0;
+            var migration = new DataRootMigration(paths, (packages, item, _) =>
+            {
+                if (++attempts == 1) throw new IOException("interrupted rebuild");
+                WritePythonFixture(packages, item); return Task.CompletedTask;
+            });
+            Assert(migration.Queue(Target(paths), manager) is null);
+            Assert(migration.ApplyAtStartup(manager, null, default).Error is not null);
+            var relative = change == "new-conflict" ? "new.txt" : "business.txt";
+            var sourceFile = Path.Combine(paths.ConfigRoot, relative);
+            var targetFile = Path.Combine(Target(paths), "Config", relative);
+            if (change == "new-conflict") File.WriteAllText(sourceFile, "new source");
+            var edited = change == "source" ? sourceFile : targetFile;
+            var modified = File.GetLastWriteTimeUtc(edited);
+            File.WriteAllText(edited, "modified");
+            if (change != "new-conflict") File.SetLastWriteTimeUtc(edited, modified);
+            migration.Retry();
+            Assert(migration.ApplyAtStartup(manager, null, default).Error is not null);
+            Assert(attempts == 1 && migration.Snapshot.DataRoot is null);
+            Assert(File.ReadAllText(edited) == "modified" && Directory.Exists(paths.PackageRoot));
         });
         check("Interrupted Python rebuilding preserves source and resumes from retained original inputs", () =>
         {

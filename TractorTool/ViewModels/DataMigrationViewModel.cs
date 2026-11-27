@@ -79,10 +79,10 @@ public partial class DataMigrationViewModel : ViewModelBase
         PreviousDataRoot = state.PreviousDataRoot;
         if (Pending?.Error is { } error) Status = error;
     }
-    public Task BeginShutdown()
+    public async Task BeginShutdown()
     {
         _stopping = true;
-        OnPropertyChanged(nameof(CanChoose)); OnPropertyChanged(nameof(CanChangeRequest));
-        return _operation;
+        try { OnPropertyChanged(nameof(CanChoose)); OnPropertyChanged(nameof(CanChangeRequest)); }
+        finally { await _operation; }
     }
 }

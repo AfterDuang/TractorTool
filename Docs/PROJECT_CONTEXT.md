@@ -10,11 +10,11 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入。2026-11-27 用户反馈本轮 Node 测试没有问题，授权文档收尾并本地提交；**未推送、未发布**。Contracts API 1.10 增加 Node 环境租约，保留 API 1.0–1.9；Python/Node 共用环境事务与卡片，保留旧 Python 记录和公开签名。构建、Review 与用户反馈见 [E150](PROJECT_HISTORY.md#evidence-node-environments)；未逐项确认的故障与兼容性场景继续留在 A30–A33。
+`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入，三个实现提交止于 `1848ca2`。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) 外部依赖修复之后，[E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 补齐宿主管理事务/回退现场保护、启动退出收尾、暂时 I/O 重验及 CI 门禁；主代理自审与 SOL 分项复核完成，授权的隔离回归通过，用户已同意本地提交。Contracts API 1.10 / UI API 1.6、旧插件接口及 Python 身份/记录不变。接续由用户确认恢复交互及真实使用效果，A04/A30–A33 未验场景保留；不推送或发版。
 
 Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源，不恢复自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 
-语言环境首轮限定 Windows x64、固定工具链和锁文件，禁用安装脚本；Node 使用 hoisted+copy，业务脚本显式定位环境模块。迁移在目标最终路径按原锁重建，失败保留原数据。版本与接入规则统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。Agent 未执行运行测试，NU1900 导致在线漏洞数据查询未完成；已发布 1.1.0 不变。
+语言环境首轮限定 Windows x64、固定工具链和锁文件，禁用安装脚本；Node 使用 hoisted+copy，业务脚本显式定位环境模块。迁移在目标最终路径按原锁重建，失败保留原数据。版本与接入规则统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。E151/E152 仅运行隔离自动回归，未启动真实主窗口或安装真实语言依赖；NU1900 导致在线漏洞数据查询未完成，CI 新门禁尚无远端执行证据，已发布 1.1.0 不变。
 
 [AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。
 

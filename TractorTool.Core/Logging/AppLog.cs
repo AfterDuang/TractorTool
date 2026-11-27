@@ -21,9 +21,12 @@ public sealed class AppLog : IAppLog
     public string? WriteError { get; private set; }
     public event Action? Changed;
 
-    public AppLog(string directory)
+    public AppLog(string directory) : this(directory, pruneFiles: true) { }
+
+    /// <summary>Defer retention while a failed migration still depends on the original file inventory.</summary>
+    public AppLog(string directory, bool pruneFiles)
     {
-        _files = new LogFileWriter(directory);
+        _files = new LogFileWriter(directory, pruneFiles);
     }
 
     public void Write(string source, string message, Exception? error = null) =>

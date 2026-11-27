@@ -232,21 +232,22 @@ public sealed partial class DataRootMigration(AppPaths paths,
     private static string MarkerPendingName(DataMigrationRequest request) => MarkerName + "." + request.Id + ".tmp";
 
     private static (List<MigrationEntry> Cleanup, Dictionary<string, string> Hashes) CopyAndVerify(
-        DataMigrationRequest request, IProgress<string>? progress, CancellationToken token)
+        DataMigrationRequest request, IProgress<string>? progress, CancellationToken token, TargetMarker? languagePlan = null)
     {
         if (!DataDirectories.Exists(request.Source)) throw new DirectoryNotFoundException("原数据目录不可用，未创建空数据替代。");
+        bool CopyEntry(MigrationEntry entry) => languagePlan is null || !IsLanguageRebuildPath(languagePlan, entry.Relative);
         var cleanup = Inventory(request.Source, token, includeCache: true);
-        var source = Inventory(request.Source, token, skipDownloads: true);
+        var source = Inventory(request.Source, token, skipDownloads: true).Where(CopyEntry).ToList();
         var expected = source.ToDictionary(e => e.Relative, StringComparer.OrdinalIgnoreCase);
         foreach (var entry in Directory.EnumerateFileSystemEntries(request.Target))
         {
             CheckPath(entry);
-            if (!DataDirectories.PersistentNames.Contains(Path.GetFileName(entry), StringComparer.Ordinal) &&
+            if (!(languagePlan is null ? DataDirectories.PersistentNames : DataDirectories.OwnedNames).Contains(Path.GetFileName(entry), StringComparer.Ordinal) &&
                 Path.GetFileName(entry) is not (MarkerName or MarkerBackupName or "host.lock" or TempName) &&
                 Path.GetFileName(entry) != MarkerPendingName(request))
                 throw new IOException("目标目录出现不属于此次迁移的内容，请选择新的空目录。");
         }
-        foreach (var entry in Inventory(request.Target, token))
+        foreach (var entry in Inventory(request.Target, token).Where(CopyEntry))
             if (!expected.TryGetValue(entry.Relative, out var original) || original.IsDirectory != entry.IsDirectory)
                 throw new IOException("目标目录含已变化或新增的内容，未覆盖；请选择新的空目录。");
         // Ownership and contents have been checked under the target lease. Reclaim only this
@@ -263,7 +264,8 @@ public sealed partial class DataRootMigration(AppPaths paths,
         var lastPercent = -1;
         var buffer = new byte[1024 * 1024];
         var copiedEntries = new List<MigrationEntry>(source.Count);
-        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        var hashes = languagePlan is null ? new Dictionary<string, string>(StringComparer.Ordinal) :
+            languagePlan.TargetHashes!.Where(p => IsLanguageRebuildPath(languagePlan, p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         foreach (var entry in source)
         {
             token.ThrowIfCancellationRequested();
@@ -309,9 +311,9 @@ public sealed partial class DataRootMigration(AppPaths paths,
             hashes.Add(entry.Relative, Convert.ToHexString(digest));
         }
         // The source lease protects cooperating hosts; detect ordinary external changes too.
-        if (!source.SequenceEqual(Inventory(request.Source, token, skipDownloads: true))) throw new IOException("源数据在迁移过程中发生变化，启动指针未切换。");
+        if (!source.SequenceEqual(Inventory(request.Source, token, skipDownloads: true).Where(CopyEntry))) throw new IOException("源数据在迁移过程中发生变化，启动指针未切换。");
         if (!cleanup.SequenceEqual(Inventory(request.Source, token, includeCache: true))) throw new IOException("旧数据或缓存在迁移过程中发生变化，启动指针未切换。");
-        if (!copiedEntries.SequenceEqual(Inventory(request.Target, token))) throw new IOException("目标数据在迁移过程中发生变化，启动指针未切换。");
+        if (!copiedEntries.SequenceEqual(Inventory(request.Target, token).Where(CopyEntry))) throw new IOException("目标数据在迁移过程中发生变化，启动指针未切换。");
         token.ThrowIfCancellationRequested();
         return (cleanup, hashes);
     }

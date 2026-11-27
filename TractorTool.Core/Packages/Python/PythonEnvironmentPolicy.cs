@@ -9,6 +9,7 @@ internal sealed class PythonEnvironmentPolicy : EnvironmentPolicy<PythonEnvironm
     internal override string Name => "Python";
     internal override string Folder => "uv";
     internal override string OwnerPrefix => "Python";
+    internal override bool CacheCleanerNeedsRuntime => true;
     internal override void Validate(PythonEnvironmentDefinition definition) => PythonEnvironmentDefinitions.Validate(definition);
     internal override string RuntimePath(string generation, PythonEnvironmentDefinition definition) =>
         Path.Combine(RuntimeDirectory(generation), "Scripts", "python.exe");

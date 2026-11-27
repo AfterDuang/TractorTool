@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using TractorTool.Contracts;
+using TractorTool.Contracts.Packages;
 using TractorTool.Contracts.Processes;
 using TractorTool.Core.Packages.Node;
 using TractorTool.Core.Storage;
@@ -13,6 +14,48 @@ internal static class NodeEnvironmentChecks
     {
         void Test(string name, Func<string, Task> body) => check("Node environments: " + name, () =>
             body(Path.Combine(root, "node-" + Guid.NewGuid().ToString("N"))).GetAwaiter().GetResult());
+
+        foreach (var changed in new[] { false, true })
+        Test("locked installed environment retries validation " + (changed ? "and still rejects changed bytes" : "without reinstalling"), async path =>
+        {
+            var fixture = WriteFixture(path);
+            var definition = fixture.Environment.Definition;
+            var payload = Path.Combine(fixture.Generation, "node", $"node-v{definition.NodeVersion}-win-x64", "node.exe");
+            var recordPath = Path.Combine(fixture.Identity, "environment.json");
+            var originalRecord = File.ReadAllText(recordPath);
+            using var handler = new NoNetwork(); using var http = new HttpClient(handler);
+            var confirmations = 0;
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(),
+                _ => throw new Exception("Existing generation queried a source."));
+            service.ConfirmInstallAsync = (prompt, _) =>
+            {
+                Require(prompt.IsRepair); confirmations++; return Task.FromResult(false);
+            };
+            using (var held = new FileStream(payload, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                await Reject<IOException>(() => service.TryRequestAsync(definition, "NodeFixture"));
+                await Reject<IOException>(() => service.TryRequestAsync(definition, "NodeFixture"));
+                var failed = service.GetEnvironments().Single();
+                Require(failed.Phase == PackagePhase.Failed && failed.Error.Length != 0 && failed.Users.Count == 0);
+                Require(confirmations == 0);
+            }
+            if (changed)
+            {
+                var timestamp = File.GetLastWriteTimeUtc(payload);
+                Write(payload, "X" + File.ReadAllText(payload)[1..]); File.SetLastWriteTimeUtc(payload, timestamp);
+                await Reject<InvalidDataException>(() => service.TryRequestAsync(definition, "NodeFixture"));
+                Require(await service.TryRequestAsync(definition, "NodeFixture") is null && confirmations == 1);
+                Require(service.GetEnvironments().Single().Phase == PackagePhase.Failed);
+            }
+            else
+            {
+                using var lease = await service.TryRequestAsync(definition, "NodeFixture");
+                Require(lease?.NodePath == payload && confirmations == 0);
+                var recovered = service.GetEnvironments().Single();
+                Require(recovered.Phase == PackagePhase.Ready && recovered.Error.Length == 0);
+            }
+            Require(handler.Calls == 0 && File.ReadAllText(recordPath) == originalRecord);
+        });
 
         Test("offline reuse and process drain retain the immutable environment", async path =>
         {
@@ -76,6 +119,132 @@ internal static class NodeEnvironmentChecks
             await Reject<InvalidDataException>(() => service.RemoveAsync(fixture.Environment.Definition.Identity));
             Require(File.ReadAllText(unknown) == "retain");
         });
+
+        Test("cache removal never validates or reserves a Node runtime", async path =>
+        {
+            var fixture = WriteFixture(path);
+            var cache = Path.Combine(path, "Cache", "Node");
+            Write(Path.Combine(cache, ".node-cache"), "TractorTool.NodeCache.v1");
+            Write(Path.Combine(cache, "content", "download.bin"), "cached bytes");
+            Write(Path.Combine(fixture.Generation, "node", $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe"), "changed runtime");
+            var log = new Log(); var reserved = false;
+            using var http = new HttpClient(new NoNetwork());
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), log, _ => true);
+            service.Changed += () => reserved |= service.GetEnvironments().Any(e => e.Users.Count != 0);
+            await service.CleanCacheAsync();
+            Require(!Directory.Exists(cache) && Directory.Exists(fixture.Generation) && !reserved &&
+                !log.Messages.Any(message => message.Contains("工具链无法用于缓存维护", StringComparison.Ordinal)));
+        });
+
+        foreach (var interruption in new[] { "before-move", "after-move", "empty-generation", "metadata", "tree-gone", "legacy", "unknown", "changed", "legacy-changed", "unverified" })
+            Test("restart resumes only owned removal: " + interruption, async path =>
+            {
+                var fixture = WriteFixture(path);
+                var work = Path.Combine(path, "Cache", "Node-work");
+                Write(Path.Combine(work, ".node-work"), "TractorTool.NodeWork.v1");
+                var stage = Path.Combine(work, Guid.NewGuid().ToString("N"));
+                var removed = Path.Combine(stage, fixture.Environment.Definition.PluginId, fixture.Environment.Definition.Identity);
+                var journal = stage + ".removal.json";
+                var record = File.ReadAllText(Path.Combine(fixture.Identity, "environment.json"));
+                Directory.CreateDirectory(Path.GetDirectoryName(removed)!);
+                if (!interruption.StartsWith("legacy", StringComparison.Ordinal)) Write(journal, record);
+                if (interruption != "before-move") Directory.Move(fixture.Identity, removed);
+                var generation = Path.Combine(removed, Path.GetFileName(fixture.Generation));
+                if (interruption == "unverified")
+                {
+                    var preparing = System.Text.Json.Nodes.JsonNode.Parse(record)!;
+                    foreach (var property in new[] { "generation", "installedRoot", "manifestHash", "installedBytes" }) preparing[property] = null;
+                    preparing["generationHashes"] = new System.Text.Json.Nodes.JsonObject();
+                    preparing["preparingGenerations"] = JsonSerializer.SerializeToNode(new[] { Path.GetFileName(generation) });
+                    Write(journal, preparing.ToJsonString(JsonOptions.Value));
+                    Write(Path.Combine(removed, "environment.json"), preparing.ToJsonString(JsonOptions.Value));
+                }
+                if (interruption is "empty-generation" or "metadata" or "tree-gone")
+                {
+                    RemoveFixtureGeneration(removed, generation, fixture.Environment.Definition.Identity);
+                    if (interruption == "empty-generation") Directory.CreateDirectory(generation);
+                    else
+                    {
+                        File.Delete(Path.Combine(removed, Path.GetFileName(generation) + ".files.json"));
+                        File.Delete(Path.Combine(removed, "environment.json"));
+                        if (interruption == "tree-gone")
+                        {
+                            File.Delete(Path.Combine(removed, ".owner"));
+                            Directory.Delete(removed); Directory.Delete(Path.GetDirectoryName(removed)!); Directory.Delete(stage);
+                        }
+                    }
+                }
+                var unknown = Path.Combine(removed, "user.txt");
+                if (interruption == "unknown") Write(unknown, "preserve");
+                string? changed = null; string? replacement = null;
+                if (interruption.EndsWith("changed", StringComparison.Ordinal))
+                {
+                    changed = Path.Combine(generation, "node", $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe");
+                    replacement = "X" + File.ReadAllText(changed)[1..];
+                    Write(changed, replacement);
+                }
+                var log = new Log();
+                using var http = new HttpClient(new NoNetwork());
+                await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), log, _ => true);
+                if (interruption == "unknown") Require(File.ReadAllText(unknown) == "preserve" && File.Exists(journal));
+                else if (changed is not null)
+                    Require(File.ReadAllText(changed) == replacement && Directory.Exists(stage) &&
+                        File.Exists(journal) == (interruption == "changed") && log.Messages.Any(message => message.Contains("已保留", StringComparison.Ordinal)));
+                else if (interruption == "unverified")
+                    Require(Directory.Exists(generation) && File.Exists(journal) && log.Messages.Any(message => message.Contains("已保留", StringComparison.Ordinal)));
+                else Require(!Directory.Exists(stage) && !File.Exists(journal));
+                Require(service.GetEnvironments().Count == (interruption == "before-move" ? 1 : 0));
+                if (interruption == "before-move") Require(Directory.Exists(fixture.Generation));
+            });
+
+        Test("explicit removal still accepts damaged bytes at recorded payload paths", async path =>
+        {
+            var fixture = WriteFixture(path);
+            using var http = new HttpClient(new NoNetwork());
+            await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), new Log(), _ => true);
+            service.UpdateReferences([], true, "");
+            Write(Path.Combine(fixture.Generation, "node", $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe"), "damaged");
+            await service.RemoveAsync(fixture.Environment.Definition.Identity);
+            Require(!Directory.Exists(fixture.Identity) && service.GetEnvironments().Count == 0);
+        });
+
+        foreach (var interruption in new[] { "partial-before", "partial-legacy", "complete-legacy", "unknown-before", "changed-legacy" })
+            Test("unpublished removal intent recovers only verified bytes: " + interruption, async path =>
+            {
+                var fixture = WriteFixture(path);
+                var work = Path.Combine(path, "Cache", "Node-work");
+                Write(Path.Combine(work, ".node-work"), "TractorTool.NodeWork.v1");
+                var stage = Path.Combine(work, Guid.NewGuid().ToString("N"));
+                var removed = Path.Combine(stage, fixture.Environment.Definition.PluginId, fixture.Environment.Definition.Identity);
+                var pending = stage + "." + fixture.Environment.Definition.Identity + ".removal.pending";
+                var record = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(fixture.Identity, "environment.json")))!;
+                record["preparingGenerations"] = JsonSerializer.SerializeToNode(Array.Empty<string>());
+                var bytes = Encoding.UTF8.GetBytes(record.ToJsonString(JsonOptions.Value));
+                if (interruption != "complete-legacy") bytes = bytes[..(bytes.Length / 2)];
+                if (interruption == "unknown-before") bytes[0] = (byte)'!';
+                Directory.CreateDirectory(Path.GetDirectoryName(removed)!);
+                File.WriteAllBytes(pending, bytes);
+                var moved = interruption.EndsWith("legacy", StringComparison.Ordinal);
+                if (moved) Directory.Move(fixture.Identity, removed);
+                string? changed = null; string? replacement = null;
+                if (interruption == "changed-legacy")
+                {
+                    changed = Path.Combine(removed, Path.GetFileName(fixture.Generation), "node",
+                        $"node-v{fixture.Environment.Definition.NodeVersion}-win-x64", "node.exe");
+                    replacement = "X" + File.ReadAllText(changed)[1..]; Write(changed, replacement);
+                }
+                var log = new Log(); using var http = new HttpClient(new NoNetwork());
+                await using var service = new NodeEnvironmentService(fixture.Packages, "win-x64", http, new NoRunner(), log, _ => true);
+                if (interruption is "unknown-before" or "changed-legacy")
+                {
+                    Require(File.ReadAllBytes(pending).SequenceEqual(bytes) && Directory.Exists(stage) &&
+                        log.Messages.Any(message => message.Contains("已保留", StringComparison.Ordinal)));
+                    if (changed is not null) Require(File.ReadAllText(changed) == replacement);
+                }
+                else Require(!File.Exists(pending) && !File.Exists(stage + ".removal.json") && !Directory.Exists(stage));
+                Require(service.GetEnvironments().Count == (moved ? 0 : 1));
+                if (!moved) Require(Directory.Exists(fixture.Generation));
+            });
 
         Test("legacy tool named Node never becomes a managed environment", async path =>
         {
@@ -290,5 +459,9 @@ internal static class NodeEnvironmentChecks
         public async Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken = default)
         { Started.TrySetResult(request); await Release.Task.WaitAsync(TimeSpan.FromSeconds(10)); cancellationToken.ThrowIfCancellationRequested(); return new(0, "", "", false, false); }
     }
-    private sealed class Log : IAppLog { public void Write(string source, string message, Exception? error = null) { } }
+    private sealed class Log : IAppLog
+    {
+        public List<string> Messages { get; } = [];
+        public void Write(string source, string message, Exception? error = null) => Messages.Add(message);
+    }
 }

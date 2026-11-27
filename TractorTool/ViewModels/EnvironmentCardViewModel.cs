@@ -50,8 +50,6 @@ public sealed class EnvironmentCardViewModel : ObservableObject
     public string StatusText => _item.Phase switch
     {
         PackagePhase.Ready => "已就绪",
-        PackagePhase.Downloading => "正在下载工具链",
-        PackagePhase.Verifying => "正在校验",
         PackagePhase.Installing => "正在准备环境",
         PackagePhase.Failed => "准备失败",
         _ => "尚未准备"

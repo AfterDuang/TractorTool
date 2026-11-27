@@ -40,7 +40,9 @@ public sealed class TrayService : IDisposable
         catch (Exception ex) { log.Write("Tray", "托盘创建失败，窗口将保留。", ex); _icon?.Dispose(); _icon = null; }
     }
 
-    public IAsyncDisposable? Register(PluginRecord record, IPlugin plugin)
+    public IAsyncDisposable? Register(PluginRecord record, IPlugin plugin) => Register(record, plugin, null);
+
+    public IAsyncDisposable? Register(PluginRecord record, IPlugin plugin, Func<bool>? canCommit)
     {
         Avalonia.Threading.Dispatcher.UIThread.VerifyAccess();
         if (plugin is not IPluginTrayModule module) return null;
@@ -51,6 +53,8 @@ public sealed class TrayService : IDisposable
         try
         {
             module.RegisterTrayMenu(menu);
+            // Plugin registration may synchronously initiate shutdown. The caller still owns cleanup.
+            if (_disposed || canCommit?.Invoke() == false) return menu;
             menu.Commit(() =>
             {
                 Menu.Items.Remove(menu.Group);

@@ -4,8 +4,13 @@ using TractorTool.Core.Storage;
 namespace TractorTool.Core.Plugins;
 
 public enum PluginChangeKind { Activate, Enable, Disable, Uninstall, Rollback }
-public sealed record PendingPluginChange(PluginChangeKind Kind, string Token, string DataRoot, string? Version = null, string? Digest = null);
+public sealed record PendingPluginChange(PluginChangeKind Kind, string Token, string DataRoot, string? Version = null, string? Digest = null)
+{
+    // Null denotes a legacy journal, not proof that a failed change is reversible.
+    public bool? DestructiveStarted { get; init; }
+}
 public sealed record PluginRecovery(string Version, string Token, string DataRoot, bool HadData);
+public sealed record RetainedPluginRemoval(string PluginId, string Token);
 public sealed record ManagedPlugin
 {
     public string Id { get; init; } = "";
@@ -22,6 +27,7 @@ public sealed record PluginManagementState : IVersionedSettings
 {
     public int SchemaVersion { get; init; } = 1;
     public ManagedPlugin[] Plugins { get; init; } = [];
+    public RetainedPluginRemoval[] RetainedRemovals { get; init; } = [];
 
     public static void Validate(PluginManagementState value)
     {
@@ -30,6 +36,7 @@ public sealed record PluginManagementState : IVersionedSettings
         foreach (var item in value.Plugins)
         {
             if (item is null) throw new InvalidDataException("插件管理条目为空。");
+            if (item.Name is null || item.Error is null) throw new InvalidDataException("插件管理条目的名称或错误信息为空。");
             AppPaths.ValidateId(item.Id);
             if (!ids.Add(item.Id)) throw new InvalidDataException("插件管理记录 ID 重复。");
             if (item.ActiveVersion is { } active) ManifestValidator.ValidateVersion(active);
@@ -54,6 +61,16 @@ public sealed record PluginManagementState : IVersionedSettings
                 ValidateToken(recovery.Token);
                 _ = AppPaths.Absolute(recovery.DataRoot);
             }
+        }
+        if (value.RetainedRemovals is null) throw new InvalidDataException("插件卸载清理记录无效。");
+        var removals = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var removal in value.RetainedRemovals)
+        {
+            if (removal is null) throw new InvalidDataException("插件卸载清理记录为空。");
+            AppPaths.ValidateId(removal.PluginId);
+            ValidateToken(removal.Token);
+            if (!ids.Contains(removal.PluginId) || !removals.Add(removal.Token))
+                throw new InvalidDataException("插件卸载清理记录缺少归属或重复。");
         }
     }
 

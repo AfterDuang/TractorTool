@@ -40,6 +40,19 @@ internal static class TrayMenuChecks
             pump(first.DisposeAsync().AsTask()); Assert(Child(tray, "Second").Header == "Action");
             pump(second.DisposeAsync().AsTask()); Assert(tray.Menu.Items.Count == 3);
         });
+        check("Reentrant shutdown during tray registration cannot publish a late menu", () =>
+        {
+            using var tray = new TrayService(() => { }, () => Task.CompletedTask, log, disabled: true);
+            var stopping = false;
+            var resource = tray.Register(Record("Late"), new Fixture(menu =>
+            {
+                menu.Add("late", new("Late action"), _ => Task.CompletedTask);
+                stopping = true;
+            }), () => !stopping)!;
+            Assert(tray.Menu.Items.Count == 3);
+            pump(resource.DisposeAsync().AsTask());
+            Assert(tray.Menu.Items.Count == 3);
+        });
         check("Tray state updates are dispatched, disabled and busy items cannot execute, shutdown awaits the action", () =>
         {
             using var tray = new TrayService(() => { }, () => Task.CompletedTask, log, disabled: true);

@@ -43,9 +43,9 @@ public sealed partial class ExternalPackageService
         Node.UpdateReferences(snapshot.NodeEnvironments, snapshot.Complete, snapshot.Error);
         Notify();
     }
-    internal void InvalidateReferences()
+    internal void InvalidateReferences(string? error = null)
     {
-        lock (_gate) _references = _references with { Complete = false, Error = "插件依赖正在变更，暂不可清理。" };
+        lock (_gate) _references = _references with { Complete = false, Error = error ?? "插件依赖正在变更，暂不可清理。" };
         Python.InvalidateReferences();
         Node.InvalidateReferences();
         Notify();
@@ -77,7 +77,17 @@ public sealed partial class ExternalPackageService
     private PackageStatus Status(PackageReference key)
     {
         if (!_entries.TryGetValue(key, out var e))
-            return new(key, _rid, PackagePhase.Missing, 0, null, "", [], false, "", null);
+        {
+            try
+            {
+                return new(key, _rid, PackagePhase.Missing, 0, null, "", [], false, "", null)
+                    { Kind = DeclaredDownload(key)?.Kind ?? PackageKind.Tool };
+            }
+            catch (InvalidDataException ex)
+            {
+                return new(key, _rid, PackagePhase.Failed, 0, null, ex.Message, [], false, "", null);
+            }
+        }
         return new(key, e.Definition.Rid, e.Phase, e.Downloaded, e.Total, e.Error,
             Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes)
             { Kind = e.Definition.Kind, RetainedBy = NativePackageRetention.GetOwners(e.Directory) };
@@ -103,7 +113,7 @@ public sealed partial class ExternalPackageService
         {
             EnsureRunning(); e = Find(package);
             RequireSupportedKind(e.Definition.Kind, supportsNativeLibraries);
-            RequireOwnedFiles(e);
+            if (e.Phase != PackagePhase.Ready || e.Operation is not null) RequireOwnedFiles(e);
             _ = DeclaredDownload(package, e.Definition);
             if (e.Operation is not null && e.InstallCancellation is null)
                 throw new InvalidOperationException("此依赖正在清理，请完成后再申请。");

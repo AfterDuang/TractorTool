@@ -10,6 +10,44 @@ internal static class PackageCategoryChecks
 {
     public static void Run(Action<string, Action> check, Action<Task> pump, string output, IAppLog log)
     {
+        foreach (var node in new[] { false, true })
+        check((node ? "Node" : "Python") + " cache confirmation ends normally when its view model stops", () =>
+        {
+            var data = Path.Combine(output, "cache-confirmation-" + Guid.NewGuid().ToString("N"));
+            var cache = Path.Combine(data, "Cache", node ? "Node" : "uv");
+            Directory.CreateDirectory(cache);
+            var marker = node ? ".node-cache" : ".python-cache";
+            File.WriteAllText(Path.Combine(cache, marker), node ? "TractorTool.NodeCache.v1" : "TractorTool.PythonCache.v1");
+            File.WriteAllText(Path.Combine(cache, "keep.bin"), "cache must survive declined confirmation");
+            using var http = new HttpClient();
+            var runner = new ProcessRunner("CacheConfirmation.Check", log, _ => throw new InvalidOperationException("Must not start a process"));
+            var service = new ExternalPackageService(Path.Combine(data, "Packages"), "win-x64", http, runner, log);
+            using var model = new ExternalToolsViewModel(service, _ => { });
+            var prompted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task? cleanup = null;
+            model.ConnectConfirmation(async (_, _, token) =>
+            {
+                prompted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, token);
+                return true;
+            });
+            try
+            {
+                model.SelectedCategoryIndex = node ? 3 : 2;
+                Require(model.CleanEnvironmentCacheCommand.CanExecute(null));
+                cleanup = model.CleanEnvironmentCacheCommand.ExecuteAsync(null);
+                pump(prompted.Task);
+                model.Dispose();
+                pump(cleanup);
+                Require(cleanup.IsCompletedSuccessfully && File.Exists(Path.Combine(cache, "keep.bin")));
+            }
+            finally
+            {
+                model.Dispose();
+                if (cleanup is not null) pump(cleanup);
+                pump(service.DisposeAsync().AsTask()); pump(runner.DisposeAsync().AsTask());
+            }
+        });
         check("Package cleanup keeps hidden categories and search results, even when selection changes during confirmation", () =>
         {
             var root = Path.Combine(output, "package-category-" + Guid.NewGuid().ToString("N"));

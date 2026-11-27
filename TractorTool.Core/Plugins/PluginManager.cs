@@ -14,6 +14,8 @@ public sealed class PluginManager : IDisposable
     private PluginManagementState _state;
     private bool _disposed;
     public IReadOnlyList<ManagedPlugin> Snapshot { get { lock (_gate) return _state.Plugins.ToArray(); } }
+    public IReadOnlyList<RetainedPluginRemoval> RetainedRemovals { get { lock (_gate) return _state.RetainedRemovals.ToArray(); } }
+    public string StateNotificationError { get; private set; } = "";
     public string? DataMigrationBlockReason
     {
         get { lock (_gate) return _state.Plugins.Any(p => p.Pending is not null || p.AwaitingLoad)
@@ -41,7 +43,10 @@ public sealed class PluginManager : IDisposable
         { throw new IOException($"插件目录被其他实例占用或不可访问：{paths.PluginRoot}。请退出使用此软件目录的其他实例。", ex); }
         try
         {
-            _store = new(PluginFiles.Under(_root, "state.json"), PluginManagementState.Validate);
+            var statePath = PluginFiles.Under(_root, "state.json");
+            if (!PathPresent(statePath) && PathPresent(PluginFiles.Under(_root, "state.json.bak")))
+                throw new InvalidDataException("插件管理主记录丢失，但备份仍存在。请恢复经过确认的主记录；不会自动重建或回滚插件启停选择。");
+            _store = new(statePath, PluginManagementState.Validate);
             _state = _store.Load();
         }
         catch { _lease.Dispose(); throw; }
@@ -60,6 +65,8 @@ public sealed class PluginManager : IDisposable
             var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             foreach (var item in _state.Plugins)
             {
+                // Uninstalled recovery files are opaque archives and must remain byte-for-byte unchanged.
+                if (item.ActiveVersion is null) continue;
                 if (item.Recovery is not { } recovery || !string.Equals(recovery.DataRoot, target, comparison)) continue;
                 var metadata = Path.Combine("Data", ".plugin-backups", recovery.Token, "snapshot.json");
                 var backup = string.Equals(relative, metadata + ".bak", comparison);
@@ -124,6 +131,12 @@ public sealed class PluginManager : IDisposable
                 if (item.Recovery is not { } recovery) continue;
                 var fromSource = string.Equals(recovery.DataRoot, source, comparison);
                 if (!fromSource && (!commit || !string.Equals(recovery.DataRoot, target.DataRoot, comparison))) continue;
+                if (item.ActiveVersion is null)
+                {
+                    // Preserve failed recovery evidence without treating an uninstalled archive as executable rollback state.
+                    next[i] = item with { Recovery = recovery with { DataRoot = target.DataRoot } };
+                    continue;
+                }
                 var root = PluginFiles.Under(target.DataRoot, "Data", ".plugin-backups", recovery.Token);
                 var metadata = new JsonFileStore<RecoveryMetadata>(PluginFiles.Under(root, "snapshot.json"));
                 // Reused target paths can retain references to a deleted profile. The persisted
@@ -178,7 +191,7 @@ public sealed class PluginManager : IDisposable
                 catch (Exception ex)
                 {
                     // Keep the request for an idempotent retry. No silent fallback to another directory.
-                    Save(entry with { Error = "启动时变更失败：" + ex.Message });
+                    Save((Find(entry.Id) ?? entry) with { Error = "启动时变更失败：" + ex.Message });
                 }
             }
         }
@@ -230,10 +243,13 @@ public sealed class PluginManager : IDisposable
             Check();
             if (kind == PluginChangeKind.Activate) throw new ArgumentException("安装需要一个已校验的插件包。");
             var item = Find(id) ?? Adopt(id, current, id);
-            if (item.Pending is not null) return PendingConflict;
+            // Abandoning a failed rollback removes only code; its data and recovery journal remain.
+            if (item.Pending is not null && !(kind == PluginChangeKind.Uninstall &&
+                item.Pending.Kind == PluginChangeKind.Rollback && item.Error.Length != 0)) return PendingConflict;
             if (item.ActiveVersion is null) return "插件尚未安装。";
             if (kind == PluginChangeKind.Rollback && item.Recovery is null) return "没有可回退版本。";
-            Save(item with { Pending = new(kind, Guid.NewGuid().ToString("N"), _paths.DataRoot), Error = "" });
+            Save(item with { Pending = new(kind, Guid.NewGuid().ToString("N"), _paths.DataRoot)
+                { DestructiveStarted = item.Pending?.Kind == PluginChangeKind.Rollback }, Error = "" });
             return null;
         }
     }
@@ -244,13 +260,70 @@ public sealed class PluginManager : IDisposable
         {
             Check();
             var item = Find(id) ?? throw new InvalidOperationException("没有待处理变更。");
-            // Failed activation has not run the new DLL or modified plugin data; the old selection is safe.
-            // Rollback/uninstall can already have moved data/code and must retain their recovery journal.
-            if (item.Error.Length != 0 && item.Pending?.Kind != PluginChangeKind.Activate)
-                throw new InvalidOperationException("启动变更已尝试，需修复原因后重启重试，不能丢弃恢复记录。");
+            if (item.Pending?.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall ||
+                item.Error.Length != 0 && item.Pending?.Kind != PluginChangeKind.Activate)
+                ValidateCancellation(item);
             if (item.Pending?.Kind == PluginChangeKind.Activate)
                 CleanPendingActivation(item);
             Save(item with { Pending = null, Error = "" });
+        }
+    }
+
+    private void ValidateCancellation(ManagedPlugin item)
+    {
+        var pending = item.Pending ?? throw new InvalidOperationException("没有待处理变更。");
+        if (pending.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall && pending.DestructiveStarted != false)
+            throw new InvalidOperationException("无法确认程序或数据尚未移动，保留恢复记录；可重启重试或改为卸载并保留数据。");
+        if (pending.Kind == PluginChangeKind.Uninstall)
+        {
+            if (!PluginFiles.DirectoryPresent(VersionPath(item.Id, item.ActiveVersion!)) ||
+                PathPresent(PluginFiles.Under(_root, "removed", pending.Token)))
+                throw new IOException("活动目录已离开原位或卸载回收目录已存在，不能取消变更。");
+            return;
+        }
+        PluginFiles.ValidatePackage(VersionPath(item.Id, item.ActiveVersion!), _compatibility);
+        if (pending.Kind == PluginChangeKind.Rollback)
+        {
+            var recovery = item.Recovery!;
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!string.Equals(recovery.DataRoot, _paths.DataRoot, comparison)) throw new IOException("恢复记录属于其他数据目录。");
+            var root = BackupPath(recovery.Token);
+            if (PathPresent(PluginFiles.Under(root, "before-rollback")) || PathPresent(PluginFiles.Under(root, "restore-ready")))
+                throw new IOException("回退已有数据交换记录，不能取消变更。");
+            _ = PluginFiles.DirectoryPresent(PluginFiles.Under(root, "restore"));
+            _ = PluginFiles.DirectoryPresent(PluginFiles.Under(_paths.DataRoot, "Data", "Plugins", item.Id));
+        }
+    }
+
+    // Only code outside discovery is retained. Persist ownership before releasing the failed request.
+    public void CompleteUninstallKeepingFiles(string id)
+    {
+        lock (_gate)
+        {
+            Check();
+            var item = Find(id) ?? throw new InvalidOperationException("没有待卸载插件。");
+            if (item.Pending is not { Kind: PluginChangeKind.Uninstall } pending || item.Error.Length == 0)
+                throw new InvalidOperationException("没有失败的卸载请求。");
+            if (PathPresent(PluginFiles.Under(_paths.PluginRoot, item.Id)))
+                throw new IOException("插件程序尚未移出安装目录，请解除占用后重启重试，或取消尚未开始的卸载。");
+            var retained = _state.RetainedRemovals;
+            if (PathPresent(PluginFiles.Under(_root, "removed", pending.Token)))
+                retained = [.. retained, new(item.Id, pending.Token)];
+            var next = item with { ActiveVersion = null, Pending = null, AwaitingLoad = false, Error = "" };
+            SaveState(_state with { Plugins = Replace(next), RetainedRemovals = retained });
+        }
+    }
+
+    public void CleanRetainedFiles(string id)
+    {
+        lock (_gate)
+        {
+            Check();
+            foreach (var removal in _state.RetainedRemovals.Where(r => r.PluginId.Equals(id, StringComparison.OrdinalIgnoreCase)).ToArray())
+            {
+                PluginFiles.Delete(_root, PluginFiles.Under(_root, "removed", removal.Token));
+                SaveState(_state with { RetainedRemovals = _state.RetainedRemovals.Where(r => r != removal).ToArray() });
+            }
         }
     }
 
@@ -324,16 +397,17 @@ public sealed class PluginManager : IDisposable
                 {
                     _ = PluginFiles.Files(source).ToArray();
                     Directory.CreateDirectory(Path.GetDirectoryName(trash)!);
+                    MarkDestructiveStarted(item);
                     Directory.Move(source, trash);
                 }
                 // A persistent tombstone prevents an old package from being implicitly re-adopted.
                 // Delete only code in the transaction trash; user data and recovery snapshots are retained.
                 PluginFiles.Delete(_root, trash);
-                return item with { ActiveVersion = null, AwaitingLoad = false, Recovery = null };
+                return item with { ActiveVersion = null, AwaitingLoad = false };
             }
             case PluginChangeKind.Rollback:
                 PluginFiles.ValidatePackage(VersionPath(item.Id, item.Recovery!.Version), _compatibility);
-                Restore(item.Id, item.Recovery!);
+                Restore(item.Id, item.Recovery!, pending.DestructiveStarted, () => MarkDestructiveStarted(item));
                 return item with { ActiveVersion = item.Recovery.Version, Recovery = null, AwaitingLoad = item.Enabled };
             default: throw new InvalidDataException("未知插件变更。");
         }
@@ -361,7 +435,13 @@ public sealed class PluginManager : IDisposable
         return new(item.ActiveVersion!, token, _paths.DataRoot, hadData);
     }
 
-    private void Restore(string id, PluginRecovery recovery)
+    private void MarkDestructiveStarted(ManagedPlugin item)
+    {
+        if (item.Pending!.DestructiveStarted != true)
+            Save(item with { Pending = item.Pending with { DestructiveStarted = true } });
+    }
+
+    private void Restore(string id, PluginRecovery recovery, bool? destructiveStarted, Action beforeDataMove)
     {
         if (!string.Equals(AppPaths.Absolute(recovery.DataRoot), _paths.DataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidOperationException("回退必须使用更新时的数据根目录；未覆盖当前配置。");
@@ -381,18 +461,23 @@ public sealed class PluginManager : IDisposable
             using var marker = new FileStream(journal, FileMode.CreateNew, FileAccess.Write, FileShare.None);
             marker.Flush(true);
         }
-        if (Directory.Exists(work))
+        if (PluginFiles.DirectoryPresent(work))
         {
-            if (Directory.Exists(data))
+            if (PluginFiles.Digest(work) != snapshot.Digest)
+                throw new InvalidDataException("回退工作副本与恢复快照不一致，保留全部数据等待处理。");
+            beforeDataMove();
+            if (PluginFiles.DirectoryPresent(data))
             {
-                if (Directory.Exists(displaced)) throw new IOException("回退路径有冲突，保留全部数据等待处理。");
+                if (PluginFiles.DirectoryPresent(displaced)) throw new IOException("回退路径有冲突，保留全部数据等待处理。");
                 _ = PluginFiles.Files(data).ToArray();
                 Directory.Move(data, displaced);
             }
             Directory.CreateDirectory(Path.GetDirectoryName(data)!);
             Directory.Move(work, data);
         }
-        else if (!Directory.Exists(data)) throw new IOException("恢复目录缺失，保留恢复记录。");
+        else if (!(destructiveStarted == true || destructiveStarted is null && PluginFiles.DirectoryPresent(displaced)) ||
+            !PluginFiles.DirectoryPresent(data) || PluginFiles.Digest(data) != snapshot.Digest)
+            throw new IOException("无法确认回退数据已完整就位，保留恢复记录与全部数据。");
     }
 
     private string BackupPath(string token) => PluginFiles.Under(_paths.DataRoot, "Data", ".plugin-backups", token);
@@ -407,13 +492,29 @@ public sealed class PluginManager : IDisposable
         var record = records.SingleOrDefault();
         return new() { Id = record?.Manifest?.Id ?? id, Name = record?.Name ?? name, ActiveVersion = record?.Manifest?.Version, Enabled = record?.State != PluginState.Disabled };
     }
-    private void Save(ManagedPlugin item)
+    private ManagedPlugin[] Replace(ManagedPlugin item) => [.. _state.Plugins.Where(p => !p.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)), item];
+    private void Save(ManagedPlugin item) => SaveState(_state with { Plugins = Replace(item) });
+    private void SaveState(PluginManagementState next)
     {
         PluginFiles.Under(_root, "state.json"); PluginFiles.Under(_root, "state.json.bak");
-        var next = _state with { Plugins = [.. _state.Plugins.Where(p => !p.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase)), item] };
         StateChanging?.Invoke();
         try { _store.Save(next); _state = next; }
-        finally { StateChanged?.Invoke(); }
+        finally
+        {
+            // Observation cannot turn a committed transaction into a failed install or destroy its staging.
+            StateNotificationError = "";
+            if (StateChanged is { } changed)
+                foreach (Action observer in changed.GetInvocationList())
+                    try { observer(); }
+                    catch (Exception ex) { StateNotificationError += "插件状态通知失败：" + ex.Message + "\n"; }
+        }
+    }
+    private static bool PathPresent(string path)
+    {
+        // A missing entry is normal during first startup; do not raise debugger first-chance exceptions.
+        if (new FileInfo(path).Attributes != (FileAttributes)(-1)) return true;
+        _ = DataDirectories.Exists(Path.GetDirectoryName(path)!);
+        return false;
     }
     private void Check() => ObjectDisposedException.ThrowIf(_disposed, this);
     // Production keeps this handle until process exit, including late plugin cleanup after the timeout.

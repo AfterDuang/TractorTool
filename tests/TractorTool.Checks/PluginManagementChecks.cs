@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Reflection;
 using System.Text.Json;
 using TractorTool.Contracts;
 using TractorTool.Core.Logging;
@@ -48,6 +49,254 @@ internal static class PluginManagementChecks
             manager.ApplyPending();
             Assert(manager.Snapshot.Single().ActiveVersion == "1.0.0");
             Assert(File.Exists(Path.Combine(paths.PluginRoot, entry.Id, "1.0.0", "Fixture.dll")));
+        });
+        check("Management observer failures preserve committed staging and notify remaining observers", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var notifications = 0;
+            Subscribe(manager, "StateChanged", () => throw new IOException("observer fixture"));
+            Subscribe(manager, "StateChanged", () => notifications++);
+            Assert(manager.QueueInstall(Zip(paths), []) is null);
+            var pending = manager.Snapshot.Single().Pending!;
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, ".management", "staging", pending.Token, "Checks.Management", "1.0.0", "Fixture.dll")));
+            Assert(notifications == 1 && manager.StateNotificationError.Contains("observer fixture"));
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null, Error: "" });
+            Assert(notifications == 2);
+            var persisted = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Load();
+            Assert(persisted.Plugins.Single() == manager.Snapshot.Single());
+        });
+        check("Management safety invalidation failure aborts a queued install", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            Subscribe(manager, "StateChanging", () => throw new IOException("invalidation fixture"));
+            Reject<IOException>(() => manager.QueueInstall(Zip(paths), []));
+            Assert(manager.Snapshot.Count == 0 && !File.Exists(Path.Combine(paths.PluginRoot, ".management", "state.json")));
+            Assert(!Directory.EnumerateFiles(Path.Combine(paths.PluginRoot, ".management", "staging"), "*", SearchOption.AllDirectories).Any());
+        });
+        check("Missing management primary never restores an older backup or enables disabled plugins", () =>
+        {
+            var paths = Paths(); ManagedPlugin disabled;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null);
+                manager.ApplyPending(); disabled = manager.Snapshot.Single();
+            }
+            var state = Path.Combine(paths.PluginRoot, ".management", "state.json");
+            var backup = File.ReadAllText(state + ".bak");
+            File.Move(state, state + ".retained");
+            Reject<InvalidDataException>(() => { using var rejected = new PluginManager(paths, compatibility); });
+            Assert(!File.Exists(state) && File.ReadAllText(state + ".bak") == backup);
+            File.Move(state + ".retained", state);
+            using var reopened = new PluginManager(paths, compatibility);
+            Assert(reopened.Snapshot.Single() == disabled && !disabled.Enabled);
+        });
+        foreach (var field in new[] { "name", "error", "retainedRemovals" })
+            check("Management rejects persisted null " + field + " without rewriting state", () =>
+        {
+            var paths = Paths();
+            using (var manager = new PluginManager(paths, compatibility)) Install(manager, paths);
+            var state = Path.Combine(paths.PluginRoot, ".management", "state.json");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(state))!;
+            if (field == "retainedRemovals") json[field] = null;
+            else json["plugins"]![0]![field] = null;
+            var invalid = json.ToJsonString(); File.WriteAllText(state, invalid);
+            Reject<InvalidDataException>(() => { using var rejected = new PluginManager(paths, compatibility); });
+            Assert(File.ReadAllText(state) == invalid);
+        });
+        check("A corrupt rollback snapshot can be cancelled before data exchange without discarding recovery", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "keep.txt"), "original");
+            Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+            manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "fixture")]);
+            File.WriteAllText(Path.Combine(data, "keep.txt"), "current");
+            var recovery = manager.Snapshot.Single().Recovery!;
+            File.WriteAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "saved", "keep.txt"), "damaged");
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null); manager.ApplyPending();
+            Assert(manager.Snapshot.Single().Pending is { DestructiveStarted: false } && manager.Snapshot.Single().Error.Length != 0);
+            manager.CancelPending("Checks.Management");
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "2.0.0", Pending: null, Error: "" });
+            Assert(manager.Snapshot.Single().Recovery == recovery && File.ReadAllText(Path.Combine(data, "keep.txt")) == "current");
+        });
+        check("A partially exchanged rollback cannot cancel but can uninstall while retaining its recovery data", () =>
+        {
+            var paths = Paths(); PluginRecovery recovery;
+            var data = paths.GetPluginDataDirectory("Checks.Management");
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "keep.txt"), "original");
+                Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+                manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "fixture")]);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
+                var item = manager.Snapshot.Single(); recovery = item.Recovery!;
+                var root = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "current");
+                Directory.Move(data, Path.Combine(root, "before-rollback"));
+                Directory.CreateDirectory(Path.Combine(root, "restore"));
+                File.WriteAllText(Path.Combine(root, "restore-ready"), "");
+                new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                    { Plugins = [item with { Pending = item.Pending! with { DestructiveStarted = true }, Error = "interrupted fixture" }] });
+            }
+            using var reopened = new PluginManager(paths, compatibility);
+            Reject<InvalidOperationException>(() => reopened.CancelPending("Checks.Management"));
+            Assert(reopened.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+            Reject<InvalidOperationException>(() => reopened.CancelPending("Checks.Management"));
+            reopened.ApplyPending();
+            Assert(reopened.Snapshot.Single() is { ActiveVersion: null, Pending: null, Error: "" });
+            Assert(reopened.Snapshot.Single().Recovery == recovery && !Directory.Exists(Path.Combine(paths.PluginRoot, "Checks.Management")));
+            Assert(File.ReadAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "keep.txt")) == "current");
+            var snapshot = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json");
+            File.WriteAllText(snapshot, "damaged archival metadata");
+            var migration = new DataRootMigration(paths);
+            Assert(migration.Queue(paths.DataRoot + "-moved", reopened) is null);
+            var moved = migration.ApplyAtStartup(reopened, null, default); using var lease = moved.TargetLease;
+            Assert(moved.Error is null && reopened.Snapshot.Single().Recovery!.DataRoot == moved.Paths.DataRoot);
+            Assert(File.ReadAllText(Path.Combine(moved.Paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "snapshot.json")) == "damaged archival metadata");
+            Assert(File.ReadAllText(Path.Combine(moved.Paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "keep.txt")) == "current");
+            Assert(reopened.QueueInstall(Zip(moved.Paths, Manifest("3.0.0")), []) is null); reopened.ApplyPending();
+            Assert(reopened.Snapshot.Single() is { ActiveVersion: "3.0.0", Recovery: null });
+            Assert(File.ReadAllText(Path.Combine(moved.Paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "keep.txt")) == "current");
+        });
+        check("Legacy failed rollback without phase evidence remains protected", () =>
+        {
+            var paths = Paths();
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths);
+                Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+                var item = manager.Snapshot.Single();
+                new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                    { Plugins = [item with { Pending = new(PluginChangeKind.Rollback, Guid.NewGuid().ToString("N"), paths.DataRoot), Error = "legacy failure" }] });
+            }
+            using var reopened = new PluginManager(paths, compatibility);
+            Reject<InvalidOperationException>(() => reopened.CancelPending("Checks.Management"));
+            Assert(reopened.Snapshot.Single().Pending is not null);
+        });
+        foreach (var damage in new[] { "missing before move", "missing after marker", "changed work" })
+            check("Rollback rejects " + damage + " without switching code or displacing current data", () =>
+        {
+            var paths = Paths();
+            var data = paths.GetPluginDataDirectory("Checks.Management");
+            PluginRecovery recovery;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "keep.txt"), "original");
+                Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+                manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "fixture")]);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "current");
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
+                var item = manager.Snapshot.Single(); recovery = item.Recovery!;
+                var root = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token);
+                File.WriteAllText(Path.Combine(root, "restore-ready"), "");
+                if (damage == "changed work")
+                {
+                    Directory.CreateDirectory(Path.Combine(root, "restore"));
+                    File.WriteAllText(Path.Combine(root, "restore", "keep.txt"), "damaged");
+                }
+                if (damage == "missing after marker")
+                    new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                        { Plugins = [item with { Pending = item.Pending! with { DestructiveStarted = true } }] });
+            }
+            using var reopened = new PluginManager(paths, compatibility); reopened.ApplyPending();
+            Assert(reopened.Snapshot.Single() is { ActiveVersion: "2.0.0", Pending.Kind: PluginChangeKind.Rollback });
+            Assert(reopened.Snapshot.Single().Error.Length != 0 && File.ReadAllText(Path.Combine(data, "keep.txt")) == "current");
+            Assert(!Directory.Exists(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback")));
+        });
+        check("Rollback resumes after verified data exchange before the final state save", () =>
+        {
+            var paths = Paths(); var data = paths.GetPluginDataDirectory("Checks.Management"); PluginRecovery recovery;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "keep.txt"), "original");
+                Assert(manager.QueueInstall(Zip(paths, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+                manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "fixture")]);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
+                var item = manager.Snapshot.Single(); recovery = item.Recovery!;
+                var root = Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "current");
+                Directory.Move(data, Path.Combine(root, "before-rollback"));
+                Directory.CreateDirectory(data); File.Copy(Path.Combine(root, "saved", "keep.txt"), Path.Combine(data, "keep.txt"));
+                File.WriteAllText(Path.Combine(root, "restore-ready"), "");
+                new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                    { Plugins = [item with { Pending = item.Pending! with { DestructiveStarted = true } }] });
+            }
+            using var reopened = new PluginManager(paths, compatibility); reopened.ApplyPending();
+            Assert(reopened.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null, Error: "" });
+            Assert(File.ReadAllText(Path.Combine(data, "keep.txt")) == "original");
+            Assert(File.ReadAllText(Path.Combine(paths.DataRoot, "Data", ".plugin-backups", recovery.Token, "before-rollback", "keep.txt")) == "current");
+        });
+        check("Deferred uninstall preserves residual ownership across restart and cleanup leaves data untouched", () =>
+        {
+            var paths = Paths(); string trash;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths);
+                var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "user data");
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+                var item = manager.Snapshot.Single();
+                trash = Path.Combine(paths.PluginRoot, ".management", "removed", item.Pending!.Token);
+                Directory.CreateDirectory(Path.GetDirectoryName(trash)!);
+                Directory.Move(Path.Combine(paths.PluginRoot, item.Id), trash);
+                new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                    { Plugins = [item with { Pending = item.Pending with { DestructiveStarted = true }, Error = "cleanup failure fixture" }] });
+            }
+            using (var reopened = new PluginManager(paths, compatibility))
+            {
+                reopened.CompleteUninstallKeepingFiles("Checks.Management");
+                Assert(reopened.Snapshot.Single() is { ActiveVersion: null, Pending: null, Error: "" });
+                Assert(reopened.RetainedRemovals.Single().PluginId == "Checks.Management" && reopened.DataMigrationBlockReason is null);
+                Assert(File.Exists(Path.Combine(trash, "1.0.0", "Fixture.dll")));
+            }
+            using var final = new PluginManager(paths, compatibility);
+            Assert(final.RetainedRemovals.Single().Token == Path.GetFileName(trash));
+            final.DiscardDataRootState(paths.DataRoot);
+            Assert(final.RetainedRemovals.Single().Token == Path.GetFileName(trash));
+            var migration = new DataRootMigration(paths);
+            Assert(migration.Queue(paths.DataRoot + "-moved", final) is null);
+            var moved = migration.ApplyAtStartup(final, null, default); using var lease = moved.TargetLease;
+            Assert(moved.Error is null && final.RetainedRemovals.Single().Token == Path.GetFileName(trash));
+            var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot)); host.Discover([], final.Snapshot);
+            Assert(host.Records.Count == 0);
+            if (OperatingSystem.IsWindows())
+            {
+                using var busy = new FileStream(Path.Combine(trash, "1.0.0", "Fixture.dll"), FileMode.Open, FileAccess.Read, FileShare.Read);
+                Reject<IOException>(() => final.CleanRetainedFiles("Checks.Management"));
+                Assert(final.RetainedRemovals.Count == 1);
+            }
+            final.CleanRetainedFiles("Checks.Management");
+            Assert(final.RetainedRemovals.Count == 0 && !Directory.Exists(trash));
+            Assert(File.ReadAllText(Path.Combine(moved.Paths.GetPluginDataDirectory("Checks.Management"), "keep.txt")) == "user data");
+        });
+        check("Failed uninstall cannot be finalized while discoverable code remains", () =>
+        {
+            var paths = Paths();
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+                var item = manager.Snapshot.Single();
+                new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Save(new()
+                    { Plugins = [item with { Error = "move failure fixture" }] });
+            }
+            using var reopened = new PluginManager(paths, compatibility);
+            Reject<IOException>(() => reopened.CompleteUninstallKeepingFiles("Checks.Management"));
+            reopened.CancelPending("Checks.Management");
+            Assert(reopened.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null });
+        });
+        check("Unstarted uninstall can be cancelled for an incompatible or damaged plugin", () =>
+        {
+            var paths = Paths();
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Uninstall, []) is null);
+            }
+            File.WriteAllText(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0", "plugin.json"), "damaged manifest fixture");
+            using var upgraded = new PluginManager(paths, compatibility with { AvaloniaVersion = "12.1.6" });
+            upgraded.CancelPending("Checks.Management");
+            Assert(upgraded.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null });
         });
         check("Management pending conflicts return a reason without changing the queued request or staging", () =>
         {
@@ -751,6 +1000,8 @@ internal static class PluginManagementChecks
         });
     }
     private static void Assert(bool condition) { if (!condition) throw new Exception("Management assertion failed"); }
+    private static void Subscribe(PluginManager manager, string name, Action callback) =>
+        typeof(PluginManager).GetEvent(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetAddMethod(true)!.Invoke(manager, [callback]);
     private sealed class CallbackProgress(Action<string> report) : IProgress<string>
     { public void Report(string value) => report(value); }
     private static void Reject<T>(Action action) where T : Exception

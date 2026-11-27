@@ -9,20 +9,20 @@ sealed class Program
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
         using var installationSignal = OperatingSystem.IsWindows() ? Platform.WindowsMaintenance.RegisterApplication() : null;
-        if (OperatingSystem.IsWindows() && installationSignal is null) return;
+        if (OperatingSystem.IsWindows() && installationSignal is null) return 0;
         LaunchArguments = args;
         var profile = ProfileRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TractorTool");
         if (OperatingSystem.IsWindows() && Path.IsPathFullyQualified(profile))
         {
             using var signal = new Platform.WindowsRestoreSignal(profile);
-            if (signal.IsExisting) return;
+            if (signal.IsExisting) return 0;
             RestoreSignal = signal;
-            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
-        else BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
     public static string[] LaunchArguments { get; private set; } = [];

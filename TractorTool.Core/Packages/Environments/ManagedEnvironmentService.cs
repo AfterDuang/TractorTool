@@ -49,6 +49,7 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
         _root = Path.Combine(packageRoot, Policy.Folder); _rid = rid;
         _processes = processes; _log = log; _sourceAllowed = sourceAllowed;
         _install = install;
+        RecoverRemovedIdentities(_root, _log);
         try
         {
             foreach (var item in ReadMigrationEnvironments(packageRoot))
@@ -107,21 +108,34 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
     {
         Policy.Validate(definition); token.ThrowIfCancellationRequested();
         Entry e; Task<bool> prepare;
-        lock (_gate)
+        while (true)
         {
-            EnsureRunning();
-            if (definition.Rid != _rid) throw new NotSupportedException("依赖环境平台不匹配。");
-            if (!_entries.TryGetValue(definition.Identity, out e!))
-                _entries.Add(definition.Identity, e = new(definition, IdentityDirectory(_root, definition)));
-            if (e.Operation is not null && e.Cancellation is null)
-                throw new InvalidOperationException("依赖环境正在清理。");
-            e.Requests++;
-            if (e.Operation is { } operation)
+            Task? retiring;
+            lock (_gate)
             {
-                // A settings-initiated installation already has consent. Join it without taking cancellation ownership.
-                prepare = InstallationReadyAsync(operation); Observe(prepare);
+                EnsureRunning();
+                if (definition.Rid != _rid) throw new NotSupportedException("依赖环境平台不匹配。");
+                if (!_entries.TryGetValue(definition.Identity, out e!))
+                    _entries.Add(definition.Identity, e = new(definition, IdentityDirectory(_root, definition)));
+                retiring = e.PreparationCancellation?.IsCancellationRequested == true ? e.Preparation : null;
+                if (retiring is null)
+                {
+                    if (e.Operation is not null && e.Cancellation is null)
+                        throw new InvalidOperationException("依赖环境正在清理。");
+                    e.Requests++;
+                    if (e.Operation is { } operation)
+                    {
+                        // A settings-initiated installation already has consent. Join it without taking cancellation ownership.
+                        prepare = InstallationReadyAsync(operation); Observe(prepare);
+                    }
+                    else prepare = e.CanValidateInstalled ? Task.FromResult(true) : e.Preparation ?? StartPreparation(e, owner);
+                    break;
+                }
             }
-            else prepare = e.Phase == PackagePhase.Ready ? Task.FromResult(true) : e.Preparation ?? StartPreparation(e, owner);
+            // A new caller must not revive consent or installation canceled by the previous last caller.
+            // Its failure is recorded by the retiring preparation, not inherited by this new request.
+            await retiring.WaitAsync(token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            token.ThrowIfCancellationRequested();
         }
         Notify();
         try
@@ -134,7 +148,11 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
             lock (_gate)
             {
                 e.Requests--;
-                if (e.Requests == 0 && token.IsCancellationRequested && e.InstallForRequests) e.Cancellation?.Cancel();
+                if (e.Requests == 0 && token.IsCancellationRequested)
+                {
+                    e.PreparationCancellation?.Cancel();
+                    if (e.InstallForRequests) e.Cancellation?.Cancel();
+                }
             }
             Notify();
         }
@@ -143,6 +161,8 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
     private Task<bool> StartPreparation(Entry e, string owner)
     {
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
+        e.PreparationCancellation = cancellation;
         e.Preparation = completion.Task;
         _operations.Add(completion.Task);
         _ = Task.Run(async () =>
@@ -152,7 +172,8 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
             try
             {
                 var confirm = ConfirmInstallAsync ?? throw new InvalidOperationException("宿主尚未连接依赖环境安装确认。");
-                accepted = await confirm(new(e.Definition, owner, e.Record?.Generation is not null), _stopping.Token).ConfigureAwait(false);
+                accepted = await confirm(new(e.Definition, owner, e.Record?.Generation is not null), cancellation.Token).ConfigureAwait(false);
+                cancellation.Token.ThrowIfCancellationRequested();
                 if (accepted)
                 {
                     await InstallAsync(e.Definition.Identity, _stopping.Token, requireRequest: true).ConfigureAwait(false);
@@ -163,7 +184,8 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
             {
                 lock (_gate)
                 {
-                    e.Preparation = null; _operations.Remove(completion.Task);
+                    e.Preparation = null; e.PreparationCancellation = null;
+                    cancellation.Dispose(); _operations.Remove(completion.Task);
                     if (failure is not null && failure is not OperationCanceledException && e.Phase != PackagePhase.Ready)
                     { e.Phase = PackagePhase.Failed; e.Error = failure.Message; }
                 }
@@ -200,7 +222,7 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
                 EnsureRoot(_root); EnsureIdentity(e.Directory, e.Definition);
                 e.Cancellation = CancellationTokenSource.CreateLinkedTokenSource(_stopping.Token);
                 e.InstallForRequests = requireRequest;
-                e.Phase = PackagePhase.Installing; e.Error = "";
+                e.Phase = PackagePhase.Installing; e.RetryValidation = false; e.Error = "";
                 var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 operation = e.Operation = completion.Task; _operations.Add(operation);
                 _ = Task.Run(async () =>
@@ -279,7 +301,7 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
                         Directory.Move(e.Directory, removed);
                         _entries.Remove(identity);
                     }
-                    try { DeleteRemovedIdentity(removed, record); }
+                    try { DeleteRemovedIdentity(removed); }
                     catch (Exception ex) { _log.Write(AppLogLevel.Warning, "Packages", $"{Policy.Name} 环境已移出安装目录；暂存文件清理未完成，已保留。", ex); }
                 }
                 catch (Exception ex) { lock (_gate) e.Error = ex.Message; failure = ex; }
@@ -300,7 +322,7 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
         lock (_gate)
         {
             EnsureRunning();
-            if (e.Phase != PackagePhase.Ready || e.Operation is not null || e.Record is null)
+            if (!e.CanValidateInstalled || e.Operation is not null || e.Record is null)
                 throw new InvalidOperationException("依赖环境尚未就绪。");
             Reserve(e, owner); _operations.Add(completion.Task);
         }
@@ -310,6 +332,12 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, _stopping.Token);
             await ValidateAsync(e.Directory, e.Record, linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
+            lock (_gate)
+            {
+                // A concurrent validation may have proved corruption while this request was reading.
+                if (!e.CanValidateInstalled) throw new InvalidDataException(e.Error);
+                e.Phase = PackagePhase.Ready; e.RetryValidation = false; e.Error = "";
+            }
             return new Lease(this, e, owner, e.Record.InstalledRoot!, runtimeProcesses);
         }
         catch (Exception ex)
@@ -317,7 +345,14 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
             lock (_gate)
             {
                 Release(e, owner);
-                if (ex is not OperationCanceledException) { e.Phase = PackagePhase.Failed; e.Error = ex.Message; }
+                if (ex is not OperationCanceledException && e.CanValidateInstalled)
+                {
+                    // Failure to read is not evidence of damaged bytes. Retry the full validation on the next request.
+                    // Preserve a concurrent request's confirmed integrity failure and its diagnostic.
+                    e.RetryValidation = ex is UnauthorizedAccessException ||
+                        ex is IOException and not FileNotFoundException and not DirectoryNotFoundException;
+                    e.Phase = PackagePhase.Failed; e.Error = ex.Message;
+                }
             }
             throw;
         }
@@ -361,11 +396,14 @@ internal sealed partial class ManagedEnvironmentService<TDefinition, TPolicy> : 
         internal string Directory { get; } = directory;
         internal EnvironmentRecord? Record;
         internal PackagePhase Phase;
+        internal bool RetryValidation;
+        internal bool CanValidateInstalled => Phase == PackagePhase.Ready || RetryValidation;
         internal string Error = "";
         internal Dictionary<string, int> Users { get; } = [];
         internal int Requests;
         internal Task? Operation;
         internal Task<bool>? Preparation;
+        internal CancellationTokenSource? PreparationCancellation;
         internal CancellationTokenSource? Cancellation;
         internal bool InstallForRequests;
     }

@@ -138,6 +138,88 @@ internal static class NativePackageChecks
             Require(handler.Calls == 0 && prompts == 0 && !Directory.Exists(Path.Combine(path, "DLL")));
         });
 
+        Test("unresolved package status uses declarations without network and reports conflicting recipes", async path =>
+        {
+            var bytes = Archive(); var handler = new Handler(bytes) { RejectRequests = true };
+            using var http = new HttpClient(handler);
+            await using var service = Create(path, http, new Probe());
+            var native = NativeRecipe(bytes);
+            service.UpdateReferences(new([new(Key, "Native.Plugin", "Native", [native])], true));
+            using var scope = service.CreateScope("Native.Plugin", [Key], CancellationToken.None, supportsNativeLibraries: true);
+            var status = scope.GetStatus(Key);
+            Require(status.Phase == PackagePhase.Missing && status.Kind == PackageKind.NativeLibrary && handler.Calls == 0);
+            Require(service.GetStatus(new("Legacy.Unknown", "1.0.0")).Kind == PackageKind.Tool);
+            var tool = native with { Kind = PackageKind.Tool, Libraries = new Dictionary<string, string>(),
+                Tools = new Dictionary<string, PackageTool> { ["tool"] = new("tool.exe", "fixture") } };
+            service.UpdateReferences(new([new(Key, "Native.Plugin", "Native", [native]), new(Key, "Tool.Plugin", "Tool", [tool])], true));
+            status = scope.GetStatus(Key);
+            Require(status.Phase == PackagePhase.Failed && status.Error.Length != 0 && handler.Calls == 0);
+        });
+
+        Test("requesting a ready native package with a lost receipt reports failure without downloading", async path =>
+        {
+            var bytes = Archive(); var handler = new Handler(bytes); using var http = new HttpClient(handler);
+            await using var service = Create(path, http, new Probe(), Definition(bytes));
+            await service.InstallAsync(Key);
+            var directory = service.GetStatus(Key).Directory;
+            File.Delete(Path.Combine(directory, "receipt.json"));
+            var requests = handler.Calls; handler.RejectRequests = true;
+            using var scope = service.CreateScope("Native.Plugin", [Key], CancellationToken.None, supportsNativeLibraries: true);
+            await Throws<InvalidDataException>(() => scope.TryRequestAsync(Key));
+            var failed = service.GetStatus(Key);
+            Require(failed.Phase == PackagePhase.Failed && failed.Error.Length != 0 && failed.Users.Count == 0);
+            Require(handler.Calls == requests && File.Exists(Path.Combine(directory, "bin", "runtime.dll")));
+        });
+
+        Test("same-process receipt loss revokes permission to repair or remove a native directory", async path =>
+        {
+            foreach (var mutation in new[] { "missing", "corrupt", "foreign" })
+            {
+                var bytes = Archive(); var handler = new Handler(bytes); using var http = new HttpClient(handler);
+                await using var service = Create(Path.Combine(path, mutation), http, new Probe(), Definition(bytes));
+                await service.InstallAsync(Key);
+                var directory = service.GetStatus(Key).Directory;
+                var receiptPath = Path.Combine(directory, "receipt.json");
+                if (mutation == "missing") File.Delete(receiptPath);
+                else if (mutation == "corrupt") File.WriteAllText(receiptPath, "{broken");
+                else
+                {
+                    var receipt = JsonNode.Parse(File.ReadAllText(receiptPath))!;
+                    receipt["ArchiveHash"] = new string('f', 64);
+                    File.WriteAllText(receiptPath, receipt.ToJsonString());
+                }
+                var keep = Path.Combine(directory, "keep.dat"); File.WriteAllText(keep, "external content");
+                var downloads = handler.Calls; handler.RejectRequests = true;
+                // No failed acquisition or restart first: removal itself must refresh ownership.
+                await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+                var item = service.GetPackages().Single();
+                Require(!item.CanRemove && !item.CanInstall && File.ReadAllText(keep) == "external content");
+                await Throws<InvalidOperationException>(() => service.InstallAsync(Key));
+                Require(handler.Calls == downloads && File.Exists(receiptPath) == (mutation != "missing"));
+            }
+        });
+
+        Test("repair rechecks the receipt after downloading before replacing existing files", async path =>
+        {
+            var bytes = Archive(); var handler = new Handler(bytes); using var http = new HttpClient(handler);
+            await using var service = Create(path, http, new Probe(), Definition(bytes));
+            await service.InstallAsync(Key);
+            var directory = service.GetStatus(Key).Directory;
+            File.WriteAllText(Path.Combine(directory, "data", "runtime.dat"), "changed!");
+            using var scope = service.CreateScope("Native.Plugin", [Key], CancellationToken.None, supportsNativeLibraries: true);
+            await Throws<InvalidDataException>(() => scope.AcquireAsync(Key));
+            handler.OnRequest = () =>
+            {
+                File.Delete(Path.Combine(directory, "receipt.json"));
+                File.WriteAllText(Path.Combine(directory, "keep.dat"), "external content");
+            };
+            service.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
+            await Throws<InvalidOperationException>(() => scope.TryRequestAsync(Key));
+            Require(File.ReadAllText(Path.Combine(directory, "keep.dat")) == "external content" &&
+                File.ReadAllText(Path.Combine(directory, "data", "runtime.dat")) == "changed!");
+            Require(!service.GetPackages().Single().CanRemove);
+        });
+
         Test("disposed leases cannot establish process retention", async path =>
         {
             var bytes = Archive(); using var http = Client(bytes);
@@ -462,11 +544,13 @@ internal static class NativePackageChecks
     {
         public int Calls;
         public bool RejectRequests;
+        public Action? OnRequest;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Interlocked.Increment(ref Calls);
             if (RejectRequests) throw new HttpRequestException("This check must reject the operation before network access.");
+            OnRequest?.Invoke();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { RequestMessage = request, Content = new ByteArrayContent(bytes) });
         }
     }

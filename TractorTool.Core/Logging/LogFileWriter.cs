@@ -16,15 +16,17 @@ internal sealed partial class LogFileWriter
         $"保留最近 {RetentionDays} 天，最多 {MaxFiles} 个文件、共 {MaxTotalBytes / 1024 / 1024} MiB；单文件 {MaxFileBytes / 1024 / 1024} MiB。自动清理旧日志，正在写入的文件保留。";
     private static readonly byte[] Truncated = Encoding.UTF8.GetBytes("\n[磁盘记录超过 64 KiB，已截断；完整内容仅在本次内存记录中保留。]" + Environment.NewLine);
     private readonly string _directory;
+    private readonly bool _pruneFiles;
     private readonly string _session = $"host-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Environment.ProcessId}-{Guid.NewGuid():N}";
     private int _part;
     private DateOnly? _cleanupDay;
     private bool _maintenanceFailed;
     public string FilePath { get; private set; }
 
-    public LogFileWriter(string directory)
+    public LogFileWriter(string directory, bool pruneFiles)
     {
         _directory = Path.GetFullPath(directory);
+        _pruneFiles = pruneFiles;
         Directory.CreateDirectory(_directory);
         FilePath = NextPath();
     }
@@ -45,7 +47,7 @@ internal sealed partial class LogFileWriter
         if (rotated || _cleanupDay != day)
         {
             _cleanupDay = day;
-            var failure = Prune(now.UtcDateTime);
+            var failure = _pruneFiles ? Prune(now.UtcDateTime) : null;
             if (failure is not null && !_maintenanceFailed) warning = failure;
             _maintenanceFailed = failure is not null;
         }

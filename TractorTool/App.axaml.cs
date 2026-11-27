@@ -43,6 +43,7 @@ public partial class App : Application
     private BackgroundTaskService? _tasks;
     private bool _confirmingExit;
     private CancellationTokenSource? _exitConfirmation;
+    private Task? _shutdown;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -60,7 +61,7 @@ public partial class App : Application
                 if (_exiting) return;
                 e.Cancel = true;
                 if (CancelStartup(window)) return;
-                if (!_ready) { _exiting = true; desktop.Shutdown(1); return; }
+                if (!_ready) { _ = ExitCoreAsync(systemExit: true); return; }
                 if (e.CloseReason != WindowCloseReason.WindowClosing) { _ = ExitCoreAsync(systemExit: true); return; }
                 if (_tray?.Available == true) window.Hide();
                 else { _vm?.NotifyTrayUnavailable(); Restore(); }
@@ -78,10 +79,13 @@ public partial class App : Application
                 if (_exiting) return;
                 e.Cancel = true;
                 if (CancelStartup(window)) return;
-                if (!_ready) { _exiting = true; desktop.Shutdown(1); }
-                else _ = ExitCoreAsync(systemExit: true);
+                _ = ExitCoreAsync(systemExit: true);
             };
-            desktop.Exit += (_, _) => { _vm?.Dispose(); _tray?.Dispose(); };
+            desktop.Exit += (_, _) =>
+            {
+                DisposeShellResource(() => _vm?.Dispose());
+                DisposeShellResource(() => _tray?.Dispose());
+            };
         }
         base.OnFrameworkInitializationCompleted();
     }
@@ -144,14 +148,14 @@ public partial class App : Application
             });
             startup.Token.ThrowIfCancellationRequested();
             ConfigureMainWindow(window, prepared.Paths, compatibility, prepared.managementError, prepared.Error, prepared.Warning, prepared.Migrated);
+            startup.Token.ThrowIfCancellationRequested();
             _startup = null;
             _ready = true;
             window.ShowWorkspace();
             try { await _vm!.InitializeAsync(); }
             catch (Exception ex)
             {
-                _log!.Write("Host", "初始化失败", ex);
-                if (!_exiting) _vm!.Notice = "初始化失败：" + ex.Message;
+                WriteHostLog("初始化失败", ex);
             }
             if (!_exiting && _tray?.Available != true) _vm!.NotifyTrayUnavailable();
         }
@@ -159,20 +163,25 @@ public partial class App : Application
         {
             _startup = null;
             _exiting = true;
-            desktop.Shutdown();
+            try { await StopServicesBoundedAsync(); }
+            finally { FinishShutdown(desktop, 0); }
         }
         catch (Exception ex)
         {
             _startup = null;
             _ready = false;
-            window.ShowStartupError(ex.Message + "\n请保留原数据与迁移记录，解决问题后重新启动。");
+            // No log is created before migration; use one only if configuration reached that point.
+            WriteHostLog("启动失败", ex);
+            await StopServicesBoundedAsync();
+            DisposeShellResource(() => _tray?.Dispose());
+            if (!_exiting) window.ShowStartupError(ex.Message + "\n请保留原数据与迁移记录，解决问题后重新启动。");
         }
         finally { startup.Dispose(); }
     }
 
     private void ConfigureMainWindow(MainWindow window, AppPaths paths, HostCompatibility compatibility, string? managementError, string? migrationError, string? migrationWarning, bool migrated)
     {
-        _log = new AppLog(paths.LogRoot);
+        _log = new AppLog(paths.LogRoot, pruneFiles: migrationError is null);
         if (migrationError is not null) _log.Write(AppLogLevel.Error, "Storage", migrationError);
         else if (migrationWarning is not null) _log.Write(AppLogLevel.Warning, "Storage", migrationWarning);
         else if (migrated) _log.Write("Storage", "应用数据迁移完成，旧业务数据已清理，插件程序位置不变。");
@@ -244,7 +253,11 @@ public partial class App : Application
     private async Task ExitCoreAsync(bool systemExit)
     {
         if (_exiting) return;
-        if (systemExit) _exitConfirmation?.Cancel();
+        if (systemExit)
+        {
+            try { _exitConfirmation?.Cancel(); }
+            catch (Exception ex) { WriteHostLog("取消退出确认失败，继续停止服务。", ex); }
+        }
         else
         {
             if (_confirmingExit) return;
@@ -257,30 +270,90 @@ public partial class App : Application
                     !await owner.ConfirmExitAsync(_tasks.Snapshot.Count(t => t.State is BackgroundTaskState.Queued or BackgroundTaskState.Running or BackgroundTaskState.Cancelling), confirmation.Token)) return;
             }
             catch (OperationCanceledException) { return; }
-            catch (Exception ex) { _log?.Write("Host", "退出确认失败，保持运行。", ex); return; }
+            catch (Exception ex) { WriteHostLog("退出确认失败，保持运行。", ex); return; }
             finally { _confirmingExit = false; _exitConfirmation = null; }
         }
         if (_exiting) return;
         _exiting = true;
-        if (_desktop?.MainWindow is MainWindow window) window.BeginShutdown();
-        var pendingWorkspace = _vm?.BeginShutdown() ?? Task.CompletedTask;
-        _log?.Write("Host", "退出：等待设置保存并停止任务、插件和常驻服务。");
+        Task? stopping = null;
         try
         {
-            var stopTasks = _tasks?.BeginShutdownAsync() ?? Task.CompletedTask;
-            var stopPlugins = _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-            var stopPackages = StopPackagesAsync();
-            await Task.WhenAll(pendingWorkspace, stopTasks, stopPlugins, stopPackages).WaitAsync(TimeSpan.FromSeconds(10));
+            var surface = StartShutdownStep(() =>
+            {
+                if (_desktop?.MainWindow is MainWindow window) window.BeginShutdown();
+                return Task.CompletedTask;
+            });
+            WriteHostLog("退出：等待设置保存并停止任务、插件和常驻服务。");
+            stopping = Task.WhenAll(surface, StopServicesAsync());
+            await stopping.WaitAsync(TimeSpan.FromSeconds(10));
         }
-        catch (Exception ex) { _log?.Write("Host", "退出清理失败或超时", ex); }
-        finally { _tray?.Dispose(); _desktop?.Shutdown(); }
+        catch (Exception ex) { WriteHostLog("退出清理失败或超时", stopping?.Exception ?? ex); }
+        finally { FinishShutdown(_desktop, _ready ? 0 : 1); }
+    }
+
+    private Task StopServicesAsync()
+    {
+        if (_shutdown is not null) return _shutdown;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _shutdown = completion.Task;
+        _ = CompleteAsync();
+        return _shutdown;
+
+        async Task CompleteAsync()
+        {
+            Task? stopping = null;
+            try
+            {
+                // Start every component even if an earlier synchronous cleanup prefix throws.
+                stopping = Task.WhenAll(
+                    StartShutdownStep(() => _vm?.BeginShutdown() ?? Task.CompletedTask),
+                    StartShutdownStep(() => _tasks?.BeginShutdownAsync() ?? Task.CompletedTask),
+                    StartShutdownStep(() => _plugins?.DisposeAsync().AsTask() ?? Task.CompletedTask),
+                    StopPackagesAsync());
+                await stopping;
+                completion.TrySetResult();
+            }
+            catch (Exception ex) { completion.TrySetException(stopping?.Exception ?? ex); }
+        }
+    }
+
+    private async Task StopServicesBoundedAsync()
+    {
+        try { await StopServicesAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (Exception ex) { WriteHostLog("启动结束后的服务清理失败或超时", ex); }
+    }
+
+    private static Task StartShutdownStep(Func<Task> stop)
+    {
+        try { return stop(); }
+        catch (Exception ex) { return Task.FromException(ex); }
+    }
+
+    private void FinishShutdown(IClassicDesktopStyleApplicationLifetime? desktop, int exitCode)
+    {
+        try { DisposeShellResource(() => _tray?.Dispose()); }
+        finally { desktop?.Shutdown(exitCode); }
+    }
+
+    private void DisposeShellResource(Action dispose)
+    {
+        try { dispose(); }
+        catch (Exception ex) { WriteHostLog("窗口资源释放失败", ex); }
+    }
+
+    private void WriteHostLog(string message, Exception? error = null)
+    {
+        try { _log?.Write("Host", message, error); }
+        catch (Exception ex) { System.Diagnostics.Trace.TraceError("{0}: {1}; 日志写入失败: {2}", message, error, ex); }
     }
 
     private async Task StopPackagesAsync()
     {
-        var packages = _packages?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-        var processes = _packageProcesses?.DisposeAsync().AsTask() ?? Task.CompletedTask;
-        await Task.WhenAll(packages, processes);
-        _packageHttp?.Dispose();
+        var packages = StartShutdownStep(() => _packages?.DisposeAsync().AsTask() ?? Task.CompletedTask);
+        var processes = StartShutdownStep(() => _packageProcesses?.DisposeAsync().AsTask() ?? Task.CompletedTask);
+        var stopping = Task.WhenAll(packages, processes);
+        try { await stopping; }
+        catch when (stopping.Exception is { } failure) { throw failure; }
+        finally { _packageHttp?.Dispose(); }
     }
 }

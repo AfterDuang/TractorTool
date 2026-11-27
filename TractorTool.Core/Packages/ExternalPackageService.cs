@@ -142,6 +142,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         PackageFiles.CheckPath(e.Directory);
         if (Directory.Exists(e.Directory))
         {
+            RequireOwnedFiles(e);
             var trash = NewWorkDirectory();
             try
             {
@@ -323,6 +324,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             token.ThrowIfCancellationRequested();
             PackageFiles.CheckPath(e.Directory);
             PreparePackageParent(definition, work);
+            RequireOwnedFiles(e);
             if (replace && HasDirectory(e.Directory)) ReplacePackage(work, staging, e.Directory);
             else Directory.Move(staging, e.Directory);
             lock (_gate) { e.Definition = definition; e.InstalledBytes = installedBytes; e.HasFiles = true; e.OwnershipConfirmed = true; }
@@ -436,8 +438,23 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     }
     private Receipt? ReadReceipt(Entry e)
     {
-        PackageFiles.CheckPath(e.Directory);
-        if (!Directory.Exists(e.Directory)) return null;
+        var receipt = ReadReceiptIdentity(e);
+        if (receipt is null) return null;
+        foreach (var (name, tool) in e.Definition.Tools)
+            if (!receipt.Tools.TryGetValue(name, out var hash) || hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit) ||
+                !File.Exists(PackageFiles.SafePath(e.Directory, tool.Path))) throw new InvalidDataException("工具文件缺失或安装记录无效。");
+        if (receipt.Schema == 3)
+            NativePackageIntegrity.ValidateReceiptMetadata(e.Directory, receipt.ManifestHash!);
+        return receipt;
+    }
+
+    // Receipt identity establishes ownership even when the payload needs repair; never cache it across mutations.
+    private Receipt? ReadReceiptIdentity(Entry e)
+    {
+        lock (_gate) e.OwnershipConfirmed = false;
+        var hasFiles = HasDirectory(e.Directory);
+        lock (_gate) e.HasFiles = hasFiles;
+        if (!hasFiles) return null;
         var path = PackageFiles.SafePath(e.Directory, "receipt.json");
         if (!File.Exists(path) || new FileInfo(path).Length > 65536) throw new InvalidDataException("工具安装记录缺失或过大。");
         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path));
@@ -455,11 +472,6 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         if (receipt.Schema == 3 && (receipt.ManifestHash is not { Length: 64 } || !receipt.ManifestHash.All(Uri.IsHexDigit)))
             throw new InvalidDataException("运行库安装记录缺少有效的载荷摘要，无法确认目录归属。");
         lock (_gate) e.OwnershipConfirmed = true;
-        foreach (var (name, tool) in e.Definition.Tools)
-            if (!receipt.Tools.TryGetValue(name, out var hash) || hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit) ||
-                !File.Exists(PackageFiles.SafePath(e.Directory, tool.Path))) throw new InvalidDataException("工具文件缺失或安装记录无效。");
-        if (receipt.Schema == 3)
-            NativePackageIntegrity.ValidateReceiptMetadata(e.Directory, receipt.ManifestHash!);
         return receipt;
     }
     private static void RequireNotRetained(Entry e)
@@ -468,10 +480,14 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             throw new InvalidOperationException("运行库已为当前进程保留，请退出软件后再修复或清理。");
     }
     private static bool CanManageFiles(Entry e) => e.Definition.Kind == PackageKind.Tool || !e.HasFiles || e.OwnershipConfirmed;
-    private static void RequireOwnedFiles(Entry e)
+    private void RequireOwnedFiles(Entry e)
     {
-        if (!CanManageFiles(e))
-            throw new InvalidOperationException("无法确认运行库目录归属，已保留文件。请先恢复安装记录，或备份并移走冲突目录后重启软件。");
+        if (e.Definition.Kind != PackageKind.NativeLibrary) return;
+        try { _ = ReadReceiptIdentity(e); }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
+        {
+            throw new InvalidOperationException("无法确认运行库目录归属，已保留文件。请先恢复安装记录，或备份并移走冲突目录后重启软件。", ex);
+        }
     }
     private static void RequireSupportedKind(PackageKind kind, bool supportsNativeLibraries)
     {

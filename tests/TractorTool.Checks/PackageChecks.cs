@@ -339,6 +339,36 @@ internal static class PackageChecks
             using var reused = await restored.TryRequestAsync(Key, "A"); Require(reused is not null);
             Require(restored.GetPackages().Single().IsInstalled && restored.GetSources().Single(s => s.Kind == DependencySourceKind.GitHub).IsDefault);
         });
+        Test("source settings reject oversized writes without losing the last readable configuration", async path =>
+        {
+            using var http = Client(Archive());
+            await using var service = Create(path, http, new Probe());
+            var file = Path.Combine(path, ".sources.json");
+            var rejected = false;
+            for (var i = 0; i < 32; i++)
+            {
+                var before = File.Exists(file) ? File.ReadAllBytes(file) : [];
+                var count = service.GetSources().Count;
+                try { service.AddSource("Mirror " + i, $"https://packages.example.com/{i}/" + new string('a', 1900), DependencySourceKind.NpmRegistry); }
+                catch (InvalidDataException)
+                {
+                    Require(File.ReadAllBytes(file).SequenceEqual(before) && service.GetSources().Count == count);
+                    rejected = true; break;
+                }
+            }
+            Require(rejected && new FileInfo(file).Length <= 32768);
+            await using var reloaded = Create(path, http, new Probe());
+            Require(reloaded.SourceError.Length == 0 && reloaded.GetSources().SequenceEqual(service.GetSources()));
+            var saved = File.ReadAllBytes(file);
+            await Throws<InvalidDataException>(() =>
+            {
+                reloaded.AddSource("Oversized Python", "https://packages.example.com/" + new string('a', 2048) + "/simple/", DependencySourceKind.PythonIndex);
+                return Task.CompletedTask;
+            });
+            Require(File.ReadAllBytes(file).SequenceEqual(saved));
+            reloaded.RemoveSource(reloaded.GetSources().First(s => !s.IsDefault));
+            Require(ExternalPackageService.ReadConfiguredSources(file).Count == reloaded.GetSources().Count);
+        });
         Test("legacy receipt recovers from matching plugin instructions without a catalog", async path =>
         {
             using var http = Client(Archive());
@@ -476,6 +506,29 @@ internal static class PackageChecks
             Require(manager.QueueChange("Test.Plugin", PluginChangeKind.Uninstall, []) is null);
             manager.ApplyPending();
             Require(service.ReferenceError == "" && service.GetPackages().Single(p => p.Package == Key).CanRemove);
+        });
+        Test("failed reference publication disables tool, Python and Node cleanup without undoing management state", async path =>
+        {
+            var paths = new AppPaths(Path.Combine(path, "app"), Path.Combine(path, "data"));
+            using var manager = new PluginManager(paths, new("windows", "win-x64", "1.2", "12.1.2"));
+            using var http = Client(Archive()); await using var service = Create(paths.PackageRoot, http, new Probe());
+            await service.InstallAsync(Key);
+            Require(service.GetPackages().Single().CanRemove && service.Python.Error == "" && service.Node.Error == "");
+            using var references = new PluginPackageReferences(paths, manager, service);
+            var manifest = new PluginManifest { Id = "Bad.Plugin", Name = "Fixture", Version = "1.0.0",
+                Dependencies = [new(Key.Id, Key.Version) { Downloads = [Recipe(Archive()) with { Repository = "invalid" }] }] };
+            var record = new PluginRecord(Path.Combine(paths.PluginRoot, manifest.Id, manifest.Version), manifest, PluginState.Disabled, "fixture");
+            // Snapshot creation succeeds; publication rejects the invalid recipe while cloning references.
+            references.SetDiscovered([record], null);
+            Require(service.ReferenceError.Contains("刷新失败") && !service.GetPackages().Single().CanRemove);
+            Require(service.Python.Error.Length != 0 && service.Node.Error.Length != 0);
+            Require(manager.QueueChange(manifest.Id, PluginChangeKind.Disable, [record]) is null);
+            Require(manager.Snapshot.Single().Pending?.Kind == PluginChangeKind.Disable);
+            Require(new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json")).Load().Plugins.Single() == manager.Snapshot.Single());
+            await Throws<InvalidOperationException>(() => service.RemoveAsync(Key));
+            references.SetDiscovered([new(record.Directory, manifest with { Dependencies = [] }, PluginState.Disabled, "fixture")], null);
+            Require(service.ReferenceError == "" && service.Python.Error == "" && service.Node.Error == "");
+            Require(service.GetPackages().Single().CanRemove);
         });
         Test("bad hash never executes tools or commits", async path =>
         {

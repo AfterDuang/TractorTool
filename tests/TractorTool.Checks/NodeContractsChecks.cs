@@ -74,7 +74,7 @@ internal static class NodeContractsChecks
             Require(restored.GetSources().Single(s => s.Name == "Mirror").Url == "https://packages.example.com/npm/");
         });
 
-        Test("startup source policy normalizes URLs without rewriting legacy configuration", path =>
+        Test("startup source policy preserves legacy URLs and permits their removal", async path =>
         {
             Directory.CreateDirectory(path);
             var settings = Path.Combine(path, "sources.json");
@@ -88,8 +88,14 @@ internal static class NodeContractsChecks
             var sources = ExternalPackageService.ReadConfiguredSources(settings);
             Require(sources.Single(s => s.Name == "Node mirror").Url == "https://packages.example.com/npm/");
             Require(sources.Single(s => s.Name == "Python mirror").Url == "https://packages.example.com/simple/");
+            Require(sources.Single(s => s.Name == "Legacy long index").Url.EndsWith("/simple/", StringComparison.Ordinal));
             Require(File.ReadAllText(settings) == original);
-            return Task.CompletedTask;
+            using var http = new HttpClient(new NoNetwork());
+            await using var service = Create(path, http, settings);
+            var allowed = typeof(ExternalPackageService).GetMethod("IsPythonSourceAllowed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            Require(!(bool)allowed.Invoke(service, ["https://unknown.example.com/simple/"])!);
+            service.RemoveSource(service.GetSources().Single(s => s.Name == "Legacy long index"));
+            Require(ExternalPackageService.ReadConfiguredSources(settings).All(s => s.Name != "Legacy long index"));
         });
 
         Test("undeclared scopes cannot request Node or use another plugin environment", async path =>

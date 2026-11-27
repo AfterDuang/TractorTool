@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics;
 using System.Text.Json;
 using TractorTool.Contracts;
@@ -314,8 +315,11 @@ internal static class ProcessChecks
                 Console.Write(JsonSerializer.Serialize(new Echo(args[1..], Environment.CurrentDirectory)));
                 return 0;
             case "environment":
-                var environment = Environment.GetEnvironmentVariables();
-                Console.Write(JsonSerializer.Serialize(args[1..].ToDictionary(name => name, name => (string?)environment[name])));
+                // Enumeration preserves key spelling; lookups must still follow the operating system's semantics.
+                var environment = Environment.GetEnvironmentVariables().Cast<DictionaryEntry>().ToDictionary(
+                    entry => (string)entry.Key, entry => (string)entry.Value!,
+                    OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+                Console.Write(JsonSerializer.Serialize(args[1..].ToDictionary(name => name, name => environment.GetValueOrDefault(name))));
                 return 0;
             case "flood":
                 for (var i = 0; i < 128; i++)

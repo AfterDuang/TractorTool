@@ -158,12 +158,16 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                     Packages = lifetime.Packages,
                     Tasks = lifetime.Tasks
                 }, token);
-                // Commit registration and the background task together; shutdown must not race this handoff.
                 lock (_lifecycleGate)
                 {
                     if (_disposed) throw new OperationCanceledException("宿主正在退出，不再注册插件页面。");
                     token.ThrowIfCancellationRequested();
-                    lifetime.Registration = register(record, plugin);
+                }
+                // Registration stays on the caller's UI context, but may reenter shutdown.
+                // Cleanup waits for Initialized before disposing the returned registration resource.
+                lifetime.Registration = register(record, plugin);
+                lock (_lifecycleGate)
+                {
                     if (_disposed) throw new OperationCanceledException("宿主正在退出，不再启动插件活动。");
                     lifetime.Background = plugin is IPluginBackgroundService service
                         ? Task.Run(async () =>
@@ -200,7 +204,16 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
 
     private Task CleanupAsync(PluginLifetime lifetime)
     {
-        lock (_lifecycleGate) return lifetime.Cleanup ??= CleanupCoreAsync(lifetime);
+        TaskCompletionSource completion;
+        lock (_lifecycleGate)
+        {
+            if (lifetime.Cleanup is not null) return lifetime.Cleanup;
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            lifetime.Cleanup = completion.Task;
+        }
+        // Publish the shared task before invoking cancellation, registration or process callbacks.
+        _ = CompleteAsync(CleanupCoreAsync(lifetime), completion);
+        return completion.Task;
     }
 
     private async Task CleanupCoreAsync(PluginLifetime lifetime)

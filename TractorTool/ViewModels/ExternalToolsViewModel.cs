@@ -232,9 +232,14 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     {
         if (_service is null || _confirm is null || _disposed || !HasEnvironmentCache) return;
         var cleanNode = SelectedCategoryIndex == 3;
-        if (!await _confirm(CleanCacheLabel, "保留已安装环境和插件业务数据。以后准备依赖可能需要重新下载。是否继续？", _stopping.Token)) return;
-        _cleaning = true; _status = ""; Refresh();
-        try { if (cleanNode) await _service.Node.CleanCacheAsync(_stopping.Token); else await _service.Python.CleanCacheAsync(_stopping.Token); }
+        try
+        {
+            if (!await _confirm(CleanCacheLabel, "保留已安装环境和插件业务数据。以后准备依赖可能需要重新下载。是否继续？", _stopping.Token)) return;
+            _stopping.Token.ThrowIfCancellationRequested();
+            _cleaning = true; _status = ""; Refresh();
+            if (cleanNode) await _service.Node.CleanCacheAsync(_stopping.Token);
+            else await _service.Python.CleanCacheAsync(_stopping.Token);
+        }
         catch (OperationCanceledException) { }
         catch (Exception ex) { _status = ex.Message; }
         finally { _cleaning = false; if (!_disposed) Refresh(); }

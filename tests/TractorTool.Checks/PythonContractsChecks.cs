@@ -65,7 +65,8 @@ internal static class PythonContractsChecks
                 declaration with { PythonVersion = "3.13.17" },
                 declaration with { Source = "http://pypi.org/simple/" },
                 declaration with { Source = "https://user:secret@pypi.org/simple/" },
-                declaration with { Source = "https://pypi.org/simple/?token=secret" }
+                declaration with { Source = "https://pypi.org/simple/?token=secret" },
+                declaration with { Source = "https://packages.example.com/" + new string('a', 2050) + "/simple/" }
             }) Throws<InvalidDataException>(() => PythonEnvironmentDefinitions.ValidateDeclaration(candidate));
             return Task.CompletedTask;
         });

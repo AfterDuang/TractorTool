@@ -9,6 +9,7 @@
         <WrapPanel>
           <Button Content="安装 / 更新" Command="{Binding InstallCommand}" Classes="accent" Margin="0,0,8,0" />
           <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" />
+          <Button Content="打开恢复文件" Command="{Binding OpenRecoveryDirectoryCommand}" Margin="8,0,0,0" />
         </WrapPanel>
       </ui:SettingRow>
       <SelectableTextBlock Text="{Binding PluginRoot}" Classes="caption" TextWrapping="Wrap" Margin="4,-8,4,0" />
@@ -69,6 +70,8 @@
                       <Button Content="卸载" Command="{Binding UninstallCommand}" IsVisible="{Binding CanManage}" />
                       <Button Content="回退版本" Command="{Binding RollbackCommand}" IsVisible="{Binding CanRollback}" />
                       <Button Content="取消变更" Command="{Binding CancelChangeCommand}" IsVisible="{Binding CanCancelChange}" />
+                      <Button Content="保留残留并结束卸载" Command="{Binding FinishUninstallCommand}" IsVisible="{Binding CanFinishUninstall}" />
+                      <Button Content="清理程序残留" Command="{Binding CleanRetainedFilesCommand}" IsVisible="{Binding CanCleanRetainedFiles}" />
                       <Button Content="打开工具" Command="{Binding OpenCommand}" IsVisible="{Binding CanOpen}" />
                     </WrapPanel>
                   </Grid>

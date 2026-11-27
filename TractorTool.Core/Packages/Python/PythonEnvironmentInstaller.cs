@@ -1,7 +1,7 @@
 using System.Collections;
-using System.Security.Cryptography;
 using System.Text.Json;
 using TractorTool.Contracts.Processes;
+using TractorTool.Core.Packages.Environments;
 
 namespace TractorTool.Core.Packages.Python;
 
@@ -17,11 +17,13 @@ internal sealed class PythonEnvironmentInstaller(HttpClient http, IProcessRunner
             PythonCacheStorage.Ensure(cache);
             var inputs = Path.Combine(generation, "inputs"); Directory.CreateDirectory(inputs);
             var projectPath = Path.Combine(inputs, "pyproject.toml"); var lockPath = Path.Combine(inputs, "uv.lock");
-            await File.WriteAllTextAsync(projectPath, definition.ProjectText, PythonEnvironmentDefinitions.Utf8, token);
-            await File.WriteAllTextAsync(lockPath, definition.LockText, PythonEnvironmentDefinitions.Utf8, token);
+            await File.WriteAllTextAsync(projectPath, definition.ProjectText, EnvironmentPolicy.Utf8, token);
+            await File.WriteAllTextAsync(lockPath, definition.LockText, EnvironmentPolicy.Utf8, token);
             phase("正在准备 uv…");
             var archive = Path.Combine(generation, "uv.zip");
-            await DownloadUvAsync(archive, token).ConfigureAwait(false);
+            await EnvironmentDownload.DownloadAsync(http,
+                $"https://github.com/astral-sh/uv/releases/download/{definition.UvVersion}/uv-x86_64-pc-windows-msvc.zip",
+                archive, PythonEnvironmentDefinitions.UvArchiveSha256, token).ConfigureAwait(false);
             var uvDirectory = Path.Combine(generation, "uv");
             await PackageFiles.ExtractAsync(archive, uvDirectory, token).ConfigureAwait(false);
             File.Delete(archive);
@@ -170,28 +172,6 @@ internal sealed class PythonEnvironmentInstaller(HttpClient http, IProcessRunner
         result["NETRC"] = Path.Combine(generation, "empty.netrc");
         result["UV_NO_HF_TOKEN"] = "1";
         return result;
-    }
-
-    private async Task DownloadUvAsync(string destination, CancellationToken token)
-    {
-        var url = $"https://github.com/astral-sh/uv/releases/download/{PythonEnvironmentDefinitions.UvVersion}/uv-x86_64-pc-windows-msvc.zip";
-        using var request = new HttpRequestMessage(HttpMethod.Get, url); request.Headers.UserAgent.ParseAdd("TractorTool/1.1");
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        if (response.RequestMessage?.RequestUri?.Scheme != "https" || response.Content.Headers.ContentLength > PackageFiles.MaxDownload)
-            throw new InvalidDataException("uv 下载地址或大小无效。");
-        await using var input = await response.Content.ReadAsStreamAsync(token);
-        await using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[81920]; long length = 0; int count;
-        while ((count = await input.ReadAsync(buffer, token)) != 0)
-        {
-            length += count;
-            if (length > PackageFiles.MaxDownload) throw new InvalidDataException("uv 下载超过大小限制。");
-            hash.AppendData(buffer, 0, count); await output.WriteAsync(buffer.AsMemory(0, count), token);
-        }
-        if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(PythonEnvironmentDefinitions.UvArchiveSha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("uv 附件 SHA256 校验失败。");
     }
 
     private async Task<ProcessResult> RunCheckedAsync(ProcessRequest request, CancellationToken token)
