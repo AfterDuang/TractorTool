@@ -53,6 +53,8 @@
 
 用户授权的 Core **353 项**、最终发布宿主离屏 **100 项**及分发夹具通过，独立插件验证前后 **235 个宿主文件**哈希不变；Debug 已构建。CI 已接入现有框架回归入口，远端执行未验证。**宿主与依赖修复已提交 `789c4f6`，未推送；真实 Windows 专项验收缺口保留**；失败过程、复验命令及证据见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)。
 
+卸载提示与恢复指引已补齐，沿用现有目录/日志入口及事务保护；Debug 构建和子代理静态复核通过，用户反馈暂未发现问题并授权本地提交，证据见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)。未逐项确认的恢复场景继续保留，不沿用 E152 的回归结果代替本轮运行验收。
+
 `Dev` 已完成 DLL、uv/Python 和 pnpm/Node 三类接入。2026-11-27 用户反馈本轮 Node 测试没有问题，授权整理文档并本地提交；**未推送、未发布**，正式版 1.1.0 不变。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，选型与实施证据见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)、[E147](PROJECT_HISTORY.md#evidence-native-library-packages)、[E148](PROJECT_HISTORY.md#evidence-python-environments)、[E150](PROJECT_HISTORY.md#evidence-node-environments)。
 
 | 顺序 | 实施范围与阶段出口 | 当前状态 |
@@ -84,6 +86,12 @@
 外部依赖入口为“设置 → 软件设置 → 外部依赖 → Packages / 依赖来源”。默认 GitHub/PyPI/npm 配合相应插件声明使用，无需部署索引；具体规则见 [GitHub 依赖](PLUGIN_DEVELOPMENT.md#package-source-maintenance) / [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。未接入的类型不提供空配置入口。
 
 Packages 在面包屑下按“外部工具、DLL 运行库、Python 环境、Node 环境”切换；搜索、统计与批量清理范围保持一致，确认期间切类不更换已列出的清理对象。缓存按钮仅作用于当前语言分类。实现与用户反馈见 [E149](PROJECT_HISTORY.md#evidence-package-categories) / [E150](PROJECT_HISTORY.md#evidence-node-environments)，验证状态统一见 A30–A33。
+
+插件管理恢复提示沿用插件页“打开目录”和日志入口；若停在启动失败页，可用资源管理器按错误中的绝对路径定位。修改现场前须显式退出软件并另存副本：
+
+- 卸载程序仍在安装目录：先处理权限或文件占用，再重新启动；仅未进入移动阶段时提示可尝试“取消变更”，保留原取消校验。
+- 管理主记录丢失：错误中列出 `state.json` 和 `.bak` 位置。先备份 `.management`，核对备份是否符合当前插件启停、活动版本及待处理变更；只有确认一致才恢复为主记录。无法确认时保留现场与日志供排查，不直接套用旧备份。
+- 待安装代码归属不明：错误中列出目标及暂存版本目录。备份相关目录和 `.management` 后，对照原安装包及变更记录核对；无法确认时保留现场供排查，不删除记录以强行解除失败。“打开恢复文件”指向插件数据快照，不能代替管理记录备份。
 
 **交互式本地发布：终端 → 运行任务 → TractorTool：本地发布 → 选择 ZIP 或 ZIP＋Windows 安装包。** 配置见 [tasks.json](../.vscode/tasks.json)，自动使用 `artifacts/local-publish-日期时间-随机后缀/distribution/assets` 保存最终产物，不覆盖旧目录。需 PowerShell 7.4+（`pwsh` 在 PATH 中）；安装包模式会下载并验证固定便携编译器。版本沿用工程默认，流程复用本地/CI 脚本，不自动安装、启动或上传，也不改变 F5 启动项。详细操作见 [项目首页](../README.md#构建分发包)。
 

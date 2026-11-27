@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 插件恢复提示 | [E153 · 卸载阶段与人工恢复指引（2026-11-27）](#evidence-plugin-recovery-guidance) |
 | 宿主整体审查修复 | [E152 · 管理恢复、启动退出及验证门禁（2026-11-27）](#evidence-host-review-fixes) |
 | 外部依赖审查修复 | [E151 · Dev 可靠性与精简（2026-11-27）](#evidence-dependency-review-fixes) |
 | Node 环境接入 | [E150 · 固定 pnpm、共享环境事务与迁移保护（2026-11-27）](#evidence-node-environments) |
@@ -190,6 +191,21 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-plugin-recovery-guidance"></a>
+
+## E153：卸载提示与人工恢复指引（2026-11-27）
+
+按用户授权仅完善提示，不新增恢复入口、持久化状态或防御机制：
+
+- 卸载无法结束时，根据已有 `DestructiveStarted` 标记，仅在明确未开始移动时提示可尝试取消；不能取消时明确告知。取消失败提示不再向已处于卸载状态的用户建议“改为卸载”。
+- 管理主记录缺失但备份存在时，列出主/备份文件位置，提示先退出并备份、核对后恢复；保留禁止自动回滚规则。
+- 待安装目录归属不明时，列出目标/暂存版本目录及管理记录目录，复用插件页“打开目录”，引导备份、核对原安装包与变更记录；停在启动失败页时可按绝对路径从资源管理器定位。不删除管理记录或自动丢弃请求。
+- 现有异常类型、校验条件、文件操作和公开接口不变。仅核对调用链和提示分支，不增加纯文案断言。未运行检查程序或真实 UI，未提交或推送。
+
+最终执行 `dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -flp:logfile=artifacts/e153-recovery-guidance-final-build.log`，0 警告/0 错误。GPT-6.2 SOL/high 子代理指出启动失败页可能无法进入插件页，已补资源管理器绝对路径指引并复核无阻断；`git diff --check` 通过。真实恢复交互仍由用户验收，E152 自动回归未重跑。
+
+随后用户反馈“目前应该是没啥问题”并授权本地提交；未逐项给出恢复或故障场景结论，保留专项验收缺口，不推送或发布。
 
 <a id="evidence-host-review-fixes"></a>
 

@@ -14,6 +14,8 @@
 
 Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源，不恢复自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 
+本轮仅补卸载阶段提示与管理记录/待安装目录的人工恢复指引，复用现有入口，不放宽事务保护或增加恢复机制；用户反馈暂未发现问题并授权本地提交，验证状态见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)，推送与发布另行授权。
+
 语言环境首轮限定 Windows x64、固定工具链和锁文件，禁用安装脚本；Node 使用 hoisted+copy，业务脚本显式定位环境模块。迁移在目标最终路径按原锁重建，失败保留原数据。版本与接入规则统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。E151/E152 仅运行隔离自动回归，未启动真实主窗口或安装真实语言依赖；NU1900 导致在线漏洞数据查询未完成，CI 新门禁尚无远端执行证据，已发布 1.1.0 不变。
 
 [AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。

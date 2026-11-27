@@ -45,7 +45,9 @@ public sealed class PluginManager : IDisposable
         {
             var statePath = PluginFiles.Under(_root, "state.json");
             if (!PathPresent(statePath) && PathPresent(PluginFiles.Under(_root, "state.json.bak")))
-                throw new InvalidDataException("插件管理主记录丢失，但备份仍存在。请恢复经过确认的主记录；不会自动重建或回滚插件启停选择。");
+                throw new InvalidDataException("插件管理主记录丢失，但备份仍存在。请通过插件页“打开目录”或资源管理器按下方路径定位 .management，先退出软件并备份该文件夹。" +
+                    "备份可能早于最近的变更；仅在确认与当前插件启停、活动版本及待处理变更一致时，恢复为主记录并重新启动。无法确认时请保留现场，不会自动恢复。" +
+                    $"\n主记录：{statePath}\n备份：{statePath}.bak");
             _store = new(statePath, PluginManagementState.Validate);
             _state = _store.Load();
         }
@@ -273,7 +275,7 @@ public sealed class PluginManager : IDisposable
     {
         var pending = item.Pending ?? throw new InvalidOperationException("没有待处理变更。");
         if (pending.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall && pending.DestructiveStarted != false)
-            throw new InvalidOperationException("无法确认程序或数据尚未移动，保留恢复记录；可重启重试或改为卸载并保留数据。");
+            throw new InvalidOperationException("无法确认程序或数据尚未移动，不能取消变更。请保留恢复记录，退出并重新打开软件重试。");
         if (pending.Kind == PluginChangeKind.Uninstall)
         {
             if (!PluginFiles.DirectoryPresent(VersionPath(item.Id, item.ActiveVersion!)) ||
@@ -305,7 +307,8 @@ public sealed class PluginManager : IDisposable
             if (item.Pending is not { Kind: PluginChangeKind.Uninstall } pending || item.Error.Length == 0)
                 throw new InvalidOperationException("没有失败的卸载请求。");
             if (PathPresent(PluginFiles.Under(_paths.PluginRoot, item.Id)))
-                throw new IOException("插件程序尚未移出安装目录，请解除占用后重启重试，或取消尚未开始的卸载。");
+                throw new IOException("插件程序尚未移出安装目录，不能结束卸载。请检查目录权限或解除文件占用后，退出并重新打开软件重试。" +
+                    (pending.DestructiveStarted == false ? "也可在插件页尝试“取消变更”。" : "无法确认程序尚未移动，当前不能取消变更。"));
             var retained = _state.RetainedRemovals;
             if (PathPresent(PluginFiles.Under(_root, "removed", pending.Token)))
                 retained = [.. retained, new(item.Id, pending.Token)];
@@ -339,7 +342,9 @@ public sealed class PluginManager : IDisposable
         {
             if (item.ActiveVersion == pending.Version || stagedVersionPresent ||
                 PluginFiles.Digest(target) != pending.Digest)
-                throw new InvalidDataException("无法确认待安装代码的清理归属，代码与变更请求已保留。");
+                throw new InvalidDataException("无法确认待安装代码的清理归属，代码与变更请求已保留，需要人工核对。请通过插件页“打开目录”或资源管理器按下方路径定位，退出软件并备份相关目录，" +
+                    "核对原安装包与变更记录后再处理；不要直接删除管理记录。" +
+                    $"\n目标版本目录：{target}\n暂存版本目录（若存在）：{stagedVersion}\n管理记录目录：{_root}");
             // Move back before deleting: interrupted deletion can retry in the same staging tree without a full digest.
             Directory.CreateDirectory(Path.GetDirectoryName(stagedVersion)!);
             Directory.Move(target, stagedVersion);
