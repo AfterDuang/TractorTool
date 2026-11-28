@@ -4,9 +4,9 @@
 
 ## 1. 当前工作
 
-**当前产品版本为 2.0.0；用户已授权提交并推送 `main` 与 `v2.0.0` 标签。** E161 及此前外部依赖扩展已在 `d37e2ec` 合并到本地 `main`。本轮只调整宿主产品版本和文档，不修改插件版本、SDK API 或共享程序集绑定身份。发布范围与验证见 [E162](PROJECT_HISTORY.md#evidence-release-200)，附件是否公开以标签工作流实际结果为准。
+**当前产品版本为 2.0.0，正式 Release 已公开。** E161 及此前外部依赖扩展已合入 `main` 并推送；经用户确认，`v2.0.0` 更新到修复提交 `aa3aeb4`，检查、打包和发布均通过，10 个附件已上传，GitHub Latest 为本版。发布范围见 [E162](PROJECT_HISTORY.md#evidence-release-200)，实际结果见 [E163](PROJECT_HISTORY.md#evidence-release-200-check-fix)。插件版本、SDK API 和共享程序集绑定身份不变。
 
-**最新状态**：`41c34e9 / v2.0.0` 首次 CI 在 Core 阶段失败，未进入打包/发布；三次运行都只有原生归档收据篡改用例失败（422/1）。修正错误的异常类型断言后，获授权的本地完整门禁通过：Core 424/424、离屏集成 111/111、235 个宿主文件哈希不变。生产代码与 CI 门禁不变；远端复验及既有标签接续见 [E163](PROJECT_HISTORY.md#evidence-release-200-check-fix)。
+**最新验证**：首次 CI 失败来自原生归档收据篡改用例的异常类型断言。修正后，本地 Core 424/424、离屏集成 111/111；远端标签运行分别为 423/423、111/111，两处均确认 235 个宿主文件哈希不变。生产代码与 CI 门禁未调整，已完成子代理复核；真实 UI 与硬件专项验收不由本次发布代替。
 
 2.0.0 纳入 DLL、uv/Python、pnpm/Node、上游归档安装和插件历史版本清理。当前 Contracts API 1.11 / UI API 1.6，Avalonia 12.1.6；旧接口和收据兼容边界见[插件规范](PLUGIN_DEVELOPMENT.md)。[1.1.0](PROJECT_HISTORY.md#evidence-release-110) 为不含上述扩展的历史分发。
 
@@ -23,7 +23,7 @@ Packages 按工具、DLL、Python、Node 分类，来源默认 GitHub/PyPI/npm�
 ## 2. 接续时必须保留
 
 - **测试归用户**：已有常规使用反馈与隔离回归仅覆盖记录中的版本和范围；真实 UI、硬件及未关闭项见[验收台账](DEVELOPMENT.md#acceptance)。闪动保持官方后端，不恢复已撤回的实验；E94 两项 P2 继续暂缓。
-- **工作区与范围**：接续时核对工作区和远端状态，保留其他开发者改动。普通分支 CI 的结果见开发台账中的 A22。
+- **工作区与范围**：接续时核对工作区和远端状态，保留其他开发者改动。发布门禁及标签结果见开发台账中的 A22。
 - **已确认的框架边界**：外部依赖只有 Packages/依赖来源，默认 GitHub/PyPI/npm，不恢复自有源；发布自动识别 Plugins 一级目录的清单与唯一工程，不恢复额外名单。细节见[架构](ARCHITECTURE.md#packages)及[脚本规则](../scripts/README.md#随包插件自动识别)。
 - **语言环境**：Windows x64、固定工具链与锁输入，禁用安装脚本；迁移在最终目标重建。pnpm 缓存只兼容已核验的登记链接，不放宽载荷或未知链接保护；规则见[Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。
 - **工作约定**：子代理选择、框架变更及发布授权遵循根 [AGENTS.md](../AGENTS.md) 和用户当前指示。

@@ -206,7 +206,7 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 ## E163：2.0.0 发布检查修正（2026-11-28）
 
-用户反馈 `Verify-PluginHost.ps1:9` 汇总 `core-checks failed: 1`。核对 [标签运行](https://github.com/AfterDuang/TractorTool/actions/runs/46131198099)、[main](https://github.com/AfterDuang/TractorTool/actions/runs/46131198618) 和 [Dev](https://github.com/AfterDuang/TractorTool/actions/runs/46131145248) 原始日志，均为构建成功、Core **422 通过/1 失败**，打包和发布均跳过；不存在 `v2.0.0` Release。
+用户反馈 `Verify-PluginHost.ps1:9` 汇总 `core-checks failed: 1`。核对 [标签运行](https://github.com/AfterDuang/TractorTool/actions/runs/46131198099)、[main](https://github.com/AfterDuang/TractorTool/actions/runs/46131198618) 和 [Dev](https://github.com/AfterDuang/TractorTool/actions/runs/46131145248) 原始日志，均为构建成功、Core **422 通过/1 失败**，打包和发布均跳过；当时尚无 `v2.0.0` Release。
 
 唯一失败为 `Native archives: tampering with a stored combination cannot authorize reuse or repair`。测试篡改组合收据映射后重新打开服务，既有归属保护将底层 `InvalidDataException` 包装成带恢复建议的 `InvalidOperationException`，在提示和下载前拒绝请求；测试却只接受底层类型。这是断言错误，不是运行库校验失效或网络/版本升级问题。
 
@@ -216,7 +216,9 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 脱离沙箱后的完整门禁通过：Core **424/424**、最终发布宿主离屏集成 **111/111**；独立插件构建、安装、检查前后的 **235 个宿主文件 SHA256 不变**。所需构建均 0 警告/0 错误。完整证据目录为 `artifacts/plugin-host-20261128-174233-62b42a`，总日志为 `artifacts/release-200-ci-fix/verification-unsandboxed.log`。上述数量来自本轮本机日志，远端复验单独记录，不把首次失败算作通过；自动检查不代替真实 Windows 窗口或硬件验收。
 
-修复交付仅含检查用例和当前文档，保留已有 `v2.0.0` 标签指向，等待用户确认是否将未公开 Release 的标签更新到修复提交；不以单纯重跑旧提交或跳过门禁代替修复。
+修复以 `aa3aeb4` 提交并推送 `main`，仅含检查用例和当前文档。用户随后明确允许更新既有 `v2.0.0` 并重新发布，使用指定旧标签对象的 `--force-with-lease` 更新远端标签；回读确认标签指向 `aa3aeb4f580f313e8b5670f60d15001f6f272c0e`。
+
+[新标签运行 46131986095](https://github.com/AfterDuang/TractorTool/actions/runs/46131986095) 的 checks、package、publish-release 全部成功：远端 Core **423/423**、离屏集成 **111/111**、235 个宿主文件哈希不变；分发夹具、安装器/ZIP 构建与发布身份校验通过。2026-11-28 17:51（UTC+8）[2.0.0 Release](https://github.com/AfterDuang/TractorTool/releases/tag/v2.0.0) 公开，API 确认非草稿、非预发行且为 Latest。10 个附件均为 uploaded：宿主 ZIP、安装器、五个独立插件 ZIP，以及 `release.json`、`installer.json`、`SHA256SUMS`。本轮未启动真实主窗口或安装发布包。
 
 <a id="evidence-release-200"></a>
 
@@ -237,7 +239,7 @@ dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false
 
 构建 0 警告/0 错误，日志 `artifacts/release-200-20261128/host-build.log`。读取生成 DLL 元数据核对：宿主 AssemblyVersion/FileVersion 为 2.0.0.0；Contracts、Core、UI 两者仍为 1.0.0.0，产品信息版本均为 2.0.0 加源码提交后缀。首次静态断言误把共享库 FileVersion 也预期为 2.0.0.0，随后按既有固定 AssemblyVersion 派生规则修正并复核，未因此修改实现。该构建来自提交前工作区，不是最终标签分发产物。
 
-本轮未运行应用或本地自动检查，不接触真实数据。最终标签分发和远端回归状态以 GitHub Actions 为准；本地编译不代替完整发布或真实 Windows 验收。
+本轮未运行应用或本地自动检查，不接触真实数据。本地编译不代替完整发布或真实 Windows 验收；后续首次 CI 失败、修复回归和正式发布结果见 [E163](#evidence-release-200-check-fix)。
 
 <a id="evidence-plugin-history-cleanup"></a>
 
