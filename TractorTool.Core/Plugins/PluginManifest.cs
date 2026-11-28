@@ -32,12 +32,16 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
 {
     private static readonly string[] UiApiVersions = ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6"];
 
+    internal static bool SupportsApi(string value, int minimumMinor = 0) =>
+        Version.TryParse(value, out var version) && version.Major == 1 && version.Minor >= minimumMinor &&
+        version.Build == -1 && version.ToString() == value && version <= Version.Parse(PluginApi.Version);
+
     public string? Check(PluginManifest manifest)
     {
         var requiredUi = Array.IndexOf(UiApiVersions, manifest.UiApiVersion);
         var supportedUi = manifest.UiApiVersion == UiApiVersion ||
             requiredUi >= 0 && requiredUi < Array.IndexOf(UiApiVersions, UiApiVersion);
-        var supportedApi = manifest.ApiVersion == PluginApi.Version || manifest.ApiVersion is "1.0" or "1.1" or "1.2" or "1.3" or "1.4" or "1.5" or "1.6" or "1.7" or "1.8" or "1.9";
+        var supportedApi = SupportsApi(manifest.ApiVersion);
         if (!supportedApi || !supportedUi)
             return $"协议不兼容：需要 API {manifest.ApiVersion} / UI {manifest.UiApiVersion}，宿主为 {PluginApi.Version} / {UiApiVersion}";
         if (manifest.AvaloniaVersion != AvaloniaVersion)
@@ -46,25 +50,29 @@ public sealed record HostCompatibility(string Platform, string Rid, string UiApi
             !manifest.SupportedPlatforms.Contains(Rid, StringComparer.OrdinalIgnoreCase))
             return $"不支持当前平台 {Rid}";
         if (manifest.Dependencies.Length != 0 && manifest.ApiVersion is "1.0" or "1.1") return "使用外部工具必须声明 API 1.2 或更高。";
-        if (manifest.Dependencies.Any(d => d.Downloads.Any(p => p.Kind == PackageKind.NativeLibrary)) && manifest.ApiVersion is not ("1.8" or "1.9" or "1.10"))
+        if (manifest.Dependencies.Any(d => d.Downloads.Any(p => p.Kind == PackageKind.NativeLibrary)) && !SupportsApi(manifest.ApiVersion, 8))
             return "使用原生运行库必须声明 API 1.8 或更高。";
-        if (manifest.PythonEnvironments.Length != 0 && manifest.ApiVersion is not ("1.9" or "1.10"))
+        if (manifest.Dependencies.Any(d => d.Downloads.Any(p => p.Archives.Count != 0)) && !SupportsApi(manifest.ApiVersion, 11))
+            return "使用原生归档组合必须声明 API 1.11 或更高。";
+        if (manifest.PythonEnvironments.Length != 0 && !SupportsApi(manifest.ApiVersion, 9))
             return "使用 Python 环境必须声明 API 1.9 或更高。";
-        if (manifest.NodeEnvironments.Length != 0 && manifest.ApiVersion != "1.10")
-            return "使用 Node 环境必须声明 API 1.10。";
+        if (manifest.NodeEnvironments.Length != 0 && !SupportsApi(manifest.ApiVersion, 10))
+            return "使用 Node 环境必须声明 API 1.10 或更高。";
         return null;
     }
 }
 
 public static class ManifestValidator
 {
+    internal static JsonSerializerOptions Json { get; } = new(JsonOptions.Value) { AllowDuplicateProperties = false };
+
     public static PluginManifest Read(string directory)
     {
         var path = Path.Combine(directory, "plugin.json");
         CheckNoLinks(directory);
         CheckNoLinks(path);
         if (new FileInfo(path).Length > 128 * 1024) throw new InvalidDataException("插件清单超过 128 KiB。");
-        var manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(path), JsonOptions.Value)
+        var manifest = JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(path), Json)
             ?? throw new InvalidDataException("清单为空。");
         Validate(manifest, directory);
         foreach (var environment in manifest.PythonEnvironments)
@@ -102,22 +110,24 @@ public static class ManifestValidator
                 _ = (download ?? throw new InvalidDataException("依赖下载资料为空。")).Definition(dependency.Package);
             if (dependency.Downloads.Select(d => d.Kind).Distinct().Count() > 1)
                 throw new InvalidDataException("同一依赖在不同平台必须声明相同的包类型。");
-            if (dependency.Downloads.Any(d => d.Kind == PackageKind.NativeLibrary) && m.ApiVersion is not ("1.8" or "1.9" or "1.10"))
+            if (dependency.Downloads.Any(d => d.Kind == PackageKind.NativeLibrary) && !HostCompatibility.SupportsApi(m.ApiVersion, 8))
                 throw new InvalidDataException("使用原生运行库必须声明 API 1.8 或更高。");
+            if (dependency.Downloads.Any(d => d.Archives.Count != 0) && !HostCompatibility.SupportsApi(m.ApiVersion, 11))
+                throw new InvalidDataException("使用原生归档组合必须声明 API 1.11 或更高。");
         }
         if (m.PythonEnvironments is null || m.PythonEnvironments.Length > 8 ||
             m.PythonEnvironments.Any(p => p is null) ||
             m.PythonEnvironments.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != m.PythonEnvironments.Length)
             throw new InvalidDataException("Python 环境声明无效、过多或重复。");
-        if (m.PythonEnvironments.Length != 0 && m.ApiVersion is not ("1.9" or "1.10"))
+        if (m.PythonEnvironments.Length != 0 && !HostCompatibility.SupportsApi(m.ApiVersion, 9))
             throw new InvalidDataException("使用 Python 环境必须声明 API 1.9 或更高。");
         foreach (var environment in m.PythonEnvironments) PythonEnvironmentDefinitions.ValidateDeclaration(environment);
         if (m.NodeEnvironments is null || m.NodeEnvironments.Length > 8 ||
             m.NodeEnvironments.Any(p => p is null) ||
             m.NodeEnvironments.Select(p => p.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != m.NodeEnvironments.Length)
             throw new InvalidDataException("Node 环境声明无效、过多或重复。");
-        if (m.NodeEnvironments.Length != 0 && m.ApiVersion != "1.10")
-            throw new InvalidDataException("使用 Node 环境必须声明 API 1.10。");
+        if (m.NodeEnvironments.Length != 0 && !HostCompatibility.SupportsApi(m.ApiVersion, 10))
+            throw new InvalidDataException("使用 Node 环境必须声明 API 1.10 或更高。");
         foreach (var environment in m.NodeEnvironments) NodeEnvironmentDefinitions.ValidateDeclaration(environment);
         _ = EntryPath(m, directory);
     }

@@ -457,7 +457,7 @@ internal static class NativePackageChecks
 
         Test("native declarations require API 1.8 and strict package kinds", path =>
         {
-            var recipe = new GitHubPackage("win-x64", "fixture/runtime", "v1.0.0", "runtime.zip",
+            var recipe = new PackageDownload("win-x64", "fixture/runtime", "v1.0.0", "runtime.zip",
                 new string('a', 64), "Runtime", "Fixture", "MIT", new Dictionary<string, PackageTool>())
             { Kind = PackageKind.NativeLibrary, Libraries = new Dictionary<string, string> { ["runtime"] = "bin/runtime.dll" } };
             var manifest = new PluginManifest { SchemaVersion = 1, Id = "Test.Native", Version = "1.0.0", Name = "Native",
@@ -471,12 +471,12 @@ internal static class NativePackageChecks
             Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { ApiVersion = "1.7" }, directory));
             var json = JsonSerializer.SerializeToNode(recipe, JsonOptions.Value)!.AsObject();
             json.Remove("tools"); // Native authors need not declare an empty executable map.
-            var roundtrip = JsonSerializer.Deserialize<GitHubPackage>(json.ToJsonString(), JsonOptions.Value)!;
+            var roundtrip = JsonSerializer.Deserialize<PackageDownload>(json.ToJsonString(), JsonOptions.Value)!;
             ManifestValidator.Validate(manifest with { Dependencies = [new(Key.Id, Key.Version) { Downloads = [roundtrip] }] }, directory);
             foreach (JsonNode? badKind in new JsonNode?[] { JsonValue.Create(1), JsonValue.Create("unknown"), JsonValue.Create("1") })
             {
                 json["kind"] = badKind;
-                Throws<JsonException>(() => JsonSerializer.Deserialize<GitHubPackage>(json.ToJsonString(), JsonOptions.Value));
+                Throws<JsonException>(() => JsonSerializer.Deserialize<PackageDownload>(json.ToJsonString(), JsonOptions.Value));
             }
             return Task.CompletedTask;
         });
@@ -491,7 +491,7 @@ internal static class NativePackageChecks
         new("https://example.invalid/tool.zip"), Convert.ToHexString(SHA256.HashData(bytes)), "Fixture",
         new("https://example.invalid/source"), new Dictionary<string, PackageTool> { ["tool"] = new("bin/tool.exe", "fixture 1.0.0") });
 
-    private static GitHubPackage NativeRecipe(byte[] bytes) => new("win-x64", "fixture/runtime", "v1.0.0", "runtime.zip",
+    private static PackageDownload NativeRecipe(byte[] bytes) => new("win-x64", "fixture/runtime", "v1.0.0", "runtime.zip",
         Convert.ToHexString(SHA256.HashData(bytes)), "Runtime", "Fixture", "MIT", new Dictionary<string, PackageTool>())
     { Kind = PackageKind.NativeLibrary, Libraries = new Dictionary<string, string> { ["runtime"] = "bin/runtime.dll" } };
 
@@ -505,7 +505,7 @@ internal static class NativePackageChecks
     private static byte[] Archive(byte[]? dll = null, (string Name, byte[] Bytes)[]? extra = null) => Zip(
         [("bin/runtime.dll", dll ?? NativePe()), ("data/runtime.dat", Encoding.UTF8.GetBytes("original")), .. extra ?? []]);
 
-    private static byte[] Zip((string Name, byte[] Bytes)[] files)
+    internal static byte[] Zip((string Name, byte[] Bytes)[] files)
     {
         using var buffer = new MemoryStream();
         using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, true))
@@ -519,7 +519,7 @@ internal static class NativePackageChecks
     }
 
     // Structurally valid PE32+ DLL headers and one section, only parsed as bytes; never loaded or executed.
-    private static byte[] NativePe(ushort machine = 0x8664)
+    internal static byte[] NativePe(ushort machine = 0x8664)
     {
         var bytes = new byte[1024];
         void U16(int offset, ushort value) => BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(offset), value);

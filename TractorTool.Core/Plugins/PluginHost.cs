@@ -139,7 +139,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 lock (_lifecycleGate) _instances.Add(lifetime);
                 var token = lifetime.Stopping.Token;
                 lifetime.Packages = packages?.CreateScope(manifest.Id, manifest.Dependencies.Select(d => d.Package).ToArray(), token,
-                    supportsNativeLibraries: manifest.ApiVersion is "1.8" or "1.9" or "1.10",
+                    supportsNativeLibraries: HostCompatibility.SupportsApi(manifest.ApiVersion, 8),
                     pythonEnvironments: manifest.PythonEnvironments.Select(d =>
                         Packages.Python.PythonEnvironmentDefinitions.Snapshot(d, manifest.Id, manifest.Version, manifest.Name,
                             record.Directory, compatibility.Rid)).ToArray(), pythonProcesses: lifetime.Processes,

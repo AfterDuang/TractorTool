@@ -162,10 +162,10 @@ try {
     foreach ($path in @('bin/Custom-Probe.exe', $consumerPath, 'Plugins/Example.Plugin1/1.2.3/custom-probe.exe',
         'upper-probe.exe', 'lower-probe.exe', 'values-probe.exe', 'keys-probe.exe', 'count-probe.exe', 'enumerator-probe.exe')) {
         $case = 'external-' + [guid]::NewGuid().ToString('N')
-        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $deps -ExtraPaths $path) } "外部依赖入口：$path"
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $deps -ExtraPaths $path) } "外部依赖文件：$path"
     }
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'host-native-cannot-exempt-tool' 3 -Dependencies $deps `
-        -ExtraPaths 'custom-probe.exe' -HostNativeFiles 'runtimes/win-x64/native/custom-probe.exe') } '外部依赖入口：custom-probe.exe'
+        -ExtraPaths 'custom-probe.exe' -HostNativeFiles 'runtimes/win-x64/native/custom-probe.exe') } '外部依赖文件：custom-probe.exe'
 
     # Native packages use the same cross-plugin reference lookup, including ordinary dictionary-key names.
     $libraries = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
@@ -182,18 +182,82 @@ try {
     }
     & $verify -AssetsDir (New-DistributionFixture 'native-package-declaration' 3 -Dependencies $nativeDeps)
     & $verify -AssetsDir (New-DistributionFixture 'native-current-api' 3 -Dependencies $nativeDeps -ApiVersion '1.9')
+    & $verify -AssetsDir (New-DistributionFixture 'native-archive-api' 3 -Dependencies $nativeDeps -ApiVersion '1.11')
     & $verify -AssetsDir (New-DistributionFixture 'unrelated-private-native' 3 -Dependencies $nativeDeps `
         -ExtraPaths 'Plugins/Example.Plugin2/1.2.3/native-probe.dll')
     foreach ($path in @('native-probe.dll', 'Plugins/Example.Plugin0/1.2.3/native/NATIVE-PROBE.DLL',
         'Plugins/Example.Plugin1/1.2.3/native-probe.dll', 'values-probe.dll', 'keys-probe.dll', 'count-probe.dll', 'enumerator-probe.dll')) {
         $case = 'external-native-' + [guid]::NewGuid().ToString('N')
-        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $nativeDeps -ExtraPaths $path) } "外部依赖入口：$path"
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 3 -Dependencies $nativeDeps -ExtraPaths $path) } "外部依赖文件：$path"
     }
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'native-old-api' 3 -Dependencies $nativeDeps -ApiVersion '1.7') } '原生运行库需要 API 1.8'
     $badNativeDeps = @{ 0 = @(@{ id = 'Example.Native'; version = '1.0.0'; downloads = @(@{
         rid = 'win-x64'; sha256 = 'cd' * 32; kind = 'nativeLibrary'; libraries = @{ entry = '../foo.dll' }
     }) }) }
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'native-unsafe-path' 1 -Dependencies $badNativeDeps) } '安全的包内相对路径：../foo.dll'
+
+    $archiveDownload = @{
+        rid = 'win-x64'; kind = 'nativeLibrary'; sourceKind = 'pythonIndex'; source = 'https://pypi.org/simple/'
+        libraries = @{ entry = 'bin/archive-entry.dll' }
+        ArChIvEs = @(
+            @{ url = 'https://files.pythonhosted.org/packages/first.whl'; sha256 = '12' * 32; files = @{
+                'wheel/entry.dll' = 'bin/archive-entry.dll'; 'wheel/helper.dll' = 'bin/archive-helper.dll'
+                'wheel/config.json' = 'share/runtime/config.json'; 'wheel/LICENSE' = 'LICENSE'
+            } },
+            @{ url = 'https://files.pythonhosted.org/packages/second.whl'; sha256 = '34' * 32; files = @{ 'wheel/module.dll' = 'lib/archive-module.dll' } }
+        )
+    }
+    $archiveDeps = @{ 0 = @(@{ id = 'Example.Archives'; version = '1.0.0'; downloads = @($archiveDownload) }) }
+    $archiveManifest = @{ apiVersion = '1.11'; dependencies = $archiveDeps[0] }
+    $projected = & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10)
+    $projectedDownload = $projected.Dependencies[0].Downloads[0]
+    if ($projectedDownload.SourceKind -cne 'pythonIndex' -or $projectedDownload.Source -cne 'https://pypi.org/simple/' -or
+        $projectedDownload.Archives.Count -ne 2 -or $projectedDownload.Archives[1].Sha256 -cne ('34' * 32) -or
+        $projectedDownload.Archives[0].Url.AbsoluteUri -cne $archiveDownload.Archives[0].url -or
+        $projectedDownload.Archives[0].Files['wheel/config.json'] -cne 'share/runtime/config.json') { throw '多归档的来源、摘要或映射在投影中丢失。' }
+    & $verify -AssetsDir (New-DistributionFixture 'archive-declaration' 1 -Dependencies $archiveDeps -ApiVersion '1.11')
+    & $verify -AssetsDir (New-DistributionFixture 'archive-supplemental-license' 1 -Dependencies $archiveDeps -ApiVersion '1.11' `
+        -ExtraPaths @('Plugins/Example.Plugin0/1.2.3/Licenses/Supplement/LICENSE', 'Licenses/Supplement/LICENSE'))
+    foreach ($path in @('archive-helper.dll', 'Plugins/Example.Plugin0/1.2.3/Native/ARCHIVE-MODULE.DLL',
+        'Plugins/Example.Plugin0/1.2.3/Native/helper.dll', 'Plugins/Example.Plugin0/1.2.3/share/runtime/config.json',
+        'Plugins/Example.Plugin0/1.2.3/LICENSE', 'share/runtime/config.json')) {
+        Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture ('archive-payload-' + [guid]::NewGuid().ToString('N')) 1 `
+            -Dependencies $archiveDeps -ApiVersion '1.11' -ExtraPaths $path) } "外部依赖文件：$path"
+    }
+    foreach ($entry in @('bin/missing.dll', 'BIN/archive-entry.dll')) {
+        $archiveDownload.libraries.entry = $entry
+        Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '入口未包含在归档映射'
+    }
+    $archiveDownload.libraries.entry = 'bin/archive-entry.dll'
+    $archiveDownload.Archives[1].url = $archiveDownload.Archives[0].url
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '固定 HTTPS ZIP/wheel 地址'
+    $archiveDownload.Archives[1].url = 'https://files.pythonhosted.org/packages/second.whl'
+    $savedMappings = $archiveDownload.Archives[1].files
+    foreach ($mapping in @(
+        @{ 'wheel/module.dll' = 'BIN/module.dll' },
+        @{ 'wheel/module.dll' = 'bin/archive-entry.dll/child.dll' },
+        @{ 'wheel/module.dll' = 'bin' }
+    )) {
+        $archiveDownload.Archives[1].files = $mapping
+        Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '归档'
+    }
+    $duplicateEntries = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    $duplicateEntries.Add('wheel/module.dll', 'lib/first.dll')
+    $duplicateEntries.Add('wheel/MODULE.dll', 'lib/second.dll')
+    $archiveDownload.Archives[1].files = $duplicateEntries
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '独立目标路径'
+    $archiveDownload.Archives[1].files = $savedMappings
+    $savedArchives = $archiveDownload.Archives
+    $archiveDownload.Archives = @()
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '单 ZIP 依赖必须使用 GitHub 来源'
+    $archiveDownload.Archives = $savedArchives
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'archive-old-api' 1 -Dependencies $archiveDeps -ApiVersion '1.10') } '组合归档需要 API 1.11'
+    $archiveDownload.Archives[0].url = 'https://pypi.org/packages/first.whl'
+    Expect-Rejection { & $readManifest -Json (ConvertTo-Json $archiveManifest -Depth 10) } '不属于声明来源'
+    $archiveDownload.Archives[0].url = 'https://files.pythonhosted.org/packages/first.whl'
+    $archiveDownload.Archives[1].sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Fixture payload')))
+    Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'archive-second-hash' 1 -Dependencies $archiveDeps -ApiVersion '1.11' `
+        -ExtraPaths 'renamed-wheel.bin') } '外部下载归档：renamed-wheel.bin'
 
     # A declared host native asset may coexist at the host root, but not in its consumer plugin or a nested folder.
     $skiaDownload = @{ rid = 'win-x64'; sha256 = 'ef' * 32; kind = 'nativeLibrary'; libraries = @{ skia = 'libSkiaSharp.dll' } }
@@ -202,11 +266,11 @@ try {
     & $verify -AssetsDir (New-DistributionFixture 'host-owned-native' 1 -Dependencies $skiaDeps `
         -ExtraPaths 'libSkiaSharp.dll' -HostNativeFiles $skiaAsset)
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'unknown-host-native' 1 -Dependencies $skiaDeps `
-        -ExtraPaths 'libSkiaSharp.dll') } '外部依赖入口：libSkiaSharp.dll'
+        -ExtraPaths 'libSkiaSharp.dll') } '外部依赖文件：libSkiaSharp.dll'
     foreach ($path in @('Plugins/Example.Plugin0/1.2.3/libSkiaSharp.dll', 'nested/libSkiaSharp.dll')) {
         $case = 'host-native-copy-' + [guid]::NewGuid().ToString('N')
         Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture $case 1 -Dependencies $skiaDeps `
-            -ExtraPaths @('libSkiaSharp.dll', $path) -HostNativeFiles $skiaAsset) } "外部依赖入口：$path"
+            -ExtraPaths @('libSkiaSharp.dll', $path) -HostNativeFiles $skiaAsset) } "外部依赖文件：$path"
     }
     $skiaDownload.sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes('Fixture payload')))
     Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture 'host-native-cannot-exempt-archive' 1 -Dependencies $skiaDeps `
@@ -274,7 +338,8 @@ try {
         & $readManifest -Path (Join-Path $mixedSource 'plugin.json') | Out-Null
     } finally { Pop-Location }
     & $verify -AssetsDir (New-DistributionFixture 'node-locked-inputs' 1 -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs)
-    & $verify -AssetsDir (New-DistributionFixture 'python-current-api' 1 -ApiVersion '1.10' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs)
+    & $verify -AssetsDir (New-DistributionFixture 'python-current-api' 1 -ApiVersion '1.11' -PythonEnvironments $pythonDeclarations -PythonInputs $pythonInputs)
+    & $verify -AssetsDir (New-DistributionFixture 'node-current-api' 1 -ApiVersion '1.11' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs)
     foreach ($payload in @('Node/runtime/NODE.EXE', 'Node/pnpm/pnpm.cjs', 'Node/node_modules/package/index.js')) {
         Expect-Rejection { & $verify -AssetsDir (New-DistributionFixture ('node-installed-' + [guid]::NewGuid().ToString('N')) 1 `
             -ApiVersion '1.10' -NodeEnvironments $nodeDeclarations -NodeInputs $nodeInputs -ExtraPaths "Plugins/Example.Plugin0/1.2.3/$payload") } '不能携带受管理 Node'

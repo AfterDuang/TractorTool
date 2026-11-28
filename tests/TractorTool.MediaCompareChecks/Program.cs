@@ -10,6 +10,7 @@ ConcurrentOwnership();
 ViewportGeometry();
 TimingChecks.Run();
 SequenceChecks.Run();
+await PackageRequestChecks.RunAsync();
 Console.WriteLine("MediaCompare managed checks passed.");
 return 0;
 

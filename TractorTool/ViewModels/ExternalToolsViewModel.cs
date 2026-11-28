@@ -39,7 +39,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             FilterCards();
         }
     }
-    public IReadOnlyList<string> SourceKinds { get; } = ["GitHub Releases", "Python 包索引", "npm registry"];
+    public IReadOnlyList<string> SourceKinds { get; } = ["GitHub Releases", "Python 包索引", "npm registry", "HTTPS 文件来源"];
     public int SourceKindIndex
     {
         get => _sourceKindIndex;
@@ -48,14 +48,16 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     public string SourceHelp => SourceKindIndex switch
     {
         0 => "公开 GitHub Enterprise Release 的 ZIP 附件。",
-        1 => "公开 PyPI 兼容索引；锁文件必须使用此索引，附件须来自同一主机。",
-        _ => "公开 npm 兼容 registry；按插件锁文件安装，禁用安装脚本与配置钩子。"
+        1 => "公开 PyPI 兼容索引，供 Python 环境或插件声明的运行库使用。自定义索引的附件须来自同一主机。",
+        2 => "公开 npm 兼容 registry；按插件锁文件安装，禁用安装脚本与配置钩子。",
+        _ => "公开的 HTTPS 下载目录，供插件获取固定版本的运行库文件。"
     };
     public string SourcePlaceholder => SourceKindIndex switch
     {
         0 => "https://github.example.com/api/v3/",
         1 => "https://packages.example.com/simple/",
-        _ => "https://registry.example.com/"
+        2 => "https://registry.example.com/",
+        _ => "https://downloads.example.com/releases/"
     };
     public bool ShowSourceForm { get => _showSourceForm; set => SetProperty(ref _showSourceForm, value); }
     public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
@@ -101,6 +103,8 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             prompt.IsRepair ? "重新安装依赖" : "安装依赖",
             $"{prompt.RequestedBy} 需要 {prompt.Definition.Name} {prompt.Definition.Package.Version}。\n{prompt.Definition.Description}\n\n" +
             $"来源：{prompt.Definition.SourceUri.AbsoluteUri}\n许可：{prompt.Definition.License}\n" +
+            (prompt.Definition.Archives.Count == 0 ? "" : $"下载 {prompt.Definition.Archives.Count} 份文件，来自 " +
+                string.Join("、", prompt.Definition.Archives.Select(a => a.Url.Host).Distinct()) + "。\n") +
             (prompt.IsRepair ? "将替换此版本损坏的依赖文件。\n" : "") +
             "安装后供插件共用，卸载插件时会保留。是否继续？", token);
         if (_service is not null) _service.Python.ConfirmInstallAsync = confirm is null ? null : (prompt, token) => confirm(
@@ -184,7 +188,13 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     {
         if (_disposed || _savingSource || _service is null) return;
         var name = SourceName; var address = SourceAddress;
-        var kind = SourceKindIndex switch { 0 => DependencySourceKind.GitHub, 1 => DependencySourceKind.PythonIndex, _ => DependencySourceKind.NpmRegistry };
+        var kind = SourceKindIndex switch
+        {
+            0 => DependencySourceKind.GitHub,
+            1 => DependencySourceKind.PythonIndex,
+            2 => DependencySourceKind.NpmRegistry,
+            _ => DependencySourceKind.Https
+        };
         _savingSource = true; _status = ""; Refresh();
         try
         {
@@ -275,13 +285,16 @@ public sealed class PackageCardViewModel : ObservableObject
     public string Directory => _item.Status.Directory;
     public string Source => _item.Definition?.SourceUri.AbsoluteUri ?? "来源信息不可用。";
     public string SourceSummary => _item.Definition is { } d ? "来源：" +
-        (d.SourceUri.AbsolutePath.Contains("/releases/tag/", StringComparison.Ordinal) ?
-            $"GitHub · {d.SourceUri.Host} / {string.Join("/", d.SourceUri.AbsolutePath.Split('/').Skip(1).Take(2))}" : d.SourceUri.Host) : "来源信息不可用";
+        (d.Archives.Count != 0 ? $"{(d.SourceKind == DependencySourceKind.PythonIndex ? "PyPI" : "HTTPS")} · {d.SourceUri.Host}" :
+            d.SourceUri.AbsolutePath.Contains("/releases/tag/", StringComparison.Ordinal) ?
+                $"GitHub · {d.SourceUri.Host} / {string.Join("/", d.SourceUri.AbsolutePath.Split('/').Skip(1).Take(2))}" : d.SourceUri.Host) : "来源信息不可用";
     public string Description => _item.Definition?.Description ?? "安装资料不可用。";
-    public string DownloadUri => _item.Definition?.DownloadUri.AbsoluteUri ?? "下载地址不可用。";
+    public string DownloadDetails => _item.Definition is not { } d ? "下载地址不可用。" : d.Archives.Count == 0 ? d.DownloadUri.AbsoluteUri :
+        string.Join("\n\n", d.Archives.Select(a => $"{a.Url.AbsoluteUri}\nSHA256：{a.Sha256}"));
     public string ContentsTitle => IsNativeLibrary ? "提供的运行库" : "提供的工具";
     public string ContentsNames => string.Join("、", IsNativeLibrary ? _item.Definition?.Libraries.Keys ?? [] : _item.Definition?.Tools.Keys ?? []);
     public string Sha256 => _item.Definition?.Sha256 ?? "无校验信息";
+    public string Sha256Title => _item.Definition?.Archives.Count > 0 ? "组合声明 SHA256" : "SHA256 校验值";
     public bool IsInstalled => _item.IsInstalled;
     public string SizeText => _item.Status.InstalledBytes is { } size ? $"{size / 1048576d:0.0} MiB" : "";
     public string RequiredBy => _item.RequiredBy.Count == 0 ? "没有插件引用" : "引用插件：" + string.Join("、", _item.RequiredBy);
@@ -298,7 +311,8 @@ public sealed class PackageCardViewModel : ObservableObject
     public bool IsBusy => _item.Status.Phase is PackagePhase.Downloading or PackagePhase.Verifying or PackagePhase.Installing;
     public bool IsIndeterminate => _item.Status.Phase != PackagePhase.Downloading || _item.Status.TotalBytes is not > 0;
     public double Progress => _item.Status.TotalBytes is > 0 ? Math.Clamp(100d * _item.Status.DownloadedBytes / _item.Status.TotalBytes.Value, 0, 100) : 0;
-    public string InstallLabel => IsInstalled ? "重新安装" : "安装";
+    public string InstallLabel => _item.Status.Phase == PackagePhase.Ready && _item.Definition?.Archives.Count > 0
+        ? "检查完整性" : IsInstalled ? "重新安装" : "安装";
     public string StatusText => _item.Status.Phase switch
     {
         PackagePhase.Missing => "未安装",

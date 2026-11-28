@@ -1,6 +1,6 @@
 # 第三方组件
 
-- GStreamer 1.28.9：官方 Windows x64 分发，来源与 SHA256 固定在本插件的运行库准备脚本中；原文许可与文件清单随运行库保留。
+- GStreamer 1.28.9：官方 Windows x64 二进制的未修改子集，单独作为宿主管理的 `TractorTool.MediaCompare.GStreamer` 包按需安装，DLL 不包含在插件代码 ZIP 中。五个官方 wheel 的 URL、SHA256 和文件映射固定在 `plugin.json`；宿主记录安装后的完整文件摘要。完整许可原文、组件来源及哈希随插件保留在 `Native/Runtime/licenses/`、`license-manifest.json` 和 `RUNTIME-NOTICE.md`，升级时须同步核对。
 - Vortice.Windows 3.8.3（Direct3D11、D3DCompiler 与实际传递依赖）：MIT，https://github.com/amerkoleci/Vortice.Windows 。
 - Vortice.Mathematics 2.1.0、SharpGen.Runtime/COM 2.4.2-beta：MIT，原文在 `Licenses`。
 - CommunityToolkit.Mvvm：插件私有 NuGet 依赖，构建脚本按实际版本收集原文许可。

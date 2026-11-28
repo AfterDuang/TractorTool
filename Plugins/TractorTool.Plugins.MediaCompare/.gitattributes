@@ -1,0 +1,6 @@
+# Keep development provenance and license hashes stable across Git checkouts.
+scripts/*.ps1 text eol=lf
+Native/Runtime/runtime-sources.json text eol=lf
+Native/Runtime/license-manifest.json text eol=lf
+Native/Runtime/RUNTIME-NOTICE.md text eol=lf
+Native/Runtime/PeImports.cs.txt text eol=lf

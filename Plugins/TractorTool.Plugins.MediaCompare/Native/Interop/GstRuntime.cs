@@ -28,7 +28,7 @@ internal static class GstRuntime
             var bin = Path.Combine(runtimeRoot, "bin");
             var plugins = Path.Combine(runtimeRoot, "lib", "gstreamer-1.0");
             if (!File.Exists(Path.Combine(bin, GstNative.Core)) || !Directory.Exists(plugins))
-                throw new FileNotFoundException("审片运行库不完整。请安装包含 GStreamer 的完整插件包。");
+                throw new FileNotFoundException("GStreamer 运行库不完整。请退出重启后，在设置 → 外部依赖 → Packages → DLL 运行库中修复。");
             if (!_resolverInstalled)
             {
                 NativeLibrary.SetDllImportResolver(typeof(GstRuntime).Assembly, Resolve);

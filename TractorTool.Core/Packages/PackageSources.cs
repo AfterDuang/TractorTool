@@ -97,7 +97,7 @@ public sealed partial class ExternalPackageService
     private bool HasDownload(PackageReference package) => _references.Dependencies.Any(d => d.Package == package &&
         d.Downloads?.Any(p => p.Rid == _rid) == true);
 
-    private GitHubPackage? DeclaredDownload(PackageReference package, PackageDefinition? installed = null)
+    private PackageDownload? DeclaredDownload(PackageReference package, PackageDefinition? installed = null)
     {
         var candidates = _references.Dependencies.Where(d => d.Package == package)
             .SelectMany(d => d.Downloads ?? []).Where(p => p.Rid == _rid).ToArray();
@@ -123,7 +123,16 @@ public sealed partial class ExternalPackageService
             var recipe = DeclaredDownload(package, e?.Definition);
             RequireSupportedKind(e?.Definition.Kind ?? recipe?.Kind ?? PackageKind.Tool, supportsNativeLibraries);
             if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null ||
-                e.Operation is not null || !HasDownload(package) && e.SourceAvailable)) return Task.CompletedTask;
+                e.Operation is not null || !HasDownload(package) && e.SourceAvailable && e.Definition.Archives.Count == 0)) return Task.CompletedTask;
+            var native = recipe?.Archives.Count > 0 ? PackageDefinitions.Snapshot(recipe.Definition(package)) :
+                recipe is null && e?.Definition.Archives.Count > 0 ? e.Definition : null;
+            if (native is not null)
+            {
+                RequireArchiveSource(native);
+                if (e is null) _entries.Add(package, new Entry(native, PackageDirectory(native)) { SourceDefinition = native });
+                else e.SourceDefinition = native;
+                return Task.CompletedTask;
+            }
             if (!_resolutions.TryGetValue(package, out var task))
             {
                 if (recipe is null)
@@ -171,7 +180,16 @@ public sealed partial class ExternalPackageService
         }
     }
 
-    private async Task<PackageDefinition> ResolveGitHubAsync(PackageReference package, GitHubPackage recipe, CancellationToken stopping)
+    private void RequireArchiveSource(PackageDefinition definition)
+    {
+        if (definition.Archives.Count == 0) return;
+        if (_settingsError.Length != 0) throw new InvalidOperationException(_settingsError);
+        if (!_sources.Any(s => s.Kind == definition.SourceKind &&
+            DependencySource.Address(s.Kind, s.Url) == definition.SourceUri))
+            throw new InvalidOperationException($"请先在依赖来源中添加 {definition.SourceUri}。已安装内容仍可离线使用。");
+    }
+
+    private async Task<PackageDefinition> ResolveGitHubAsync(PackageReference package, PackageDownload recipe, CancellationToken stopping)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -223,6 +241,7 @@ public sealed partial class ExternalPackageService
     {
         // Legacy receipts may point to an upstream mirror; identical bytes and tool contracts can be reused.
         if (previous.Package != next.Package || previous.Rid != next.Rid || previous.Kind != next.Kind ||
+            (previous.Archives.Count == 0) != (next.Archives.Count == 0) ||
             !string.Equals(previous.Sha256, next.Sha256, StringComparison.OrdinalIgnoreCase) ||
             previous.Libraries.Count != next.Libraries.Count || previous.Libraries.Any(p =>
                 !next.Libraries.TryGetValue(p.Key, out var path) || p.Value != path) ||

@@ -62,30 +62,6 @@
     "gstmpegtsdemux",
     "gstdvdlpcmdec"
   ],
-  "licenses": [
-    "gstreamer-1.0",
-    "gst-plugins-base-1.0",
-    "gst-plugins-bad-1.0",
-    "ffmpeg",
-    "glib",
-    "libffi",
-    "pcre2",
-    "proxy-libintl",
-    "orc",
-    "libjpeg-turbo",
-    "libpng",
-    "zlib",
-    "bzip2",
-    "flac",
-    "libogg",
-    "libvorbis",
-    "opus",
-    "libvpx",
-    "dav1d",
-    "gst-plugins-good-1.0",
-    "gst-libav-1.0",
-    "gst-plugins-ugly-1.0"
-  ],
   "windowsImports": [
     "ADVAPI32.dll",
     "AVRT.dll",
@@ -106,16 +82,5 @@
     "USER32.dll",
     "WINMM.dll",
     "WS2_32.dll"
-  ],
-  "msvcLicense": {
-    "path": "licenses/msvc-runtime/license.rtf",
-    "sha256": "8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b",
-    "source": "Official GStreamer installer: tmp/vc_redist.x64.exe (14.44.35211), Burn payload license.rtf (u4)",
-    "redistributableSha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"
-  },
-  "licenseSource": {
-    "fileName": "gstreamer-1.0-msvc-x86_64-1.28.9.exe",
-    "url": "https://gstreamer.freedesktop.org/data/pkg/windows/1.28.9/msvc/gstreamer-1.0-msvc-x86_64-1.28.9.exe",
-    "sha256": "ce4008705e8c6fe92803535b82fb3d6551e183f438e6ef26682ac4d0aca61076"
-  }
+  ]
 }

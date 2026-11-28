@@ -17,7 +17,7 @@ internal static class PythonContractsChecks
         Test("new API retains native and legacy manifests", path =>
         {
             var (directory, declaration, manifest) = Fixture(path);
-            var native = new GitHubPackage("win-x64", "example/runtime", "v1.0.0", "runtime.zip", new string('a', 64),
+            var native = new PackageDownload("win-x64", "example/runtime", "v1.0.0", "runtime.zip", new string('a', 64),
                 "Runtime", "Fixture", "MIT", new Dictionary<string, PackageTool>())
             { Kind = PackageKind.NativeLibrary, Libraries = new Dictionary<string, string> { ["runtime"] = "runtime.dll" } };
             var compatible = new HostCompatibility("windows", "win-x64", "1.6", "12.1.6");

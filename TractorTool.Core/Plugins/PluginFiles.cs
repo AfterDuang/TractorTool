@@ -44,7 +44,7 @@ internal static class PluginFiles
             ?? throw new InvalidDataException("ZIP 根目录必须包含 plugin.json。");
         if (json.Length > 128 * 1024) throw new InvalidDataException("插件清单超过 128 KiB。");
         PluginManifest manifest;
-        using (var input = json.Open()) manifest = JsonSerializer.Deserialize<PluginManifest>(input, JsonOptions.Value)
+        using (var input = json.Open()) manifest = JsonSerializer.Deserialize<PluginManifest>(input, ManifestValidator.Json)
             ?? throw new InvalidDataException("插件清单为空。");
         AppPaths.ValidateId(manifest.Id);
         ManifestValidator.ValidateVersion(manifest.Version);

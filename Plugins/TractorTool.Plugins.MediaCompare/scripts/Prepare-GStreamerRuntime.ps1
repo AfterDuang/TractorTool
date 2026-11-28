@@ -42,7 +42,8 @@ if ($licenseManifest.schemaVersion -ne 1 -or @(Get-ChildItem -LiteralPath $licen
 }
 foreach ($entry in $licenseManifest.files) {
     $path = [IO.Path]::GetFullPath((Join-Path $licenseMaterials $entry.path))
-    if (-not $path.StartsWith([IO.Path]::GetFullPath($licenseMaterials) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
+    if ([IO.Path]::IsPathRooted($entry.path) -or
+        -not $path.StartsWith([IO.Path]::GetFullPath($licenseMaterials) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
         (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $entry.sha256) { throw "原文许可证校验失败：$($entry.path)" }
 }
 $inputs = @($PSCommandPath, $configPath, (Join-Path $materials 'PeImports.cs.txt'), $licenseManifestPath, (Join-Path $materials 'RUNTIME-NOTICE.md'))
@@ -167,24 +168,26 @@ try {
         }
         $licenseRoot = Join-Path $runtime 'licenses'
         [void][IO.Directory]::CreateDirectory($licenseRoot)
-        foreach ($component in $config.licenses) {
-            $source = Join-Path $licenseMaterials $component
-            if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "缺少上游许可证：$component" }
-            Copy-Item -LiteralPath $source -Destination $licenseRoot -Recurse
+        foreach ($entry in $licenseManifest.files) {
+            $source = Join-Path $licenseMaterials $entry.path
+            $destination = Join-Path $licenseRoot $entry.path
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))
+            [IO.File]::Copy($source, $destination)
         }
-        $msvcLicense = Join-Path $materials $config.msvcLicense.path
-        if ((Get-FileHash -LiteralPath $msvcLicense -Algorithm SHA256).Hash -ne $config.msvcLicense.sha256) { throw 'MSVC 原文许可证校验失败。' }
-        Copy-Item -LiteralPath (Split-Path -Parent $msvcLicense) -Destination $licenseRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $materials 'RUNTIME-NOTICE.md') -Destination (Join-Path $runtime 'NOTICE.md')
         Copy-Item -LiteralPath $configPath -Destination (Join-Path $runtime 'runtime-sources.json')
         Copy-Item -LiteralPath $licenseManifestPath -Destination (Join-Path $runtime 'license-manifest.json')
-        $files = @(Get-ChildItem -LiteralPath $runtime -Recurse -File | Sort-Object FullName | ForEach-Object {
-            @{ path = [IO.Path]::GetRelativePath($runtime, $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+        $paths = [string[]]@(Get-ChildItem -LiteralPath $runtime -Recurse -File | ForEach-Object FullName)
+        [Array]::Sort($paths, [StringComparer]::Ordinal)
+        $files = @($paths | ForEach-Object { Get-Item -LiteralPath $_ } | ForEach-Object {
+            [pscustomobject][ordered]@{ path = [IO.Path]::GetRelativePath($runtime, $_.FullName).Replace('\', '/'); bytes = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
         })
         $total = ($files | Measure-Object -Property bytes -Sum).Sum
-        if ($total -ge 240MB) { throw "运行库超过预留预算 240 MiB：$total bytes；插件总体上限 256 MiB。" }
-        $imports = @($selected.Keys | Sort-Object | ForEach-Object { @{ path = [IO.Path]::GetRelativePath($upstream, $_).Replace('\', '/'); imports = $selected[$_] } })
-        $manifest = @{ schemaVersion = 1; fingerprint = $fingerprint; version = $config.gstreamerVersion; rid = $config.rid; payloadBytes = $total; modules = $config.modules; files = $files; nativeImports = $imports; windowsImports = @($systemImports) }
+        if ($total -ge 240MB) { throw "运行库超过本插件的分发预算 240 MiB：$total bytes。" }
+        $nativePaths = [string[]]@($selected.Keys)
+        [Array]::Sort($nativePaths, [StringComparer]::Ordinal)
+        $imports = @($nativePaths | ForEach-Object { [ordered]@{ path = [IO.Path]::GetRelativePath($upstream, $_).Replace('\', '/'); imports = $selected[$_] } })
+        $manifest = [ordered]@{ schemaVersion = 1; fingerprint = $fingerprint; version = $config.gstreamerVersion; rid = $config.rid; payloadBytes = $total; modules = $config.modules; files = $files; nativeImports = $imports; windowsImports = @($systemImports) }
         $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $runtime 'runtime-manifest.json') -Encoding utf8NoBOM
         if (Test-Path -LiteralPath $OutputDirectory) {
             Assert-WorkspacePath $OutputDirectory

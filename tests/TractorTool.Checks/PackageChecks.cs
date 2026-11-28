@@ -716,9 +716,9 @@ internal static class PackageChecks
     }
 
     private static readonly PackageReference Key = new("Fixture", "1.0.0");
-    private static GitHubPackage Recipe(byte[] bytes) => new("win-x64", "Fixture/tool", "v1.0.0", "tool.zip",
+    private static PackageDownload Recipe(byte[] bytes) => new("win-x64", "Fixture/tool", "v1.0.0", "tool.zip",
         Definition(bytes).Sha256, "Fixture", "Fixture", "Fixture", Definition(bytes).Tools);
-    private static byte[] Release(GitHubPackage recipe, string? digest = null, string? asset = null,
+    private static byte[] Release(PackageDownload recipe, string? digest = null, string? asset = null,
         string? download = null, string? tag = null, long size = 100) => JsonSerializer.SerializeToUtf8Bytes(new
         {
             tag_name = tag ?? recipe.Tag, draft = false,
@@ -726,7 +726,7 @@ internal static class PackageChecks
                 browser_download_url = download ?? $"{(recipe.Source == DependencySource.GitHubUrl ? "https://github.com" : new Uri(recipe.Source).GetLeftPart(UriPartial.Authority))}/{recipe.Repository}/releases/download/{recipe.Tag}/{recipe.Asset}",
                 digest = digest ?? "sha256:" + recipe.Sha256 } }
         });
-    private static ExternalPackageService GitHub(string root, HttpClient http, GitHubPackage recipe)
+    private static ExternalPackageService GitHub(string root, HttpClient http, PackageDownload recipe)
     {
         var service = new ExternalPackageService(root, "win-x64", http, new Probe(), new Log());
         service.UpdateReferences(new([new(Key, "Test.Plugin", "Plugin", [recipe])], true)); return service;

@@ -136,7 +136,9 @@
     },
     {
       "sha256": "8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b",
-      "path": "msvc-runtime/license.rtf"
+      "path": "msvc-runtime/license.rtf",
+      "source": "Official GStreamer installer: tmp/vc_redist.x64.exe (14.44.35211), Burn payload license.rtf (u4)",
+      "redistributableSha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"
     },
     {
       "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551",

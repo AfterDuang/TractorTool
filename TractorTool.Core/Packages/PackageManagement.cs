@@ -7,7 +7,7 @@ using TractorTool.Core.Packages.Node;
 
 namespace TractorTool.Core.Packages;
 
-public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName, IReadOnlyList<GitHubPackage>? Downloads = null);
+public sealed record PackageDependency(PackageReference Package, string PluginId, string PluginName, IReadOnlyList<PackageDownload>? Downloads = null);
 public sealed record PackageReferenceSnapshot(IReadOnlyList<PackageDependency> Dependencies, bool Complete, string Error = "")
 {
     public IReadOnlyList<PythonEnvironmentDefinition> PythonEnvironments { get; init; } = [];
@@ -69,7 +69,8 @@ public sealed partial class ExternalPackageService
                     .Select(d => $"{d.PluginName} ({d.PluginId})").Distinct().Order().ToArray();
                 return new PackageListItem(key, e?.Definition, Status(key), required, e?.HasFiles == true,
                     e is { Operation: null, Preparation: null } && (e.SourceAvailable || HasDownload(key)) && e.Users.Count == 0 &&
-                        CanManageFiles(e) && !NativePackageRetention.IsRetained(e.Directory) && !_ambiguousInstallations.Contains(key) && e.Phase != PackagePhase.Ready,
+                        CanManageFiles(e) && !NativePackageRetention.IsRetained(e.Directory) && !_ambiguousInstallations.Contains(key) &&
+                        (e.Phase != PackagePhase.Ready || e.Definition.Archives.Count != 0),
                     e is not null && CanRemove(e));
             }).ToArray();
         }
@@ -259,7 +260,8 @@ public sealed partial class ExternalPackageService
                 !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("安装记录与目录身份不符。");
             var entry = new Entry(definition, directory) { HasFiles = true,
-                SourceDefinition = string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
+                SourceDefinition = definition.Archives.Count > 0 ? definition :
+                    string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
             _entries[key] = entry; _pendingReceipts.Remove(key);
             try
             {

@@ -29,8 +29,8 @@
                 <TextBlock Text="当前为 SDR 8 位预览，未做显示器色彩校准，不适用于 HDR / Log 色彩评判。" Classes="caption" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding RendererStatus}" Classes="caption" TextWrapping="Wrap" />
                 <Separator />
-                <TextBlock Text="媒体运行库已随插件提供，无需另行下载。" TextWrapping="Wrap" />
-                <TextBlock Text="GStreamer 1.28.9 · 插件私有运行库" Classes="caption" />
+                <TextBlock Text="首次打开素材时由宿主准备运行库，已安装后可离线使用。" TextWrapping="Wrap" />
+                <TextBlock Text="GStreamer 1.28.9 · 在外部依赖的 DLL 运行库中管理" Classes="caption" TextWrapping="Wrap" />
               </StackPanel>
             </Flyout>
           </Button.Flyout>
@@ -152,6 +152,7 @@
     </Grid>
     <StackPanel Grid.Row="4" Spacing="4" IsVisible="{Binding ShowStatus}">
       <TextBlock Text="{Binding Status}" IsVisible="{Binding IsBusy}" Classes="caption" />
+      <TextBlock Text="{Binding DependencyNotice}" IsVisible="{Binding HasDependencyNotice}" Classes="caption" TextWrapping="Wrap" />
       <TextBlock Text="{Binding DisplayError}" IsVisible="{Binding HasError}" Foreground="{DynamicResource AppLogErrorBrush}" TextWrapping="Wrap" />
     </StackPanel>
   </Grid>

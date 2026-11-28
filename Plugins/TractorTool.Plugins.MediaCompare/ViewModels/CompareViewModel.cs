@@ -4,13 +4,16 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TractorTool.Contracts;
+using TractorTool.Contracts.Packages;
 using TractorTool.Plugins.MediaCompare.Media;
+using TractorTool.Plugins.MediaCompare.Native.Interop;
 
 namespace TractorTool.Plugins.MediaCompare.ViewModels;
 
 /// <summary>The plugin owns playback; navigation pages only subscribe to its presentation.</summary>
 public sealed partial class CompareViewModel(PluginContext context) : ObservableObject, IAsyncDisposable
 {
+    private static readonly PackageReference RuntimePackage = new("TractorTool.MediaCompare.GStreamer", "1.28.9");
     private readonly CancellationTokenSource _stopping = CancellationTokenSource.CreateLinkedTokenSource(context.ApplicationStopping);
     private readonly SemaphoreSlim _commands = new(1, 1);
     private ComparisonSession? _session;
@@ -38,6 +41,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus), nameof(DisplayError), nameof(CanClear), nameof(ShowClear)), NotifyCanExecuteChangedFor(nameof(ClearAllCommand))] private string _seekError = "";
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasError), nameof(ShowStatus), nameof(DisplayError))] private string _rendererError = "";
     [ObservableProperty] private string _status = "选择或拖入 A、B 素材。滚轮缩放，拖动画面联动平移。";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(ShowStatus), nameof(HasDependencyNotice))]
+    private string _dependencyNotice = "";
     [ObservableProperty] private string _aName = "未选择素材";
     [ObservableProperty] private string _bName = "未选择素材";
     [ObservableProperty] private string _aDetails = "视频、图片或序列帧";
@@ -69,7 +74,8 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     }
     public bool HasError => Error.Length != 0 || SeekError.Length != 0 || RendererError.Length != 0;
     public string DisplayError => string.Join("\n", new[] { RendererError, Error, SeekError }.Where(message => message.Length != 0));
-    public bool ShowStatus => IsBusy || HasError;
+    public bool HasDependencyNotice => DependencyNotice.Length != 0;
+    public bool ShowStatus => IsBusy || HasError || HasDependencyNotice;
     public bool HasTimeline => DurationSeconds > 0;
     public bool CanOperate => !IsBusy && !_stopped;
     public bool CanSelectAudio => CanOperate && !IsAudioChanging;
@@ -105,6 +111,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
         if (!CanOperate) return;
         if (kind == MediaSourceKind.Sequence && (!double.IsFinite(SequenceFrameRate) || SequenceFrameRate is < 1 or > 240))
         { ReportError("序列帧帧率必须在 1–240 之间。"); return; }
+        DependencyNotice = "";
         IsBusy = true;
         IsScrubbing = false; _resumeAfterScrub = false;
         CancelPendingSeek();
@@ -313,6 +320,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     private async Task ExecuteAsync(Func<ComparisonSession, CancellationToken, Task> action, bool create = false, bool clearError = true)
     {
         if (_stopped || (!create && _session is null)) return;
+        var requestingRuntime = false;
         try
         {
             await _commands.WaitAsync(_stopping.Token);
@@ -322,8 +330,27 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
                 if (clearError) Error = SeekError = "";
                 if (_session is null)
                 {
-                    var runtime = Path.Combine(Path.GetDirectoryName(typeof(CompareViewModel).Assembly.Location)!, "Native", "GStreamer");
+                    Status = "正在准备 GStreamer 运行库…";
+                    var packages = context.Packages ?? throw new NotSupportedException("需要支持原生运行库依赖的宿主，请更新 TractorTool。");
+                    requestingRuntime = true;
+                    using var lease = await packages.TryRequestAsync(RuntimePackage, _stopping.Token);
+                    requestingRuntime = false;
+                    context.ApplicationStopping.ThrowIfCancellationRequested();
+                    _stopping.Token.ThrowIfCancellationRequested();
+                    if (lease is null)
+                    {
+                        DependencyNotice = "GStreamer 运行库准备未完成；再次打开素材即可重试。";
+                        return;
+                    }
+                    var runtime = Path.GetFullPath(lease.Directory);
+                    if (!lease.Libraries.TryGetValue("GStreamer", out var library) ||
+                        !string.Equals(Path.GetFullPath(library), Path.Combine(runtime, "bin", GstNative.Core), StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("GStreamer 运行库入口与插件所需布局不符，请在外部依赖设置中检查或修复。");
                     var cache = Path.Combine(context.Paths.GetPluginDataDirectory(context.PluginId), "Cache");
+                    _stopping.Token.ThrowIfCancellationRequested();
+                    // Native loads can partially succeed; keep the package protected until host exit.
+                    lease.RetainUntilProcessExit();
+                    Status = "正在初始化 GStreamer…";
                     _session = await Task.Run(() => new ComparisonSession(runtime, cache), _stopping.Token);
                     _session.FrameReady += ReceiveFrame;
                     _session.Error += OnSessionError;
@@ -333,7 +360,14 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
             }
             finally { _commands.Release(); }
         }
-        catch (OperationCanceledException) when (_stopping.IsCancellationRequested) { }
+        // The host can withdraw installation confirmation before the package request finishes.
+        catch (Exception) when (requestingRuntime && (context.ApplicationStopping.IsCancellationRequested || _stopping.IsCancellationRequested)) { }
+        catch (OperationCanceledException) when (context.ApplicationStopping.IsCancellationRequested || _stopping.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (context.ApplicationStopping.IsCancellationRequested || _stopping.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (requestingRuntime)
+        {
+            DependencyNotice = "运行库准备已取消；再次打开素材即可重试。";
+        }
         catch (Exception ex) { ReportError(ex.Message, ex); }
     }
 
@@ -377,6 +411,7 @@ public sealed partial class CompareViewModel(PluginContext context) : Observable
     public void ReportError(string message, Exception? error = null)
     {
         if (_stopped) return;
+        DependencyNotice = "";
         Error = message;
         Status = "操作未完成。请查看错误提示，可更换素材后重试。";
         context.Log.Write(AppLogLevel.Error, context.PluginId, message, error);

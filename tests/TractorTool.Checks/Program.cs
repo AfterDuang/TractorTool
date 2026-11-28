@@ -255,7 +255,7 @@ Check("Package paths accept ordinary nested dependencies", () =>
 Check("Reject unknown manifest schema", () => Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SchemaVersion = 2 }, dir)));
 Check("Reject null platform/dependency fields", () => { Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { SupportedPlatforms = null! }, dir)); Throws<InvalidDataException>(() => ManifestValidator.Validate(manifest with { Dependencies = null! }, dir)); });
 Check("Exact SDK baseline compatibility", () => { Assert(compatibility.Check(manifest) is null); Assert(compatibility.Check(manifest with { ApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { UiApiVersion = "2.0" }) is not null); Assert(compatibility.Check(manifest with { AvaloniaVersion = "11.3.0" }) is not null); });
-Check("API 1.10 accepts Node, Python, native, process and legacy plugins", () =>
+Check("API 1.11 accepts archive, Node, Python, native, process and legacy plugins", () =>
 {
     Assert(compatibility.Check(manifest with { ApiVersion = "1.1" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.0" }) is null);
@@ -268,7 +268,9 @@ Check("API 1.10 accepts Node, Python, native, process and legacy plugins", () =>
     Assert(compatibility.Check(manifest with { ApiVersion = "1.8" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.9" }) is null);
     Assert(compatibility.Check(manifest with { ApiVersion = "1.10" }) is null);
-    Assert(compatibility.Check(manifest with { ApiVersion = "1.11" }) is not null);
+    Assert(compatibility.Check(manifest with { ApiVersion = "1.11" }) is null);
+    foreach (var unsupported in new[] { "1.12", "1.011", "1.11.0" })
+        Assert(compatibility.Check(manifest with { ApiVersion = unsupported }) is not null);
 });
 Check("Package dependencies validate shape and API without requiring an available source", () =>
 {
@@ -321,6 +323,7 @@ PluginManagementChecks.Run(root, Check);
 ProcessChecks.Run(root, Check);
 PackageChecks.Run(root, Check);
 NativePackageChecks.Run(root, Check);
+NativeArchiveChecks.Run(root, Check);
 PythonContractsChecks.Run(root, Check);
 PythonEnvironmentChecks.Run(root, Check);
 NodeContractsChecks.Run(root, Check);

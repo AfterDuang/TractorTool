@@ -14,6 +14,9 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 原生上游归档安装 | [E158 · 固定 HTTPS 制品、多归档映射与审片接入（2026-11-28）](#evidence-native-upstream-archives) |
+| AB 审片质量收尾 | [E157 · 许可清单、退出边界与检查可靠性（2026-11-28）](#evidence-media-compare-quality-fixes) |
+| AB 审片外部运行库 | [E156 · GStreamer 宿主管理接入（2026-11-28）](#evidence-media-compare-managed-runtime) |
 | Node 缓存兼容 | [E155 · pnpm 项目登记链接（2026-11-28）](#evidence-node-cache-registration) |
 | Python/Node 真实使用夹具 | [E154 · 可编辑输入、持续运行与失败恢复（2026-11-28）](#evidence-environment-probe-workflows) |
 | 插件恢复提示 | [E153 · 卸载阶段与人工恢复指引（2026-11-27）](#evidence-plugin-recovery-guidance) |
@@ -193,6 +196,95 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-native-upstream-archives"></a>
+
+## E158：原生上游归档安装与审片消费（2026-11-28）
+
+用户授权补齐官方上游直接安装，要求保持框架精简、旧插件兼容，完成后经子代理 Review；最初要求先不提交，运行测试由用户负责。测试后用户反馈可正常使用、未发现问题，并授权本地提交，未授权推送。基线为 Dev `b93b80b`，保留 E156/E157 未提交的插件申请、退出、许可与检查改动。
+
+- Contracts API 升至 1.11，沿用现有包服务与租约；旧 API 1.0–1.10、GitHub 单 ZIP 和 schema 1–3 保持兼容。新增 `archives` 固定 HTTPS ZIP/wheel、逐份 SHA256 和精确文件映射，来源限已配置 PyPI/HTTPS 文件来源；默认 PyPI 制品域为 `files.pythonhosted.org`。
+- 一个包最多 16 份归档，先全部下载/校验再映射、一次提交；下载、展开和条目数按组合累计，跨归档目标冲突及归档内危险路径均拒绝。schema 4 保存全部来源、映射与载荷摘要，配方变化参与身份；卸载插件后可沿收据检查完整性并修复。宿主不执行 wheel、安装器或自定义钩子。
+- Packages 详情展示各归档来源与 SHA256；来源页增加 HTTPS 文件来源。打包清单投影与分发检查同步新声明和外部载荷边界，避免构建放行而运行时拒绝，或遗漏改名的外部 DLL。
+- 审片插件升至 0.1.9 / API 1.11，依赖为 `TractorTool.MediaCompare.GStreamer / 1.28.9`，避免与旧自打包候选同版冲突。五份官方 wheel 映射 73 个 DLL；46 份许可原文及出处随插件交付。删除自打包运行库发布流程，准备脚本仅留作开发诊断；已有安装不自动删除。
+
+静态材料核对：五份本地归档逐份 SHA256 匹配，合计下载 106,496,198 B、展开 281,695,957 B、581 条目；73 个映射条目均存在，内容与既有运行库相同。46 份许可原文摘要匹配。该核对未发起网络下载或加载原生 DLL。
+
+证据目录：`artifacts/native-upstream-20261128`。初次隔离 Debug 构建 0 警告/0 错误；最终验证如下：
+
+| 验证 | 结果与证据 |
+| --- | --- |
+| 宿主隔离发布 | `Publish-Host.ps1 -Output artifacts/native-upstream-20261128/host-release` 通过，`host-publish.log` |
+| 插件 SDK 独立打包 | `Build-Plugin.ps1` 使用上述宿主 SDK，输出 `plugin/TractorTool.MediaCompare-0.1.9.zip`，817,519 B，SHA256 `F26BD6772EA683A0730F22050112000E6E6F5085D9FF15979CEFD051F8211931`；`plugin-build.log` |
+| 产物静态核对 | 插件清单 API 1.11 / 版本 0.1.9，5 份归档，46 份许可，0 个 GStreamer DLL；宿主 235 个文件数量及哈希不变，`plugin-inventory.txt` / `host-hash-result.txt` |
+| 检查工程编译 | Core、引用最终发布宿主的离屏集成及审片检查均通过，日志 `core-checks-build.log` / `integration-checks-build.log` / `media-checks-build.log`；新增 21 项 Core 用例及分发夹具未执行 |
+| 静态 Review | 两名 `gpt-6.2-sol/high` 子代理复核 Core、UI、分发与消费链，修正维护入口、来源检查、超时定位、重复 JSON 映射、打包校验差异及版本冲突后无剩余阻断；PowerShell AST 与 `git diff --check` 通过 |
+
+以上构建均无编译错误；NU1900 表示在线漏洞数据查询未完成。检查覆盖组合失败/取消、修复保留旧包、无插件时按收据维护、移除来源、危险归档路径与映射、累计限额、清单门槛及旧格式兼容；仅完成编译，不标为回归通过。
+
+用户随后反馈“测试可以使用，没有问题”，并授权本地提交。记录为本轮常规使用反馈；拒绝/取消、离线复用、损坏修复、部分加载失败后的保护、退出维护及媒体/音画专项未逐项报告，继续保留待验。历史自动回归不覆盖此次新增实现；代理未启动主窗口、检查程序或安装真实依赖。旧 E156/E157 插件与运行库 ZIP 保留为历史证据，不再作为当前交付。
+
+<a id="evidence-media-compare-quality-fixes"></a>
+
+## E157：AB 审片五项质量审查修正（2026-11-28）
+
+用户授权处理 E156 后续 Review 的五项 P3。保持插件 0.1.8 和运行库 1.28.9（均未公开），不修改宿主/Core/Contracts/公共 UI，不提交或发布。实现如下：
+
+- `license-manifest.json` 成为许可原文校验、逐文件复制及出处的唯一清单。删除 `runtime-sources.json` 的重复目录表、MSVC 原文摘要和重复安装包资料；MSVC 独有出处/再发行包摘要并入对应许可条目，安装包出处沿用既有 `upstream`。路径、文件数量及原文 hash 校验保留；原文文件和 native DLL 均未改动。
+- `CompareViewModel` 只在 `TryRequestAsync` 阶段识别退出期间晚到的普通异常；正常运行仍报告同类错误，原生初始化/媒体操作不适用新增过滤。申请成功返回后立即检查宿主原始停止令牌，再检查关联令牌，避免取消传播前误显示拒绝提示。拒绝安装/修复统一提示运行库准备未完成。
+- 检查工程复制真实 `plugin.json` 为 `MediaCompare.plugin.json`，检查直接读取 PluginId、包身份及原生入口，删除重复测试声明。增加确认撤回异常在正常/退出状态下的对照；模拟申请及取消回调均有 10 秒等待上限，失败时先独立放行，再有界等待清理。取消顺序的断言放在生产 catch 之外，避免被退出过滤误吞。上述检查仅编译。
+
+主代理实施许可修正，写代码子代理按完整会话分叉处理运行边界与检查；两名 GPT-6.2-SOL/high 子代理分别静态复核，未发现阻断。旧 Prepare 脚本仍被独立打包入口和诊断使用，不删除有效发布工具；活动代码中不再有旧目录名单、重复 MSVC 校验、测试写死包身份、无限模拟等待或错误拒绝文案。
+
+证据目录为 `artifacts/media-compare-dependency-fixes-20261128`：
+
+| 检查 | 结果 |
+| --- | --- |
+| `dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -m:1 -nr:false -v minimal` | `build.log`：0 错误、2 个 NU1900 警告；检查输出的清单与源码逐字节一致 |
+| `pwsh -NoProfile -File Plugins/TractorTool.Plugins.MediaCompare/scripts/Build-GStreamerPackage.ps1 -OutputDirectory H:/ProjH/TractorTool/artifacts/media-compare-dependency-fixes-20261128/runtime` | `runtime-build.log`：运行库目录 50,254,660 B；123 文件。固定来源缓存重验后复用，未执行原生代码 |
+| 运行库 ZIP 静态逐文件核对 | `runtime-static-checks.json`：122 项载荷长度/hash 与内置清单匹配；按实际 `license-manifest.files` 对照全部 46 份原文，无遗漏，且与 E156 原文逐字节相同；73 个 DLL 同样完全一致 |
+| `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj -HostSdkDir artifacts/environment-probes-20261128/host -Output artifacts/media-compare-dependency-fixes-20261128/plugin` | `plugin-build.log`：0 错误、2 个 NU1900 警告；插件 ZIP 21 文件、689,127 B，不含 GStreamer 或共享宿主 DLL |
+| 声明与 SDK | `static-checks.json`：源码、检查输出、插件包内清单和实际附件 hash 一致；235 个发布 SDK 文件哈希不变 |
+| 文档与差异 | `doc-links.json`：420 处本地链接及对应锚点无问题；`git diff --check` 通过 |
+
+当前唯一交付组合为 `plugin/TractorTool.MediaCompare-0.1.8.zip`，SHA256 `3028B058102F281DCA90537F4CDC9F05447CE3B66136EC5756C7C59193F3323B`；`runtime/GStreamer.MediaCompare-1.28.9-win-x64.zip`，19,831,185 B，SHA256 `e20a55cdfa779e093ed3d5828bcf373669bbcd291864ef0815c370b4aff74aca`。许可元数据及脚本指纹变化使附件摘要改变，插件声明已同步；E156 同名本地候选不再用于交付。尚无公开同版附件被覆盖，公开上传仍待授权。
+
+本轮没有启动宿主、执行检查程序或原生媒体诊断，也未接触真实应用数据。NU1900 表示在线漏洞数据查询未完成。首次下载、拒绝/修复重试、离线使用、实际退出与媒体表现仍由用户验收；静态核对不等于这些场景通过。
+
+<a id="evidence-media-compare-managed-runtime"></a>
+
+## E156：AB 审片 GStreamer 宿主管理接入（2026-11-28）
+
+用户要求核实 Dev 的 DLL/uv/Node 能力并将 GStreamer 接入外部依赖。工作基于 `Dev` 的 `b93b80b`，起始工作区干净。本轮仅修改 MediaCompare、对应检查和文档，不扩展宿主/Core/Contracts/公共 UI；沿用“只编译和 Review，用户运行测试”，未提交或推送。
+
+- 清单与工程递增至 0.1.8，声明最低 Contracts API 1.8 和 `GStreamer.MediaCompare 1.28.9` 原生包。首次打开素材时调用 `Packages.TryRequestAsync`，核对租约入口及目录，在首次原生调用前执行 `RetainUntilProcessExit`；初始化结束释放普通租约，进程期保护保留。缺失服务明确失败，无旧插件副本回退；拒绝/共享下载取消显示普通重试提示。宿主原始停止令牌或插件关联令牌已取消时，不把 OCE/ODE 记为 Error；运行中的真实错误仍记录。
+- 删除普通插件构建中的运行库下载/复制目标和检查工程旧跳过属性。显式发布脚本复用已校验的官方 wheel，准备完整 DLL/模块/许可闭包；新增 `Build-GStreamerPackage.ps1` 产出独立 ZIP、SHA256SUMS 与依赖声明。它不上传或自动改清单；固定排序/时间戳、限定工作区且不与准备缓存重叠，逐文件核对 `.partial` 后才完成 ZIP。局部 Git LF 属性稳定参与指纹及归档的输入，许可原文仍保留字节。
+- [上游 Windows 下载](https://gstreamer.freedesktop.org/data/pkg/windows/1.28.9/msvc/)提供安装器，官方 GStreamer/Cerbero 仓库没有所需的 GitHub Release 便携 ZIP；宿主原生包仍接受 GitHub ZIP，不能把 PyPI wheel 当作完整 DLL 包直接安装。依照现行插件规范，由插件发布流程准备附件，使用本仓库现有 GitHub 来源，不新建索引服务或私有框架下载器。
+- 两名 GPT-6.2-SOL/high 子代理分审运行生命周期与原生包交付。已修复退出期间取消回调传播窗口、假日志漏记无异常 Error、换行导致 hash 不稳定、输出目录重叠、相对路径解析、排序及归档完成前暴露文件等问题，最终静态复核无阻断。新增检查覆盖空页不申请、拒绝重试、共享取消、准备中停止、租约获得后取消、入口/保护顺序、服务缺失及同步/异步关闭窗口；全部仅编译。
+
+证据根目录：`artifacts/media-compare-dependency-20261128`。最终命令及结果：
+
+| 检查 | 证据与结论 |
+| --- | --- |
+| `dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -m:1 -nr:false -v minimal` | `build-final.log`：0 错误、2 个 NU1900 警告；未执行检查程序 |
+| `pwsh -NoProfile -File Plugins/TractorTool.Plugins.MediaCompare/scripts/Build-GStreamerPackage.ps1 -OutputDirectory H:/ProjH/TractorTool/artifacts/media-compare-dependency-20261128/runtime-release` | `runtime-build-release.log`：123 个 ZIP 文件，122 项清单载荷、46 份许可原文及 73 个 AMD64 原生 DLL 静态核对通过；运行库目录 50,255,418 B，压缩附件 19,831,462 B |
+| `pwsh -NoProfile -File scripts/Build-Plugin.ps1 -Project Plugins/TractorTool.Plugins.MediaCompare/TractorTool.Plugins.MediaCompare.csproj -HostSdkDir artifacts/environment-probes-20261128/host -Output artifacts/media-compare-dependency-20261128/plugin-final` | `plugin-build-final.log`：独立引用发布 SDK，0 错误、2 个 NU1900 警告；21 文件、689,060 B，不含 GStreamer 或共享宿主 DLL |
+| ZIP、声明和 SDK 对照 | `static-checks.json`：源码、插件 ZIP 内清单、运行库依赖声明与实际 SHA256 一致，235 个 SDK 原文件哈希不变 |
+| 文档与差异检查 | `doc-links.json`：417 处本地链接及对应锚点无问题；`git diff --check` 通过 |
+
+最终插件 ZIP：`plugin-final/TractorTool.MediaCompare-0.1.8.zip`，SHA256 `2F207F289A91AF7BAD5848BECA8A4F1E3B1A88F55E2A12024EE6E4B5E4BBFA71`。最终运行库 ZIP：`runtime-release/GStreamer.MediaCompare-1.28.9-win-x64.zip`，SHA256 `f3f353132ca5c7686d5848f6bd9dc47a820248fca2be4510e0d4f338cb897c9e`。早期同名输出有其他摘要，仅使用上述最终目录。首轮打包曾因 PowerShell 有序字典不能按 `bytes` 属性计量失败，改为有序 PSCustomObject 后完成，失败日志 `runtime-build.log` 保留；修正前的编译/归档日志不代替最终结果。
+
+本轮未运行主窗口、原生媒体/检查程序或接触真实数据。NU1900 表示在线漏洞数据查询未完成。GitHub 只读查询 `releases/tags/runtime-gstreamer-1.28.9` 返回 404；清单所指附件尚未公开，首次安装暂不可用。发布候选在本仓库独立 `runtime-gstreamer-1.28.9` Release，须经授权上传，不标软件 Latest、不使用整包自动发布的 `v*` 标签。0.1.8 要求 Dev 的 API 1.8 能力，已发布 1.1.0 宿主不兼容。后续由用户验证首次确认/拒绝重试、离线复用、加载后不可维护、退出重启后修复及媒体/音画；旧版运行结果不外推到本轮。
+
+用户随后要求重点检查代码质量及悬空/无用代码。主代理与两名 GPT-6.2-SOL/high 子代理重新追踪调用链，只读核对现有 ZIP；未构建、运行应用或执行检查。未发现悬空生产代码：Prepare 脚本仍由独立运行库打包入口调用，显式诊断也使用其产物；旧自动复制目标和跳过参数的活动引用已移除，新增状态均有 UI 消费者。记录以下 5 项 P3，未修改业务代码：
+
+1. `Prepare-GStreamerRuntime.ps1` 先按 `license-manifest.json` 校验全体原文，再按 `runtime-sources.json` 的独立目录名单复制，并再次核对同一 MSVC 许可 hash。未来补原文及总清单却漏改目录名单时，归档仍可通过但少文件；当前附件两个集合一致。应以已校验的许可清单为唯一复制依据，删除重复名单/hash，保留独有出处。
+2. 宿主退出先撤回 `ConfirmInstallAsync`，晚到的准备任务可能抛 `InvalidOperationException`；插件只过滤停止时的 OCE/ODE，在停止信号已发出而 UI 清理未执行时仍可能记 Error。应在依赖准备故障路径区分退出与正常运行，补确认撤回场景。
+3. `TryRequestAsync` 对拒绝安装和拒绝修复均返回 null；提示“尚未安装 GStreamer”错误涵盖已装但损坏的包。应改为中性的准备未完成提示。
+4. `PackageRequestChecks` 再写一份包 ID/版本作为断言；仅更新实际清单时检查仍可通过，真实宿主却会拒绝未声明的旧身份。应从实际清单取得期望值。
+5. 取消检查的模拟申请无限等待，等待 Dispose/取消握手无上限；取消链回归可能使整个检查挂起。应设置有界等待并独立保障模拟请求及回调最终释放。
+
+以上为静态发现；没有用历史编译/运行结果验证这些边界。当前台账和交接已保留待处理项，发布授权仍未取得。
 
 <a id="evidence-node-cache-registration"></a>
 

@@ -16,11 +16,30 @@
 
 ## 依赖与宿主边界
 
-采用官方 GStreamer 1.28.9 的公开 C ABI 与 D3D11 能力，不修改上游，不引入完整 GES 剪辑模型。运行库与 GPU 互操作库是插件私有依赖，随插件交付；包含 Blu-ray LPCM 所需的 `dvdlpcmdec`，不依赖系统 PATH、另装播放器、FFmpeg 命令行程序或 Python 环境。来源及许可见[运行库材料](../../Plugins/TractorTool.Plugins.MediaCompare/Native/Runtime/README.md)。
+采用官方 GStreamer 1.28.9 的公开 C ABI 与 D3D11 能力，不修改上游，不引入完整 GES 剪辑模型。原生载荷作为 `TractorTool.MediaCompare.GStreamer / 1.28.9` 独立包由宿主管理，GPU 互操作托管库仍随插件交付。包含 Blu-ray LPCM 所需的 `dvdlpcmdec`，不依赖系统 PATH、另装播放器、FFmpeg 命令行程序或 Python 环境。来源及许可见[运行库材料](../../Plugins/TractorTool.Plugins.MediaCompare/Native/Runtime/README.md)。
 
-`dependencies` 为空表示未通过宿主 Packages 申请外部工具，并不表示没有运行库。现有 Packages 仅支持 GitHub Release ZIP 内可执行工具及版本输出校验；DLL-only 运行库的声明、完整性校验、来源及进程期占用保护尚无公开契约。若改为首次申请，须先交架构侧分析，不把 DLL 伪装成工具，也不另建运行时下载器。
+首次打开素材才通过 `TryRequestAsync` 申请，初始化和空页面不下载；宿主负责确认、完整载荷验证、安装与离线复用。拒绝使用普通提示，可再次打开重试，不写 Error。安装目录来自租约，加载前调用 `RetainUntilProcessExit`，普通租约覆盖初始化；部分加载失败仍保护到软件退出。注册缓存写入插件数据目录，不修改已安装包。0.1.9 声明 API 1.11，复用既有租约接口，以新增归档声明完成上游下载。
+
+宿主直接获取官方上游制品，不维护或发布 TractorTool 运行库包。旧 0.1.8 候选及本仓库 Release 声明已退出当前交付，新包使用独立 ID 避免旧组合的同版身份冲突；已有安装不自动删除。接入规则见下文，构建与运行验收状态只看[台账](../DEVELOPMENT.md#media-compare)。入口路径与 ABI/版本、同名 DLL 的进程冲突检查和受限加载仍由插件负责。
 
 只引用公开 Contracts/UI；媒体引擎、时间映射、GPU 资源与缓存均归插件。注册页使用现有 Avalonia 控件能力；若必须修改宿主、Core、Contracts 或公共 UI，停止该项实现并交由架构侧分析。包体仍遵循[现有安装限制](../PLUGIN_DEVELOPMENT.md#3-运行目录与打包)。
+
+<a id="host-native-upstream-request"></a>
+
+## 官方上游归档接入
+
+通用声明、来源与安全规则见[原生归档组合（API 1.11）](../PLUGIN_DEVELOPMENT.md#native-archive-packages)。插件的[真实清单](../../Plugins/TractorTool.Plugins.MediaCompare/plugin.json)锁定五份 `1.28.9 / win_amd64` 官方 wheel：`gstreamer-libs`、`gstreamer-plugins`、`gstreamer-plugins-restricted`、`gstreamer-plugins-libs`、`gstreamer-ext-runtime`。默认 PyPI 来源关联 `files.pythonhosted.org`，每份声明精确 URL、SHA256 和文件映射；宿主将 wheel 作为 ZIP 读取，不安装 Python 或执行脚本。
+
+插件选择 73 个 DLL，映射到 `bin/` 和 `lib/gstreamer-1.0/`，入口为 `bin/gstreamer-1.0-0.dll`。归档间相同 DLL 只选一份，禁止安装时按顺序覆盖；模块选择、传递依赖闭包、ABI 和解码能力归插件。宿主校验全部归档后一次提交，保存组合配方和完整载荷摘要，沿用申请、离线复用、修复、清理及进程期保护，不实现 GStreamer 专属逻辑。
+
+46 份许可原文、NOTICE 与逐文件来源清单作为插件静态材料随包交付；其中包含 wheel 以外的官方安装器和组件源码材料，不假设 wheel 已覆盖全部许可。普通构建不下载或携带运行库。`Prepare-GStreamerRuntime.ps1` 仅保留为开发期闭包/许可诊断，宿主不执行该脚本，也不再生成或发布自有运行库 ZIP。
+
+用户专项验收：
+
+1. 使用 API 1.11 宿主与 0.1.9 插件，无需系统 Python/GStreamer；首次打开素材，经一次确认下载五份官方归档。不得请求本仓库运行库 Release。
+2. 拒绝/取消可重试，安装后断网可用；单份下载失败、摘要错误或安装中断不返回半成品，修复失败保留旧包。
+3. 辅助 DLL 损坏可发现；来源和许可可追溯。加载或部分加载失败后，退出前禁止修复/清理，退出后可维护；同版本不同组合不得静默复用。
+4. 真实视频、图片序列、音频、GPU 与媒体定位按下文继续验收。下载成功不代表解码或音画通过，既有性能和色彩边界不变。
 
 ## 内部职责
 
@@ -67,12 +86,12 @@
 3. 不同宽高比和分辨率：包含 720×576、PAR 16:15 与 768×576 方形像素的等效素材；使用可识别上下左右的画面，检查方向、光标缩放锚点、顺向联动平移、适合画面、125%/150% DPI、缩放窗口。
 4. 静音/A/B 声音切换、无音轨及缺解码器提示、AC3/LPCM M2TS；切页重返、隐藏到托盘、连续替换、播放中退出，检查原生资源与日志。
 5. 双 4K 长 GOP 正倒拖，记录冷定位/缓存定位延迟、丢帧和显存占用；普通可播放不能代替性能验收。
-6. 从独立 ZIP 安装到干净宿主，不依赖开发机运行库；检查私有 DLL、许可、压缩/展开体积及平台限制。
+6. 从 0.1.9 独立 ZIP 安装到支持 API 1.11 的干净宿主：空页面不申请、首开素材确认、拒绝后重试、已安装离线复用；“外部依赖 → Packages → DLL 运行库”显示来源和引用，加载及部分失败后退出前禁止修复/清理。退出重启后验证损坏修复，卸载插件后再验证清理。检查运行库辅助 DLL、插件随附许可及逐文件出处，确认代码包不携带 GStreamer；不依赖开发机旧运行库。
 7. 焦点依次位于预览、时间轴、打开/视图/播放按钮时按空格；长按不反复切换，序列帧率输入和声音下拉框保持自身交互。反复播放→暂停→拖动→播放，末尾再播放；核对暂停超时及 segment 警告是否仍发生。
 8. 从 Explorer 拖文件至 A/B 标题及画布，检查目标提示与替换失败后的原素材；拒绝目录、多文件和非本地项目。播放或定位期间移除一侧、清空全部并重新打开，核对画面、时间和试听状态，确认源文件不变。
 9. SDR 10 位视频、16 位 PNG 单图/序列转换与持续精度提示；含 HDR 色彩标记或独立 HDR SEI 的素材应拒绝。缺失标记不构成色彩准确性证明。
 
-自动验证入口为 [MediaCompareChecks](../../tests/TractorTool.MediaCompareChecks)。不带参数时仅检查样本所有权、视图数学、帧时间边界与序列文件校验，不初始化媒体引擎或窗口。
+自动验证入口为 [MediaCompareChecks](../../tests/TractorTool.MediaCompareChecks)。不带参数时检查样本所有权、视图数学、帧时间边界、序列文件，以及模拟包服务的申请/取消/退出边界，不下载依赖或初始化媒体引擎/窗口。
 
 显式传入 `--gpu-playback <runtimeRoot> <newScratchDirectory> <syntheticA> <syntheticB>` 时运行独立 Windows GPU 诊断；四个路径必须绝对路径，临时目录必须不存在，素材使用自行生成的 SDR 8 位视频（至少 8 秒，建议 12 秒、720p H.264＋AAC，包含固定/可变帧率组合）。它复用 `ComparisonSession` 和 `ComparePreview`，创建不激活、不显示在任务栏的屏幕外窗口，检查多点定位、取消后保留最新请求、试听命令、单侧移除、全部清空后重开播放，以及快速重进、初始化/呈现在途停止和重复释放。另从预览子控件派发空拖放事件检查冒泡处理与拒绝，不等于 Explorer 原生文件拖放验收。不加载宿主、用户配置或已安装插件；用法见[插件源码入口](../../Plugins/TractorTool.Plugins.MediaCompare/README.md#独立播放诊断)。
 

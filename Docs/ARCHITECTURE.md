@@ -138,15 +138,15 @@ Contracts 不包含控件类型；Avalonia 页面契约只在 UI 工程。宿主
 
 工具包保留版本命令验证；原生运行库通过静态 PE 和完整文件校验，不在安装时执行 DLL。Python/Node 通过各自服务接入共享的[环境事务](../TractorTool.Core/Packages/Environments/ManagedEnvironmentService.cs)，安装策略独立，确认、引用、代次提交、租约及缓存维护共用。三类扩展位于 `Dev`，未改变已发布 1.1.0；现行设计见 [7.3](#dependency-extension)，当前验收见[开发台账](DEVELOPMENT.md#dependency-extension-plan)。
 
-**来源**：不维护自有源。默认 GitHub/PyPI/npm，用户可添加公开 GitHub Enterprise HTTPS API、PyPI 兼容 HTTPS Simple 索引或 npm registry；配置在 `<DataRoot>/Config/dependency-sources.json`，旧记录保持可读。来源移除不删除已装包，修复须再次满足来源策略；配置损坏保留原件并阻止覆盖。不开放私有认证或其他安装类型的空入口。
+**来源**：不维护自有源。默认 GitHub/PyPI/npm，用户可添加公开 GitHub Enterprise API、PyPI Simple 索引、npm registry 或 HTTPS 文件目录；配置在 `<DataRoot>/Config/dependency-sources.json`，旧记录保持可读。原生归档使用 PyPI 或 HTTPS 文件来源：默认 PyPI 只接受 `files.pythonhosted.org`，自定义索引限定同源，文件目录限定同源及目录前缀。固定 URL 不接受认证、查询串或片段，最终重定向地址仍须符合声明来源；不承诺 HTTP 网络沙箱。来源移除不删除已装包，修复再次检查来源；配置损坏保留原件并阻止覆盖。
 
-**声明与解析**：插件清单的 id/version 指定包，downloads 按 RID 固定仓库、tag、ZIP 附件、SHA256、许可、包类型和入口契约，格式见[接入规范](PLUGIN_DEVELOPMENT.md#package-source-maintenance)。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 仅在缺包/修复时查精确 Release，不跟随 latest、不持久缓存远程索引。旧清单缺省类型仍是工具包，可复用已装包；缺下载资料时报告需更新声明。同身份的类型、已装摘要与入口契约必须一致，不能暗中替换同版内容；Windows 大小写别名冲突同时暂停清理。
+**声明与解析**：插件清单的 id/version 指定包，`downloads` 按 RID 声明许可、类型和入口；旧 GitHub 仓库/tag/ZIP/SHA256 格式不变。API 1.11 原生包可改用 `archives`，每份固定 URL、SHA256 与精确“归档条目 → 安装相对路径”映射，格式见[接入规范](PLUGIN_DEVELOPMENT.md#native-archive-packages)。[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) 仅为 GitHub 声明查询精确 Release；归档声明直接校验已配置来源，不猜 latest 或文件。组合身份包含全部来源、归档摘要及映射，同版不可修改；旧包保持原摘要比较。模块选择、传递 DLL 集合与 ABI 验证归插件，Core 不读取业务准备脚本。同身份类型与入口契约必须一致，Windows 大小写别名冲突同时暂停清理。
 
 **申请事务**：`TryRequestAsync` → 校验声明/复用或查询 → 首次确认 → 下载校验 → 安全解压 → 按类型验证 → 写 receipt 并原子提交 → 校验已安装内容并返回租约。拒绝返回 null；旧 `AcquireAsync` 仅复用已装包，初始化不自动下载。并发同包请求合并确认/安装，调用方取消仅停止自己的等待，设置页取消才停止共享下载。
 
 **校验边界**：API/下载/展开均有时间或体积上限；验证精确标签、唯一已上传附件、同仓库地址及可用的 GitHub digest，拒绝跨站/降级 API 重定向。下载后独立核对声明 SHA256；拒绝 ZIP 越界、链接、特殊文件、重名及大小写冲突。工具按受限参数向量探测版本，非零退出或选定输出截断即失败。原生入口须为匹配 Windows RID 的非 CLR DLL；[NativePackageIntegrity](../TractorTool.Core/Packages/NativePackageIntegrity.cs) 为全部载荷文件生成路径、长度和 SHA256 清单，每次取得租约复验文件集合及内容。宿主不执行 DLL、shell 或安装脚本；ABI、传递依赖搜索策略及业务能力由插件负责。校验值证明内容一致，不替代来源可信性。
 
-**记录与恢复**：工具继续使用 schema 2 收据并兼容 schema 1；原生包使用 schema 3，保存包定义、下载摘要和独立 `.package-files.json` 的 `ManifestHash`。完整载荷清单与收据均位于安装目录，不因来源离线而失效。修复先在 `Packages/.work` 下载并验证替代包；提交时在同卷保留旧目录，待新目录就位再清理。启动时先恢复中断的目录切换再读收据。未知归属的文件保留并提示处理。Packages 页面展示类型、来源、首次下载和修复进度，允许停止共享下载。
+**记录与恢复**：工具继续使用 schema 2 收据并兼容 schema 1；单 ZIP 原生包使用 schema 3，组合归档使用 schema 4。后者保存完整归档配方及组合摘要，两类原生记录均保存独立 `.package-files.json` 的 `ManifestHash`。取得租约复验载荷，离线复用不查来源；组合包修复可直接读取收据，仍须来源允许和目录归属验证。所有归档先下载、校验，再在 `Packages/.work` 按映射组合；目标禁止重复、大小写冲突、文件/目录冲突及保留记录占位，限额按全部归档累计。完整准备后沿用原目录替换事务，失败保留旧包，启动恢复未完成切换。未知归属文件保留。Packages 仍展示一条运行库，详情列出每份来源与摘要。
 
 **引用与清理**：引用从持久清单和管理日志重建，包括禁用/失败、待激活及可回退版本。管理提交与引用同步受锁保护；记录不可读或管理日志的活动版本未被发现时暂停清理，不能视为零引用。同一服务锁内检查引用、请求预留、安装事务和运行租约，无占用才允许用户清理；卸载只解除生效后的引用，不联动删除包。插件作用域限定可申请依赖，退出封闭新操作并取消/等待在途工作，插件清理完成后回收遗漏租约。
 

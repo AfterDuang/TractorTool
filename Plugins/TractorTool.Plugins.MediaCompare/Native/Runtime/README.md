@@ -1,19 +1,13 @@
-# 运行库准备材料
+# 运行库声明与开发材料
 
-`scripts/Prepare-GStreamerRuntime.ps1` 在构建期准备插件私有的 GStreamer 1.28.9 MSVC x64 运行库。默认下载缓存位于仓库 `artifacts/media-compare-runtime/downloads`，可交付目录为 `artifacts/media-compare-runtime/runtime`；项目将其复制到插件输出的 `Native/GStreamer`。二进制不进入 Git。
+API 1.11 宿主从 `plugin.json` 列明的五个官方 GStreamer 1.28.9 Windows x64 wheel 下载、逐份校验，并按明确映射组成一个 `TractorTool.MediaCompare.GStreamer` DLL 运行库。使用默认 PyPI 来源，无需自有包源、镜像或 Release 附件，也不安装 Python 或执行脚本。旧单 ZIP 候选使用独立的 `GStreamer.MediaCompare` 标识，宿主不自动迁移或删除旧安装。当前实现与验收见[开发台账](../../../../Docs/DEVELOPMENT.md#media-compare)。
 
-```powershell
-pwsh -File Plugins/TractorTool.Plugins.MediaCompare/scripts/Prepare-GStreamerRuntime.ps1
-```
+插件代码 ZIP 不包含 GStreamer DLL。完整许可材料 `licenses/`、`license-manifest.json`、`RUNTIME-NOTICE.md` 随插件保留；宿主单独记录 DLL 安装目录的全部文件摘要。消费者通过租约访问 `bin/`、`lib/gstreamer-1.0/`，声明入口是 `libraries.GStreamer = bin/gstreamer-1.0-0.dll`，不推导数据路径或读取旧插件内副本。
 
-脚本需要 Windows、PowerShell 7.4+。支持 `-OutputDirectory`、`-CacheDirectory`，均须位于当前工作区。首次下载约 102 MiB，后续构建核对输入指纹及完整文件 SHA256 后复用产物。输入变更或文件损坏时重新准备，旧的受管理产物保留为 `.replaced-<随机值>`，不覆盖未知目录。下载缓存的校验失败会停止构建。
+`plugin.json` 是运行时安装声明；`runtime-sources.json` 固定相同的上游 URL/SHA256、媒体模块与系统导入，用于开发阶段复核选择。`Prepare-GStreamerRuntime.ps1` 与 `PeImports.cs.txt` 仅用于经授权的独立诊断和版本升级时验证 DLL 导入闭包，不参与普通构建、宿主安装或发布。旧 `Build-GStreamerPackage.ps1` 已删除；不再生成或上传自维护运行库 ZIP。
 
-`runtime-sources.json` 固定 5 个官方 wheel 的 URL、SHA256、媒体模块和许可目录；脚本将 wheel 作为 ZIP 读取，不需要或附带 Python，不执行安装器、不写注册表、不改 PATH。DLL 交付集合以生成的清单为准。3 个 MSVC DLL 来自官方 `gstreamer_ext_runtime` wheel，与安装包内 VC Redistributable 均为 14.44.35211。
+当前映射选择 73 个既有 DLL，合计来自五份归档；重复出现的同名 DLL 先核对字节摘要一致，再只声明一份，宿主不按归档顺序覆盖。升级时须重新验证所选模块、完整传递 DLL、ABI、路径和许可，更新固定包身份与声明；不能只改下载地址。
 
-`licenses/` 的原文文件来自同版本官方安装包 `app/share/licenses/` 及其中 VC Redistributable 的英文 `license.rtf`；另补 Good、Ugly 与 libav 包装层 1.28.9 源码中的 COPYING。安装包 URL/SHA256 记录在 `runtime-sources.json` 的 `licenseSource`；每份原文哈希及额外来源在 `license-manifest.json`。普通构建直接使用这些入库文本，不下载完整安装器或额外解包工具。局部 `.gitattributes` 禁止 Git 改写许可证换行，避免破坏来源校验。许可材料、声明和来源/校验清单随 `Native/GStreamer` 一起复制，项目无需重复添加一套许可内容。
+`licenses/` 原文来自同版本官方安装包 `app/share/licenses/` 与其中 VC Redistributable 的英文 `license.rtf`，另补 Good、Ugly、libav 包装层 1.28.9 源码的 COPYING。`license-manifest.json` 记录逐份路径/摘要及上游来源；局部 `.gitattributes` 禁止改写原文换行。三个 MSVC DLL 来自官方 `gstreamer_ext_runtime` wheel，保持原有 14.44.35211 基线。许可材料不假定由五个 wheel 完整提供，不要求用户下载或执行安装器。
 
-`PeImports.cs.txt` 只供准备脚本编译调用，通过 `PEReader` 解析普通及延迟导入，不加载 DLL；使用 `.txt` 避免成为插件业务程序集的一部分。脚本从所选媒体模块递归计算 `bin/` 导入闭包，强制 x64，未知非系统依赖使构建失败。不携带整个 SDK、可执行工具、GStreamer 外部扫描器或 Python 模块。D3D11 的系统动态加载依赖（如 Windows 自带 `d3dcompiler_47.dll`）不打包。
-
-`runtime-manifest.json` 记录每个交付文件的大小/哈希与 DLL 导入，`payloadBytes` 不包括清单自身；控制台统计完整目录实际大小。运行库预算为 240 MiB，为插件程序集留下余量。宿主安装器限制 ZIP 及展开总量为 256 MiB；通用打包脚本不会代替安装入口检查该上限，交付时仍须核对最终插件包体积。
-
-这一步只证明来源、布局、依赖闭包和体积。真实解码、图像序列、同步播放、声音切换和 GPU 渲染由用户在 Windows 上验收。
+静态映射和文件摘要一致只证明所选字节未变。首次真实下载、拒绝/取消、离线复用、加载与进程期保护、修复，以及媒体和 GPU 效果仍由用户在 Windows 上验收。

@@ -88,6 +88,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             EnsureRunning(); var e = Find(package);
             if (e.Phase == PackagePhase.Ready && e.Operation is null) return Task.CompletedTask;
             var definition = approvedDefinition ?? e.SourceDefinition ?? throw new NotSupportedException("插件尚未提供此包版本的安装资料。");
+            RequireArchiveSource(definition);
             _ = DeclaredDownload(package, definition);
             if (e.Operation is null)
             {
@@ -276,33 +277,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             _ = PackageDirectory(definition);
             RecoverReplacement(e.Directory, work);
             if (!replace && Directory.Exists(e.Directory)) throw new IOException("该版本目录已存在但未通过检查，请先确认修复。");
-            var zip = Path.Combine(work, "download.zip");
-            using var response = await _http.GetAsync(definition.DownloadUri, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            if (response.RequestMessage?.RequestUri?.Scheme != "https") throw new InvalidDataException("下载不能重定向到非 HTTPS 地址。");
-            var total = response.Content.Headers.ContentLength;
-            if (total > PackageFiles.MaxDownload) throw new InvalidDataException("下载大小超过限制。");
-            await using (var input = await response.Content.ReadAsStreamAsync(token))
-            await using (var output = new FileStream(zip, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
-            {
-                byte[] buffer = new byte[81920]; long received = 0; int count; long lastNotification = 0;
-                while ((count = await input.ReadAsync(buffer, token)) != 0)
-                {
-                    received += count;
-                    if (received > PackageFiles.MaxDownload) throw new InvalidDataException("下载大小超过限制。");
-                    await output.WriteAsync(buffer.AsMemory(0, count), token);
-                    lock (_gate) { e.Downloaded = received; e.Total = total; }
-                    // Bound UI notifications to roughly ten per second, without a polling timer.
-                    if (Environment.TickCount64 - lastNotification >= 100) { Notify(); lastNotification = Environment.TickCount64; }
-                }
-                if (total is not null && received != total) throw new InvalidDataException("下载不完整。");
-            }
-            SetState(e, PackagePhase.Verifying);
-            if (!string.Equals(await HashAsync(zip, token), definition.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("SHA-256 校验失败，未安装下载内容。");
-            SetState(e, PackagePhase.Installing);
-            var staging = Path.Combine(work, "content"); Directory.CreateDirectory(staging);
-            var installedBytes = await PackageFiles.ExtractAsync(zip, staging, token);
+            var staging = Path.Combine(work, "content");
+            var installedBytes = await PreparePackageContentAsync(e, definition, work, staging, token).ConfigureAwait(false);
             Dictionary<string, string> hashes = [];
             foreach (var (name, tool) in definition.Tools)
             {
@@ -320,7 +296,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             var manifestHash = definition.Kind == PackageKind.NativeLibrary
                 ? await NativePackageIntegrity.WriteAsync(staging, definition, token).ConfigureAwait(false) : null;
             await File.WriteAllTextAsync(Path.Combine(staging, "receipt.json"), JsonSerializer.Serialize(
-                new Receipt(manifestHash is null ? 2 : 3, definition.Sha256, hashes, installedBytes, definition, manifestHash)), token);
+                new Receipt(manifestHash is null ? 2 : definition.Archives.Count == 0 ? 3 : 4,
+                    definition.Sha256, hashes, installedBytes, definition, manifestHash)), token);
             token.ThrowIfCancellationRequested();
             PackageFiles.CheckPath(e.Directory);
             PreparePackageParent(definition, work);
@@ -443,7 +420,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         foreach (var (name, tool) in e.Definition.Tools)
             if (!receipt.Tools.TryGetValue(name, out var hash) || hash is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit) ||
                 !File.Exists(PackageFiles.SafePath(e.Directory, tool.Path))) throw new InvalidDataException("工具文件缺失或安装记录无效。");
-        if (receipt.Schema == 3)
+        if (receipt.Schema is 3 or 4)
             NativePackageIntegrity.ValidateReceiptMetadata(e.Directory, receipt.ManifestHash!);
         return receipt;
     }
@@ -458,10 +435,11 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         var path = PackageFiles.SafePath(e.Directory, "receipt.json");
         if (!File.Exists(path) || new FileInfo(path).Length > 65536) throw new InvalidDataException("工具安装记录缺失或过大。");
         var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(path));
-        if (receipt is null || receipt.Schema is not (1 or 2 or 3) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
+        if (receipt is null || receipt.Schema is not (1 or 2 or 3 or 4) || !string.Equals(receipt.ArchiveHash, e.Definition.Sha256, StringComparison.OrdinalIgnoreCase) || receipt.Tools is null ||
             receipt.Tools.Count != e.Definition.Tools.Count || receipt.InstalledBytes <= 0 || receipt.InstalledBytes > 1024L * 1024 * 1024)
             throw new InvalidDataException("工具安装记录与目录不符。");
-        if ((e.Definition.Kind == PackageKind.NativeLibrary) != (receipt.Schema == 3))
+        if ((e.Definition.Kind == PackageKind.NativeLibrary) != (receipt.Schema is 3 or 4) ||
+            (e.Definition.Archives.Count != 0) != (receipt.Schema == 4))
             throw new InvalidDataException("依赖类型与安装记录版本不符。");
         if (receipt.Schema >= 2)
         {
@@ -469,7 +447,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             PackageDefinitions.Validate(definition);
             RequireSameArtifact(e.Definition, definition);
         }
-        if (receipt.Schema == 3 && (receipt.ManifestHash is not { Length: 64 } || !receipt.ManifestHash.All(Uri.IsHexDigit)))
+        if (receipt.Schema is 3 or 4 && (receipt.ManifestHash is not { Length: 64 } || !receipt.ManifestHash.All(Uri.IsHexDigit)))
             throw new InvalidDataException("运行库安装记录缺少有效的载荷摘要，无法确认目录归属。");
         lock (_gate) e.OwnershipConfirmed = true;
         return receipt;

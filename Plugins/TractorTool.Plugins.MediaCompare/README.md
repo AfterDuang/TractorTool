@@ -11,7 +11,9 @@
 
 业务设计与验收方法见 [MediaCompare](../../Docs/Plugins/MediaCompare.md)；当前状态只见[开发台账](../../Docs/DEVELOPMENT.md#media-compare)。依赖与发布遵循[插件开发规范](../../Docs/PLUGIN_DEVELOPMENT.md)。
 
-常规构建自动准备并复制私有运行库，来源和离线复用见 [运行库材料](Native/Runtime/README.md)。纯编译可传 `-p:SkipMediaCompareRuntime=true`，此时输出不构成可安装插件。正式 ZIP 使用仓库 `Build-Plugin.ps1` 和已发布的 `HostSdkDir`；不要从源码引用的 Debug 输出手工压包，避免混入共享框架 DLL。
+插件要求支持 API 1.11 原生归档声明的宿主；已发布 1.1.0 宿主不支持。首次打开素材调用宿主 Packages 申请 `TractorTool.MediaCompare.GStreamer / 1.28.9`，从默认 PyPI 来源获取五个固定官方 wheel，按清单映射安装 73 个 DLL；拒绝不报错，可再次打开重试。加载前登记进程期保护，缓存仍放插件数据目录；退出前不能修复或删除已加载运行库。旧候选 `GStreamer.MediaCompare` 与新包使用不同标识；如曾安装，保留原文件，由用户在不再引用后主动清理。
+
+普通构建不下载或携带 GStreamer DLL，保留完整许可原文与出处；不维护运行库镜像或自有 Release 附件。官方地址、摘要及文件映射直接在 `plugin.json`，宿主只执行通用的归档安装事务，不运行插件准备脚本。开发诊断材料见[运行库材料](Native/Runtime/README.md)。插件 ZIP 使用仓库 `Build-Plugin.ps1` 和目标宿主 `HostSdkDir`，不手工压源码 Debug 输出；构建、静态校验与真实运行验收分别记录在开发台账。
 
 ## 独立播放诊断
 
@@ -19,7 +21,7 @@
 
 ```powershell
 # 仓库根目录：先编译；运行库和合成素材须已准备好。
-dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release -p:SkipMediaCompareRuntime=true
+dotnet build tests/TractorTool.MediaCompareChecks/TractorTool.MediaCompareChecks.csproj -c Release
 ```
 
 ```text

@@ -73,7 +73,7 @@ function Get-ZipFiles($Archive, [string]$Prefix) {
 function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime, $HostDependencies) {
     # A plugin can reference a package whose download recipe is supplied by a different plugin.
     $requirements = @{}
-    $packagesByFile = @{}
+    $packagesByPath = @{}
     $toolFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $hostNativeFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     # Published host dependencies establish provenance. A native DLL name alone cannot distinguish
@@ -93,17 +93,31 @@ function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime, $Ho
             $package = "$($dependency.id)/$($dependency.version)"
             $null = $required.Add($package)
             foreach ($download in $dependency.downloads) {
-                $null = $archiveHashes.Add($download.sha256)
+                if ($download.Archives.Count -eq 0) { $null = $archiveHashes.Add($download.sha256) }
+                else { foreach ($archive in $download.Archives) { $null = $archiveHashes.Add($archive.Sha256) } }
                 if ($download.rid -cne $Runtime) { continue }
                 foreach ($tool in $download.Tools.GetEnumerator()) { $null = $toolFiles.Add([IO.Path]::GetFileName($tool.Value.Path.Replace('\', '/'))) }
                 $paths = @($download.Tools.GetEnumerator() | ForEach-Object { $_.Value.Path }) +
                     @($download.Libraries.GetEnumerator() | ForEach-Object Value)
-                foreach ($entryPath in $paths) {
-                    $name = [IO.Path]::GetFileName($entryPath.Replace('\', '/'))
-                    if (!$packagesByFile.ContainsKey($name)) {
-                        $packagesByFile[$name] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                $blockedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                foreach ($entryPath in $paths) { $null = $blockedPaths.Add('file:' + [IO.Path]::GetFileName($entryPath.Replace('\', '/'))) }
+                foreach ($archive in $download.Archives) {
+                    foreach ($mapping in $archive.Files.GetEnumerator()) {
+                        $target = $mapping.Value
+                        # Block both original and installed binary names. Resources match only their
+                        # exact path within the host/plugin, so supplementary licenses remain legal.
+                        if ([IO.Path]::GetExtension($mapping.Key) -in @('.dll', '.exe')) {
+                            $null = $blockedPaths.Add('file:' + [IO.Path]::GetFileName($mapping.Key))
+                        }
+                        $blockedPath = if ([IO.Path]::GetExtension($target) -in @('.dll', '.exe')) { 'file:' + [IO.Path]::GetFileName($target) } else { 'path:' + $target }
+                        $null = $blockedPaths.Add($blockedPath)
                     }
-                    $null = $packagesByFile[$name].Add($package)
+                }
+                foreach ($blockedPath in $blockedPaths) {
+                    if (!$packagesByPath.ContainsKey($blockedPath)) {
+                        $packagesByPath[$blockedPath] = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                    }
+                    $null = $packagesByPath[$blockedPath].Add($package)
                 }
             }
         }
@@ -111,13 +125,17 @@ function Assert-NoExternalPackages($Inventory, $Manifests, [string]$Runtime, $Ho
     foreach ($file in $Inventory.GetEnumerator()) {
         $path = $file.Key
         if ($archiveHashes.Contains($file.Value)) { throw "分发包混入已声明的外部下载归档：$path" }
-        $packages = $packagesByFile[[IO.Path]::GetFileName($path)]
-        if ($null -eq $packages) { continue }
         if (!$path.Contains('/') -and $hostNativeFiles.Contains($path) -and !$toolFiles.Contains($path)) { continue }
-        # A private file in an unrelated plugin may legitimately have the same name.
-        if (!$path.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase) -or
-            $requirements[$path.Split('/')[1]].Overlaps($packages)) {
-            throw "分发包混入已声明的外部依赖入口：$path"
+        $parts = $path.Split('/')
+        $isPlugin = $path.StartsWith('Plugins/', [StringComparison]::OrdinalIgnoreCase)
+        $relative = if ($isPlugin) { $parts[3..($parts.Length - 1)] -join '/' } else { $path }
+        foreach ($key in @(('file:' + $parts[-1]), ('path:' + $relative))) {
+            $packages = $packagesByPath[$key]
+            if ($null -eq $packages) { continue }
+            # A private file in an unrelated plugin may legitimately have the same name.
+            if (!$isPlugin -or $requirements[$parts[1]].Overlaps($packages)) {
+                throw "分发包混入已声明的外部依赖文件：$path"
+            }
         }
     }
 }

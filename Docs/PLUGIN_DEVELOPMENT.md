@@ -73,7 +73,7 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 `Dev` 为 1.10，仍接受 1.0–1.9；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10。已发布 1.1.0 宿主不支持 API 1.8–1.10 |
+| `apiVersion` | 当前 `Dev` 为 1.11，仍接受 1.0–1.10；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10，原生归档组合要求 1.11。已发布 1.1.0 宿主不支持 API 1.8–1.11 |
 | `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
@@ -243,7 +243,7 @@ var result = await context.Processes!.RunAsync(
 
 `source` 可省略，默认 `https://api.github.com/`。Enterprise 声明 `https://主机/api/v3/`，用户先在“设置 → 软件设置 → 外部依赖 → 依赖来源”添加相同地址。GitHub 当前仅公开 Release、ZIP、固定 SHA256；不把 tag 自动生成的 Source code ZIP 当成编译后的工具，也不自动猜附件、latest 或版本区间。[Python](#python-environments) 和 [Node](#node-environments) 使用独立的环境声明，不能把 PyPI/npm 地址填到 GitHub `downloads.source`。
 
-工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
+工具 `arguments` 默认 `["-version"]`，`output` 默认 stdout，可选 stderr；版本前缀归一 CRLF/LF 后比较。参数最多 16 项、每项 1024 字符、禁止 NUL；前缀最多 512 字符，包定义最多 48 KiB，最多 16 个不重复 RID。限制以 [PackageDownload](../TractorTool.Core/Packages/PackageDownload.cs)、[PackageDefinitions](../TractorTool.Core/Packages/PackageDefinitions.cs) 和 [ManifestValidator](../TractorTool.Core/Plugins/PluginManifest.cs) 为准。SHA256 核对内容，不代替对插件发布者和上游的信任。
 
 [PackageProbePlugin](../tests/PackageProbePlugin/ProbePlugin.cs) 演示上述声明与调用，只读取版本、不搜索文件、不进入正式分发。GitHub 接口依据 [Release by tag](https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name)，测试附件见 [ripgrep Release](https://github.com/BurntSushi/ripgrep/releases/tag/14.1.1)。
 
@@ -280,7 +280,7 @@ var result = await context.Processes!.RunAsync(
 }
 ```
 
-`libraries` 将逻辑入口名映射到 ZIP 内相对 `.dll` 路径，要求 1–32 项；不能同时声明工具，`tools` 可省略或为空。当前接受 `win-x64`、`win-x86`、`win-arm64`，宿主使用当前 RID；每个声明入口必须是匹配架构的非 CLR PE DLL。纯托管程序集不是这类包。包内应包含完整传递运行库、资源和许可；上游没有合适的完整 ZIP 时由插件发布流程准备，不让宿主拼装业务专属运行时。
+`libraries` 将逻辑入口名映射到 ZIP 内相对 `.dll` 路径，要求 1–32 项；不能同时声明工具，`tools` 可省略或为空。当前接受 `win-x64`、`win-x86`、`win-arm64`，宿主使用当前 RID；每个声明入口必须是匹配架构的非 CLR PE DLL。纯托管程序集不是这类包。包内应包含完整传递运行库、资源和许可；上游提供多份 ZIP/wheel 时，可使用下方 API 1.11 的静态归档映射；插件负责选择完整文件集合，宿主只执行通用校验和安装。
 
 宿主安装时不加载 DLL：校验归档、静态检查入口，保存全部载荷文件的长度和 SHA256；每次申请租约复验完整文件集合，包含辅助 DLL 与资源。新增、缺失或损坏文件会使申请失败，可在未占用时修复。安装生成的根 `receipt.json` 和 `.package-files.json` 是保留元数据，不能由归档提供。ABI、初始化、设备或编解码能力仍由插件验证，安装成功不代表这些业务能力通过。
 
@@ -302,6 +302,24 @@ if (version != 3_002_008) throw new InvalidDataException("SDL 运行库版本不
 夹具通过 Windows `LoadLibraryExW` 限定搜索范围。不要将外部包路径直接交给带 `Assembly` 参数的 `NativeLibrary.Load`：该重载先调用插件 ALC，而现有 ALC 的私有库解析边界仍限于插件代码目录。外部运行库接入不放宽这一边界。
 
 真实申请、版本调用、拒绝重试、占用显示、重启清理和损坏修复方法见[夹具 README](../tests/NativeLibraryProbePlugin/README.md)。该项目不进入正式插件自动发现范围；构建和静态审查不代表 Windows 原生加载已验收，结果归 [A30](DEVELOPMENT.md#acceptance)。
+
+<a id="native-archive-packages"></a>
+
+### 原生归档组合（API 1.11）
+
+沿用 `dependencies[].downloads`、`kind: "nativeLibrary"`、`rid/name/description/license/libraries` 与原租约调用。选择此方式时，省略 GitHub 的 `repository/tag/asset/sha256`；完整真实声明见 [AB 审片清单](../Plugins/TractorTool.Plugins.MediaCompare/plugin.json)。旧工具、GitHub 单 ZIP 和已装 schema 1/2/3 不必改写。
+
+| 字段 | 规则 |
+| --- | --- |
+| `sourceKind` / `source` | `pythonIndex` 配置 HTTPS Simple 索引；默认 `https://pypi.org/simple/` 已内置。`https` 配置公开 HTTPS 文件目录，用户须先添加同一来源 |
+| `archives` | 1–16 份固定 ZIP 或 `.whl`；每份 `url`、64 位 `sha256` 和非空 `files`。只把 wheel 当归档，不创建 Python 环境或执行安装代码 |
+| `files` | 精确归档内文件名到安装相对路径的字典，均使用正斜杠；没有通配符、脚本或自动依赖推导。每个安装目标在全部归档中只能声明一次，重复 DLL 由插件作者选定一份 |
+| 来源约束 | 默认 PyPI 的文件必须在 `files.pythonhosted.org`；自定义索引限同源；HTTPS 文件目录限同源及目录前缀。URL 禁止认证、查询串、片段和非默认端口，最终重定向仍检查 |
+| 大小与路径 | 全部归档累计下载最多 256 MiB、展开 1 GiB、条目 10000；完整定义最多 48 KiB。未选条目仍检查链接、路径、类型、重名和限额。禁止映射到 `receipt.json`、`.package-files.json` 或其下级路径 |
+
+组合身份包括来源、每份地址/摘要及文件映射；变更这些内容或入口契约须使用新包版本或独立 ID。schema 4 收据保留完整配方，离线复用不依赖插件目录；修复可从收据准备，但来源必须仍在配置中。全部输入校验、映射与原生入口验证完成后才一次提交，失败不发布半成品。加载前仍必须调用 `RetainUntilProcessExit()`。
+
+归档内许可可按映射安装；额外许可原文、NOTICE 及组件对应也可作为插件静态文件随包交付。插件作者负责文件选择与许可完整性，不能假定一个 wheel 包含所有第三方许可。框架不执行补许可安装器或推导媒体模块。
 
 <a id="dependency-extension-contract"></a>
 <a id="python-environments"></a>

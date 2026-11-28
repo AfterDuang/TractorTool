@@ -10,15 +10,19 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 接入，三个实现提交止于 `1848ca2`。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) 外部依赖修复之后，[E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 补齐宿主管理事务/回退现场保护、启动退出收尾、暂时 I/O 重验及 CI 门禁；主代理自审与 SOL 分项复核完成，授权的隔离回归通过，已本地提交 `789c4f6`，尚未推送。Contracts API 1.10 / UI API 1.6、旧插件接口及 Python 身份/记录不变。接续由用户确认恢复交互及真实使用效果，A04/A30–A33 未验场景保留；不推送或发版。
+`Dev` 在用户已推送的 `b93b80b` 基础上完成 E156–E158；用户测试后授权本地提交，未推送。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 的依赖、管理恢复、生命周期和 CI 修复已归档；隔离回归只覆盖当时版本。恢复交互、真实迁移与进程清理等缺口继续保留在 A04/A30–A33。
 
-Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源，不恢复自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
+Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源和 HTTPS 文件来源，不维护自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 
-卸载提示与人工恢复指引已本地提交 `213b074`，见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)。Python/Node 测试插件 1.1.0 本地提交为 `31ef180`，见 [E154](PROJECT_HISTORY.md#evidence-environment-probe-workflows)。[E155](PROJECT_HISTORY.md#evidence-node-cache-registration) 已修 Core：合法 pnpm 缓存登记作为终端链接处理，清缓存、迁移提交前和默认重置前仅解除登记，未知链接及环境载荷仍严格检查；公开 API、安装策略和持久记录不变。宿主、18 项新增回归已编译，SOL 静态复核无阻断，自动回归未执行，也未删除用户缓存。用户后续运行确认 Node/Python 预期失败均进入公共任务 Error，现已授权本地提交修复；重复准备、清缓存、迁移和重置仍待逐项验收。已有测试插件无需重装，旧 E154 宿主不含 Core 修复。DLL 专项留到审片插件接入时验证；推送与发布另行授权。
+Python/Node 真实使用夹具见 [E154](PROJECT_HISTORY.md#evidence-environment-probe-workflows)。[E155](PROJECT_HISTORY.md#evidence-node-cache-registration) 修复 pnpm 缓存登记 junction 的误拦截，保留未知链接及载荷保护；新增 18 项回归已编译但未执行。用户确认两类预期进程失败均进入公共任务 Error；重复准备、清缓存、迁移和重置尚未逐项验收，已有测试插件无需重装。
 
 语言环境首轮限定 Windows x64、固定工具链和锁文件，禁用安装脚本；Node 使用 hoisted+copy，业务脚本显式定位环境模块。迁移在目标最终路径按原锁重建，失败保留原数据。版本与接入规则统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。E151/E152 仅运行隔离自动回归，未启动真实主窗口或安装真实语言依赖；NU1900 导致在线漏洞数据查询未完成，CI 新门禁尚无远端执行证据，已发布 1.1.0 不变。
 
-[AB 审片 0.1.7](DEVELOPMENT.md#media-compare) 已提交并推送 `e025a04`；构建、静态 Review 和独立打包证据见 [E145](PROJECT_HISTORY.md#evidence-media-compare-scrub-optimization)。用户反馈手感“也还行”，专项性能及音画验收仍开放。保持插件侧“只编译和 Review，用户运行测试”的约定，后续验证方法及限制统一见台账；保留设备锁与 `.vscode/settings.json`。
+[E158](PROJECT_HISTORY.md#evidence-native-upstream-archives) 已实现原生上游归档安装：Contracts API 1.11 / UI API 1.6，保留旧 API 1.0–1.10 和 schema 1–3；新声明以固定 HTTPS ZIP/wheel、逐份 SHA256 和精确文件映射组合一个 DLL 包。复用现有确认、事务、完整性、修复与进程期保护，schema 4 保存全部来源和配方，不创建新的包管理服务。
+
+[AB 审片 0.1.9](DEVELOPMENT.md#media-compare) 消费 API 1.11，声明 `TractorTool.MediaCompare.GStreamer / 1.28.9`，从五份官方 wheel 映射 73 个 DLL，46 份许可原文随插件交付。新 ID 避免与旧自打包候选同版冲突；普通构建不下载或携带运行库，已移除自打包发布流程。`Prepare-GStreamerRuntime.ps1` 只作开发诊断。E156/E157 的许可、申请/退出及原生加载边界保留；0.1.8 旧候选不再用于交付，不删除已有安装。
+
+**当前验证与授权**：隔离宿主发布、插件 SDK 独立打包、Core/离屏集成/审片检查工程编译通过；两名 SOL/high 子代理复核 Core 与打包/消费链，无剩余阻断。新增 21 项 Core 用例与分发夹具均未执行，NU1900 表示在线漏洞数据查询未完成。五份本地归档、映射和许可已静态核对；用户反馈本轮实际测试可正常使用、未发现问题，并授权本地提交。未推送。常规反馈不外推为拒绝/取消重试、离线复用、损坏修复和占用维护等专项通过，后续按台账继续验收。使用[当前测试产物](DEVELOPMENT.md#development-artifacts)。
 
 ## 2. 接续时必须保留
 
@@ -36,7 +40,7 @@ Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境�
 | 独立打包 | [Build-Plugin](../scripts/Build-Plugin.ps1)、[Verify-PluginHost](../scripts/Verify-PluginHost.ps1)、[脚本边界](../scripts/README.md) |
 | AB 审片 | [源码入口](../Plugins/TractorTool.Plugins.MediaCompare/README.md)、[需求与验收](Plugins/MediaCompare.md)、[当前状态](DEVELOPMENT.md#media-compare) |
 | 装载与公共接口 | [PluginLoadContext](../TractorTool.Core/Plugins/PluginLoadContext.cs)、[接入规范](PLUGIN_DEVELOPMENT.md) |
-| GitHub 依赖 | [GitHubPackage](../TractorTool.Core/Packages/GitHubPackage.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs) |
+| 归档依赖 | [PackageDownload](../TractorTool.Core/Packages/PackageDownload.cs)、[PackageArchive](../TractorTool.Core/Packages/PackageArchive.cs)、[PackageSources](../TractorTool.Core/Packages/PackageSources.cs)、[组合安装](../TractorTool.Core/Packages/PackageInstallation.cs) |
 | 外部依赖扩展 | [公开包契约](../TractorTool.Contracts/Packages/IExternalPackageService.cs)、[包定义](../TractorTool.Core/Packages/PackageDefinitions.cs)、[包服务](../TractorTool.Core/Packages/ExternalPackageService.cs)、[清单投影](../scripts/Read-PluginManifest.ps1)；新增设计与目录见[架构 7.3](ARCHITECTURE.md#dependency-extension) |
 | Python 环境 | [声明与工具链](../TractorTool.Core/Packages/Python/PythonEnvironmentDefinitions.cs)、[安装](../TractorTool.Core/Packages/Python/PythonEnvironmentInstaller.cs)、[服务与占用](../TractorTool.Core/Packages/Python/PythonEnvironmentService.cs)、[迁移重建](../TractorTool.Core/Packages/Python/PythonEnvironmentMigration.cs)、[真实夹具](../tests/PythonEnvironmentProbePlugin/README.md) |
 | Node 与共享环境 | [Node 安装](../TractorTool.Core/Packages/Node/NodeEnvironmentInstaller.cs)、[输入策略](../TractorTool.Core/Packages/Node/NodeInputPolicy.cs)、[共享事务](../TractorTool.Core/Packages/Environments/ManagedEnvironmentService.cs)、[混合迁移](../TractorTool.Core/Storage/LanguageEnvironmentDataMigration.cs)、[真实 npm 夹具](../tests/NodeEnvironmentProbePlugin/README.md) |

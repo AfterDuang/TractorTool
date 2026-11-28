@@ -1,6 +1,6 @@
 # MediaCompare 原生媒体运行库
 
-本目录是 GStreamer 1.28.9 官方 MSVC x64 二进制的未修改子集，仅供本插件使用。GStreamer、FFmpeg、GLib 等以动态 DLL 链接，未静态合并进插件。许可证原文及上游声明在 `licenses/`，每个交付文件的 SHA256、导入闭包和来源记录在 `runtime-manifest.json` / `runtime-sources.json`。
+本目录保存 GStreamer 1.28.9 官方 MSVC x64 运行库的许可材料。GStreamer、FFmpeg、GLib 等以动态 DLL 链接，未静态合并进插件。DLL 由宿主从插件清单列明的官方 wheel 按需下载；许可证原文及上游声明随插件保留在 `licenses/`，原文路径、哈希和出处见 `license-manifest.json`。二进制来源、逐份归档 SHA256 与精确文件映射见插件根 `plugin.json`；安装后的完整文件摘要由宿主维护。
 
 - GStreamer 及插件源代码：https://gstreamer.freedesktop.org/src/ （1.28.9）
 - 官方构建配方、依赖版本、补丁和编译方法：https://gitlab.freedesktop.org/gstreamer/cerbero/-/tree/1.28.9
@@ -12,4 +12,4 @@
 - Blu-ray LPCM 解码模块 `gstdvdlpcmdec.dll` 对应 [gst-plugins-ugly 1.28.9 COPYING](https://github.com/GStreamer/gstreamer/blob/1.28.9/subprojects/gst-plugins-ugly/COPYING)，原文位于 `licenses/gst-plugins-ugly-1.0/COPYING`。
 - Visual C++ 运行库 14.44.35211 从 GStreamer 官方 `gstreamer_ext_runtime` wheel 提取。`licenses/msvc-runtime/license.rtf` 原样来自同版官方安装包内 `vc_redist.x64.exe` 的英文许可，来源与 SHA256 已记录。适用 Microsoft 条款，不能以 GStreamer 的 LGPL 许可替代。
 
-支持替换这些动态库，但替换者须维持 GStreamer 1.x / 当前组件的二进制 ABI 和目录结构，并承担兼容性验证。插件不修改系统 PATH，不安装系统编解码器，不附带 Python、开发头文件、静态库、测试程序或全局 GStreamer 插件扫描器。原生媒体能力依赖具体插件、系统和显卡；文件清单核验不等于真实格式或硬件验收。
+可在独立诊断目录中替换动态库，或核对上游组件后更新插件的固定来源与映射声明；替换者须维持 GStreamer 1.x / 当前组件的二进制 ABI 和目录结构，并承担兼容性验证。宿主会复验已安装包的全部文件，直接修改该目录会触发完整性错误，已加载包须退出后才能维护。插件不修改系统 PATH，不安装系统编解码器，不附带 Python、开发头文件、静态库、测试程序或全局 GStreamer 插件扫描器。原生媒体能力依赖具体插件、系统和显卡；文件清单核验不等于真实格式或硬件验收。

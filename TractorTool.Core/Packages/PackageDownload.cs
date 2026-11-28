@@ -8,20 +8,37 @@ namespace TractorTool.Core.Packages;
 // Download instructions belong to the plugin; PackageReference remains the stable public identity.
 public sealed record PluginDependency(string Id, string Version)
 {
-    public GitHubPackage[] Downloads { get; init; } = [];
+    public PackageDownload[] Downloads { get; init; } = [];
     [JsonIgnore] public PackageReference Package => new(Id, Version);
 }
 
-public sealed record GitHubPackage(string Rid, string Repository, string Tag, string Asset,
+public sealed record PackageDownload(string Rid, string Repository, string Tag, string Asset,
     string Sha256, string Name, string Description, string License, IReadOnlyDictionary<string, PackageTool> Tools)
 {
     public IReadOnlyDictionary<string, PackageTool> Tools { get; init; } = Tools ?? ReadOnlyDictionary<string, PackageTool>.Empty;
     public PackageKind Kind { get; init; }
     public IReadOnlyDictionary<string, string> Libraries { get; init; } = ReadOnlyDictionary<string, string>.Empty;
     public string Source { get; init; } = DependencySource.GitHubUrl;
+    public DependencySourceKind SourceKind { get; init; }
+    public IReadOnlyList<PackageArchive> Archives { get; init; } = [];
 
     internal PackageDefinition Definition(PackageReference package)
     {
+        if (Archives is null) throw new InvalidDataException("依赖归档列表不能为空。");
+        if (Archives.Count != 0)
+        {
+            if (Kind != PackageKind.NativeLibrary || !string.IsNullOrEmpty(Repository) || !string.IsNullOrEmpty(Tag) ||
+                !string.IsNullOrEmpty(Asset) || !string.IsNullOrEmpty(Sha256))
+                throw new InvalidDataException("原生归档声明不能混用 GitHub 仓库、标签或单包摘要。");
+            var origin = DependencySource.Address(SourceKind, Source);
+            PackageArchiveDefinitions.Validate(Archives, SourceKind, origin);
+            var native = new PackageDefinition(package, Rid, Name, Description, Archives[0].Url,
+                PackageArchiveDefinitions.Identity(Archives, SourceKind, origin), License, origin, Tools)
+                { Kind = Kind, Libraries = Libraries, Archives = Archives, SourceKind = SourceKind };
+            PackageDefinitions.Validate(native);
+            return native;
+        }
+        if (SourceKind != DependencySourceKind.GitHub) throw new InvalidDataException("单 ZIP 依赖必须使用 GitHub 来源。");
         var source = DependencySource.ApiUri(Source);
         if (Repository is null || !Regex.IsMatch(Repository, @"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$") ||
             Repository.Split('/')[1] is "." or ".." || string.IsNullOrWhiteSpace(Tag) || Tag is "." or ".." || Tag.Length > 256 ||
@@ -37,10 +54,11 @@ public sealed record GitHubPackage(string Rid, string Repository, string Tag, st
         return result;
     }
 
-    internal GitHubPackage Snapshot(PackageReference package)
+    internal PackageDownload Snapshot(PackageReference package)
     {
         var definition = PackageDefinitions.Snapshot(Definition(package));
-        return this with { Source = DependencySource.ApiUri(Source).AbsoluteUri, Tools = definition.Tools, Libraries = definition.Libraries };
+        return this with { Source = DependencySource.Address(SourceKind, Source).AbsoluteUri,
+            Tools = definition.Tools, Libraries = definition.Libraries, Archives = definition.Archives };
     }
 }
 
@@ -62,6 +80,7 @@ public sealed record DependencySource(string Name, string Url)
         DependencySourceKind.GitHub => "GitHub Releases",
         DependencySourceKind.PythonIndex => "Python 包索引",
         DependencySourceKind.NpmRegistry => "npm registry",
+        DependencySourceKind.Https => "HTTPS 文件来源",
         _ => "未知来源"
     };
     internal static Uri Address(DependencySourceKind kind, string address) => kind switch
@@ -69,8 +88,16 @@ public sealed record DependencySource(string Name, string Url)
         DependencySourceKind.GitHub => ApiUri(address),
         DependencySourceKind.PythonIndex => IndexUri(address),
         DependencySourceKind.NpmRegistry => Node.NodeEnvironmentDefinitions.RegistryUri(address),
+        DependencySourceKind.Https => HttpsUri(address),
         _ => throw new InvalidDataException("不支持的依赖来源类型。")
     };
+    internal static Uri HttpsUri(string address)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || !uri.IsDefaultPort)
+            throw new InvalidDataException("文件来源须为无认证的 HTTPS 目录地址。");
+        return new(uri.AbsoluteUri.TrimEnd('/') + "/");
+    }
     internal static Uri IndexUri(string address)
     {
         if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
@@ -90,7 +117,7 @@ public sealed record DependencySource(string Name, string Url)
 }
 
 [JsonConverter(typeof(DependencySourceKindConverter))]
-public enum DependencySourceKind { GitHub, PythonIndex, NpmRegistry }
+public enum DependencySourceKind { GitHub, PythonIndex, NpmRegistry, Https }
 
 internal sealed class DependencySourceKindConverter : JsonStringEnumConverter<DependencySourceKind>
 {

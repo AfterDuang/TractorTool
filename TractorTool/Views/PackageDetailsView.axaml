@@ -26,11 +26,11 @@
         <StackPanel Spacing="8">
           <TextBlock Text="{Binding ContentsTitle}" FontWeight="SemiBold" />
           <SelectableTextBlock Text="{Binding ContentsNames}" TextWrapping="Wrap" />
-          <TextBlock Text="当前下载地址" FontWeight="SemiBold" Margin="0,8,0,0" />
-          <SelectableTextBlock Text="{Binding DownloadUri}" TextWrapping="Wrap" />
-          <TextBlock Text="SHA256 校验值" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <TextBlock Text="下载文件" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <SelectableTextBlock Text="{Binding DownloadDetails}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Sha256Title}" FontWeight="SemiBold" Margin="0,8,0,0" />
           <SelectableTextBlock Text="{Binding Sha256}" TextWrapping="Wrap" />
-          <TextBlock Text="项目来源" FontWeight="SemiBold" Margin="0,8,0,0" />
+          <TextBlock Text="来源地址" FontWeight="SemiBold" Margin="0,8,0,0" />
           <SelectableTextBlock Text="{Binding Source}" TextWrapping="Wrap" />
           <TextBlock Text="存储位置" FontWeight="SemiBold" Margin="0,8,0,0" />
           <SelectableTextBlock Text="{Binding Directory}" TextWrapping="Wrap" />
