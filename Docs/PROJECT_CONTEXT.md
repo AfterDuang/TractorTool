@@ -10,7 +10,7 @@
 
 框架待确认项集中在数据迁移、退出及进程清理；切页末段闪动保留默认渲染与动效，等待上游修复。插件当前验收见[验收台账](DEVELOPMENT.md#acceptance)，特别是文件夹历史的真实 CLI/窗口回归和 HUD 硬件场景。
 
-`Dev` 在用户已推送的 `b93b80b` 基础上完成 E156–E158；用户测试后授权本地提交，未推送。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 的依赖、管理恢复、生命周期和 CI 修复已归档；隔离回归只覆盖当时版本。恢复交互、真实迁移与进程清理等缺口继续保留在 A04/A30–A33。
+`Dev` 在用户已推送的 `b93b80b` 基础上完成 E156–E158，用户测试后已本地提交为 `487b5fc`。其后的 [E159 来源输入反馈](PROJECT_HISTORY.md#evidence-source-validation-feedback) 与 [E160 宿主审查修复](PROJECT_HISTORY.md#evidence-host-state-source-review) 已完成同会话模型/思考深度子代理复核并获授权本地提交，未由代理推送；包含重置收尾、加载结果、清理引用复查、GitHub 配方来源快照及冗余代码清理。[E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes) 的隔离回归只覆盖当时版本，当前验收统一见台账。
 
 Packages 导航为“外部工具、DLL 运行库、Python 环境、Node 环境”，搜索、统计、批量清理限定当前可见范围；缓存维护归对应语言。来源默认 GitHub/PyPI/npm，可添加公开兼容来源和 HTTPS 文件来源，不维护自有源。当前测试产物统一见[开发台账](DEVELOPMENT.md#development-artifacts)，历史构建不作为当前运行入口。
 
@@ -22,7 +22,7 @@ Python/Node 真实使用夹具见 [E154](PROJECT_HISTORY.md#evidence-environment
 
 [AB 审片 0.1.9](DEVELOPMENT.md#media-compare) 消费 API 1.11，声明 `TractorTool.MediaCompare.GStreamer / 1.28.9`，从五份官方 wheel 映射 73 个 DLL，46 份许可原文随插件交付。新 ID 避免与旧自打包候选同版冲突；普通构建不下载或携带运行库，已移除自打包发布流程。`Prepare-GStreamerRuntime.ps1` 只作开发诊断。E156/E157 的许可、申请/退出及原生加载边界保留；0.1.8 旧候选不再用于交付，不删除已有安装。
 
-**当前验证与授权**：隔离宿主发布、插件 SDK 独立打包、Core/离屏集成/审片检查工程编译通过；两名 SOL/high 子代理复核 Core 与打包/消费链，无剩余阻断。新增 21 项 Core 用例与分发夹具均未执行，NU1900 表示在线漏洞数据查询未完成。五份本地归档、映射和许可已静态核对；用户反馈本轮实际测试可正常使用、未发现问题，并授权本地提交。未推送。常规反馈不外推为拒绝/取消重试、离线复用、损坏修复和占用维护等专项通过，后续按台账继续验收。使用[当前测试产物](DEVELOPMENT.md#development-artifacts)。
+**当前验证与授权**：E158 已获用户常规使用反馈并提交；E159/E160 的宿主与检查工程编译通过，后续同模型复核无阻断，已按用户授权本地提交、未推送。本轮只做静态复核与提交，没有重新运行检查、启动应用或操作真实数据；产物与证据见[当前测试产物](DEVELOPMENT.md#development-artifacts)和 E160。恢复交互、真实迁移、进程清理及 A04/A30–A33 的未确认专项继续保留；历史通过不套用到当前修改。
 
 ## 2. 接续时必须保留
 

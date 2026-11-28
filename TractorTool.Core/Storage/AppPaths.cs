@@ -4,17 +4,26 @@ using TractorTool.Core.Packages.Node;
 
 namespace TractorTool.Core.Storage;
 
+public sealed record DataResetRequest(string Source, string AppRoot);
+
 public sealed record BootstrapSettings : IVersionedSettings
 {
     public int SchemaVersion { get; init; } = 1;
     public string? DataRoot { get; init; }
     public DataMigrationRequest? Migration { get; init; }
     public string? PreviousDataRoot { get; init; }
+    public DataResetRequest? DataReset { get; init; }
     public static void Validate(BootstrapSettings value)
     {
         if (value.DataRoot is { } root) _ = AppPaths.Absolute(root);
         if (value.PreviousDataRoot is { } previous) _ = AppPaths.Absolute(previous);
         if (value.Migration is { } migration) DataMigrationRequest.Validate(migration);
+        if (value.DataReset is { } reset)
+        {
+            _ = AppPaths.Absolute(reset.Source); _ = AppPaths.Absolute(reset.AppRoot);
+            if (value.DataRoot is not null || value.Migration is not null || value.PreviousDataRoot is not null)
+                throw new InvalidDataException("数据重置收尾记录与启动配置冲突，原记录已保留。");
+        }
     }
 }
 
@@ -57,16 +66,21 @@ public sealed class AppPaths : IAppPaths
             var backup = pointer + ".bak";
             DataDirectories.CheckPath(backup);
             if (new FileInfo(backup).Attributes != (FileAttributes)(-1))
-                throw new InvalidDataException($"启动定位文件缺失：{pointer}。请核对备份 {backup} 中的数据目录和迁移记录，确认正确后恢复主文件并重新启动。");
+                throw new InvalidDataException($"启动定位文件缺失：{pointer}。请核对备份 {backup} 中的数据目录和未完成事务，确认仍对应当前数据后恢复主文件并重新启动；不要恢复已经完成的迁移或重置记录。");
         }
         var store = new JsonFileStore<BootstrapSettings>(pointer, BootstrapSettings.Validate);
         var settings = store.Load();
         var result = new AppPaths(AppContext.BaseDirectory, fixedRoot, settings.DataRoot);
+        if (settings.DataReset is { } reset)
+        {
+            result.RequireResetOwner(reset);
+            return new AppPaths(AppContext.BaseDirectory, fixedRoot) { MissingDataRoot = Absolute(reset.Source) };
+        }
         if (settings.DataRoot is not null && !DataDirectories.Exists(result.DataRoot))
         {
             if (settings.Migration is not null)
                 throw new IOException($"迁移尚未完成，数据目录缺失：{result.DataRoot}。请恢复目录后重试，迁移记录已保留。");
-            // The startup owner must settle plugin records before committing this fallback.
+            // No data writer may start until the pointer and plugin reset records are settled.
             return new AppPaths(AppContext.BaseDirectory, fixedRoot) { MissingDataRoot = result.DataRoot };
         }
         if (ensureDirectories) result.EnsureDataDirectories();
@@ -82,18 +96,43 @@ public sealed class AppPaths : IAppPaths
         DataDirectories.CheckPath(BootstrapFile); DataDirectories.CheckPath(BootstrapFile + ".bak");
         var store = new JsonFileStore<BootstrapSettings>(BootstrapFile, BootstrapSettings.Validate);
         var settings = store.Load();
-        if (settings.Migration is not null || settings.DataRoot is null ||
-            !string.Equals(Absolute(settings.DataRoot), MissingDataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-            throw new IOException("启动配置已变化，未重置数据。请重新启动。");
-        if (DataDirectories.Exists(MissingDataRoot)) throw new IOException("原数据目录已恢复，未重置数据。请重新启动。");
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (settings.DataReset is { } reset)
+        {
+            RequireResetOwner(reset);
+            if (!string.Equals(Absolute(reset.Source), MissingDataRoot, comparison))
+                throw new IOException("数据重置记录已变化，请重新启动后完成收尾。");
+        }
+        else
+        {
+            if (settings.Migration is not null || settings.DataRoot is null ||
+                !string.Equals(Absolute(settings.DataRoot), MissingDataRoot, comparison))
+                throw new IOException("启动配置已变化，未重置数据。请重新启动。");
+            if (DataDirectories.Exists(MissingDataRoot)) throw new IOException("原数据目录已恢复，未重置数据。请重新启动。");
+            token.ThrowIfCancellationRequested();
+            NodeCacheStorage.PrepareForDataRemoval(BootstrapRoot, token);
+            DataDirectories.Clear(BootstrapRoot, token);
+            token.ThrowIfCancellationRequested();
+            if (DataDirectories.Exists(MissingDataRoot)) throw new IOException("原数据目录已恢复，未重置数据。请重新启动。");
+            // Commit the default root with restartable finalization before retiring original recovery records.
+            store.Save(new() { DataReset = new(MissingDataRoot, AppRoot) });
+        }
         token.ThrowIfCancellationRequested();
         discardPluginDataState(MissingDataRoot);
         discardPluginDataState(BootstrapRoot); // Its stale business data is also being discarded.
-        NodeCacheStorage.PrepareForDataRemoval(BootstrapRoot, token);
-        DataDirectories.Clear(BootstrapRoot, token);
         token.ThrowIfCancellationRequested();
-        store.Save(new()); // Keep the old pointer until cleanup succeeds, so a failed reset can retry.
+        store.Save(new());
         _dataResetCompleted = true;
+    }
+
+    private void RequireResetOwner(DataResetRequest reset)
+    {
+        var previous = new AppPaths(AppRoot, BootstrapRoot, reset.Source);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(Absolute(reset.AppRoot), AppRoot, comparison))
+            throw new IOException($"数据重置收尾尚未完成，请从原软件目录启动：{reset.AppRoot}");
+        if (string.Equals(previous.DataRoot, BootstrapRoot, comparison))
+            throw new InvalidDataException("数据重置记录不能将默认目录作为丢失的自定义目录。");
     }
 
     public void EnsureDataDirectories()

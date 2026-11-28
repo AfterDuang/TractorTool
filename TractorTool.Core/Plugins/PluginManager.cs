@@ -357,7 +357,7 @@ public sealed class PluginManager : IDisposable
         lock (_gate)
         {
             Check();
-            foreach (var item in _state.Plugins.Where(p => p.AwaitingLoad).ToArray())
+            foreach (var item in _state.Plugins.Where(p => p.AwaitingLoad && p.Error.Length == 0).ToArray())
             {
                 var record = records.FirstOrDefault(r => r.Manifest?.Id == item.Id && r.Manifest.Version == item.ActiveVersion);
                 if (record?.State == PluginState.Loaded) Save(item with { AwaitingLoad = false, Error = "" });

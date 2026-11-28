@@ -12,7 +12,6 @@ public sealed record NodeEnvironmentListItem(NodeEnvironmentDefinition Definitio
     bool CanInstall, bool CanRemove, bool CanCancel)
 {
     public string Identity => Definition.Identity;
-    public bool IsInstalled => Directory.Length != 0;
 }
 public sealed record NodeMigrationEnvironment(string RelativeDirectory, NodeEnvironmentDefinition Definition);
 

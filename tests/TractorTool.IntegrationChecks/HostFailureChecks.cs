@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Avalonia.Controls.ApplicationLifetimes;
 using TractorTool;
 using TractorTool.Core.Logging;
@@ -13,6 +14,138 @@ internal static class HostFailureChecks
 {
     public static void Run(Action<string, Action> check, Action<Task> pump, string output)
     {
+        check("Discovery completion resets after startup or directory failure and recovers on the next scan", () =>
+        {
+            var root = Path.Combine(output, "discovery-completion-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
+            paths.EnsureDataDirectories();
+            var host = new PluginHost(paths, new("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion), new AppLog(paths.LogRoot));
+            try
+            {
+                Require(!host.DiscoveryCompleted);
+                host.Discover([]);
+                Require(host.DiscoveryCompleted && host.DirectoryError is null);
+                host.Discover([], startupError: "fixture management unavailable");
+                Require(!host.DiscoveryCompleted && host.DirectoryError is not null);
+                host.Discover([]);
+                Require(host.DiscoveryCompleted);
+                Directory.Delete(paths.PluginRoot);
+                File.WriteAllText(paths.PluginRoot, "fixture directory blocker");
+                host.Discover([]);
+                Require(!host.DiscoveryCompleted && host.DirectoryError is not null && host.Records.Count == 0);
+                File.Delete(paths.PluginRoot);
+                host.Discover([]);
+                Require(host.DiscoveryCompleted && host.DirectoryError is null);
+            }
+            finally { pump(host.DisposeAsync().AsTask()); }
+        });
+
+        check("A completed discovery with an installation warning still persists actual load failures", () =>
+        {
+            var root = Path.Combine(output, "discovery-warning-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
+            paths.EnsureDataDirectories();
+            var item = new ManagedPlugin { Id = "Checks.LoadFailure", ActiveVersion = "1.0.0", AwaitingLoad = true };
+            var directory = Path.Combine(paths.PluginRoot, item.Id, item.ActiveVersion!);
+            Directory.CreateDirectory(directory);
+            var manifest = new PluginManifest { SchemaVersion = 1, Id = item.Id, Name = item.Id, Version = item.ActiveVersion!,
+                EntryAssembly = "Missing.dll", EntryType = "Fixture.Plugin", ApiVersion = "1.0", UiApiVersion = UiApi.Version,
+                AvaloniaVersion = UiApi.AvaloniaVersion, SupportedPlatforms = ["win-x64"] };
+            File.WriteAllText(Path.Combine(directory, "plugin.json"), JsonSerializer.Serialize(manifest, JsonOptions.Value));
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [item] });
+            var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
+            using var manager = new PluginManager(paths, compatibility);
+            var log = new AppLog(paths.LogRoot);
+            var host = new PluginHost(paths, compatibility, log);
+            const string warning = "fixture plugin directory is not writable";
+            // Inject only the write-probe diagnostic after a real scan; do not alter machine ACLs or load results.
+            void ReportWriteWarning()
+            {
+                if (host.DiscoveryCompleted)
+                    typeof(PluginHost).GetProperty(nameof(PluginHost.DirectoryError))!.SetValue(host, warning);
+            }
+            log.Changed += ReportWriteWarning;
+            var settings = new SettingsViewModel(paths, new(Path.Combine(paths.ConfigRoot, "settings.json")), new(), log, manager: manager);
+            using var vm = new MainViewModel(paths, host, log, settings, () => Task.CompletedTask, manager);
+            try
+            {
+                pump(vm.InitializeAsync());
+                Require(vm.Plugins.ManagementAvailable && host.DiscoveryCompleted && host.DirectoryError == warning);
+                var record = host.Records.Single();
+                Require(record.State == PluginState.Failed && record.Detail.Contains("找不到入口程序集"));
+                Require(manager.Snapshot.Single().Error.Contains(record.Detail) && store.Load().Plugins.Single() == manager.Snapshot.Single(),
+                    "An installation-only directory warning must not suppress the actual load outcome.");
+            }
+            finally { log.Changed -= ReportWriteWarning; vm.Dispose(); pump(host.DisposeAsync().AsTask()); }
+        });
+
+        check("Management startup failure does not persist false load failures after writes recover", () =>
+        {
+            var root = Path.Combine(output, "load-management-failure-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
+            paths.EnsureDataDirectories();
+            var healthy = new ManagedPlugin { Id = "Checks.Healthy", ActiveVersion = "1.0.0", AwaitingLoad = true };
+            var pending = new ManagedPlugin { Id = "Checks.Pending", ActiveVersion = "1.0.0",
+                Pending = new(PluginChangeKind.Disable, Guid.NewGuid().ToString("N"), paths.DataRoot) };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [healthy, pending] });
+            var before = File.ReadAllBytes(store.FilePath);
+            var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
+            using var manager = new PluginManager(paths, compatibility);
+            var writes = 0;
+            void FailPendingWrites()
+            {
+                // Both ApplyPending writes fail; a later erroneous RecordLoadResults write would succeed.
+                if (++writes <= 2) throw new IOException("fixture pending state write failure");
+            }
+            typeof(PluginManager).GetEvent("StateChanging", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetAddMethod(true)!.Invoke(manager, [(Action)FailPendingWrites]);
+            var log = new AppLog(paths.LogRoot);
+            var host = new PluginHost(paths, compatibility, log);
+            var settings = new SettingsViewModel(paths, new(Path.Combine(paths.ConfigRoot, "settings.json")), new(), log, manager: manager);
+            using var vm = new MainViewModel(paths, host, log, settings, () => Task.CompletedTask, manager);
+            try
+            {
+                pump(vm.InitializeAsync());
+                Require(!vm.Plugins.ManagementAvailable && !vm.Plugins.IsLoading &&
+                    !host.DiscoveryCompleted && host.DirectoryError?.Contains("fixture pending state write failure") == true && host.Records.Count == 0);
+                Require(writes == 2 && manager.Snapshot.SequenceEqual(new[] { healthy, pending }) &&
+                    File.ReadAllBytes(store.FilePath).SequenceEqual(before),
+                    "A failed management startup must leave unattempted load records and the journal unchanged.");
+            }
+            finally { vm.Dispose(); pump(host.DisposeAsync().AsTask()); }
+        });
+
+        check("Load results record success and real failures once while preserving disabled and previous failures", () =>
+        {
+            var root = Path.Combine(output, "load-results-" + Guid.NewGuid().ToString("N"));
+            var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
+            paths.EnsureDataDirectories();
+            var loaded = new ManagedPlugin { Id = "Checks.Loaded", ActiveVersion = "1.0.0", AwaitingLoad = true };
+            var failed = loaded with { Id = "Checks.Failed" };
+            var missing = loaded with { Id = "Checks.Missing" };
+            var disabled = loaded with { Id = "Checks.Disabled", Enabled = false };
+            var previous = loaded with { Id = "Checks.Previous", Error = "previous initialization failure" };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(new() { Plugins = [loaded, failed, missing, disabled, previous] });
+            using var manager = new PluginManager(paths, new("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion));
+            PluginRecord Record(ManagedPlugin item, PluginState state, string detail = "") =>
+                new("fixture", new PluginManifest { Id = item.Id, Version = item.ActiveVersion! }, state, detail);
+            PluginRecord[] records = [Record(loaded, PluginState.Loaded), Record(failed, PluginState.Failed, "fixture initialization failure"),
+                Record(disabled, PluginState.Disabled), Record(previous, PluginState.Failed, previous.Error)];
+            manager.RecordLoadResults(records);
+            var snapshot = manager.Snapshot;
+            Require(snapshot.Single(p => p.Id == loaded.Id) == (loaded with { AwaitingLoad = false }));
+            Require(snapshot.Single(p => p.Id == failed.Id).Error.Contains("fixture initialization failure") &&
+                snapshot.Single(p => p.Id == missing.Id).Error.Contains("找不到活动版本"));
+            Require(snapshot.Single(p => p.Id == previous.Id) == previous && snapshot.Single(p => p.Id == disabled.Id) == disabled);
+            var saved = File.ReadAllBytes(store.FilePath);
+            manager.RecordLoadResults(records);
+            Require(manager.Snapshot.SequenceEqual(snapshot) && File.ReadAllBytes(store.FilePath).SequenceEqual(saved),
+                "Records skipped on the next startup must not acquire another error prefix or rewrite the journal.");
+        });
+
         check("Initialization failure ends loading and tray fallback preserves the failure notice", () =>
         {
             var (paths, log, host, vm) = Create(output);
@@ -146,7 +279,7 @@ internal static class HostFailureChecks
         typeof(App).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(app, value);
     private static Task Invoke(App app, string method, params object[] arguments) =>
         (Task)typeof(App).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(app, arguments)!;
-    private static void Require(bool value) { if (!value) throw new InvalidOperationException("Assertion failed"); }
+    private static void Require(bool value, string message = "Assertion failed") { if (!value) throw new InvalidOperationException(message); }
 
     private sealed class DisposalProbe : HttpMessageHandler
     {

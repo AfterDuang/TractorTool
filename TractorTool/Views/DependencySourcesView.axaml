@@ -31,6 +31,7 @@
           <TextBox Text="{Binding SourceName}" PlaceholderText="例如：团队依赖" MaxLength="80" />
           <TextBlock Text="来源地址" />
           <TextBox Text="{Binding SourceAddress}" PlaceholderText="{Binding SourcePlaceholder}" />
+          <TextBlock Text="{Binding SourceFormError}" IsVisible="{Binding HasSourceFormError}" TextWrapping="Wrap" />
           <Button Content="添加" Command="{Binding AddSourceCommand}" Classes="accent" />
         </StackPanel>
       </Expander>

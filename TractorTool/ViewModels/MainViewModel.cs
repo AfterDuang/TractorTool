@@ -155,7 +155,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
             return menu;
         });
         if (_detached) return;
-        if (_manager is not null)
+        if (_manager is not null && Plugins.ManagementAvailable && _plugins.DiscoveryCompleted)
         {
             try { await Task.Run(() => _manager.RecordLoadResults(_plugins.Records)); }
             catch (Exception ex) { _log.Write("Plugins", "保存插件加载结果失败", ex); Plugins.OperationStatus = "插件已加载，但管理状态保存失败：" + ex.Message; }

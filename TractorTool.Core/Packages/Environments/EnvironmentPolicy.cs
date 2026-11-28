@@ -13,7 +13,6 @@ internal interface IEnvironmentDefinition
     string Id { get; }
     string Rid { get; }
     string Source { get; }
-    string Description { get; }
 }
 
 internal static class EnvironmentPolicy

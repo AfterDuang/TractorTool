@@ -14,6 +14,8 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 宿主状态与来源审查收尾 | [E160 · 重置提交、加载结果与依赖维护（2026-11-28）](#evidence-host-state-source-review) |
+| 来源输入与日志反馈 | [E159 · 重复添加提示与保存异常日志（2026-11-28）](#evidence-source-validation-feedback) |
 | 原生上游归档安装 | [E158 · 固定 HTTPS 制品、多归档映射与审片接入（2026-11-28）](#evidence-native-upstream-archives) |
 | AB 审片质量收尾 | [E157 · 许可清单、退出边界与检查可靠性（2026-11-28）](#evidence-media-compare-quality-fixes) |
 | AB 审片外部运行库 | [E156 · GStreamer 宿主管理接入（2026-11-28）](#evidence-media-compare-managed-runtime) |
@@ -196,6 +198,45 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-host-state-source-review"></a>
+
+## E160：宿主状态、重置提交与依赖维护（2026-11-28）
+
+基线为 Dev `487b5fc`，保留 E159 未提交改动。按用户授权处理本次全宿主静态审查的 4 项 P2、重复日志及未使用成员，没有扩大插件业务或公开 SDK。
+
+- 重置默认数据前不再先丢弃原数据根的插件回退记录。默认残留清理、旧根复查成功后，原子提交默认指针及 `DataReset(Source, AppRoot)`；再清理相关管理记录，最后清除标记。提交前失败可恢复旧根继续回退；提交后失败从原安装目录继续收尾，不重复清理默认数据，也不切回后来恢复的旧根。
+- 管理启动失败、根目录发现失败不写回虚假的插件加载结果；已有失败原因不重复追加前缀。`DiscoveryCompleted` 将完整发现与写入探针诊断分开，目录不可写但真实执行的加载结果仍保存。删除启动管理错误的重复日志。
+- 工具/DLL 清理在真正移出目录前、同一服务锁内复查引用完整性、占用及操作归属。资格变化拒绝清理并保留原阶段，真实文件错误仍失败；递归删除在锁外完成。
+- GitHub 配方及 API 来源合为私有不可变 `InstallSource`，缓存复用、解析发布及确认后的安装登记检查来源；确认使用同一快照，避免并发刷新校验了另一来源。已登记安装不因删源自动取消，已验证的安装仍可离线复用。旧收据及构造注入兼容。
+- 删除 `IEnvironmentDefinition.Description`、Python/Node 列表 DTO 的 `IsInstalled` 三个无消费者成员；保留具体定义描述及宿主展示属性，不新增包管理服务或通用事务层。
+- 新增 10 项 Core 回归：重置提交前失败后恢复原回退、提交后同对象/重开收尾、标记归属和配置冲突、清理期间引用改变、缓存配方删源、确认期间删源及 A/B 同摘要配方交错。新增 4 项集成回归：根目录不可访问后的发现状态、带写入诊断的实际加载失败、管理启动失败不污染结果、已有失败不重复写入。只编译，未执行。
+- 两名 GPT‑6.2‑SOL/high 子代理独立静态复核。已修正首轮发现的 `DirectoryError` 误阻止真实结果保存、配方与来源分开捕获竞态，并补齐 A/B 用例的通知同步；最终复核无剩余阻断。
+
+本轮构建均为 `Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false`，输出根为 `artifacts/host-review-fixes-20261128`：
+
+| 编译目标 | 附加参数与输出 | 结果 |
+| --- | --- | --- |
+| `TractorTool/TractorTool.csproj` | `-o artifacts/host-review-fixes-20261128/host-debug` | 0 警告 / 0 错误，`host-build.log` |
+| `tests/TractorTool.Checks/TractorTool.Checks.csproj` | `-o artifacts/host-review-fixes-20261128/core-build` | 0 警告 / 0 错误，`core-build.log` |
+| `tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj` | `-p:HostSdkDir=H:/ProjH/TractorTool/artifacts/host-review-fixes-20261128/host-debug -o artifacts/host-review-fixes-20261128/integration-build` | 0 错误、1 条 NU1900，`integration-build.log`；在线漏洞数据查询未完成 |
+
+`git diff --check` 通过。修复阶段未运行检查程序、真实窗口或依赖下载，未操作真实数据；当时保留未提交状态供复核。
+
+随后按用户“同模型复核、无问题提交”的要求，两名子代理通过完整会话分叉继承主会话模型与思考深度，分别复核全部 23 个修改文件和重置/加载上下游，均未发现提交阻断；来源反馈、并发来源切换、清理及恢复用例的触发路径已静态核对。生产和测试文件与上述编译版本一致，未重复运行构建或检查；E159/E160 连同文档按授权一并本地提交，未推送。编译与静态 Review 不代替故障恢复及 Windows 运行验收。
+
+<a id="evidence-source-validation-feedback"></a>
+
+## E159：重复添加来源的提示与日志（2026-11-28）
+
+基线为 Dev `487b5fc`。用户发现重复添加来源时调试器停在持久化校验异常，软件日志却无记录：原有界面 catch 只更新列表上方的错误提示，添加表单位于列表下方。
+
+- 表单预检复用 Core 的来源校验与地址规范化；重复名称/地址直接返回原因，保留输入、就地提示并记录不带异常的 Warning。保存入口仍执行原有持久化校验，不改变来源规则或插件契约。
+- 真正的添加/移除保存失败记录 Error 及原异常；添加失败在按钮附近显示，移除失败沿用列表提示。没有新增下载或恢复机制。
+- 隔离 Debug 构建：`dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/source-feedback-20261128/host-debug`，0 警告/0 错误。
+- 集成检查通过 `-p:HostSdkDir=H:/ProjH/TractorTool/artifacts/source-feedback-20261128/host-debug` 引用该宿主编译，输出 `artifacts/source-feedback-20261128/integration-build`；0 错误，1 条 NU1900 表示在线漏洞数据查询未完成。新增 3 项覆盖重复名称、规范化重复地址、真实保存失败，检查配置不变、日志等级、输入保留及纠正后保存。
+- SOL/high Review 发现保存失败用例假定 Windows 原生异常类型及消息包含路径；已改为检查 Error、保存调用栈与未读计数，重新编译通过，最终复核无剩余阻塞。`git diff --check` 通过。
+- 检查程序、真实窗口和依赖下载均未运行；等待用户测试，未提交或推送。
 
 <a id="evidence-native-upstream-archives"></a>
 

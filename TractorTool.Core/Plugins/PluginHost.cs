@@ -31,12 +31,14 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
     private bool _disposed;
     public List<PluginRecord> Records { get; } = [];
     public string? DirectoryError { get; private set; }
+    public bool DiscoveryCompleted { get; private set; }
 
     public void Discover(IReadOnlyCollection<string> disabled, IReadOnlyList<ManagedPlugin>? managed = null, string? startupError = null)
     {
         if (_loadTask is not null || _disposed) throw new InvalidOperationException("插件变更需重启生效。");
         Records.Clear();
         DirectoryError = null;
+        DiscoveryCompleted = false;
         if (startupError is not null) { DirectoryError = startupError; log.Write(AppLogLevel.Error, "Plugins", startupError); return; }
         try
         {
@@ -69,6 +71,7 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                 }
                 catch (Exception ex) { Records.Add(new(idDirectory, null, PluginState.Invalid, ex.Message)); }
             }
+            DiscoveryCompleted = true;
         }
         catch (Exception ex) { DirectoryError = $"无法访问插件目录 {paths.PluginRoot}：{ex.Message}"; }
         foreach (var group in Records.Where(r => r.Manifest is not null).GroupBy(r => r.Manifest!.Id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))

@@ -46,9 +46,26 @@ public sealed partial class ExternalPackageService
     public void AddSource(string name, string address)
         => AddSource(name, address, DependencySourceKind.GitHub);
 
+    public string? GetSourceAdditionError(string name, string address, DependencySourceKind kind)
+    {
+        try
+        {
+            var source = CreateSource(name, address, kind);
+            lock (_gate)
+            {
+                EnsureRunning();
+                return GetSourcesError(new SourceSettings { Sources = [.. _sources.Where(s => !s.IsDefault), source] });
+            }
+        }
+        catch (InvalidDataException ex) { return ex.Message; }
+    }
+
+    private static DependencySource CreateSource(string name, string address, DependencySourceKind kind)
+        => new(name.Trim(), DependencySource.Address(kind, address.Trim()).AbsoluteUri) { Kind = kind };
+
     public void AddSource(string name, string address, DependencySourceKind kind)
     {
-        var source = new DependencySource(name.Trim(), DependencySource.Address(kind, address.Trim()).AbsoluteUri) { Kind = kind };
+        var source = CreateSource(name, address, kind);
         lock (_gate)
         {
             EnsureRunning();
@@ -79,14 +96,22 @@ public sealed partial class ExternalPackageService
     }
     private static void ValidateSources(SourceSettings settings)
     {
-        if (settings.Sources is null || settings.Sources.Length > 32) throw new InvalidDataException("依赖来源数量无效。");
+        if (GetSourcesError(settings) is { } error) throw new InvalidDataException(error);
+    }
+    private static string? GetSourcesError(SourceSettings settings)
+    {
+        if (settings.Sources is null || settings.Sources.Length > 32) return "依赖来源数量无效。";
         var urls = DefaultSources.Select(s => s.Url).ToHashSet(StringComparer.Ordinal);
         // Existing entries may be named after newly added defaults; keep saved configurations valid.
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GitHub" };
         foreach (var source in settings.Sources)
-            if (source is null || string.IsNullOrWhiteSpace(source.Name) || source.Name.Length > 80 || source.Name.Any(char.IsControl) ||
-                !urls.Add(DependencySource.Address(source.Kind, source.Url).AbsoluteUri) || !names.Add(source.Name))
-                throw new InvalidDataException("依赖来源名称或地址无效、重复。");
+        {
+            if (source is null || string.IsNullOrWhiteSpace(source.Name) || source.Name.Length > 80 || source.Name.Any(char.IsControl))
+                return "依赖来源名称无效。";
+            if (!urls.Add(DependencySource.Address(source.Kind, source.Url).AbsoluteUri)) return "该来源地址已添加，无需重复添加。";
+            if (!names.Add(source.Name)) return "来源名称已使用，请换一个名称。";
+        }
+        return null;
     }
     private sealed class SourceSettings : IVersionedSettings
     {
@@ -122,23 +147,26 @@ public sealed partial class ExternalPackageService
             if (e is not null && e.Phase != PackagePhase.Ready) { RequireOwnedFiles(e); RequireNotRetained(e); }
             var recipe = DeclaredDownload(package, e?.Definition);
             RequireSupportedKind(e?.Definition.Kind ?? recipe?.Kind ?? PackageKind.Tool, supportsNativeLibraries);
-            if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null ||
-                e.Operation is not null || !HasDownload(package) && e.SourceAvailable && e.Definition.Archives.Count == 0)) return Task.CompletedTask;
+            if (e is not null && (e.Phase == PackagePhase.Ready || e.Preparation is not null || e.Operation is not null)) return Task.CompletedTask;
+            if (e is not null && !HasDownload(package) && e.SourceAvailable && e.Definition.Archives.Count == 0)
+            {
+                RequireInstallSource(e.Source!);
+                return Task.CompletedTask;
+            }
             var native = recipe?.Archives.Count > 0 ? PackageDefinitions.Snapshot(recipe.Definition(package)) :
                 recipe is null && e?.Definition.Archives.Count > 0 ? e.Definition : null;
             if (native is not null)
             {
                 RequireArchiveSource(native);
-                if (e is null) _entries.Add(package, new Entry(native, PackageDirectory(native)) { SourceDefinition = native });
-                else e.SourceDefinition = native;
+                if (e is null) _entries.Add(package, new Entry(native, PackageDirectory(native)) { Source = new(native) });
+                else e.Source = new(native);
                 return Task.CompletedTask;
             }
             if (!_resolutions.TryGetValue(package, out var task))
             {
                 if (recipe is null)
                     throw new NotSupportedException($"{package.Id} {package.Version} 尚无 {_rid} 的 GitHub 安装资料，请更新或联系插件作者。");
-                if (!_sources.Any(s => s.Kind == DependencySourceKind.GitHub && DependencySource.ApiUri(s.Url).AbsoluteUri == recipe.Source))
-                    throw new InvalidOperationException($"请先在依赖来源中添加 {recipe.Source}。");
+                RequireGitHubSource(recipe.Source);
                 var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 task = completion.Task; _resolutions.Add(package, task); _operations.Add(task);
                 _ = task.ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
@@ -151,15 +179,16 @@ public sealed partial class ExternalPackageService
                         lock (_gate)
                         {
                             EnsureRunning();
+                            RequireGitHubSource(recipe.Source);
                             _ = DeclaredDownload(package, definition);
                             if (_entries.TryGetValue(package, out var previous))
                             {
                                 RequireSameArtifact(previous.Definition, definition);
-                                previous.SourceDefinition = definition;
+                                previous.Source = new(definition, recipe.Source);
                                 if (!previous.HasFiles && previous.Operation is null && previous.Preparation is null) previous.Definition = definition;
                             }
                             else _entries.Add(package, new Entry(definition, PackageDirectory(definition))
-                                { SourceDefinition = definition });
+                                { Source = new(definition, recipe.Source) });
                         }
                     }
                     catch (Exception ex) { failure = ex; }
@@ -178,6 +207,22 @@ public sealed partial class ExternalPackageService
             }
             return task.WaitAsync(token);
         }
+    }
+
+    private sealed record InstallSource(PackageDefinition Definition, string? GitHubSource = null);
+
+    private void RequireInstallSource(InstallSource source)
+    {
+        RequireArchiveSource(source.Definition);
+        // Constructor-supplied definitions remain independent of configured GitHub sources.
+        if (source.GitHubSource is { } gitHubSource) RequireGitHubSource(gitHubSource);
+    }
+
+    private void RequireGitHubSource(string source)
+    {
+        if (_settingsError.Length != 0) throw new InvalidOperationException(_settingsError);
+        if (!_sources.Any(s => s.Kind == DependencySourceKind.GitHub && DependencySource.ApiUri(s.Url).AbsoluteUri == source))
+            throw new InvalidOperationException($"请先在依赖来源中添加 {source}。已安装内容仍可离线使用。");
     }
 
     private void RequireArchiveSource(PackageDefinition definition)

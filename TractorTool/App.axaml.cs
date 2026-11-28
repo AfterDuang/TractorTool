@@ -186,8 +186,7 @@ public partial class App : Application
         else if (migrationWarning is not null) _log.Write(AppLogLevel.Warning, "Storage", migrationWarning);
         else if (migrated) _log.Write("Storage", "应用数据迁移完成，旧业务数据已清理，插件程序位置不变。");
         if (paths.MissingDataRoot is { } missing)
-            _log.Write(AppLogLevel.Warning, "Storage", $"原数据目录已删除：{missing}。已在默认目录重新初始化：{paths.DataRoot}；如需更换位置，请重新迁移。");
-        if (managementError is not null) _log.Write(AppLogLevel.Error, "Plugins", managementError);
+            _log.Write(AppLogLevel.Warning, "Storage", $"已因原数据目录缺失而重置：{missing}。当前使用默认目录：{paths.DataRoot}；如需更换位置，请重新迁移。");
         _log.Write("Host", $"启动：Version={AppInfo.Version}; AppRoot={paths.AppRoot}; DataRoot={paths.DataRoot}; Bootstrap={paths.BootstrapFile}");
         var store = new JsonFileStore<HostSettings>(Path.Combine(paths.ConfigRoot, "settings.json"), HostSettings.Validate);
         var settings = store.Load();

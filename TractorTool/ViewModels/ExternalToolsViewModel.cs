@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TractorTool.Contracts;
 using TractorTool.Contracts.Packages;
 using TractorTool.Core.Packages;
 
@@ -10,6 +11,7 @@ namespace TractorTool.ViewModels;
 public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
 {
     private readonly ExternalPackageService? _service;
+    private readonly IAppLog _log;
     private readonly CancellationTokenSource _stopping = new();
     private readonly HashSet<PackageReference> _knownInstalled = [];
     private int _queued;
@@ -20,6 +22,7 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     private bool _showSourceForm;
     private string _sourceName = "";
     private string _sourceAddress = "";
+    private string _sourceFormError = "";
     private string _searchText = "";
     private int _selectedCategoryIndex;
     private int _sourceKindIndex;
@@ -62,6 +65,12 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     public bool ShowSourceForm { get => _showSourceForm; set => SetProperty(ref _showSourceForm, value); }
     public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
     public string SourceAddress { get => _sourceAddress; set { if (SetProperty(ref _sourceAddress, value)) AddSourceCommand.NotifyCanExecuteChanged(); } }
+    public string SourceFormError
+    {
+        get => _sourceFormError;
+        private set { if (SetProperty(ref _sourceFormError, value)) OnPropertyChanged(nameof(HasSourceFormError)); }
+    }
+    public bool HasSourceFormError => SourceFormError.Length != 0;
     public string SearchText { get => _searchText; set { if (SetProperty(ref _searchText, value)) FilterCards(); } }
     public bool IsEmpty => VisibleCards.Count == 0 && VisibleEnvironmentCards.Count == 0;
     public string EmptyMessage => !string.IsNullOrWhiteSpace(SearchText) ? "当前分类没有找到匹配的依赖。" :
@@ -83,9 +92,10 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
     public IAsyncRelayCommand<DependencySource> RemoveSourceCommand { get; }
     public IRelayCommand<PackageCardViewModel> OpenCommand { get; }
 
-    public ExternalToolsViewModel(ExternalPackageService? service, Action<PackageCardViewModel> open)
+    public ExternalToolsViewModel(ExternalPackageService? service, Action<PackageCardViewModel> open, IAppLog log)
     {
         _service = service;
+        _log = log;
         OpenCommand = new RelayCommand<PackageCardViewModel>(card => { if (!_disposed && card is not null) open(card); });
         CleanCommand = new AsyncRelayCommand(CleanAsync, () => !_disposed && !_cleaning && HasCleanup);
         CleanEnvironmentCacheCommand = new AsyncRelayCommand(CleanEnvironmentCacheAsync, () => !_disposed && !_cleaning && HasEnvironmentCache);
@@ -195,14 +205,25 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
             2 => DependencySourceKind.NpmRegistry,
             _ => DependencySourceKind.Https
         };
-        _savingSource = true; _status = ""; Refresh();
+        _savingSource = true; _status = ""; SourceFormError = ""; Refresh();
         try
         {
+            if (remove is null && _service.GetSourceAdditionError(name, address, kind) is { } error)
+            {
+                SourceFormError = error;
+                _log.Write(AppLogLevel.Warning, "Packages", "未添加依赖来源：" + error);
+                return;
+            }
             await Task.Run(() => { if (remove is null) _service.AddSource(name, address, kind); else _service.RemoveSource(remove); });
             if (remove is null && SourceName == name && SourceAddress == address)
             { SourceName = ""; SourceAddress = ""; ShowSourceForm = false; }
         }
-        catch (Exception ex) { _status = "依赖来源未保存：" + ex.Message; }
+        catch (Exception ex)
+        {
+            var message = "依赖来源未保存：" + ex.Message;
+            if (remove is null) SourceFormError = message; else _status = message;
+            _log.Write("Packages", "保存依赖来源失败", ex);
+        }
         finally { _savingSource = false; if (!_disposed) Refresh(); }
     }
     private async Task CleanAsync()

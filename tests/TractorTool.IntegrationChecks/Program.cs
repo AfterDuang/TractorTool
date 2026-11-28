@@ -590,7 +590,7 @@ Check("Dependency settings separate installed packages and persistent GitHub sou
     var runner = new ProcessRunner("PackageSettings.Check", log, _ => throw new InvalidOperationException("Browsing must not start a tool"));
     var service = new ExternalPackageService(Path.Combine(output, "github-ui-packages"), "win-x64", http, runner, log);
     service.UpdateReferences(new([], true));
-    using var model = new ExternalToolsViewModel(service, _ => { });
+    using var model = new ExternalToolsViewModel(service, _ => { }, log);
     try
     {
         Assert(model.IsEmpty && model.Sources.Count == 3 && model.Sources.All(s => s.IsDefault));
@@ -620,7 +620,7 @@ Check("First dependency transfer appears in settings and can be cancelled", () =
         endpoint, new Dictionary<string, PackageTool> { ["tool"] = new("tool.exe", "1.0") });
     var service = new ExternalPackageService(Path.Combine(output, "first-ui-download"), "win-x64", http, runner, log, [definition]);
     service.UpdateReferences(new([], true));
-    using var model = new ExternalToolsViewModel(service, _ => { });
+    using var model = new ExternalToolsViewModel(service, _ => { }, log);
     try
     {
         var install = service.InstallAsync(key);

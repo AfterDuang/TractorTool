@@ -479,6 +479,123 @@ internal static class PluginManagementChecks
             Assert(new JsonFileStore<BootstrapSettings>(paths.BootstrapFile).Load().DataRoot is null);
         });
         foreach (var failPointer in new[] { false, true })
+        if (OperatingSystem.IsWindows()) check("Exchanged rollback survives failed reset " + (failPointer ? "pointer save" : "cleanup") + " and restoration of the old root", () =>
+        {
+            var paths = Paths();
+            var custom = new AppPaths(paths.AppRoot, paths.BootstrapRoot, paths.DataRoot + "-custom");
+            custom.EnsureDataDirectories();
+            var data = custom.GetPluginDataDirectory("Checks.Management");
+            var state = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            ManagedPlugin interrupted;
+            using (var manager = new PluginManager(custom, compatibility))
+            {
+                Install(manager, custom); Directory.CreateDirectory(data); File.WriteAllText(Path.Combine(data, "keep.txt"), "original");
+                Assert(manager.QueueInstall(Zip(custom, Manifest("2.0.0")), []) is null); manager.ApplyPending();
+                manager.RecordLoadResults([new PluginRecord("fixture", Manifest("2.0.0"), PluginState.Loaded, "fixture")]);
+                Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Rollback, []) is null);
+                var item = manager.Snapshot.Single();
+                var recovery = Path.Combine(custom.DataRoot, "Data", ".plugin-backups", item.Recovery!.Token);
+                File.WriteAllText(Path.Combine(data, "keep.txt"), "current");
+                Directory.Move(data, Path.Combine(recovery, "before-rollback"));
+                Directory.CreateDirectory(data); File.Copy(Path.Combine(recovery, "saved", "keep.txt"), Path.Combine(data, "keep.txt"));
+                File.WriteAllText(Path.Combine(recovery, "restore-ready"), "");
+                interrupted = item with { Pending = item.Pending! with { DestructiveStarted = true }, Error = "interrupted rollback fixture" };
+                state.Save(new() { Plugins = [interrupted] });
+            }
+            var before = File.ReadAllBytes(state.FilePath);
+            var savedRoot = custom.DataRoot + "-saved";
+            Directory.Move(custom.DataRoot, savedRoot);
+            var pointer = new JsonFileStore<BootstrapSettings>(paths.BootstrapFile, BootstrapSettings.Validate);
+            pointer.Save(new() { DataRoot = custom.DataRoot });
+            var stale = Path.Combine(paths.ConfigRoot, "locked.txt"); File.WriteAllText(stale, "stale default data");
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                using (var locked = new FileStream(failPointer ? paths.BootstrapFile : stale, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    Reject<IOException>(() => reset.CompleteDataReset(manager.DiscardDataRootState));
+                Assert(pointer.Load() is { DataReset: null } original && original.DataRoot == custom.DataRoot);
+                Assert(manager.Snapshot.Single() == interrupted && state.Load().Plugins.Single() == interrupted &&
+                    File.ReadAllBytes(state.FilePath).SequenceEqual(before));
+            }
+            Directory.Move(savedRoot, custom.DataRoot);
+            var reopened = AppPaths.Open(paths.BootstrapRoot);
+            Assert(reopened.MissingDataRoot is null && reopened.DataRoot == custom.DataRoot);
+            using var resumed = new PluginManager(custom, compatibility); resumed.ApplyPending();
+            Assert(resumed.Snapshot.Single() is { ActiveVersion: "1.0.0", Pending: null, Error: "" });
+            Assert(File.ReadAllText(Path.Combine(data, "keep.txt")) == "original");
+            Assert(File.ReadAllText(Path.Combine(custom.DataRoot, "Data", ".plugin-backups", interrupted.Recovery!.Token,
+                "before-rollback", "keep.txt")) == "current");
+        });
+        foreach (var reopen in new[] { false, true })
+        check("Committed data reset resumes " + (reopen ? "after reopening" : "on the same paths") + " without clearing new default data or returning to the old root", () =>
+        {
+            var paths = Paths();
+            var custom = new AppPaths(paths.AppRoot, paths.BootstrapRoot, paths.DataRoot + "-custom");
+            custom.EnsureDataDirectories(); File.WriteAllText(Path.Combine(custom.DataRoot, "keep.txt"), "restored old data");
+            var current = new ManagedPlugin { Id = "Checks.Deleted", ActiveVersion = "2.0.0", AwaitingLoad = true,
+                Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), custom.DataRoot, true),
+                Pending = new(PluginChangeKind.Rollback, Guid.NewGuid().ToString("N"), custom.DataRoot) { DestructiveStarted = true },
+                Error = "interrupted rollback fixture" };
+            var stale = current with { Id = "Checks.Default", Recovery = current.Recovery! with { DataRoot = paths.DataRoot },
+                Pending = current.Pending! with { DataRoot = paths.DataRoot } };
+            var other = current with { Id = "Checks.Other", Recovery = current.Recovery! with { DataRoot = custom.DataRoot + "-other" },
+                Pending = current.Pending! with { DataRoot = custom.DataRoot + "-other" } };
+            var state = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            state.Save(new() { Plugins = [current, stale, other] });
+            var pointer = new JsonFileStore<BootstrapSettings>(paths.BootstrapFile, BootstrapSettings.Validate);
+            pointer.Save(new() { DataRoot = custom.DataRoot });
+            var savedRoot = custom.DataRoot + "-saved"; Directory.Move(custom.DataRoot, savedRoot);
+            var reset = AppPaths.Open(paths.BootstrapRoot);
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                var calls = 0;
+                Reject<IOException>(() => reset.CompleteDataReset(discarded =>
+                {
+                    if (++calls == 2) throw new IOException("fixture second discard failure");
+                    manager.DiscardDataRootState(discarded);
+                }));
+                Assert(calls == 2 && pointer.Load() is { DataRoot: null } committed &&
+                    committed.DataReset == new DataResetRequest(custom.DataRoot, reset.AppRoot));
+                Assert(manager.Snapshot.Single(p => p.Id == current.Id) == (current with { Pending = null, Recovery = null, AwaitingLoad = false, Error = "" }));
+                Assert(manager.Snapshot.Single(p => p.Id == stale.Id) == stale);
+            }
+            Reject<InvalidOperationException>(reset.EnsureDataDirectories);
+            Directory.Move(savedRoot, custom.DataRoot);
+            var sentinel = Path.Combine(paths.DataRoot, "Data", "after-commit.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(sentinel)!); File.WriteAllText(sentinel, "keep new default data");
+            var continuation = reopen ? AppPaths.Open(paths.BootstrapRoot) : reset;
+            Assert(continuation.DataRoot == paths.DataRoot && continuation.MissingDataRoot == custom.DataRoot);
+            Reject<InvalidOperationException>(continuation.EnsureDataDirectories);
+            using var resumed = new PluginManager(paths, compatibility);
+            continuation.CompleteDataReset(resumed.DiscardDataRootState);
+            continuation.EnsureDataDirectories();
+            Assert(pointer.Load() is { DataRoot: null, DataReset: null });
+            Assert(File.ReadAllText(sentinel) == "keep new default data" && File.ReadAllText(Path.Combine(custom.DataRoot, "keep.txt")) == "restored old data");
+            Assert(resumed.Snapshot.Single(p => p.Id == current.Id) == (current with { Pending = null, Recovery = null, AwaitingLoad = false, Error = "" }));
+            Assert(resumed.Snapshot.Single(p => p.Id == stale.Id) == (stale with { Pending = null, Recovery = null, AwaitingLoad = false, Error = "" }));
+            Assert(resumed.Snapshot.Single(p => p.Id == other.Id) == other);
+            Assert(AppPaths.Open(paths.BootstrapRoot) is { MissingDataRoot: null } opened && opened.DataRoot == paths.DataRoot);
+        });
+        check("Data reset markers reject conflicting pointers and another installation without rewriting evidence", () =>
+        {
+            var paths = Paths();
+            var marker = new DataResetRequest(paths.DataRoot + "-missing", AppPaths.Absolute(AppContext.BaseDirectory));
+            BootstrapSettings[] conflicts = [new() { DataReset = marker, DataRoot = marker.Source },
+                new() { DataReset = marker, PreviousDataRoot = marker.Source },
+                new() { DataReset = marker, Migration = new(Guid.NewGuid().ToString("N"), marker.Source, marker.Source + "-moved", marker.AppRoot) }];
+            var pointer = new JsonFileStore<BootstrapSettings>(paths.BootstrapFile);
+            foreach (var conflict in conflicts)
+            {
+                pointer.Save(conflict); var before = File.ReadAllBytes(paths.BootstrapFile);
+                Reject<InvalidDataException>(() => AppPaths.Open(paths.BootstrapRoot));
+                Assert(File.ReadAllBytes(paths.BootstrapFile).SequenceEqual(before));
+            }
+            pointer.Save(new() { DataReset = marker with { AppRoot = paths.AppRoot } });
+            var owned = File.ReadAllBytes(paths.BootstrapFile);
+            Reject<IOException>(() => AppPaths.Open(paths.BootstrapRoot));
+            Assert(File.ReadAllBytes(paths.BootstrapFile).SequenceEqual(owned));
+        });
+        foreach (var failPointer in new[] { false, true })
         if (OperatingSystem.IsWindows()) check("Uninstall survives failed reset " + (failPointer ? "pointer save" : "cleanup") + " and restoration of the old root", () =>
         {
             var paths = Paths();

@@ -43,7 +43,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         {
             var entry = new Entry(d, PackageDirectory(d));
             if (!_entries.TryAdd(d.Package, entry)) throw new InvalidDataException("外部工具目录重复。");
-            entry.SourceDefinition = d;
+            entry.Source = new(d);
             entry.HasFiles = Directory.Exists(entry.Directory);
             try
             {
@@ -79,7 +79,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
     }
 
     private Task InstallAsync(PackageReference package, CancellationToken cancellationToken, bool repair,
-        PackageDefinition? approvedDefinition = null)
+        InstallSource? approvedSource = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         Task task;
@@ -87,11 +87,12 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         {
             EnsureRunning(); var e = Find(package);
             if (e.Phase == PackagePhase.Ready && e.Operation is null) return Task.CompletedTask;
-            var definition = approvedDefinition ?? e.SourceDefinition ?? throw new NotSupportedException("插件尚未提供此包版本的安装资料。");
-            RequireArchiveSource(definition);
+            var source = approvedSource ?? e.Source ?? throw new NotSupportedException("插件尚未提供此包版本的安装资料。");
+            var definition = source.Definition;
             _ = DeclaredDownload(package, definition);
             if (e.Operation is null)
             {
+                RequireInstallSource(source);
                 RequireOwnedFiles(e);
                 RequireNotRetained(e);
                 if (e.Users.Count != 0) throw new InvalidOperationException("依赖仍被使用，不能重新安装。");
@@ -117,25 +118,34 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
 
     public Task RemoveAsync(PackageReference package)
     {
-        Task task;
+        Task? task = null;
         lock (_gate)
         {
             EnsureRunning(); var e = Find(package);
             if (!CanRemove(e)) throw new InvalidOperationException("依赖仍被插件引用、正在使用或引用状态不可确认，不能清理。");
+            var originalPhase = e.Phase;
+            var failurePhase = PackagePhase.Failed;
             e.Phase = PackagePhase.Installing; e.Error = "";
             task = e.Operation = StartOperation(() =>
             {
-                RemoveFiles(e);
+                // Wait for the caller to publish this operation before capturing its identity.
+                Task operation;
+                lock (_gate) operation = task!;
+                if (!TryRemoveFiles(e, operation))
+                {
+                    failurePhase = originalPhase;
+                    throw new InvalidOperationException("依赖的引用或使用状态已变化，未清理文件。");
+                }
                 SetState(e, PackagePhase.Missing);
                 lock (_gate) { e.HasFiles = false; e.Requested = false; }
                 _log.Write("Packages", $"{package.Id} {package.Version}：未引用依赖已清理。");
                 return Task.CompletedTask;
-            }, e);
+            }, e, () => failurePhase);
         }
         Notify(); return task;
     }
 
-    private void RemoveFiles(Entry e)
+    private bool TryRemoveFiles(Entry e, Task operation)
     {
         _ = PackageDirectory(e.Definition);
         RequireNotRetained(e);
@@ -147,13 +157,20 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             var trash = NewWorkDirectory();
             try
             {
-                Directory.Move(e.Directory, Path.Combine(trash, "removed"));
-                lock (_gate) e.HasFiles = false;
+                lock (_gate)
+                {
+                    // References may change while this operation waits or validates the installed files.
+                    if (!CanRemove(e, operation) || !_entries.TryGetValue(e.Definition.Package, out var current) || !ReferenceEquals(current, e))
+                        return false;
+                    Directory.Move(e.Directory, Path.Combine(trash, "removed"));
+                    e.HasFiles = false;
+                }
                 PackageFiles.DeleteOwnedTree(_root, trash, "owner.txt");
             }
-            catch { Cleanup(trash); throw; }
+            finally { Cleanup(trash); }
         }
         lock (_gate) e.HasFiles = false;
+        return true;
     }
 
     internal Task<IPackageLease> AcquireAsync(PackageReference package, string owner, CancellationToken token, bool supportsNativeLibraries = true)
@@ -233,7 +250,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
             NodeEnvironmentDefinitions.RegistryUri(s.Url).AbsoluteUri == source);
     }
 
-    private Task StartOperation(Func<Task> action, Entry e)
+    private Task StartOperation(Func<Task> action, Entry e, Func<PackagePhase>? failurePhase = null)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _operations.Add(completion.Task);
@@ -247,7 +264,7 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
                 SetState(e, e.HasFiles ? PackagePhase.Failed : PackagePhase.Missing, e.HasFiles ? "修复已取消，已保留原安装。" : "");
                 _log.Write("Packages", $"{e.Definition.Package.Id}：安装已取消。");
             }
-            catch (Exception ex) { failure = ex; SetState(e, PackagePhase.Failed, ex.Message); _log.Write("Packages", $"{e.Definition.Package.Id} 操作失败", ex); }
+            catch (Exception ex) { failure = ex; SetState(e, failurePhase?.Invoke() ?? PackagePhase.Failed, ex.Message); _log.Write("Packages", $"{e.Definition.Package.Id} 操作失败", ex); }
             finally
             {
                 lock (_gate)
@@ -531,8 +548,8 @@ public sealed partial class ExternalPackageService : IAsyncDisposable
         public Dictionary<string, int> Users { get; } = [];
         public Task? Operation;
         public CancellationTokenSource? InstallCancellation;
-        public PackageDefinition? SourceDefinition;
-        public bool SourceAvailable => SourceDefinition is not null;
+        public InstallSource? Source;
+        public bool SourceAvailable => Source is not null;
         public bool HasFiles;
         public bool OwnershipConfirmed;
         public bool Requested;

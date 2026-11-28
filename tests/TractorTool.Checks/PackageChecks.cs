@@ -151,6 +151,48 @@ internal static class PackageChecks
             Require(service.GetPackages().Single().IsInstalled && service.GetPackages().Single().CanRemove);
             await service.RemoveAsync(Key);
         });
+        foreach (var incomplete in new[] { false, true })
+        if (OperatingSystem.IsWindows()) Test("queued cleanup preserves files after references become " + (incomplete ? "uncertain" : "required"), async path =>
+        {
+            using var http = Client(Archive());
+            await using (var install = Create(path, http, new Probe())) await install.InstallAsync(Key);
+            var directory = Path.Combine(path, Key.Id, Key.Version, "win-x64");
+            var before = File.ReadAllBytes(Path.Combine(directory, "receipt.json"));
+            var work = Path.Combine(path, ".work", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(work);
+            var marker = Path.Combine(work, "owner.txt");
+            File.WriteAllText(marker, "TractorTool.PackageWork.v1");
+            using var locked = new FileStream(marker, FileMode.Open, FileAccess.Read, FileShare.None);
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using var release = new ManualResetEventSlim();
+            var log = new Log((message, _) =>
+            {
+                if (!message.StartsWith("保留无法恢复的工具暂存目录：", StringComparison.Ordinal)) return;
+                entered.TrySetResult();
+                if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Recovery gate was not released.");
+            });
+            using var offline = new HttpClient(new Handler((_, _) => throw new Exception("Refused cleanup must preserve offline use.")));
+            await using var service = new ExternalPackageService(path, "win-x64", offline, new Probe(), log, [Definition(Archive())]);
+            try
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                service.UpdateReferences(new([], true));
+                // The existing recovery task holds removal before its first file mutation.
+                var removal = service.RemoveAsync(Key);
+                service.UpdateReferences(incomplete ? new([], false, "Refreshing plugin declarations") :
+                    new([new(Key, "New.Plugin", "New plugin")], true));
+                release.Set();
+                await Throws<InvalidOperationException>(() => removal.WaitAsync(TimeSpan.FromSeconds(5)));
+                Require(File.ReadAllBytes(Path.Combine(directory, "receipt.json")).SequenceEqual(before) &&
+                    File.Exists(Path.Combine(directory, "bin", "tool.exe")) && service.GetPackages().Single().IsInstalled);
+                Equal(service.GetStatus(Key).Phase, PackagePhase.Ready);
+                using (await service.RequestAsync(Key, "New.Plugin")) { }
+                service.UpdateReferences(new([], true));
+                await service.RemoveAsync(Key);
+                Require(!Directory.Exists(directory));
+            }
+            finally { release.Set(); }
+        });
         if (OperatingSystem.IsWindows()) Test("locked legacy receipt remains usable when metadata upgrade fails", async path =>
         {
             using var http = Client(Archive());
@@ -338,6 +380,133 @@ internal static class PackageChecks
             restored.RemoveSource(restored.GetSources().Single(s => !s.IsDefault));
             using var reused = await restored.TryRequestAsync(Key, "A"); Require(reused is not null);
             Require(restored.GetPackages().Single().IsInstalled && restored.GetSources().Single(s => s.Kind == DependencySourceKind.GitHub).IsDefault);
+        });
+        Test("cached GitHub repair still requires its configured source after plugin references disappear", async path =>
+        {
+            var bytes = Archive(); var recipe = Recipe(bytes) with { Source = "https://git.example.com/api/v3/" };
+            var calls = 0;
+            using var http = new HttpClient(new Handler((request, _) =>
+            {
+                Interlocked.Increment(ref calls);
+                return Task.FromResult(Response(request, request.RequestUri!.AbsolutePath.StartsWith("/api/v3/") ? Release(recipe) : bytes));
+            }));
+            await using (var install = GitHub(path, http, recipe))
+            {
+                install.AddSource("Team", recipe.Source);
+                install.ConfirmInstallAsync = (_, _) => Task.FromResult(true);
+                using var lease = await install.TryRequestAsync(Key, "A");
+                Require(lease is not null);
+            }
+            var tool = Path.Combine(path, Key.Id, Key.Version, "win-x64", "bin", "tool.exe");
+            File.Delete(tool);
+            await using var service = GitHub(path, http, recipe);
+            var prompts = 0;
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(false); };
+            Require(await service.TryRequestAsync(Key, "软件设置") is null && prompts == 1);
+            service.UpdateReferences(new([], true));
+            service.RemoveSource(service.GetSources().Single(s => !s.IsDefault));
+            var before = calls;
+            await Throws<InvalidOperationException>(async () => { using var lease = await service.TryRequestAsync(Key, "软件设置"); });
+            Require(calls == before && prompts == 1 && !File.Exists(tool));
+
+            service.AddSource("Team", recipe.Source);
+            service.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(true); };
+            using (var repaired = await service.TryRequestAsync(Key, "软件设置")) Require(repaired is not null && File.Exists(tool));
+            Require(calls == before + 1 && prompts == 2);
+            service.RemoveSource(service.GetSources().Single(s => !s.IsDefault));
+            using var reused = await service.TryRequestAsync(Key, "软件设置");
+            Require(reused is not null && calls == before + 1 && prompts == 2);
+        });
+        Test("GitHub source is rechecked after install confirmation before starting a download", async path =>
+        {
+            var bytes = Archive(); var recipe = Recipe(bytes) with { Source = "https://git.example.com/api/v3/" };
+            var downloads = 0;
+            using var http = new HttpClient(new Handler((request, _) =>
+            {
+                var metadata = request.RequestUri!.AbsolutePath.StartsWith("/api/v3/");
+                if (!metadata) Interlocked.Increment(ref downloads);
+                return Task.FromResult(Response(request, metadata ? Release(recipe) : bytes));
+            }));
+            await using var service = GitHub(path, http, recipe);
+            service.AddSource("Team", recipe.Source);
+            service.ConfirmInstallAsync = (_, _) =>
+            {
+                service.RemoveSource(service.GetSources().Single(s => !s.IsDefault));
+                return Task.FromResult(true);
+            };
+            await Throws<InvalidOperationException>(async () => { using var lease = await service.TryRequestAsync(Key, "A"); });
+            Require(downloads == 0 && !Directory.Exists(service.GetStatus(Key).Directory));
+        });
+        Test("GitHub confirmation retains its own source while another resolution replaces the cache", async path =>
+        {
+            var bytes = Archive();
+            var recipeA = Recipe(bytes) with { Source = "https://a.example.com/api/v3/" };
+            var recipeB = recipeA with { Source = "https://b.example.com/api/v3/" };
+            var enteredB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var confirmation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var approve = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var downloads = 0;
+            using var http = new HttpClient(new Handler(async (request, token) =>
+            {
+                if (request.RequestUri!.AbsolutePath.StartsWith("/api/v3/"))
+                {
+                    if (request.RequestUri.Host == "a.example.com") return Response(request, Release(recipeA));
+                    enteredB.TrySetResult();
+                    await releaseB.Task.WaitAsync(token);
+                    return Response(request, Release(recipeB));
+                }
+                Interlocked.Increment(ref downloads);
+                return Response(request, bytes);
+            }));
+            await using var service = GitHub(path, http, recipeA);
+            service.AddSource("A", recipeA.Source); service.AddSource("B", recipeB.Source);
+            service.ConfirmInstallAsync = (_, _) => Task.FromResult(false);
+            var cachedA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var initialChanges = 0;
+            void CacheChanged() { if (Interlocked.Increment(ref initialChanges) == 4) cachedA.TrySetResult(); }
+            service.Changed += CacheChanged;
+            try
+            {
+                Require(await service.TryRequestAsync(Key, "A") is null);
+                // Drain resolution, reservation, preparation and request-release notifications.
+                await cachedA.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            finally { service.Changed -= CacheChanged; }
+            service.UpdateReferences(new([new(Key, "Plugin.B", "Plugin B", [recipeB])], true));
+            var requestB = service.TryRequestAsync(Key, "B");
+            Action? onChanged = null;
+            try
+            {
+                await enteredB.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                service.UpdateReferences(new([], true));
+                service.ConfirmInstallAsync = (prompt, _) =>
+                {
+                    Require(prompt.Definition.DownloadUri.Host == "a.example.com");
+                    confirmation.TrySetResult();
+                    return approve.Task;
+                };
+                var requestA = service.TryRequestAsync(Key, "软件设置");
+                await confirmation.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                var resolvedB = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var changes = 0;
+                onChanged = () => { if (Interlocked.Increment(ref changes) == 2) resolvedB.TrySetResult(); };
+                service.Changed += onChanged;
+                releaseB.TrySetResult();
+                // Both resolution publication and request B joining A's preparation must finish.
+                await resolvedB.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                service.Changed -= onChanged; onChanged = null;
+                service.RemoveSource(service.GetSources().Single(s => s.Url == recipeA.Source));
+                approve.TrySetResult(true);
+                await Throws<InvalidOperationException>(async () => { using var lease = await requestA; });
+                await Throws<InvalidOperationException>(async () => { using var lease = await requestB; });
+                Require(downloads == 0);
+            }
+            finally
+            {
+                if (onChanged is not null) service.Changed -= onChanged;
+                releaseB.TrySetResult(); approve.TrySetResult(false);
+            }
         });
         Test("source settings reject oversized writes without losing the last readable configuration", async path =>
         {
@@ -778,7 +947,8 @@ internal static class PackageChecks
             return Task.FromResult(new ProcessResult(0, Output, Error, OutputTruncated, ErrorTruncated));
         }
     }
-    private sealed class Log : IAppLog { public void Write(string source, string message, Exception? error = null) { } }
+    private sealed class Log(Action<string, Exception?>? written = null) : IAppLog
+    { public void Write(string source, string message, Exception? error = null) => written?.Invoke(message, error); }
     private static void Require(bool value) { if (!value) throw new Exception("Package assertion failed."); }
     private static void Equal<T>(T value, T expected) => Require(EqualityComparer<T>.Default.Equals(value, expected));
     private static async Task Throws<T>(Func<Task> action) where T : Exception

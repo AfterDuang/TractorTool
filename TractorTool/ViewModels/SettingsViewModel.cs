@@ -75,7 +75,7 @@ public partial class SettingsViewModel : ViewModelBase
         ExternalPackageService? packages = null, TractorTool.Core.Plugins.PluginManager? manager = null)
     {
         Paths = paths; _store = store; _settings = settings; _log = log;
-        ExternalTools = new(packages, OpenPackage);
+        ExternalTools = new(packages, OpenPackage, log);
         Migration = new(paths, manager, log);
         SoftwareSettings = [new("通用设置", () => new SettingsGeneralView { DataContext = this }),
             new("外部依赖", () => new SettingsGeneralView { DataContext = this }, Icon: ToolIconKind.Tools)];

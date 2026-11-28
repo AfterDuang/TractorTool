@@ -93,9 +93,9 @@ public sealed partial class ExternalPackageService
             Array.AsReadOnly(e.Users.Keys.Order().ToArray()), e.InstallCancellation is not null, e.Directory, e.InstalledBytes)
             { Kind = e.Definition.Kind, RetainedBy = NativePackageRetention.GetOwners(e.Directory) };
     }
-    private bool CanRemove(Entry e) => _shutdown is null && _references.Complete && e.HasFiles &&
+    private bool CanRemove(Entry e, Task? operation = null) => _shutdown is null && _references.Complete && e.HasFiles &&
         !_references.Dependencies.Any(d => d.Package == e.Definition.Package) &&
-        e.Operation is null && e.Users.Count == 0 && e.Requests == 0 && e.Preparation is null &&
+        ReferenceEquals(e.Operation, operation) && e.Users.Count == 0 && e.Requests == 0 && e.Preparation is null &&
         CanManageFiles(e) && !NativePackageRetention.IsRetained(e.Directory) && !_ambiguousInstallations.Contains(e.Definition.Package);
 
     // Preserve the API 1.3 contract for already-built plugins.
@@ -135,7 +135,7 @@ public sealed partial class ExternalPackageService
     }
     private Task<bool> StartPreparation(Entry e, string owner)
     {
-        var definition = e.SourceDefinition;
+        var source = e.Source;
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _operations.Add(completion.Task);
         _ = Task.Run(async () =>
@@ -144,14 +144,14 @@ public sealed partial class ExternalPackageService
             var accepted = false;
             try
             {
-                if (definition is null) throw new NotSupportedException("可信安装源暂未提供此包版本。");
+                if (source is null) throw new NotSupportedException("可信安装源暂未提供此包版本。");
                 var confirm = ConfirmInstallAsync ?? throw new InvalidOperationException("宿主暂时无法确认依赖安装。");
-                if (!await confirm(new(definition, owner, e.HasFiles), _stopping.Token).ConfigureAwait(false))
+                if (!await confirm(new(source.Definition, owner, e.HasFiles), _stopping.Token).ConfigureAwait(false))
                     return;
                 _stopping.Token.ThrowIfCancellationRequested();
                 // Every requester may have left while the confirmation dialog was visible.
                 lock (_gate) if (e.Requests == 0) throw new OperationCanceledException("依赖申请已取消。");
-                await InstallAsync(e.Definition.Package, _stopping.Token, repair: true, definition).ConfigureAwait(false);
+                await InstallAsync(e.Definition.Package, _stopping.Token, repair: true, source).ConfigureAwait(false);
                 accepted = true;
             }
             catch (Exception ex) { failure = ex; }
@@ -260,8 +260,8 @@ public sealed partial class ExternalPackageService
                 !string.Equals(definition.Sha256, receipt.ArchiveHash, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("安装记录与目录身份不符。");
             var entry = new Entry(definition, directory) { HasFiles = true,
-                SourceDefinition = definition.Archives.Count > 0 ? definition :
-                    string.Equals(known?.SourceDefinition?.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.SourceDefinition : null };
+                Source = definition.Archives.Count > 0 ? new(definition) :
+                    string.Equals(known?.Source?.Definition.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase) ? known?.Source : null };
             _entries[key] = entry; _pendingReceipts.Remove(key);
             try
             {

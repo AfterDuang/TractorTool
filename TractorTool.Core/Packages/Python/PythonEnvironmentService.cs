@@ -12,7 +12,6 @@ public sealed record PythonEnvironmentListItem(PythonEnvironmentDefinition Defin
     bool CanInstall, bool CanRemove, bool CanCancel)
 {
     public string Identity => Definition.Identity;
-    public bool IsInstalled => Directory.Length != 0;
 }
 public sealed record PythonMigrationEnvironment(string RelativeDirectory, PythonEnvironmentDefinition Definition);
 

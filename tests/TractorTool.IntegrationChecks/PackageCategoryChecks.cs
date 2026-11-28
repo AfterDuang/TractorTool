@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using TractorTool.Contracts;
 using TractorTool.Contracts.Packages;
+using TractorTool.Core.Logging;
 using TractorTool.Core.Packages;
 using TractorTool.Core.Processes;
 using TractorTool.ViewModels;
@@ -22,7 +23,7 @@ internal static class PackageCategoryChecks
             using var http = new HttpClient();
             var runner = new ProcessRunner("CacheConfirmation.Check", log, _ => throw new InvalidOperationException("Must not start a process"));
             var service = new ExternalPackageService(Path.Combine(data, "Packages"), "win-x64", http, runner, log);
-            using var model = new ExternalToolsViewModel(service, _ => { });
+            using var model = new ExternalToolsViewModel(service, _ => { }, log);
             var prompted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             Task? cleanup = null;
             model.ConnectConfirmation(async (_, _, token) =>
@@ -61,7 +62,7 @@ internal static class PackageCategoryChecks
             var runner = new ProcessRunner("PackageCategory.Check", log, _ => throw new InvalidOperationException("Cleanup must not run a tool"));
             var service = new ExternalPackageService(root, "win-x64", http, runner, log);
             service.UpdateReferences(new([], true));
-            using var model = new ExternalToolsViewModel(service, _ => { });
+            using var model = new ExternalToolsViewModel(service, _ => { }, log);
             var prompted = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Task? cleanup = null;
@@ -96,6 +97,94 @@ internal static class PackageCategoryChecks
                 if (cleanup is not null) pump(cleanup);
                 model.Dispose(); pump(service.DisposeAsync().AsTask()); pump(runner.DisposeAsync().AsTask());
             }
+        });
+
+        foreach (var duplicateName in new[] { true, false })
+        check((duplicateName ? "Duplicate source names" : "Normalized duplicate source addresses") +
+            " preserve settings and form input, log a warning, and allow correction", () =>
+        {
+            var data = Path.Combine(output, "source-validation-" + Guid.NewGuid().ToString("N"));
+            var sourcesFile = Path.Combine(data, "Config", "dependency-sources.json");
+            var sourceLog = new AppLog(Path.Combine(data, "Logs"));
+            using var http = new HttpClient();
+            var runner = new ProcessRunner("SourceValidation.Check", sourceLog,
+                _ => throw new InvalidOperationException("Source settings must not start a process"));
+            var service = new ExternalPackageService(Path.Combine(data, "Packages"), "win-x64", http, runner,
+                sourceLog, sourcesFile: sourcesFile);
+            service.AddSource("Team", "https://packages.example.invalid/releases/", DependencySourceKind.Https);
+            using var model = new ExternalToolsViewModel(service, _ => { }, sourceLog);
+            try
+            {
+                var before = File.ReadAllBytes(sourcesFile);
+                var previousSources = service.GetSources().ToArray();
+                var previousLogId = sourceLog.Snapshot().Entries.Last().Id;
+                var name = duplicateName ? "  tEaM  " : "Second team";
+                var address = duplicateName ? "https://other.example.invalid/releases/" : "  https://PACKAGES.example.invalid/releases  ";
+                model.SourceKindIndex = 3;
+                model.SourceName = name; model.SourceAddress = address; model.ShowSourceForm = true;
+                pump(model.AddSourceCommand.ExecuteAsync(null));
+
+                Require(model.HasSourceFormError && model.SourceFormError.Contains(duplicateName ? "名称" : "地址"),
+                    "The form must explain whether the source name or normalized address is duplicated.");
+                Require(model.SourceName == name && model.SourceAddress == address && model.ShowSourceForm,
+                    "Rejected source input must remain visible and editable.");
+                Require(File.ReadAllBytes(sourcesFile).SequenceEqual(before) && service.GetSources().SequenceEqual(previousSources),
+                    "A duplicate source must not change persisted settings or active sources.");
+                var entries = sourceLog.Snapshot().Entries.Where(e => e.Id > previousLogId).ToArray();
+                Require(entries.Length == 1 && entries[0].Level == AppLogLevel.Warning && entries[0].Detail is null &&
+                    entries[0].Message.Contains(model.SourceFormError),
+                    "A rejected duplicate must create one warning with the form reason and no exception detail.");
+                Require(sourceLog.Snapshot().UnreadErrors == 0,
+                    "Normal duplicate input must not increase unread errors.");
+
+                model.SourceName = "Corrected team"; model.SourceAddress = "https://corrected.example.invalid/releases/";
+                Require(model.AddSourceCommand.CanExecute(null), "Corrected source input must be resubmittable.");
+                pump(model.AddSourceCommand.ExecuteAsync(null));
+                Require(!model.HasSourceFormError && model.SourceFormError.Length == 0 && !model.ShowSourceForm &&
+                    model.SourceName.Length == 0 && model.SourceAddress.Length == 0,
+                    "A successful correction must clear the validation message and reset the form.");
+                var added = service.GetSources().Single(s => s.Name == "Corrected team");
+                Require(added.Kind == DependencySourceKind.Https && added.Url == "https://corrected.example.invalid/releases/" &&
+                    ExternalPackageService.ReadConfiguredSources(sourcesFile).Contains(added) && model.Sources.Contains(added),
+                    "The corrected HTTPS source must be persisted and visible in the source list.");
+            }
+            finally { model.Dispose(); pump(service.DisposeAsync().AsTask()); pump(runner.DisposeAsync().AsTask()); }
+        });
+
+        check("Source persistence failure retains input, logs the IO exception, and does not add a source", () =>
+        {
+            var data = Path.Combine(output, "source-save-failure-" + Guid.NewGuid().ToString("N"));
+            var sourcesFile = Path.Combine(data, "Config", "dependency-sources.json");
+            var sourceLog = new AppLog(Path.Combine(data, "Logs"));
+            using var http = new HttpClient();
+            var runner = new ProcessRunner("SourceSaveFailure.Check", sourceLog,
+                _ => throw new InvalidOperationException("Source settings must not start a process"));
+            var service = new ExternalPackageService(Path.Combine(data, "Packages"), "win-x64", http, runner,
+                sourceLog, sourcesFile: sourcesFile);
+            using var model = new ExternalToolsViewModel(service, _ => { }, sourceLog);
+            try
+            {
+                var previousSources = service.GetSources().ToArray();
+                // Fail an actual write after loading valid settings, rather than simulating invalid input.
+                Directory.CreateDirectory(sourcesFile);
+                model.SourceKindIndex = 3; model.SourceName = "Team";
+                model.SourceAddress = "https://packages.example.invalid/releases/"; model.ShowSourceForm = true;
+                pump(model.AddSourceCommand.ExecuteAsync(null));
+
+                Require(model.HasSourceFormError && model.ShowSourceForm && model.SourceName == "Team" &&
+                    model.SourceAddress == "https://packages.example.invalid/releases/",
+                    "A failed settings write must show its error without discarding source input.");
+                Require(service.GetSources().SequenceEqual(previousSources) && model.Sources.SequenceEqual(previousSources) &&
+                    Directory.Exists(sourcesFile) && !File.Exists(sourcesFile),
+                    "A failed settings write must leave both source lists and the conflicting directory unchanged.");
+                var entries = sourceLog.Snapshot().Entries;
+                Require(entries.Count == 1 && entries[0].Level == AppLogLevel.Error &&
+                    entries[0].Detail is { } detail && detail.Contains("JsonFileStore"),
+                    "A real IO failure must be logged as Error with exception details from the settings save.");
+                Require(sourceLog.Snapshot().UnreadErrors == 1,
+                    "A real source persistence failure must be visible as one unread error.");
+            }
+            finally { model.Dispose(); pump(service.DisposeAsync().AsTask()); pump(runner.DisposeAsync().AsTask()); }
         });
     }
 
@@ -141,8 +230,8 @@ internal static class PackageCategoryChecks
         return directory;
     }
 
-    private static void Require(bool value)
+    private static void Require(bool value, string message = "Package category cleanup assertion failed.")
     {
-        if (!value) throw new InvalidOperationException("Package category cleanup assertion failed.");
+        if (!value) throw new InvalidOperationException(message);
     }
 }
