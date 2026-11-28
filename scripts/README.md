@@ -27,6 +27,17 @@ Generate-AppIcon 和 Verify-PluginHost 是独立的维护、验证入口，不�
 
 GitHub Actions 在 PR、`main`/`Dev` 推送及版本标签上先运行 Verify-PluginHost，检查通过后才打包；发布标签仍须通过产物校验后才公开 Release。该入口只构建框架、检查工程和独立机制插件，输出 Core/离屏集成日志，不替代真实窗口验收。
 
+## 源码与 SDK 验证
+
+普通 `dotnet build` 只编译，不执行检查。[集成检查工程](../tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj)未设置 `HostSdkDir` 时引用当前源码工程；设置后只引用该目录中的宿主、Core、Contracts 和 UI DLL，缺少文件会失败，不回退到源码。框架改动后，应重新发布对应源码的宿主，再以其 SDK 构建检查和机制插件；旧产物不能用来验证新源码。
+
+Verify-PluginHost 按此顺序构建并运行 Core 检查、发布宿主、独立打包机制插件、编译并运行离屏集成检查，最后比较宿主文件哈希。当前检查源码覆盖的入口包括：
+
+- [PackageChecks](../tests/TractorTool.Checks/PackageChecks.cs) 与 [PluginManagementChecks](../tests/TractorTool.Checks/PluginManagementChecks.cs)：来源快照、清理时引用变化、插件加载结果与数据重置恢复。
+- [HostFailureChecks](../tests/TractorTool.IntegrationChecks/HostFailureChecks.cs) 与 [PackageCategoryChecks](../tests/TractorTool.IntegrationChecks/PackageCategoryChecks.cs)：启动恢复顺序、加载失败记录及来源输入反馈。
+
+这些是检查入口，不表示当前源码已通过。实际执行范围与结果仅记录在[自动检查台账](../Docs/DEVELOPMENT.md#automated-checks)；当前可用产物见[本地产物](../Docs/DEVELOPMENT.md#local-artifacts)，旧证据保留在对应历史记录中。
+
 ## 随包插件自动识别
 
 发布扫描 `Plugins` 的一级子目录，带 `plugin.json` 且同目录恰有一个 `.csproj` 即为随包插件，按目录名排序；工程和目录名称不限，ID 与版本读取插件清单。增删插件工程即可改变随包范围，无需额外名单。无清单的辅助目录不参与；不递归扫描 `bin/obj`、嵌套工程或仓库 `tests`。没有插件时只分发宿主。实验/测试插件应留在 `tests`，放入上述正式目录会自动随包发布。

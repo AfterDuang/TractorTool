@@ -8,6 +8,7 @@
       <ui:SettingRow Header="本地插件" Description="拖入 ZIP 或选择文件安装，变更在重启后生效。" Icon="Folder">
         <WrapPanel>
           <Button Content="安装 / 更新" Command="{Binding InstallCommand}" Classes="accent" Margin="0,0,8,0" />
+          <Button Content="清理历史版本" Command="{Binding CleanHistoryCommand}" Margin="0,0,8,0" />
           <Button Content="打开目录" Command="{Binding OpenDirectoryCommand}" />
           <Button Content="打开恢复文件" Command="{Binding OpenRecoveryDirectoryCommand}" Margin="8,0,0,0" />
         </WrapPanel>

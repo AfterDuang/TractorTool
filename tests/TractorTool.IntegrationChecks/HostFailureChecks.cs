@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Avalonia.Controls.ApplicationLifetimes;
+using CommunityToolkit.Mvvm.Input;
 using TractorTool;
 using TractorTool.Core.Logging;
 using TractorTool.Core.Plugins;
@@ -14,6 +15,67 @@ internal static class HostFailureChecks
 {
     public static void Run(Action<string, Action> check, Action<Task> pump, string output)
     {
+        foreach (var accepted in new[] { false, true })
+        check($"History cleanup {(accepted ? "queues" : "declines")} the exact confirmed versions including manually deleted history", () =>
+        {
+            var (paths, manager, host, vm) = CreateHistoryCleanup(output);
+            using (manager)
+            try
+            {
+                string? preview = null;
+                vm.ConfirmAsync = message => { preview = message; return Task.FromResult(accepted); };
+                Require(vm.CleanHistoryCommand.CanExecute(null));
+                pump(vm.CleanHistoryCommand.ExecuteAsync(null));
+                Require(preview?.Contains("历史版本测试：1.0.0、1.1.0") == true &&
+                    preview.Contains("重启后") && preview.Contains("无法回退") &&
+                    preview.Contains("当前版本、插件数据、恢复快照和外部依赖均保留"),
+                    "Confirmation must name the exact old versions and explain the cleanup boundary.");
+                var item = manager.Snapshot.Single();
+                Require(item.ActiveVersion == "2.0.0" && item.Recovery?.Version == "1.0.0" &&
+                    Directory.Exists(Path.Combine(paths.PluginRoot, item.Id, "1.1.0")),
+                    "Preview and queuing must not delete code or clear the recovery record before restart.");
+                if (accepted)
+                {
+                    Require(item.Pending is { Kind: PluginChangeKind.CleanHistory, DestructiveStarted: false } pending &&
+                        pending.HistoryVersions!.SequenceEqual(new[] { "1.0.0", "1.1.0" }));
+                    Require(vm.Items.Single().PendingText.Contains("1.0.0、1.1.0") &&
+                        vm.Items.Single().CancelChangeCommand is not null,
+                        "Queued history cleanup must show its versions and remain cancellable before restart.");
+                }
+                else Require(item.Pending is null, "Declining the preview must not queue a cleanup.");
+            }
+            finally { pump(host.DisposeAsync().AsTask()); }
+        });
+
+        check("History cleanup confirmation arriving after shutdown never queues a change", () =>
+        {
+            var (_, manager, host, vm) = CreateHistoryCleanup(output);
+            using (manager)
+            {
+                var prompted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                Task operation = Task.CompletedTask, shutdown = Task.CompletedTask;
+                try
+                {
+                    vm.ConfirmAsync = _ => { prompted.SetResult(); return answer.Task; };
+                    operation = vm.CleanHistoryCommand.ExecuteAsync(null);
+                    pump(prompted.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+                    shutdown = vm.BeginShutdown();
+                    Require(!shutdown.IsCompleted && !vm.CleanHistoryCommand.CanExecute(null));
+                    answer.SetResult(true);
+                    pump(Task.WhenAll(operation, shutdown));
+                    Require(manager.Snapshot.Single().Pending is null && !vm.CleanHistoryCommand.CanExecute(null),
+                        "Shutdown must wait for the prompt without accepting its late confirmation.");
+                }
+                finally
+                {
+                    answer.TrySetResult(false);
+                    pump(Task.WhenAll(operation, shutdown));
+                    pump(host.DisposeAsync().AsTask());
+                }
+            }
+        });
+
         check("Discovery completion resets after startup or directory failure and recovers on the next scan", () =>
         {
             var root = Path.Combine(output, "discovery-completion-" + Guid.NewGuid().ToString("N"));
@@ -256,6 +318,33 @@ internal static class HostFailureChecks
             pump(first);
             Require(handler.Disposed && ReferenceEquals(first, Invoke(app, "StopServicesAsync")));
         });
+    }
+
+    private static (AppPaths, PluginManager, PluginHost, PluginsViewModel) CreateHistoryCleanup(string output)
+    {
+        var root = Path.Combine(output, "history-cleanup-ui-" + Guid.NewGuid().ToString("N"));
+        var paths = new AppPaths(Path.Combine(root, "app"), Path.Combine(root, "data"));
+        paths.EnsureDataDirectories();
+        var item = new ManagedPlugin { Id = "Checks.History", Name = "历史版本测试", ActiveVersion = "2.0.0",
+            Recovery = new("1.0.0", Guid.NewGuid().ToString("N"), paths.DataRoot, false) };
+        // The recovery version was manually deleted; another obsolete version still has its code.
+        foreach (var version in new[] { "1.1.0", "2.0.0" })
+        {
+            var directory = Path.Combine(paths.PluginRoot, item.Id, version);
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "plugin.json"), JsonSerializer.Serialize(new { id = item.Id, version }));
+        }
+        new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate)
+            .Save(new() { Plugins = [item] });
+        var compatibility = new HostCompatibility("windows", "win-x64", UiApi.Version, UiApi.AvaloniaVersion);
+        var manager = new PluginManager(paths, compatibility);
+        var log = new AppLog(paths.LogRoot);
+        var host = new PluginHost(paths, compatibility, log);
+        host.Records.Add(new(Path.Combine(paths.PluginRoot, item.Id, item.ActiveVersion),
+            new PluginManifest { Id = item.Id, Name = item.Name, Version = item.ActiveVersion }, PluginState.Loaded, "State fixture"));
+        var vm = new PluginsViewModel(paths, host, new RelayCommand(() => { }), manager, log);
+        vm.Update([], []);
+        return (paths, manager, host, vm);
     }
 
     private static (AppPaths, AppLog, PluginHost, MainViewModel) Create(string output, Action<HostSettings>? validate = null)

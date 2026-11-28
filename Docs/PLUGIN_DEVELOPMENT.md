@@ -73,11 +73,11 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前 `Dev` 为 1.11，仍接受 1.0–1.10；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10，原生归档组合要求 1.11。已发布 1.1.0 宿主不支持 API 1.8–1.11 |
+| `apiVersion` | 当前源码为 1.11，仍接受 1.0–1.10；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10，原生归档组合要求 1.11。已发布 1.1.0 宿主不支持 API 1.8–1.11 |
 | `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
-| `dependencies` | 可空，最多 32 个不重复的 id/三段 version；新依赖在 downloads 按 RID 提供 GitHub 安装资料。旧 id/version 清单仍可复用已装包；完整示例见下文 |
+| `dependencies` | 可空，最多 32 个不重复的 id/三段 version；在 `downloads` 按 RID 提供 GitHub 安装资料，API 1.11 原生运行库也可使用[归档组合](#native-archive-packages)声明。旧 id/version 清单仍可复用已装包 |
 | `description`、`author` | 可选展示信息 |
 
 图标枚举/说明元数据从 UI API 1.1 提供；使用 `IconPath` 或控件 `ImageSource` 的插件声明 1.2。UI API 1.3 允许 PluginPageOptions.UsesCustomHeader=true，由插件自己提供标题和局部功能切换，宿主收起默认标题并让出整页视口；只对导航页生效，设置页仍由设置容器组织。默认 false 保留旧布局。保留 PluginPageOptions 的原两参数构造函数和旧注册签名，不要求旧插件为缺省符号重新构建；旧 DLL 的实际加载仍需兼容回归。应用产品版本不是插件 API 版本，也不是插件自身版本；不能把三者一起自动升版。
@@ -85,6 +85,8 @@ TractorTool.Plugins.Example/
 上述 API 兼容以 Avalonia 基线匹配为前提，包括补丁版本；共享程序集装载还会核对实际 AssemblyVersion。升级宿主 Avalonia 时，插件须同步编译引用和清单，引用新发布 SDK 重新打包，不能只修改旧 ZIP 的清单。向已有安装发布时增加插件自身版本，先启动新宿主，再安装匹配的新插件 ZIP 并显式退出重启；旧宿主拒绝新基线包，新宿主也拒绝旧基线包。宿主安装器保留原 Plugins，不自动替换已装插件；全新分发目录可直接附带匹配版本。当前升级产物见[开发入口](DEVELOPMENT.md#avalonia-1216-upgrade)。
 
 管理页已提供本地 ZIP 安装/更新、启用/禁用、卸载与可用时回退，重启生效。活动版本由安装目录的管理记录明确指定；未纳入管理的多个同 ID 候选仍报告冲突，不自动选最高版本。旧 `disabledPlugins` 只用于未管理插件，接管后的状态以管理记录为准。禁用、不兼容、损坏的插件只显示清单状态，不为了获取名称而执行入口。
+
+“清理历史版本”按用户确认列表在重启时删除旧程序并解除回退引用，保留当前版本、插件数据、恢复快照和已装依赖。旧回退代码已手动删除时也可通过此入口解除遗留记录；不要自行修改 `.management`。Python/Node 环境仍按插件版本及锁定身份分别管理，清理旧程序不会合并环境；不再被引用的旧环境由用户在 Packages 单独清理。
 
 ## 3. 运行目录与打包
 
@@ -112,15 +114,15 @@ AppRoot 是实际软件启动目录，不是源码仓库或终端当前目录。
 | 共享 SDK | Contracts、UI 及目标宿主提供的 Avalonia、FluentAvalonia、MicroCom.Runtime 共享程序集 | 引用目标 SDK 中的兼容版本；加载器核对共享身份，插件 ZIP 排除这些 DLL |
 | 私有托管/原生库 | 插件自身的项目或 NuGet 依赖 | 随插件携带 DLL、必要的 deps.json、平台原生库、资源与许可；不得依赖开发机缓存或包外链接 |
 | 外部可执行工具 | 插件清单声明固定版本及下载资料，用户配置可用来源，宿主负责安装与租约 | 位于 DataRoot/Packages；通过包服务取得路径，不混入插件 ZIP、不搜索 PATH、不自建下载器 |
-| 独立原生运行库 | API 1.8 声明完整便携包及 DLL 入口，宿主校验全部文件 | 位于 DataRoot/Packages/DLL；插件申请租约、在加载前登记进程期保护，再自行加载和验证 ABI |
+| 独立原生运行库 | API 1.8 支持 GitHub 单 ZIP，API 1.11 支持上游归档组合；均声明 DLL 入口，宿主校验全部文件 | 位于 DataRoot/Packages/DLL；插件申请租约、在加载前登记进程期保护，再自行加载和验证 ABI |
 | Python 环境 | API 1.9 的 `pythonEnvironments` 声明项目/锁摘要、Python 版本及来源 | 位于 DataRoot/Packages/uv；插件携带业务代码和锁定输入，通过环境租约运行，不随 ZIP 携带已装解释器或 venv |
 | Node 环境 | API 1.10 的 `nodeEnvironments` 声明项目/锁摘要、Node 版本及来源 | 位于 DataRoot/Packages/Node；插件携带已构建业务入口，通过环境租约调用，不携带 node_modules 或全局工具链 |
 
-`dependencies` 声明外部工具或 API 1.8 原生运行库，空数组不代表插件没有私有 DLL。工具包仍可附带其所需 DLL；独立运行库使用单独的包类型，不把 DLL 当可执行工具探测。Packages 不负责托管 NuGet 库的加载；这些私有库仍随插件交付。边界见[包管理](ARCHITECTURE.md#41-包管理)。
+`dependencies` 声明外部工具或独立原生运行库，空数组不代表插件没有私有 DLL。工具包仍可附带其所需 DLL；独立运行库使用单独的包类型，不把 DLL 当可执行工具探测。Packages 不负责托管 NuGet 库的加载；这些私有库仍随插件交付。边界见[包管理](ARCHITECTURE.md#41-包管理)。
 
 声明和真实夹具见[DLL 接入](#native-library-packages)、[Python 接入](#python-environments)及[Node 接入](#node-environments)；运行验收只以[开发台账](DEVELOPMENT.md#dependency-extension-plan)为准。
 
-NuGet 是构建期依赖渠道；GitHub Release、PyPI、npm 是外部依赖获取渠道，分别由包服务、uv、pnpm 准备对应载荷。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
+NuGet 是构建期依赖渠道；GitHub Release、PyPI、npm 和 HTTPS 目录是外部依赖获取渠道。运行方式由声明类型决定：包服务安装工具/DLL，uv 准备 Python 环境，pnpm 准备 Node 环境；PyPI 上的原生归档不因此要求 Python 环境。包来自 NuGet 不代表它属于共享 SDK；即使宿主也使用同名私有库，插件仍须随包交付。第三方 DLL 命名为 System.* / Microsoft.* 不会获得框架兜底。具体解析顺序见[装载隔离](ARCHITECTURE.md#23-装载顺序与版本隔离)，构建模式见[第 6 节](#6-开发构建与安装验证)。
 
 例如，插件可直接引用目标宿主随附的 `Avalonia.Controls.ColorPicker`。若插件另用宿主 SDK 未提供的 `Avalonia.*` 扩展，使用 1.1.0 或更高版本的宿主 SDK 打包，声明 UI API 1.6，并把扩展 DLL 和私有依赖放进插件 ZIP。现有插件可继续声明其实际使用的旧 UI API。
 
@@ -252,14 +254,14 @@ var result = await context.Processes!.RunAsync(
 1. 发布宿主后用第 6 节 Build-Plugin 为测试插件打包，安装并显式退出、重新启动。
 2. 点击测试插件“申请依赖并读取版本”，首次拒绝应正常返回，再次接受才下载真实 GitHub ZIP；正确版本后释放租约。
 3. Packages 仅列已安装包，显示来源、版本、许可、大小与引用；已装重复申请/重启离线复用不查询 GitHub。修复期间继续显示进度、取消或错误。
-4. 验证来源增删持久化、坏地址/重复拒绝、未配置来源明确提示、API 404/限流/超时、坏 hash/附件拒绝；移除来源不删包，卸载插件重启后保留包，无引用/租约才允许清理。
+4. 验证来源增删持久化、坏地址/重复的就地提示和 Warning、真实保存失败的 Error、未配置来源提示、API 404/限流/超时及坏 hash/附件拒绝。多来源不自动回退，移除来源不删包，卸载插件重启后保留包，无引用/租约才允许清理。
 5. 单调用方取消不影响其他申请；退出取消查询/下载并等待清理。运行结果登记到 [A07](DEVELOPMENT.md#acceptance)，编译、网络资料核对不算通过。
 
 <a id="native-library-packages"></a>
 
 ### 独立原生 DLL 运行库（API 1.8）
 
-此能力已进入 `Dev` 代码，尚未发布或完成运行验收。插件清单声明 `apiVersion: "1.8"`，依赖片段如下，内容来自 [SDL 真实夹具](../tests/NativeLibraryProbePlugin/plugin.json)：
+此能力已进入当前源码，尚未发布或完成运行验收。插件清单声明 `apiVersion: "1.8"`，依赖片段如下，内容来自 [SDL 真实夹具](../tests/NativeLibraryProbePlugin/plugin.json)：
 
 ```json
 {
@@ -326,7 +328,7 @@ if (version != 3_002_008) throw new InvalidDataException("SDL 运行库版本不
 
 ### Python 环境（API 1.9）
 
-此能力已进入 `Dev`，尚未发布。首轮仅支持 `win-x64`、CPython **3.13.18**，宿主固定 uv **0.13.10** 与 Python 上游构建 **20261124**；插件无需安装系统 Python，也不能自行换工具链。旧工具、原生包及 API 1.0–1.8 保持原调用；新插件声明 `apiVersion: "1.9"`，在根清单增加 `pythonEnvironments`。实际示例见[测试清单](../tests/PythonEnvironmentProbePlugin/plugin.json)。
+此能力已进入当前源码，尚未发布。首轮仅支持 `win-x64`、CPython **3.13.18**，宿主固定 uv **0.13.10** 与 Python 上游构建 **20261124**；插件无需安装系统 Python，也不能自行换工具链。旧工具、原生包及 API 1.0–1.8 保持原调用；新插件声明 `apiVersion: "1.9"`，在根清单增加 `pythonEnvironments`。实际示例见[测试清单](../tests/PythonEnvironmentProbePlugin/plugin.json)。
 
 | 环境字段 | 规则 |
 | --- | --- |
@@ -358,7 +360,7 @@ var result = await environment.RunAsync(new ProcessRequest(environment.PythonPat
 
 ### Node 环境（API 1.10）
 
-此能力位于 `Dev`，尚未发布。首轮仅支持 `win-x64`、Node.js **24.22.3**，宿主固定 pnpm **10.34.9**。插件声明 `apiVersion: "1.10"`，在根清单增加 `nodeEnvironments`，最多 8 项，ID 在插件内不重复。普通旧插件无需改清单或重新编译。
+此能力已进入当前源码，尚未发布。首轮仅支持 `win-x64`、Node.js **24.22.3**，宿主固定 pnpm **10.34.9**。插件声明 `apiVersion: "1.10"`，在根清单增加 `nodeEnvironments`，最多 8 项，ID 在插件内不重复。普通旧插件无需改清单或重新编译。
 
 | 字段 | 要求 |
 | --- | --- |

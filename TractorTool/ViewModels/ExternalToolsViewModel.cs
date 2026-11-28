@@ -77,7 +77,10 @@ public sealed class ExternalToolsViewModel : ObservableObject, IDisposable
         $"尚未安装{PackageCategories[SelectedCategoryIndex]}。插件首次使用时会提示准备。";
     public string Summary => $"{VisibleCards.Count(c => c.IsInstalled) + VisibleEnvironmentCards.Count(c => c.IsInstalled)} 个已安装 · {VisibleCards.Count(c => c.CanRemove) + VisibleEnvironmentCards.Count(c => c.CanRemove)} 个可清理";
     public bool HasCleanup => VisibleCards.Any(c => c.CanRemove) || VisibleEnvironmentCards.Any(c => c.CanRemove);
-    public string Error => string.Join("\n", new[] { _service?.SourceError, _service?.ReferenceError, _service?.Python.Error, _service?.Node.Error, _status }.Where(s => !string.IsNullOrEmpty(s)));
+    public string Error => string.Join("\n",
+        new[] { _service?.SourceError, _service?.ReferenceError, _service?.Python.Error, _service?.Node.Error, _status }
+            .SelectMany(error => (error ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.Ordinal));
     public bool HasError => Error.Length != 0;
     public IAsyncRelayCommand CleanCommand { get; }
     public IAsyncRelayCommand CleanEnvironmentCacheCommand { get; }

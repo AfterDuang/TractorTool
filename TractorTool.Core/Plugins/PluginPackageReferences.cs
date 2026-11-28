@@ -51,6 +51,17 @@ public sealed class PluginPackageReferences : IDisposable
             var python = new List<PythonEnvironmentDefinition>();
             var node = new List<NodeEnvironmentDefinition>();
             var error = _scanError;
+            void AddManifest(string directory)
+            {
+                var path = PluginFiles.Under(directory, "plugin.json");
+                if (!PluginFiles.DirectoryPresent(directory) || new FileInfo(path).Attributes == (FileAttributes)(-1))
+                {
+                    // A deleted history/staging entry is incomplete evidence, not an exceptional read attempt.
+                    error = "无法确认全部插件依赖，暂停清理：插件清单不存在：" + path;
+                    return;
+                }
+                manifests.Add((ManifestValidator.Read(directory), directory));
+            }
             try
             {
                 foreach (var item in managed)
@@ -60,12 +71,12 @@ public sealed class PluginPackageReferences : IDisposable
                     {
                         if (error.Length == 0 && !_active.Any(r => r.Manifest!.Id.Equals(item.Id, StringComparison.OrdinalIgnoreCase) && r.Manifest.Version == activeVersion))
                             error = $"未发现已登记的插件 {item.Id} {activeVersion}，暂停清理依赖。";
-                        if (item.Recovery is { } recovery) manifests.Add(Read(item.Id, recovery.Version));
+                        if (item.Recovery is { } recovery) AddManifest(PluginFiles.Under(_paths.PluginRoot, item.Id, recovery.Version));
                     }
                     if (item.Pending is { Kind: PluginChangeKind.Activate, Version: { } version } pending)
                     {
                         var staging = PluginFiles.Under(_paths.PluginRoot, ".management", "staging", pending.Token, item.Id, version);
-                        manifests.Add(Directory.Exists(staging) ? (ManifestValidator.Read(staging), staging) : Read(item.Id, version));
+                        AddManifest(PluginFiles.DirectoryPresent(staging) ? staging : PluginFiles.Under(_paths.PluginRoot, item.Id, version));
                     }
                 }
                 foreach (var (manifest, directory) in manifests)
@@ -92,12 +103,6 @@ public sealed class PluginPackageReferences : IDisposable
                 _packages.InvalidateReferences("插件依赖刷新失败，暂停清理：" + ex.Message);
             }
         }
-    }
-
-    private (PluginManifest Manifest, string Directory) Read(string id, string version)
-    {
-        var directory = PluginFiles.Under(_paths.PluginRoot, id, version);
-        return (ManifestValidator.Read(directory), directory);
     }
 
     public void Dispose()

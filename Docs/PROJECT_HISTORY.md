@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 插件历史版本清理 | [E161 · 重启清理、手删旧版恢复与提示去重（2026-11-28）](#evidence-plugin-history-cleanup) |
 | 宿主状态与来源审查收尾 | [E160 · 重置提交、加载结果与依赖维护（2026-11-28）](#evidence-host-state-source-review) |
 | 来源输入与日志反馈 | [E159 · 重复添加提示与保存异常日志（2026-11-28）](#evidence-source-validation-feedback) |
 | 原生上游归档安装 | [E158 · 固定 HTTPS 制品、多归档映射与审片接入（2026-11-28）](#evidence-native-upstream-archives) |
@@ -199,6 +200,58 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
 
+<a id="evidence-plugin-history-cleanup"></a>
+
+## E161：历史版本清理与 Packages 提示去重（2026-11-28）
+
+基线为 `Dev / 84a66d4`，保留上一轮未提交文档整理。用户反馈同一测试插件保留两个版本的语言环境，手动删除旧插件代码后，回退记录仍要求读取旧 `plugin.json`，导致依赖引用无法确认，并在 Packages 重复显示同一错误。本轮只增加受管理的历史程序清理和展示去重，不改变环境身份或跨插件版本复用策略，不修改 Contracts / UI API。
+
+- 插件页提供一个全局“清理历史版本”入口，异步预览满足条件的插件和具体版本；保留当前程序，不接受待变更、待确认加载或管理错误条目。预览和排队均复查本次 `host.Records`，只允许唯一当前版为 Loaded/Disabled 的受管理插件，失败、等待和冲突不纳入。接受确认后在管理锁内复核同一列表，批量写入既有 Pending，取消或关机后迟到确认不排队。
+- `CleanHistory` 在重启加载前执行，先核对目录归属及路径保护，再移入 `.management/removed/<Token>`；回收区只递归删除列表内版本，根目录非递归删除，避免碰未知项。成功后解除 Recovery。持久化开始阶段，执行前可取消，删除/保存失败保留请求和现场供下次重启接续；数据重置仍保留代码清理请求。失败记录仍展示并写日志，但不阻止当前插件按原有规则加载。
+- 已登记的旧 Recovery 目录或清单被手动删除时仍可解除遗留记录；未知无清单目录不清。当前程序、插件数据、恢复快照和 Packages 保留；重新发布引用后，用户可另到 Packages 清理无引用且无占用的依赖。
+- Packages 相同诊断行只显示一次，独立错误保留，不放宽清理资格。
+- 新增 22 项 Windows Core 检查和 4 项离屏集成检查；UI 覆盖精确预览、确认接受/拒绝、待清理取消入口、关机时迟到确认及重复/独立错误显示。26 项新检查均只编译、未执行，真实验收由用户完成。
+- Review 后修正清理失败误阻止当前版本加载、预览缺少本次发现结果校验、历史清单读取兼容问题。清单复用 `ManifestValidator.Json` 和 `StreamReader`，接受大小写及 BOM，读取异常带具体文件位置；同时限制回收区删除范围，保留必要路径保护。
+
+构建证据根为 `artifacts/plugin-history-cleanup-20261128`：
+
+| 目标 | 输出 | 当前结果 |
+| --- | --- | --- |
+| 宿主 | `host-debug` | 0 警告 / 0 错误，未启动 |
+| Core 检查工程 | `core-build` | 0 警告 / 0 错误；检查程序未运行 |
+| 离屏集成检查工程 | `integration-build` | 1 条 NU1900 / 0 错误；缓存漏洞源不可用警告，检查程序未运行 |
+
+构建命令（在仓库根目录）：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/plugin-history-cleanup-20261128/host-debug
+dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/plugin-history-cleanup-20261128/core-build
+dotnet build tests/TractorTool.IntegrationChecks/TractorTool.IntegrationChecks.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -p:HostSdkDir=H:/ProjH/TractorTool/artifacts/plugin-history-cleanup-20261128/host-debug -o artifacts/plugin-history-cleanup-20261128/integration-build
+```
+
+新增 nullable CS8604 警告已修正并重编，最终仅保留上表 NU1900。GPT‑6.2‑SOL/high 子代理完成修正后静态复核，源码及新检查夹具无剩余阻断；`git diff --check` 通过。未运行检查程序、真实窗口、依赖下载或操作真实应用数据；未提交、未推送。隔离宿主仅用于编译证据，用户应在原有安装/调试目录按当前源码构建后验收，避免改变 AppRoot 而读到另一套插件和管理记录。故障注入仅使用隔离样本。
+
+### E161 补充：已删除清单的调试器异常
+
+用户真实清理时看到 VideoExport 0.5.6 的 `FileNotFoundException`。只读原安装目录的管理记录显示相应清理请求、回退记录及错误均已清空，当前版本仍为 0.5.7。源码追踪为 `SaveState → StateChanged → PluginPackageReferences.Refresh` 仍读取登记中的旧清单，在 `FileInfo.Length` 产生已捕获的 first-chance 异常；它不等于本次清理失败。
+
+引用刷新改为先按既有目录/路径规则判断清单是否缺失。已知缺失直接发布引用不完整及具体路径；没有绕过损坏清单、权限或链接校验，也不因安排清理就提前解除引用。复用读取入口为一个局部函数，删除旧 `Read` 方法，不增加公共接口。待激活清单同样保留保护，staging 采用严格的目录判断。
+
+增强既有两项手删检查，监听目标目录的 first-chance 缺失异常，并核对刷新、排队、取消与最终提交的引用状态；现有包引用检查补待安装清单缺失与恢复。用例总数不增加，均未执行。补充构建如下，宿主及 Core 检查均为 0 警告/0 错误；前述集成产物来自初版构建，本次未重编或运行。
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/plugin-history-cleanup-20261128/reference-feedback/host-debug
+dotnet build tests/TractorTool.Checks/TractorTool.Checks.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/plugin-history-cleanup-20261128/reference-feedback/core-build
+```
+
+GPT‑6.2‑SOL/high 子代理补充静态复核无阻断发现：正常缺失不会提前开放依赖清理，取消仍保留 Recovery，真实路径与权限异常仍被保守处理。预检后若文件被外部并发删除，仍可能产生并捕获真实 I/O 异常，不承诺禁止全部调试器异常。`git diff --check` 及文档本地链接目标核对通过。未启动主窗口、运行检查、修改真实数据或提交。
+
+### E161 交付与本地合并
+
+用户确认 Ctrl+F5 启动后进程列表不再显示“已挂起”，随后授权提交并将 `Dev` 合并至本地 `main`。此前只读采样显示进程由调试器启动、调试器已附加，采样时窗口响应正常且没有 Suspended 线程；本次反馈支持调试启动相关判断，未修改挂起或窗口逻辑。
+
+提交前确认 `main` 为 `Dev` 的祖先，可快进纳入此前 DLL、Python、Node 及宿主修复，连同本轮 E161 和已授权文档整理统一交付；同步当前文档的分支描述。正式版仍为 1.1.0，不推送、不打标签。本次只做静态文档检查与 Git 操作，未重跑应用、构建或检查程序，26 项新增检查及既有专项运行缺口保持原状态。
+
 <a id="evidence-host-state-source-review"></a>
 
 ## E160：宿主状态、重置提交与依赖维护（2026-11-28）
@@ -223,7 +276,23 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 
 `git diff --check` 通过。修复阶段未运行检查程序、真实窗口或依赖下载，未操作真实数据；当时保留未提交状态供复核。
 
-随后按用户“同模型复核、无问题提交”的要求，两名子代理通过完整会话分叉继承主会话模型与思考深度，分别复核全部 23 个修改文件和重置/加载上下游，均未发现提交阻断；来源反馈、并发来源切换、清理及恢复用例的触发路径已静态核对。生产和测试文件与上述编译版本一致，未重复运行构建或检查；E159/E160 连同文档按授权一并本地提交，未推送。编译与静态 Review 不代替故障恢复及 Windows 运行验收。
+随后按用户“同模型复核、无问题提交”的要求，两名子代理通过完整会话分叉继承主会话模型与思考深度，分别复核全部 23 个修改文件和重置/加载上下游，均未发现提交阻断；来源反馈、并发来源切换、清理及恢复用例的触发路径已静态核对。生产和测试文件与上述编译版本一致，未重复运行构建或检查；E159/E160 连同文档按授权一并本地提交为 `84a66d4`，代理未推送。编译与静态 Review 不代替故障恢复及 Windows 运行验收。
+
+<a id="host-review-documentation"></a>
+
+### 文档归并（2026-11-28）
+
+按 `84a66d4` 核对源码，更新架构、框架 README、脚本说明和插件接入规范，补清来源授权、离线复用及重置提交边界；修正仍只描述 GitHub 单包的通用声明表。开发台账收拢当前构建入口，交接摘要移除重复实施过程和插件业务细节。既有未关闭验收继续留在开发台账；本轮只做文档及本地链接核对，不新增构建或运行结论。
+
+以下宿主产物留作对应轮次的历史证据，不用于 E160 修复验收；当前入口见[开发台账](DEVELOPMENT.md#development-artifacts)。已有测试插件包的接口兼容性不受本次修复影响。
+
+| 轮次 | 历史产物 | 边界 |
+| --- | --- | --- |
+| E155 | `artifacts/node-cache-fix-20261128/host-debug/TractorTool.exe`；同根 `Start-TestHost.cmd` | pnpm 缓存修复候选，启动脚本绑定旧宿主路径 |
+| E158 | `artifacts/native-upstream-20261128/host-release/TractorTool.exe` | 上游归档安装自包含宿主，早于 E159/E160 |
+| E159 | `artifacts/source-feedback-20261128/host-debug/TractorTool.exe` | 来源输入反馈候选，后由 E160 宿主包含 |
+
+这些路径是本地生成物，不随仓库交付；需要当前自包含宿主时应从当前源码重新发布，不混用旧 SDK 验证新源码。本轮未删除实际产物。
 
 <a id="evidence-source-validation-feedback"></a>
 
@@ -236,7 +305,7 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 - 隔离 Debug 构建：`dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/source-feedback-20261128/host-debug`，0 警告/0 错误。
 - 集成检查通过 `-p:HostSdkDir=H:/ProjH/TractorTool/artifacts/source-feedback-20261128/host-debug` 引用该宿主编译，输出 `artifacts/source-feedback-20261128/integration-build`；0 错误，1 条 NU1900 表示在线漏洞数据查询未完成。新增 3 项覆盖重复名称、规范化重复地址、真实保存失败，检查配置不变、日志等级、输入保留及纠正后保存。
 - SOL/high Review 发现保存失败用例假定 Windows 原生异常类型及消息包含路径；已改为检查 Error、保存调用栈与未读计数，重新编译通过，最终复核无剩余阻塞。`git diff --check` 通过。
-- 检查程序、真实窗口和依赖下载均未运行；等待用户测试，未提交或推送。
+- 检查程序、真实窗口和依赖下载均未运行；当轮未提交，后与 E160 一并归入 `84a66d4`，代理未推送。
 
 <a id="evidence-native-upstream-archives"></a>
 

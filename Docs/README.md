@@ -38,6 +38,8 @@
 - **源码与版本**：工程引用见各 `.csproj`；框架 NuGet 版本集中在 `Directory.Packages.props`，业务私有库由对应插件工程定版。SDK 工具链见 `global.json`，产品版本见 `Directory.Build.props`，接口版本见公开 API 定义，插件身份与外部工具资料见 `plugin.json`。解决方案分组不建立程序集依赖。
 - **依赖分类**：[架构分层](ARCHITECTURE.md#1-当前代码与目标结构)解释工程依赖方向；[插件依赖表](PLUGIN_DEVELOPMENT.md#dependency-kinds)区分 .NET 运行时、共享 SDK、私有库、外部工具、原生运行库及 Python/Node 环境；[脚本说明](../scripts/README.md)解释构建工具及许可收集边界。
 - **外部依赖扩展**：[产品要求](TractorTool.md#dependency-extension-requirements) → [架构与分类目录](ARCHITECTURE.md#dependency-extension) → [DLL](PLUGIN_DEVELOPMENT.md#native-library-packages) / [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments) 接入 → [实施与验收](DEVELOPMENT.md#dependency-extension-plan)。代码、发布与运行验收分别确认，不把规划当成可调用接口。
+- **依赖来源**：[使用说明](../README.md#依赖来源怎么用)解释新增来源、离线复用与镜像边界；[包管理设计](ARCHITECTURE.md#packages)说明来源匹配与事务；具体声明见[GitHub](PLUGIN_DEVELOPMENT.md#package-source-maintenance)、[上游归档](PLUGIN_DEVELOPMENT.md#native-archive-packages)及对应语言环境规范。
+- **故障恢复**：插件变更看[安装与恢复](ARCHITECTURE.md#24-安装更新禁用和卸载)，数据迁移或重置看[存储设计](ARCHITECTURE.md#storage)；当前操作与检查入口查[开发与验收](DEVELOPMENT.md#workflow)，具体故障证据从台账追溯历史。
 - **状态 → 证据**：开发台账链接具体历史记录，交接只摘录当前约束和下一步；历史可以说明旧方案，不能成为当前规则的唯一入口。参考项目、截图与调研放历史，不扩充日常必读链。
 
 ## 怎么维护

@@ -664,6 +664,14 @@ internal static class PackageChecks
             using var references = new PluginPackageReferences(paths, manager, service);
             references.SetDiscovered([new(Path.Combine(paths.PluginRoot, "Test.Plugin", "2.0.0"), active, PluginState.Disabled, "")], null);
             Require(service.ReferenceError == "" && service.GetPackages().Select(p => p.Package.Id).Order().SequenceEqual(new[] { "Active", "Pending", "Recovery" }));
+            var pendingManifest = Path.Combine(paths.PluginRoot, ".management", "staging", token, "Test.Plugin", "3.0.0", "plugin.json");
+            File.Delete(pendingManifest);
+            references.SetDiscovered([new(Path.Combine(paths.PluginRoot, "Test.Plugin", "2.0.0"), active, PluginState.Disabled, "")], null);
+            Require(service.ReferenceError.Contains(pendingManifest) && service.Python.Error.Length != 0 && service.Node.Error.Length != 0);
+            Require(manager.Snapshot.Single().Pending?.Kind == PluginChangeKind.Activate);
+            WriteManifest(Path.Combine(paths.PluginRoot, ".management", "staging", token), "3.0.0", "Pending");
+            references.SetDiscovered([new(Path.Combine(paths.PluginRoot, "Test.Plugin", "2.0.0"), active, PluginState.Disabled, "")], null);
+            Require(service.ReferenceError == "" && service.Python.Error == "" && service.Node.Error == "");
             manager.CancelPending("Test.Plugin");
             Require(service.GetPackages().All(p => p.Package.Id != "Pending"));
             references.SetDiscovered([new("broken", null, PluginState.Invalid, "broken")], null);

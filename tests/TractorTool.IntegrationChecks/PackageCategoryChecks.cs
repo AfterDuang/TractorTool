@@ -99,6 +99,42 @@ internal static class PackageCategoryChecks
             }
         });
 
+        check("Package errors show shared reference failures once and preserve independent environment storage errors", () =>
+        {
+            var root = Path.Combine(output, "package-errors-" + Guid.NewGuid().ToString("N"));
+            foreach (var node in new[] { false, true })
+            {
+                var directory = Path.Combine(root, node ? "Node" : "uv");
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(Path.Combine(directory, node ? ".node-packages" : ".python-packages"),
+                    node ? "TractorTool.NodePackages.v1" : "TractorTool.PythonPackages.v1");
+                File.WriteAllText(Path.Combine(directory, "unknown.txt"), "Preserve this unrecognized content.");
+            }
+            using var http = new HttpClient();
+            var runner = new ProcessRunner("PackageErrors.Check", log,
+                _ => throw new InvalidOperationException("Listing package errors must not start a process"));
+            var service = new ExternalPackageService(root, "win-x64", http, runner, log);
+            using var model = new ExternalToolsViewModel(service, _ => { }, log);
+            try
+            {
+                service.UpdateReferences(new([], true));
+                var pythonError = service.Python.Error;
+                var nodeError = service.Node.Error;
+                Require(pythonError.StartsWith("Python 环境记录不可用", StringComparison.Ordinal) &&
+                    nodeError.StartsWith("Node 环境记录不可用", StringComparison.Ordinal),
+                    "The fixture must independently block both environment stores.");
+                const string sharedError = "无法确认全部插件依赖，暂停清理：\r\n旧版本的 plugin.json 不存在。";
+                service.UpdateReferences(new([], false, sharedError));
+                Require(model.Error == string.Join("\n", [sharedError.Replace("\r\n", "\n"), pythonError, nodeError]),
+                    "Each shared diagnostic line must appear once without hiding distinct Python or Node storage errors.");
+
+                service.UpdateReferences(new([], true));
+                Require(model.Error == string.Join("\n", [pythonError, nodeError]),
+                    "Repairing references must remove their error while preserving unrelated storage errors.");
+            }
+            finally { model.Dispose(); pump(service.DisposeAsync().AsTask()); pump(runner.DisposeAsync().AsTask()); }
+        });
+
         foreach (var duplicateName in new[] { true, false })
         check((duplicateName ? "Duplicate source names" : "Normalized duplicate source addresses") +
             " preserve settings and form input, log a warning, and allow correction", () =>

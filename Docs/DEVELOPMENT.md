@@ -10,11 +10,13 @@
 
 **1.1.0 分发包含 Windows x64 宿主和四个 1.1.0 插件。** 产品和插件分别定版，沿用 Avalonia 12.1.6。插件私有扩展、外部工具和发布验证见 [E137](PROJECT_HISTORY.md#evidence-release-110)。正式标签经构建和校验后自动公开附件。
 
-源码中的 [AB 审片 0.1.9](#media-compare) 开发版接入 Dev 宿主的官方上游归档安装，不维护自有 GStreamer 发布包。宿主发布、插件打包与静态复核已完成，用户反馈测试可正常使用、未发现问题，已授权本地提交；未推送或发布，上述正式版本不变。后续整包构建沿用现行插件自动发现规则。
+**当前源码包含 E161 及此前的外部依赖扩展。** DLL、uv/Python、pnpm/Node 及上游归档安装均已接入；[AB 审片 0.1.9](#media-compare) 使用官方上游归档，不维护自有运行库发布包。这些扩展尚未发布，正式版 1.1.0 不变。
 
-依赖来源重复添加的反馈修复见 [E159](PROJECT_HISTORY.md#evidence-source-validation-feedback)：重复输入在表单内提示并记录 Warning，真实保存失败记录带异常详情的 Error；宿主及新增 3 项集成检查编译通过，静态复核无剩余阻塞。已随 E160 本地提交，未推送；运行验收仍待用户验证。
+`84a66d4` 已合并 [E159 来源反馈](PROJECT_HISTORY.md#evidence-source-validation-feedback) 和 [E160 宿主可靠性修复](PROJECT_HISTORY.md#evidence-host-state-source-review)：来源重复输入就地提示、真实保存失败记日志；重置可恢复收尾，管理启动与目录发现完成后记录加载结果并保留原失败原因，依赖清理与来源授权在提交前复查。已完成编译与静态复核，新增 17 项检查未运行；代理未推送，运行验收由用户负责。
 
-宿主审查收尾见 [E160](PROJECT_HISTORY.md#evidence-host-state-source-review)：数据重置先提交可恢复的默认指针，再清理旧插件恢复记录；只保存本轮实际加载结果；依赖移出前复查引用与占用，GitHub 下载使用同一份已确认配方和来源。重复管理错误日志及 3 个未使用成员已移除。宿主、Core/集成检查工程编译通过，新增 14 项回归未执行；SOL/high 复核及后续两名同会话模型/思考深度的子代理复核均无剩余阻断。已按用户授权本地提交，未推送；运行验收仍由用户负责。
+**[E161 历史版本清理与错误提示去重](PROJECT_HISTORY.md#evidence-plugin-history-cleanup)。** 插件页新增统一预览、确认与重启清理，兼容旧回退目录被手动删除；只释放旧程序和回退引用，数据、恢复快照、Packages 保留。Packages 相同诊断行只显示一次，独立错误保留。Contracts / UI API 不变；宿主、Core 与集成检查工程构建通过，子代理静态复核无剩余阻断。26 项新增检查未运行，真实验收由用户负责；用户已授权本轮提交并合并至本地 `main`，不包含新版本发布。
+
+用户随后反馈清理时调试器显示旧清单的文件缺失异常；只读现场记录显示清理已完成。已修正引用刷新仍直接读取已删除清单的遗漏，缺失时继续暂停依赖清理并给出原因，成功提交清理后才解除保护。补充构建与复核见 E161，增强既有用例未运行，专项验收继续按台账追踪。
 
 仍待真实 Windows 环境验收的项目包括跨会话安装、断电恢复、大目录迁移、设备采样和媒体导出。切页末段闪动继续使用官方渲染后端，等待上游修复。详见[下一步](#next)及[精度对照](PROJECT_HISTORY.md#evidence-page-flicker-precision)。
 
@@ -24,7 +26,7 @@
 | --- | --- |
 | 工程与版本 | VS Code，项目清单见 [TractorTool.slnx](../TractorTool.slnx)。SDK 见 [global.json](../global.json)，框架 NuGet 版本见 [Directory.Packages.props](../Directory.Packages.props)，插件业务私有库版本见所属插件的工程文件。宿主产品版本见 [Directory.Build.props](../Directory.Build.props)，插件版本取自各自的 `plugin.json`。分发脚本要求 PowerShell 7.4+ |
 | 系统数据HUD | 硬件按类型显示图标/示例，CPU 访问条件明确提示，重新检测后清读数缓存；E93 独立采样和 E95 精简保持。E96 离屏回归通过。E94 两项 P2 仍待修复，CPU 温度实读/原生交互/DPI/高频性能待验，托盘方案列表暂缓 |
-| 公共接口 | Dev 为 Contracts API 1.11 / UI API 1.6；新增原生归档组合声明，沿用现有 DLL 租约与进程期保护。旧接口签名及 API 1.0–1.10 继续支持，Python/Node 接入不变。UI 1.6 支持插件私有 Avalonia 扩展 |
+| 公共接口 | 当前源码为 Contracts API 1.11 / UI API 1.6；新增原生归档组合声明，沿用现有 DLL 租约与进程期保护。旧接口签名及 API 1.0–1.10 继续支持，Python/Node 接入不变。UI 1.6 支持插件私有 Avalonia 扩展 |
 | 插件与公共 UI | 独立装载、页面/设置注册、常驻生命周期；ZIP 管理与启停/卸载/回退允许重启生效，预期状态冲突正常返回原因。共享主题/动效、层级设置及面包屑；软件/插件设置分组可独立折叠，标题区 32 DIP，仅保留小图标和常规字重软件名，专属布局留在各页面 |
 | 插件托盘 | 按插件名分组，注册普通/勾选动作并更新启用/文字状态；重复点击保护、统一日志、停止取消及解绑；切页/隐藏继续存在。只提供公共菜单接入，不实现悬浮球业务或任意深度菜单树 |
 | 剪贴板 | Fluent 彩色剪贴板图标共用于侧栏、主页和插件管理，Avalonia 保持 12.1.6；系统历史、左列表/右预览、复制原项、事件与激活刷新；WinRT 操作完成后检查取消，避免原生 Cancel 中断离页清理。无自建历史库或定时轮询 |
@@ -39,8 +41,8 @@
 | M5 安装器 | Inno Setup 6.7.3，当前用户可写目录；从已校验 ZIP 编译，首次附带插件、升级保留现有 Plugins，卸载保留插件及应用数据。首个文件写入前登记安装事务，同包可在原目录恢复。 |
 | 插件打包边界 | Build-Plugin 支持无 MVVM 的插件；仅随包包含 MVVM DLL 时复制对应许可，缺失仍失败；保留插件自备 Licenses。其他私有库许可由作者维护，不声称全部自动收集；宿主验证也复用该打包入口 |
 | DLL 运行库 | 保留 GitHub 单 ZIP，新增固定 HTTPS ZIP/wheel 与精确文件映射；多归档全部校验后一次提交，schema 4 保存完整配方与载荷摘要，旧 schema 1–3 兼容。宿主负责安装、完整性及占用保护，插件自行加载。实现及验证边界见 [E158](PROJECT_HISTORY.md#evidence-native-upstream-archives) |
-| Python 环境 | Dev 新增固定 uv/CPython、项目/锁快照、单索引 wheel 安装、最终代次、完整文件复核及受管调用；默认 PyPI/兼容索引进入来源页，Packages 管理整体环境。迁移在新根重建，构建与运行状态见 [A31/A33](#dependency-extension-plan) |
-| Node 环境 | Dev 新增固定 Node/pnpm、原始锁快照、单 registry 冻结安装、受管调用、npm 来源和 Node 分类；Python/Node 共用事务及目标重建，不放宽目录链接策略，见 A32/A33 |
+| Python 环境 | 固定 uv/CPython、项目/锁快照、单索引 wheel 安装、最终代次、完整文件复核及受管调用；默认 PyPI/兼容索引进入来源页，Packages 管理整体环境。迁移在新根重建，构建与运行状态见 [A31/A33](#dependency-extension-plan) |
+| Node 环境 | 固定 Node/pnpm、原始锁快照、单 registry 冻结安装、受管调用、npm 来源和 Node 分类；Python/Node 共用事务及目标重建，不放宽目录链接策略，见 A32/A33 |
 | 未实现的扩展 | 私有源认证、其他安装类型、源码构建/安装脚本、机器级安装、非 Windows 进程适配器及 AI 扩展仍未实现，不再有自有源部署任务 |
 
 ### 验证证据入口
@@ -53,27 +55,17 @@
 
 ### 外部依赖扩展
 
-2026-11-27 的 Astra 接入审查及后续宿主整体审查修复已完成：外部依赖归属/下载/取消/卸载与迁移重试、管理提交/通知隔离、失败回退现场保护、主记录丢失保护、启动退出收尾和语言环境暂时 I/O 重验。共享下载/输入逻辑已合并，公开接口、旧插件基线与 Python 身份不变。主代理自审和 SOL 分项复核未发现新的阻塞项。
+三类接入已实现，当前仅 Windows x64；设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，工具链、清单与限制统一在[插件规范](PLUGIN_DEVELOPMENT.md#dependency-kinds)维护。原接入版本已有用户常规使用反馈，后续修复不自动继承这些运行结论。
 
-用户授权的 Core **353 项**、最终发布宿主离屏 **100 项**及分发夹具通过，独立插件验证前后 **235 个宿主文件**哈希不变；Debug 已构建。CI 已接入现有框架回归入口，远端执行未验证。**宿主与依赖修复提交为 `789c4f6`，已包含在用户后续推送的 Dev 基线；真实 Windows 专项验收缺口保留**；失败过程、复验命令及证据见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)。
-
-卸载提示与恢复指引已补齐，沿用现有目录/日志入口及事务保护；Debug 构建和子代理静态复核通过，用户反馈暂未发现问题并授权本地提交，证据见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)。未逐项确认的恢复场景继续保留，不沿用 E152 的回归结果代替本轮运行验收。
-
-Python/Node 测试插件 1.1.0 已完成独立构建、静态包校验及 SOL Review，提交为 `31ef180`，见 [E154](PROJECT_HISTORY.md#evidence-environment-probe-workflows)。Node 缓存登记 junction 修复为 `b93b80b`，用户已自行推送；保留未知链接保护，新增 18 项回归已编译但未执行，见 [E155](PROJECT_HISTORY.md#evidence-node-cache-registration)。用户日志确认 Node/Python 预期失败分别以退出码 42/17 进入公共任务 Error；重复准备、清缓存、迁移及重置仍未逐项验收。
-
-原生上游归档接入见 [E158](PROJECT_HISTORY.md#evidence-native-upstream-archives)：API 1.11 支持 1–16 份固定 ZIP/wheel、逐份 SHA256 和精确文件映射，沿用已有安装事务与租约。审片插件直接消费五份官方 wheel，源码不再指向自有运行库 Release。隔离宿主发布、插件 SDK 独立打包及 Core/离屏集成/审片检查工程编译通过；两名 SOL/high 子代理复核 Core 与打包/消费链，无剩余阻断。新增 21 项 Core 用例与分发夹具未执行；NU1900 在线漏洞查询未完成。用户反馈本轮测试可正常使用、未发现问题，已授权本地提交；未逐项反馈的取消、离线复用、修复及占用保护场景继续待验。
-
-`Dev` 已完成 DLL、uv/Python 和 pnpm/Node 三类接入，用户对原接入版本反馈测试没有问题，后续修复已由用户推送至 `b93b80b`；未发布，正式版 1.1.0 不变。设计见[架构 7.3](ARCHITECTURE.md#dependency-extension)，选型与实施证据见 [E146](PROJECT_HISTORY.md#evidence-dependency-extension-plan)、[E147](PROJECT_HISTORY.md#evidence-native-library-packages)、[E148](PROJECT_HISTORY.md#evidence-python-environments)、[E150](PROJECT_HISTORY.md#evidence-node-environments)。
-
-| 顺序 | 实施范围与阶段出口 | 当前状态 |
+| 接入 | 当前能力 | 验证与未关闭项 |
 | --- | --- | --- |
-| 1. 独立原生运行库 | 扩展声明、完整文件校验、收据兼容及进程期保护；以真实消费者验证申请、加载、占用阻止修复/删除和重启后维护 | GitHub 单 ZIP 基线已有用户常规反馈；上游归档组合构建与静态复核通过，用户常规测试未发现问题并授权本地提交，专项缺口见 E158/A30 |
-| 2. uv / Python | 固定工具链、按锁安装、插件隔离环境及逐进程环境配置；用真实 PyPI 依赖验证首次准备、调用、拒绝重试与离线复用 | 已实现；构建/独立打包和静态复核完成，CLI 互斥已修正；用户反馈当前版本暂未遇问题并允许提交，专项缺口见 A31/A33 |
-| 3. pnpm / Node | 固定 Node/pnpm、按锁安装、hoisted+copy 无链接布局和禁用安装钩子；真实 npm 夹具用于调用、取消及环境维护验收 | 已实现；构建、静态复核及独立打包见 E150；用户反馈测试没有问题并允许提交，专项缺口见 A32/A33 |
+| 独立原生运行库 | GitHub 单 ZIP、API 1.11 上游归档组合、完整文件校验、旧收据兼容及进程期保护 | [E147](PROJECT_HISTORY.md#evidence-native-library-packages) / [E158](PROJECT_HISTORY.md#evidence-native-upstream-archives) 已有用户常规反馈；E158 新增检查只编译，取消、多归档失败、离线修复及占用维护见 A30 |
+| uv / Python | 固定工具链、项目/锁快照、插件隔离环境及受管进程调用 | [E148](PROJECT_HISTORY.md#evidence-python-environments) / [E154](PROJECT_HISTORY.md#evidence-environment-probe-workflows) 已有常规使用及预期失败反馈；断网重试、离线调用和隔离场景见 A31 |
+| pnpm / Node | 固定工具链、冻结安装、hoisted+copy、禁用安装钩子；兼容受限的 pnpm 缓存登记 | [E150](PROJECT_HISTORY.md#evidence-node-environments) 已有常规反馈，[E155](PROJECT_HISTORY.md#evidence-node-cache-registration) 新增检查只编译；真实安装/取消、重复准备及清缓存见 A32 |
 
-两类语言环境共用确认、事务、租约、缓存维护和迁移保护，保留旧 Python 记录格式与公开接口；当前仅 Windows x64，工具链版本、清单及限制统一见 [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。新分类与旧包重名保护、最终路径重建和故障恢复仍须按 A33 补齐专项运行证据。
+两类语言环境共用确认、事务、租约、缓存维护和迁移保护，保留旧 Python 记录格式。新旧分类冲突、回退引用、最终路径重建与故障恢复统一由 A33 追踪。宿主管理/生命周期的既有隔离回归见 [E151](PROJECT_HISTORY.md#evidence-dependency-review-fixes) / [E152](PROJECT_HISTORY.md#evidence-host-review-fixes)，恢复交互见 [E153](PROJECT_HISTORY.md#evidence-plugin-recovery-guidance)；具体命令和检查数量留在历史，不作为当前源码全部通过的证据。CI 已接入框架检查门禁，远端执行未重新核对。
 
-真实来源夹具及运行步骤：[DLL](../tests/NativeLibraryProbePlugin/README.md)、[Python](../tests/PythonEnvironmentProbePlugin/README.md)、[Node](../tests/NodeEnvironmentProbePlugin/README.md)，均不随正式分发；当前交付入口见[开发测试产物](#development-artifacts)。E151 使用临时文件、受控 HTTP/安装夹具及离屏界面，未重新下载真实语言依赖或启动真实主窗口；NU1900 表示在线漏洞数据查询未完成。用户未逐项报告的 A30–A33 真实场景继续保留。
+真实来源夹具及运行步骤：[DLL](../tests/NativeLibraryProbePlugin/README.md)、[Python](../tests/PythonEnvironmentProbePlugin/README.md)、[Node](../tests/NodeEnvironmentProbePlugin/README.md)，均不随正式分发；交付入口见[开发测试产物](#development-artifacts)。Python/Node 预期进程失败已获用户日志确认，重复准备、清缓存、迁移和重置仍需逐项验收。历史临时目录、受控 HTTP/安装夹具与离屏检查不能替代真实 Windows 证据。
 
 <a id="media-compare"></a>
 
@@ -95,6 +87,8 @@ Python/Node 测试插件 1.1.0 已完成独立构建、静态包校验及 SOL Re
 外部依赖入口为“设置 → 软件设置 → 外部依赖 → Packages / 依赖来源”。默认 GitHub/PyPI/npm 配合相应插件声明使用，无需部署索引；具体规则见 [GitHub 依赖](PLUGIN_DEVELOPMENT.md#package-source-maintenance) / [Python](PLUGIN_DEVELOPMENT.md#python-environments) / [Node](PLUGIN_DEVELOPMENT.md#node-environments)。未接入的类型不提供空配置入口。
 
 Packages 在面包屑下按“外部工具、DLL 运行库、Python 环境、Node 环境”切换；搜索、统计与批量清理范围保持一致，确认期间切类不更换已列出的清理对象。缓存按钮仅作用于当前语言分类。实现与用户反馈见 [E149](PROJECT_HISTORY.md#evidence-package-categories) / [E150](PROJECT_HISTORY.md#evidence-node-environments)，验证状态统一见 A30–A33。
+
+旧插件版本由“插件 → 清理历史版本”处理：核对弹窗中的插件和版本后确认，显式退出并重新启动；未开始执行时可取消，失败保留请求供重启重试。旧回退目录或清单已手动删除也走此入口，不直接修改管理记录。重启完成后，再到 Packages 检查旧版本依赖是否已无引用并按需清理；本功能不合并 Python/Node 环境。
 
 插件管理恢复提示沿用插件页“打开目录”和日志入口；若停在启动失败页，可用资源管理器按错误中的绝对路径定位。修改现场前须显式退出软件并另存副本：
 
@@ -149,19 +143,17 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 <a id="development-artifacts"></a>
 
-#### Dev 开发测试产物
+#### 开发测试产物
 
 | 产物 | 用途与证据 |
 | --- | --- |
-| [宿主审查修复 Debug 宿主](../artifacts/host-review-fixes-20261128/host-debug/TractorTool.exe) | E160，包含 E158/E159；0 警告/0 错误，未启动。来源表单、插件加载记录和依赖维护按当前源码验证；故障重置仅在隔离 profile 中进行。已有调试环境重新构建即可 |
-| [原生上游归档宿主](../artifacts/native-upstream-20261128/host-release/TractorTool.exe) | E158 隔离发布，Contracts API 1.11；0 编译错误，NU1900 在线漏洞查询未完成，未启动。用于新归档声明，不以旧 API 1.10 产物替代 |
-| [Node 缓存修复 Debug 宿主](../artifacts/node-cache-fix-20261128/host-debug/TractorTool.exe) | 含 E155；本机 .NET 10 环境构建，未启动。可用 [Start-TestHost.cmd](../artifacts/node-cache-fix-20261128/Start-TestHost.cmd) 创建独立 profile 后安装下面两份 ZIP；已有 VS Code 调试环境则结束旧进程、重新构建运行，无需重装测试插件。E154 的旧宿主保留为历史产物 |
+| `artifacts/plugin-history-cleanup-20261128/reference-feedback/host-debug` | E161 缺失清单反馈修正后的隔离编译产物，0 警告/0 错误，未启动。用于保存构建证据；历史版本验收应在原有安装/调试目录按当前源码构建，避免切换安装根后读到另一套 Plugins 和管理记录 |
 | [Python 测试插件 1.1.0](../artifacts/environment-probes-20261128/python/Test.PythonEnvironmentProbe-1.1.0.zip) | 使用真实 idna 依赖处理用户输入，提供持续运行/失败场景及结果文件；[验收步骤](../tests/PythonEnvironmentProbePlugin/README.md)，不进入正式分发 |
 | [Node 测试插件 1.1.0](../artifacts/environment-probes-20261128/node/Test.NodeEnvironmentProbe-1.1.0.zip) | 使用真实 is-number 依赖处理用户输入，提供持续运行/失败场景及结果文件；[验收步骤](../tests/NodeEnvironmentProbePlugin/README.md)，不进入正式分发 |
 
 配套插件为 [AB 审片 0.1.9 ZIP](../artifacts/native-upstream-20261128/plugin/TractorTool.MediaCompare-0.1.9.zip)，要求 API 1.11 宿主；包内不含 GStreamer DLL，首次申请从官方上游下载。证据与测试步骤见 [E158 产物说明](../artifacts/native-upstream-20261128/README.md)。E157 旧插件候选及自打包 GStreamer ZIP 不再用于交付，不发布运行库附件。
 
-宿主使用独立 `--profile-root`；安装插件后显式退出重启。DLL/Python/Node 的旧交付包与命令保留在 E147/E148/E150，重建时使用当前源码和宿主 SDK。生成产物不入库，路径仅在对应本地工作区可用。
+E161 未改变插件接口，以上既有插件包仍可使用；历史版本清理验收沿用原有安装/调试目录及其管理记录，不直接启动隔离构建产物。故障注入仍只允许隔离样本。旧宿主与启动脚本仅作[历史证据](PROJECT_HISTORY.md#host-review-documentation)，不用于本轮验收；生成产物不入库，路径仅在对应本地工作区可用。
 
 需要运行或完整分发时按[开发入口](#workflow)从当前源码生成新目录，独立安装插件后显式退出重启；不要拼用历史副本，也不要把机制夹具当正式业务插件。托盘验证方法见[接入规范](PLUGIN_DEVELOPMENT.md#tray-menu)。
 
@@ -211,7 +203,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | M4 | 多预设串行与公共有限任务 | 实现补齐；需同源多个正确可播放输出、切页/隐藏继续、取消/退出/中断及持久化证据 |
 | M5 | 可靠性与正式发布 | 日志保留、迁移/同窗启动、ZIP 与用户级安装器已实现；1.1.0 已经标签流程构建、校验并公开发布。隔离恢复回归见 E135，插件隔离及分发校验见 E137；真实安装、专项故障恢复、跨会话及无 SDK 机器验收仍未完成 |
 
-外部依赖三类扩展已在 `Dev` 实现，进入专项可靠性验收；当前反馈与缺口见[外部依赖扩展](#dependency-extension-plan)。本地 AI 等业务仍归插件，实现与构建不代表故障场景已经验证。
+外部依赖三类扩展已在当前源码实现，进入专项可靠性验收；当前反馈与缺口见[外部依赖扩展](#dependency-extension-plan)。本地 AI 等业务仍归插件，实现与构建不代表故障场景已经验证。
 
 <a id="acceptance"></a>
 
@@ -226,10 +218,10 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 | A01 | 主框架与主题 | 顶部主页和三个底部入口可达，欢迎/插件卡片与实际安装一致，布局/图标/控件/切页反馈统一，宿主和插件主题一致，重启保留 | UI | E117 官方 12.1.6 已构建，用户常规使用反馈暂未发现升级问题；E137 离屏呈现器清空与失败恢复的页头绑定检查通过，真实退出及页头同步仍待验。E116 用户确认高精度候选消闪、普通精度仍闪；候选已清理且不再采用定制后端，闪动仍未关闭。保留原动效及文字/透明度设置；快速切页/取消、GPU/高 DPI、主题首帧与动画关闭/恢复仍待验 |
 | A02 | 独立插件 | 宿主发布后单独构建并安装到软件目录 Plugins，导航和设置出现，宿主二进制未改变 | 集成、UI | E117 正式插件独立构建与兼容声明核对通过，用户常规反馈暂未发现升级问题。E137 独立机制插件的离屏装载、私有依赖隔离、旧 UI API 兼容及共享副本拒绝通过，234 个宿主文件哈希未变；全部正式插件的真实安装/UI 仍未逐项验收 |
 | A03 | 兼容性与禁用 | 不兼容、禁用插件只读清单不执行入口；加载错误可定位 | 集成 | E135 离屏集成验证独立插件装载、兼容性拒绝、禁用及图标回退。日常安装的升级及原生交互需真机验证。[E135](PROJECT_HISTORY.md#evidence-release-100) |
-| A04 | 管理操作重启生效 | 安装/更新/禁用/卸载正确生效，失败可恢复，数据保留；目录不可写不误报成功或改装别处 | 集成、UI | E62 用户常规反馈与 E137 原隔离检查保留。E152 通过通知故障、缺主有备份、阶段取消、回退副本丢失/改写、已交换重试、残留归属及归档迁移/重装检查；E160 加载结果与重置收尾已修复、回归仅编译。真实安装目录 ACL、占用和现场中断恢复仍待专项验收 |
+| A04 | 管理操作重启生效 | 安装/更新/禁用/卸载/历史清理正确生效，失败可恢复，数据保留；手删旧回退代码可解除记录，目录不可写不误报成功 | 集成、UI | E62 用户常规反馈与 E137 原隔离检查保留。E152 管理恢复隔离检查通过；E160 加载结果与重置收尾回归仅编译。[E161](PROJECT_HISTORY.md#evidence-plugin-history-cleanup) 补精确预览、手删旧版兼容、重启清理和失败重试；构建通过，子代理静态复核无剩余阻断，新增检查未运行。真实目录 ACL、占用和现场中断恢复仍待专项验收 |
 | A05 | 页面与任务分离 | 导出时切页、关闭到托盘、重新显示，任务连续且状态正确 | UI、进程 | E55 隔离导航回收、取消/错误恢复、动画及嵌套 Settings 检查通过；真实发布版长期切页/图片内存曲线待用户复测。当前真实视频任务、任务页和托盘仍待验，不能据页面回收通过认定后台业务已验收 |
-| A06 | 默认与自定义数据根目录 | 迁移后可用并安全清旧业务数据，插件代码不移动；自定义目录删除后默认初始化，访问故障/未完迁移不重置 | 集成、UI | E137 隔离检查通过默认重置及失败重试、父路径/占位保护、移码恢复、连续迁移快照与旧目标复用、目标损坏/源变化保护、清理中断恢复及旧清单兼容。真实 ACL、离线卷、跨卷/近满盘、大目录、块内取消及提交两侧实际断电仍待验证；删除后重新迁移的完整 UI 流程未单独验收 |
-| A07 | 外部包事务及依赖管理 | GitHub 精确版本/附件、首次确认、离线复用、多版本、声明冲突、已装来源展示；引用/使用中不可删，卸载保留包；新工具不改宿主二进制 | 集成、UI、网络 | E137 隔离检查通过坏/旧收据恢复、hash 与 Windows 别名保护、修复失败/取消及提交前后中断恢复；离屏设置页验证首次下载可见并可取消。E62 用户反馈安装、拒绝重试、修复/清理暂未发现问题；真实 GitHub/ripgrep 独立插件专项覆盖未逐项报告。E117 FFmpeg 移动目录被拒后重试成功，根因未定 |
+| A06 | 默认与自定义数据根目录 | 迁移后可用并安全清旧业务数据，插件代码不移动；自定义目录删除后默认初始化，访问故障/未完迁移不重置 | 集成、UI | E137 隔离检查通过默认重置及失败重试、父路径/占位保护、移码恢复、连续迁移快照与旧目标复用、目标损坏/源变化保护、清理中断恢复及旧清单兼容。E160 重置提交前后恢复及标记归属检查仅编译。真实 ACL、离线卷、跨卷/近满盘、大目录、块内取消及提交两侧实际断电仍待验证；删除后重新迁移的完整 UI 流程未单独验收 |
+| A07 | 外部包事务及依赖管理 | GitHub 精确版本/附件、首次确认、离线复用、多版本、声明冲突、已装来源展示；引用/使用中不可删，卸载保留包；新工具不改宿主二进制 | 集成、UI、网络 | E137 隔离检查通过坏/旧收据恢复、hash 与 Windows 别名保护、修复失败/取消及提交前后中断恢复；离屏设置页验证首次下载可见并可取消。E159/E160 来源反馈、并发来源快照及清理引用变化检查仅编译。E161 同错去重与独立错误保留待运行验收。E62 用户反馈安装、拒绝重试、修复/清理暂未发现问题；真实 GitHub/ripgrep 独立插件专项覆盖未逐项报告。E117 FFmpeg 移动目录被拒后重试成功，根因未定 |
 | A08 | [系统剪贴板历史](Plugins/ClipboardHistory.md#5-验收方法) | 系统历史分栏预览、复制原项、事件/手动刷新及明确异常，无自建历史库 | 集成、UI | E103 真实日志确认离页取消 WinRT 失败，1.1.3 已修正并独立编译/打包；新增迟到失败用例仅编译，用户需验证读取中切页、快速选择和重返页面。E46 底部留白及 Windows 完整行为仍待验收 |
 | A09 | [媒体探测及视频验收](Plugins/VideoExport.md#6-验收方法) | JSON 正确解析，含中文路径、无音轨、未知时长和损坏文件处理 | 集成 | 0.5.2 完整报告、预设命名及任务接入已独立打包；媒体/参数/进度/隔离输出检查只编译；E62 视频常规流程用户测试无问题，中文路径/损坏文件等专项未逐项报告 |
 | A10 | 输入限制 | 一次只允许一个源视频和至多一张封面，不出现多源队列 | UI | 未验证 |
@@ -269,7 +261,7 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 ## 6. 下一步与维护
 
-`Dev` 的[三类外部依赖接入](#dependency-extension-plan) 及 E156–E158 上游归档扩展已提交至 `487b5fc`，后者已获用户常规使用反馈；其后的 E159 来源反馈与 E160 宿主状态/来源修复也已本地提交，未由代理推送。优先复核来源重复输入、插件启动失败后的记录、未引用依赖清理，以及隔离目录中的重置失败恢复；不得在真实数据上制造破坏性故障。A04/A30–A33 的真实下载、调用、迁移及 Windows UI 证据继续补齐，临时夹具不替代这些验收。以下既有未关闭问题继续保留。
+以当前源码继续由用户确认历史版本预览、拒绝/取消、重启清理、手动删除后的记录释放及 Packages 提示去重；确认当前插件可用、数据/快照/外部依赖保留，再另行清理无引用依赖。构建和静态复核已完成，用户已授权提交并合并至本地 `main`；26 项新增检查未运行，专项验收缺口保留。E159/E160 的来源反馈、加载记录、清理与重置恢复专项仍待验；不得在真实数据上制造破坏性故障。A04/A30–A33 的真实下载、调用、迁移及 Windows UI 证据继续补齐，临时夹具不替代这些验收。
 
 E117 用户常规使用反馈暂未发现 Avalonia 升级问题。FFmpeg 安装末尾拒绝移动目录曾偶发一次、重试成功，未作代码修复；若再现，先捕获源/目标路径与所有相关进程的文件访问记录定位原因。以下专项运行缺口保持开放。
 

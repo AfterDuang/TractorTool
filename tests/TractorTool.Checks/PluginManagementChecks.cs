@@ -1,8 +1,11 @@
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using TractorTool.Contracts;
+using TractorTool.Contracts.Processes;
 using TractorTool.Core.Logging;
+using TractorTool.Core.Packages;
 using TractorTool.Core.Plugins;
 using TractorTool.Core.Storage;
 
@@ -40,6 +43,287 @@ internal static class PluginManagementChecks
             // State-machine fixture outcome, not a DLL-load integration test.
             manager.RecordLoadResults([new PluginRecord(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0"), Manifest(), PluginState.Loaded, "State fixture")]);
         }
+        void Activate(PluginManager manager, AppPaths paths, PluginManifest manifest)
+        {
+            Assert(manager.QueueInstall(Zip(paths, manifest), []) is null);
+            manager.ApplyPending();
+            manager.RecordLoadResults([new(Path.Combine(paths.PluginRoot, manifest.Id, manifest.Version), manifest,
+                PluginState.Loaded, "State fixture")]);
+            Assert(manager.Snapshot.Single(p => p.Id == manifest.Id) is { Pending: null, AwaitingLoad: false, Error: "" });
+        }
+        // Explicit state-machine outcomes, not executed or loaded fixture assemblies.
+        PluginRecord[] Records(PluginManager manager, AppPaths paths) => manager.Snapshot
+            .Where(p => p.ActiveVersion is not null).Select(p => new PluginRecord(
+                Path.Combine(paths.PluginRoot, p.Id, p.ActiveVersion!), Manifest(p.ActiveVersion!, p.Id),
+                p.Enabled ? PluginState.Loaded : PluginState.Disabled, "State fixture")).ToArray();
+        check("History cleanup removes obsolete code but retains current code, data, snapshots and packages", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            var data = paths.GetPluginDataDirectory("Checks.Management"); Directory.CreateDirectory(data);
+            var dataFile = Path.Combine(data, "keep.txt"); File.WriteAllText(dataFile, "user data");
+            Activate(manager, paths, Manifest("2.0.0"));
+            Activate(manager, paths, Manifest("3.0.0"));
+            var code = Path.Combine(paths.PluginRoot, "Checks.Management");
+            // Retired plugins remain owned even when today's host would reject their SDK declaration.
+            File.WriteAllText(Path.Combine(code, "1.0.0", "plugin.json"),
+                JsonSerializer.Serialize(Manifest() with { ApiVersion = "99.0" }, JsonOptions.Value));
+            var unknown = Path.Combine(code, "7.0.0"); Directory.CreateDirectory(unknown);
+            var unknownFile = Path.Combine(unknown, "keep.txt"); File.WriteAllText(unknownFile, "unclaimed directory");
+            var packageFile = Path.Combine(paths.PackageRoot, "keep.txt"); File.WriteAllText(packageFile, "dependency data");
+            var backups = Directory.GetFiles(Path.Combine(paths.DataRoot, "Data", ".plugin-backups"), "*", SearchOption.AllDirectories)
+                .ToDictionary(p => p, File.ReadAllBytes);
+            Assert(backups.Count != 0);
+            var preview = manager.GetHistoryCleanup(Records(manager, paths));
+            Assert(preview.Single().Versions.SequenceEqual(new[] { "1.0.0", "2.0.0" }));
+            Assert(manager.QueueHistoryCleanup(preview, Records(manager, paths)) is null);
+            Assert(Directory.Exists(Path.Combine(code, "1.0.0")) && Directory.Exists(Path.Combine(code, "2.0.0")));
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { ActiveVersion: "3.0.0", Pending: null, Recovery: null, Error: "" });
+            Assert(!Directory.Exists(Path.Combine(code, "1.0.0")) && !Directory.Exists(Path.Combine(code, "2.0.0")));
+            Assert(File.Exists(Path.Combine(code, "3.0.0", "Fixture.dll")) && manager.GetHistoryCleanup(Records(manager, paths)).Count == 0);
+            Assert(File.ReadAllText(dataFile) == "user data" && File.ReadAllText(packageFile) == "dependency data");
+            Assert(File.ReadAllText(unknownFile) == "unclaimed directory");
+            Assert(backups.All(p => File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+        });
+        foreach (var missing in new[] { "directory", "manifest" })
+            check("History cleanup releases a manually deleted recovery " + missing + " and rebuilds all dependency references", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            var old = Manifest() with { ApiVersion = "1.2", Dependencies = [new("Old.Tool", "1.0.0")] };
+            var active = Manifest("2.0.0") with { ApiVersion = "1.2", Dependencies = [new("Current.Tool", "1.0.0")] };
+            Activate(manager, paths, old); Activate(manager, paths, active);
+            using var http = new HttpClient();
+            var packages = new ExternalPackageService(paths.PackageRoot, "win-x64", http, new NoProcesses(), new AppLog(paths.LogRoot));
+            try
+            {
+                using var references = new PluginPackageReferences(paths, manager, packages);
+                PluginRecord[] discovered = [new(Path.Combine(paths.PluginRoot, active.Id, active.Version), active, PluginState.Loaded, "State fixture")];
+                references.SetDiscovered(discovered, null);
+                Assert(packages.ReferenceError == "" && packages.GetPackages().Count == 2);
+                var oldDirectory = Path.Combine(paths.PluginRoot, old.Id, old.Version);
+                if (missing == "directory") Directory.Delete(oldDirectory, recursive: true);
+                else File.Delete(Path.Combine(oldDirectory, "plugin.json"));
+                var missingReads = 0;
+                void OnFirstChance(object? sender, FirstChanceExceptionEventArgs args)
+                {
+                    if (args.Exception is FileNotFoundException or DirectoryNotFoundException &&
+                        args.Exception.Message.Contains(oldDirectory, StringComparison.OrdinalIgnoreCase))
+                        Interlocked.Increment(ref missingReads);
+                }
+                AppDomain.CurrentDomain.FirstChanceException += OnFirstChance;
+                try
+                {
+                    references.SetDiscovered(discovered, null);
+                    Assert(packages.ReferenceError.Contains(Path.Combine(oldDirectory, "plugin.json"), StringComparison.Ordinal) &&
+                        packages.Python.Error.Length != 0 && packages.Node.Error.Length != 0);
+                    Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+                    Assert(packages.ReferenceError.Length != 0 && packages.Python.Error.Length != 0 && packages.Node.Error.Length != 0);
+                    manager.CancelPending(active.Id);
+                    Assert(manager.Snapshot.Single().Recovery?.Version == old.Version && packages.ReferenceError.Length != 0);
+                    Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+                    manager.ApplyPending();
+                    Assert(missingReads == 0);
+                }
+                finally { AppDomain.CurrentDomain.FirstChanceException -= OnFirstChance; }
+                Assert(manager.Snapshot.Single() is { ActiveVersion: "2.0.0", Recovery: null, Pending: null, Error: "" });
+                Assert(!Directory.Exists(oldDirectory) && File.Exists(Path.Combine(discovered[0].Directory, "Fixture.dll")));
+                Assert(packages.ReferenceError == "" && packages.Python.Error == "" && packages.Node.Error == "");
+                Assert(packages.GetPackages().Single().Package.Id == "Current.Tool");
+            }
+            finally { packages.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        });
+        foreach (var changed in new[] { "pending request", "active version", "history list" })
+            check("History cleanup rejects the whole preview after another plugin changes its " + changed, () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
+            foreach (var id in new[] { "Checks.First", "Checks.Second" })
+            {
+                Activate(manager, paths, Manifest(id: id));
+                Activate(manager, paths, Manifest("2.0.0", id));
+            }
+            var preview = manager.GetHistoryCleanup(Records(manager, paths)).OrderBy(p => p.PluginId).ToArray();
+            if (changed == "pending request") Assert(manager.QueueChange("Checks.Second", PluginChangeKind.Disable, []) is null);
+            else if (changed == "active version") Activate(manager, paths, Manifest("3.0.0", "Checks.Second"));
+            else ZipFile.ExtractToDirectory(Zip(paths, Manifest("0.9.0", "Checks.Second")),
+                Path.Combine(paths.PluginRoot, "Checks.Second", "0.9.0"));
+            var before = manager.Snapshot.ToArray();
+            Assert(manager.QueueHistoryCleanup(preview, Records(manager, paths)) is not null);
+            Assert(manager.Snapshot.SequenceEqual(before) && manager.Snapshot.Single(p => p.Id == "Checks.First").Pending is null);
+            Assert(new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"))
+                .Load().Plugins.SequenceEqual(before));
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, "Checks.First", "1.0.0", "Fixture.dll")));
+        });
+        check("History cleanup can be cancelled before startup without dropping its recovery record", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            var before = manager.Snapshot.Single();
+            Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+            Assert(manager.GetHistoryCleanup(Records(manager, paths)).Count == 0);
+            manager.CancelPending(before.Id);
+            Assert(manager.Snapshot.Single() == before && manager.GetHistoryCleanup(Records(manager, paths)).Count == 1);
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, before.Id, "1.0.0", "Fixture.dll")));
+        });
+        foreach (var failedState in new[] { PluginState.Failed, PluginState.Invalid, PluginState.Discovered, PluginState.Incompatible })
+            check("History cleanup excludes the current session's " + failedState + " plugin and rejects an earlier preview", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            var loaded = Records(manager, paths).Single();
+            var preview = manager.GetHistoryCleanup([loaded]);
+            Assert(preview.Count == 1);
+            PluginRecord[] current = [new(loaded.Directory, loaded.Manifest, failedState, "Current-session fixture")];
+            manager.RecordLoadResults(current);
+            Assert(manager.Snapshot.Single() is { AwaitingLoad: false, Error: "" });
+            Assert(manager.GetHistoryCleanup(current).Count == 0 && manager.QueueHistoryCleanup(preview, current) is not null);
+            Assert(manager.Snapshot.Single().Pending is null);
+        });
+        check("History cleanup requires one unambiguous current record for the selected version", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            var loaded = Records(manager, paths).Single();
+            var preview = manager.GetHistoryCleanup([loaded]);
+            PluginRecord[] duplicates = [loaded, new(loaded.Directory + "-duplicate", loaded.Manifest, PluginState.Loaded, "Duplicate fixture")];
+            Assert(manager.GetHistoryCleanup(duplicates).Count == 0 && manager.QueueHistoryCleanup(preview, duplicates) is not null);
+            PluginRecord[] stale = [new(Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0"), Manifest(), PluginState.Loaded, "Old session fixture")];
+            Assert(manager.GetHistoryCleanup(stale).Count == 0 && manager.QueueHistoryCleanup(preview, stale) is not null);
+            Assert(manager.Snapshot.Single().Pending is null);
+        });
+        if (OperatingSystem.IsWindows())
+            check("History cleanup resumes an interrupted move and a locked deletion without allowing cancellation", () =>
+        {
+            var paths = Paths(); ManagedPlugin queued;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Activate(manager, paths, Manifest("2.0.0")); Activate(manager, paths, Manifest("3.0.0"));
+                Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+                queued = manager.Snapshot.Single();
+            }
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(store.Load() with { Plugins = [queued with { Pending = queued.Pending! with { DestructiveStarted = true } }] });
+            var trash = Path.Combine(paths.PluginRoot, ".management", "removed", queued.Pending!.Token);
+            Directory.CreateDirectory(trash);
+            Directory.Move(Path.Combine(paths.PluginRoot, queued.Id, "1.0.0"), Path.Combine(trash, "1.0.0"));
+            using (var busy = new FileStream(Path.Combine(trash, "1.0.0", "Fixture.dll"), FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var resumed = new PluginManager(paths, compatibility))
+            {
+                resumed.ApplyPending();
+                Assert(resumed.Snapshot.Single() is { Pending.DestructiveStarted: true, Error.Length: > 0 });
+                Assert(resumed.Snapshot.Single().Recovery == queued.Recovery);
+                Reject<InvalidOperationException>(() => resumed.CancelPending(queued.Id));
+                Assert(File.Exists(Path.Combine(paths.PluginRoot, queued.Id, "3.0.0", "Fixture.dll")));
+                var log = new AppLog(paths.LogRoot);
+                var host = new PluginHost(paths, compatibility, log);
+                host.Discover([], resumed.Snapshot);
+                Assert(host.Records.Single() is { State: PluginState.Discovered, Manifest.Version: "3.0.0" });
+                Assert(log.Snapshot().Entries.Any(e => e.Level == AppLogLevel.Error && e.Source == "Plugins"));
+            }
+            using var completed = new PluginManager(paths, compatibility);
+            completed.ApplyPending();
+            Assert(completed.Snapshot.Single() is { ActiveVersion: "3.0.0", Pending: null, Recovery: null, Error: "" });
+            Assert(!Directory.Exists(trash) && completed.GetHistoryCleanup(Records(completed, paths)).Count == 0);
+        });
+        check("History cleanup preserves unlisted trash contents and keeps a retryable request", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+            var item = manager.Snapshot.Single();
+            var trash = Path.Combine(paths.PluginRoot, ".management", "removed", item.Pending!.Token);
+            var foreign = Path.Combine(trash, "not-in-the-preview"); Directory.CreateDirectory(foreign);
+            var evidence = Path.Combine(foreign, "keep.txt"); File.WriteAllText(evidence, "unclaimed data");
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { Pending.DestructiveStarted: true, Error.Length: > 0 });
+            Assert(File.ReadAllText(evidence) == "unclaimed data" && manager.Snapshot.Single().Recovery == item.Recovery);
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, item.Id, "2.0.0", "Fixture.dll")));
+            Directory.Delete(foreign, recursive: true); // Remove only the fixture obstruction, then retry.
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { Pending: null, Recovery: null, Error: "" } && !Directory.Exists(trash));
+        });
+        check("Data reset preserves an interrupted history cleanup until its code trash is removed", () =>
+        {
+            var paths = Paths(); ManagedPlugin queued;
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Activate(manager, paths, Manifest("2.0.0"));
+                Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+                queued = manager.Snapshot.Single();
+            }
+            var request = queued.Pending! with { DestructiveStarted = true };
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"), PluginManagementState.Validate);
+            store.Save(store.Load() with { Plugins = [queued with { Pending = request }] });
+            var trash = Path.Combine(paths.PluginRoot, ".management", "removed", request.Token);
+            Directory.CreateDirectory(trash);
+            Directory.Move(Path.Combine(paths.PluginRoot, queued.Id, "1.0.0"), Path.Combine(trash, "1.0.0"));
+            Directory.Delete(paths.DataRoot, recursive: true); // Isolated fixture, including the former recovery snapshot.
+            using var resumed = new PluginManager(paths, compatibility);
+            resumed.DiscardDataRootState(paths.DataRoot);
+            var pending = resumed.Snapshot.Single().Pending;
+            Assert(pending is { Kind: PluginChangeKind.CleanHistory, DestructiveStarted: true } &&
+                pending.Token == request.Token && pending.HistoryVersions!.SequenceEqual(request.HistoryVersions!));
+            Assert(resumed.Snapshot.Single().Recovery is null && Directory.Exists(trash));
+            resumed.ApplyPending();
+            Assert(resumed.Snapshot.Single() is { ActiveVersion: "2.0.0", Pending: null, Recovery: null, Error: "" });
+            Assert(!Directory.Exists(trash) && !Directory.Exists(paths.DataRoot));
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, queued.Id, "2.0.0", "Fixture.dll")));
+        });
+        foreach (var invalid in new[] { new[] { "2.0.0" }, new[] { "1.0.0", "1.0.0" }, new[] { "../1.0.0" }, Array.Empty<string>() })
+            check("History cleanup rejects unsafe persisted versions: " + string.Join(",", invalid), () =>
+        {
+            var paths = Paths();
+            using (var manager = new PluginManager(paths, compatibility))
+            {
+                Install(manager, paths); Activate(manager, paths, Manifest("2.0.0"));
+                Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(Records(manager, paths)), Records(manager, paths)) is null);
+            }
+            var store = new JsonFileStore<PluginManagementState>(Path.Combine(paths.PluginRoot, ".management", "state.json"));
+            var state = store.Load(); var item = state.Plugins.Single();
+            store.Save(state with { Plugins = [item with { Pending = item.Pending! with { HistoryVersions = invalid } }] });
+            Reject<InvalidDataException>(() => { using var rejected = new PluginManager(paths, compatibility); });
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, item.Id, "2.0.0", "Fixture.dll")));
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, item.Id, "1.0.0", "Fixture.dll")));
+        });
+        check("History cleanup refuses an old directory whose manifest belongs to another plugin", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            var oldManifest = Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0", "plugin.json");
+            File.WriteAllText(oldManifest, JsonSerializer.Serialize(Manifest(id: "Checks.Foreign"), JsonOptions.Value));
+            Reject<InvalidDataException>(() => manager.GetHistoryCleanup(Records(manager, paths)));
+            Assert(manager.Snapshot.Single().Pending is null && File.Exists(oldManifest));
+        });
+        check("History cleanup accepts the host's case-insensitive JSON property names and UTF-16 manifests", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            Assert(manager.QueueChange("Checks.Management", PluginChangeKind.Disable, []) is null); manager.ApplyPending();
+            foreach (var version in new[] { "1.0.0", "2.0.0" })
+            {
+                var json = JsonSerializer.Serialize(Manifest(version), JsonOptions.Value)
+                    .Replace("\"id\":", "\"Id\":").Replace("\"version\":", "\"Version\":");
+                File.WriteAllText(Path.Combine(paths.PluginRoot, "Checks.Management", version, "plugin.json"), json, System.Text.Encoding.Unicode);
+            }
+            var current = Records(manager, paths);
+            Assert(current.Single().State == PluginState.Disabled);
+            Assert(manager.QueueHistoryCleanup(manager.GetHistoryCleanup(current), current) is null);
+            manager.ApplyPending();
+            Assert(manager.Snapshot.Single() is { Enabled: false, ActiveVersion: "2.0.0", Recovery: null, Pending: null, Error: "" });
+            var host = new PluginHost(paths, compatibility, new AppLog(paths.LogRoot));
+            host.Discover([], manager.Snapshot);
+            Assert(host.Records.Single().State == PluginState.Disabled);
+        });
+        check("History cleanup rejects duplicate JSON ownership properties without deleting either version", () =>
+        {
+            var paths = Paths(); using var manager = new PluginManager(paths, compatibility); Install(manager, paths);
+            Activate(manager, paths, Manifest("2.0.0"));
+            var old = Path.Combine(paths.PluginRoot, "Checks.Management", "1.0.0", "plugin.json");
+            var json = JsonSerializer.Serialize(Manifest(), JsonOptions.Value).Insert(1, "\"id\":\"Checks.Foreign\",");
+            File.WriteAllText(old, json);
+            Reject<InvalidDataException>(() => manager.GetHistoryCleanup(Records(manager, paths)));
+            Assert(manager.Snapshot.Single().Pending is null && File.ReadAllText(old) == json);
+            Assert(File.Exists(Path.Combine(paths.PluginRoot, "Checks.Management", "2.0.0", "Fixture.dll")));
+        });
         check("Management stages package until next startup", () =>
         {
             var paths = Paths(); using var manager = new PluginManager(paths, compatibility);
@@ -1117,6 +1401,11 @@ internal static class PluginManagementChecks
         });
     }
     private static void Assert(bool condition) { if (!condition) throw new Exception("Management assertion failed"); }
+    private sealed class NoProcesses : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("History cleanup must not start a process.");
+    }
     private static void Subscribe(PluginManager manager, string name, Action callback) =>
         typeof(PluginManager).GetEvent(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetAddMethod(true)!.Invoke(manager, [callback]);
     private sealed class CallbackProgress(Action<string> report) : IProgress<string>

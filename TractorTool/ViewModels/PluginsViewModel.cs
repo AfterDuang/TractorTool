@@ -18,10 +18,10 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     private Task _operation = Task.CompletedTask;
     public Func<Task<string?>>? PickArchiveAsync { get; set; }
     public Func<string, Task<bool>>? ConfirmAsync { get; set; }
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(CleanHistoryCommand))]
     private bool _managementAvailable = manager is not null;
     public bool CanInstall => ManagementAvailable && !IsBusy && !IsLoading && !_stopping;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(CleanHistoryCommand))]
     private bool _isBusy;
     public string PluginRoot => paths.PluginRoot;
     public string RecoveryRoot => Path.Combine(paths.DataRoot, "Data", ".plugin-backups");
@@ -38,7 +38,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     public bool HasOperationStatus => !string.IsNullOrWhiteSpace(OperationStatus);
     public bool HasDirectoryError => !string.IsNullOrWhiteSpace(DirectoryError);
     [ObservableProperty] private string _summary = "正在检查本地插件…";
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsEmpty)), NotifyPropertyChangedFor(nameof(NoMatches)), NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand))] private bool _isLoading = true;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsEmpty)), NotifyPropertyChangedFor(nameof(NoMatches)), NotifyPropertyChangedFor(nameof(CanInstall)), NotifyCanExecuteChangedFor(nameof(InstallCommand), nameof(CleanHistoryCommand))] private bool _isLoading = true;
     public void Update(IReadOnlyList<RegisteredPage> pages, IEnumerable<NavigationItem> navigation)
     {
         _pages = pages; _navigation = navigation.ToArray();
@@ -117,7 +117,8 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         var text = pending?.Kind switch {
             PluginChangeKind.Activate => "重启后安装 " + pending.Version, PluginChangeKind.Enable => "重启后启用",
             PluginChangeKind.Disable => "重启后禁用", PluginChangeKind.Uninstall => "重启后卸载（保留数据）",
-            PluginChangeKind.Rollback => "重启后回退到 " + item!.Recovery?.Version, _ => "" };
+            PluginChangeKind.Rollback => "重启后回退到 " + item!.Recovery?.Version,
+            PluginChangeKind.CleanHistory => "重启后清理历史版本：" + string.Join("、", pending.HistoryVersions!), _ => "" };
         if (!string.IsNullOrEmpty(item?.Error)) text += (text.Length == 0 ? "" : "\n") + item.Error;
         var retained = manager.RetainedRemovals.Any(r => r.PluginId.Equals(id, StringComparison.OrdinalIgnoreCase));
         if (retained) text += (text.Length == 0 ? "" : "\n") + "程序残留已保留在卸载回收目录，可稍后重试清理；插件数据与恢复快照不受影响。";
@@ -165,6 +166,26 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
         OperationStatus = "插件包已校验，退出并重新打开软件后生效。";
         log?.Write("Plugins", OperationStatus);
     }
+
+    [RelayCommand(CanExecute = nameof(CanInstall))]
+    private Task CleanHistoryAsync() => RunOperationAsync(async () =>
+    {
+        var plan = await Task.Run(() => manager!.GetHistoryCleanup(host.Records));
+        if (_stopping) return;
+        if (plan.Count == 0)
+        {
+            OperationStatus = "暂无可清理的历史版本；有待生效变更或加载错误的插件需先处理后再清理。";
+            return;
+        }
+        var versions = string.Join("\n", plan.Select(p => $"{p.Name}：{string.Join("、", p.Versions)}"));
+        var message = "重启后清理以下插件历史版本？\n\n" + versions +
+            "\n\n清理后将无法回退到列出的版本。当前版本、插件数据、恢复快照和外部依赖均保留。";
+        if (ConfirmAsync is null || !await ConfirmAsync(message) || _stopping) return;
+        var rejection = await Task.Run(() => manager!.QueueHistoryCleanup(plan, host.Records));
+        if (rejection is not null) { ReportRejection(rejection); return; }
+        OperationStatus = "历史版本清理已安排，退出并重新打开软件后生效。";
+        log?.Write("Plugins", OperationStatus + "\n" + versions);
+    });
 
     private Task CancelChangeAsync(string id) => RunOperationAsync(async () =>
     {
@@ -226,7 +247,7 @@ public partial class PluginsViewModel(AppPaths paths, PluginHost host, IRelayCom
     public async Task BeginShutdown()
     {
         _stopping = true;
-        try { InstallCommand.NotifyCanExecuteChanged(); }
+        try { InstallCommand.NotifyCanExecuteChanged(); CleanHistoryCommand.NotifyCanExecuteChanged(); }
         finally { await _operation; }
     }
     [RelayCommand] private void OpenDirectory()

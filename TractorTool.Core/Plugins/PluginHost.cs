@@ -62,8 +62,13 @@ public sealed class PluginHost(AppPaths paths, HostCompatibility compatibility, 
                             ReadRecord(versionDirectory, selection.Enabled ? [] : [selection.Id]);
                             if (selection.Error.Length != 0)
                             {
-                                Records[^1].State = PluginState.Failed;
-                                Records[^1].Detail = selection.Error;
+                                if (selection.Pending?.Kind == PluginChangeKind.CleanHistory)
+                                    log.Write(AppLogLevel.Error, "Plugins", selection.Id + " · " + selection.Error);
+                                else
+                                {
+                                    Records[^1].State = PluginState.Failed;
+                                    Records[^1].Detail = selection.Error;
+                                }
                             }
                         }
                     }

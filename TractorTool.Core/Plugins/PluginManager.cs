@@ -3,7 +3,7 @@ using TractorTool.Core.Storage;
 namespace TractorTool.Core.Plugins;
 
 /// <summary>One installation owner; all mutations are serialized and no loaded version is overwritten.</summary>
-public sealed class PluginManager : IDisposable
+public sealed partial class PluginManager : IDisposable
 {
     private AppPaths _paths;
     private readonly HostCompatibility _compatibility;
@@ -102,14 +102,14 @@ public sealed class PluginManager : IDisposable
                 if (!pending && !recovery) continue;
                 if (pending && item.Pending?.Kind == PluginChangeKind.Activate)
                     CleanPendingActivation(item);
-                // Uninstall may already have moved code to trash; data reset must not cancel its retry.
-                var uninstall = pending && item.Pending!.Kind == PluginChangeKind.Uninstall;
+                // Code cleanup may already have moved files to trash; data reset must not cancel its retry.
+                var cleanup = pending && item.Pending!.Kind is PluginChangeKind.Uninstall or PluginChangeKind.CleanHistory;
                 Save(item with
                 {
-                    Pending = pending && !uninstall ? null : item.Pending,
+                    Pending = pending && !cleanup ? null : item.Pending,
                     Recovery = recovery ? null : item.Recovery,
                     AwaitingLoad = false,
-                    Error = uninstall ? item.Error : ""
+                    Error = cleanup ? item.Error : ""
                 });
             }
         }
@@ -243,7 +243,8 @@ public sealed class PluginManager : IDisposable
         lock (_gate)
         {
             Check();
-            if (kind == PluginChangeKind.Activate) throw new ArgumentException("安装需要一个已校验的插件包。");
+            if (kind is PluginChangeKind.Activate or PluginChangeKind.CleanHistory)
+                throw new ArgumentException("安装和历史清理需要先确认对应的包或版本列表。", nameof(kind));
             var item = Find(id) ?? Adopt(id, current, id);
             // Abandoning a failed rollback removes only code; its data and recovery journal remain.
             if (item.Pending is not null && !(kind == PluginChangeKind.Uninstall &&
@@ -262,7 +263,7 @@ public sealed class PluginManager : IDisposable
         {
             Check();
             var item = Find(id) ?? throw new InvalidOperationException("没有待处理变更。");
-            if (item.Pending?.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall ||
+            if (item.Pending?.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall or PluginChangeKind.CleanHistory ||
                 item.Error.Length != 0 && item.Pending?.Kind != PluginChangeKind.Activate)
                 ValidateCancellation(item);
             if (item.Pending?.Kind == PluginChangeKind.Activate)
@@ -274,8 +275,14 @@ public sealed class PluginManager : IDisposable
     private void ValidateCancellation(ManagedPlugin item)
     {
         var pending = item.Pending ?? throw new InvalidOperationException("没有待处理变更。");
-        if (pending.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall && pending.DestructiveStarted != false)
+        if (pending.Kind is PluginChangeKind.Rollback or PluginChangeKind.Uninstall or PluginChangeKind.CleanHistory && pending.DestructiveStarted != false)
             throw new InvalidOperationException("无法确认程序或数据尚未移动，不能取消变更。请保留恢复记录，退出并重新打开软件重试。");
+        if (pending.Kind == PluginChangeKind.CleanHistory)
+        {
+            if (PathPresent(PluginFiles.Under(_root, "removed", pending.Token)))
+                throw new IOException("历史版本已进入清理目录，不能取消变更；请重新启动后继续清理。");
+            return;
+        }
         if (pending.Kind == PluginChangeKind.Uninstall)
         {
             if (!PluginFiles.DirectoryPresent(VersionPath(item.Id, item.ActiveVersion!)) ||
@@ -370,8 +377,8 @@ public sealed class PluginManager : IDisposable
     private ManagedPlugin Apply(ManagedPlugin item)
     {
         var pending = item.Pending!;
-        // Uninstall only mutates installation code; it must also finish after a data reset or a restored root.
-        if (pending.Kind != PluginChangeKind.Uninstall &&
+        // Code cleanup must also finish after a data reset or a restored root.
+        if (pending.Kind is not (PluginChangeKind.Uninstall or PluginChangeKind.CleanHistory) &&
             !string.Equals(pending.DataRoot, _paths.DataRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new InvalidOperationException("待处理变更属于另一个数据根目录，请使用安排变更时的配置启动。");
         switch (pending.Kind)
@@ -414,6 +421,8 @@ public sealed class PluginManager : IDisposable
                 PluginFiles.ValidatePackage(VersionPath(item.Id, item.Recovery!.Version), _compatibility);
                 Restore(item.Id, item.Recovery!, pending.DestructiveStarted, () => MarkDestructiveStarted(item));
                 return item with { ActiveVersion = item.Recovery.Version, Recovery = null, AwaitingLoad = item.Enabled };
+            case PluginChangeKind.CleanHistory:
+                return ApplyHistoryCleanup(item);
             default: throw new InvalidDataException("未知插件变更。");
         }
     }

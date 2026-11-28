@@ -3,11 +3,12 @@ using TractorTool.Core.Storage;
 
 namespace TractorTool.Core.Plugins;
 
-public enum PluginChangeKind { Activate, Enable, Disable, Uninstall, Rollback }
+public enum PluginChangeKind { Activate, Enable, Disable, Uninstall, Rollback, CleanHistory }
 public sealed record PendingPluginChange(PluginChangeKind Kind, string Token, string DataRoot, string? Version = null, string? Digest = null)
 {
     // Null denotes a legacy journal, not proof that a failed change is reversible.
     public bool? DestructiveStarted { get; init; }
+    public IReadOnlyList<string>? HistoryVersions { get; init; }
 }
 public sealed record PluginRecovery(string Version, string Token, string DataRoot, bool HadData);
 public sealed record RetainedPluginRemoval(string PluginId, string Token);
@@ -54,6 +55,21 @@ public sealed record PluginManagementState : IVersionedSettings
                 else if (item.ActiveVersion is null) throw new InvalidDataException("待变更插件没有活动版本。");
                 if (pending.Kind == PluginChangeKind.Rollback && item.Recovery is null)
                     throw new InvalidDataException("回退缺少恢复记录。");
+                if (pending.Kind != PluginChangeKind.CleanHistory && pending.HistoryVersions is { Count: > 0 })
+                    throw new InvalidDataException("历史版本清理记录无效。");
+                if (pending.Kind == PluginChangeKind.CleanHistory)
+                {
+                    var versions = new HashSet<string>(StringComparer.Ordinal);
+                    if (pending.HistoryVersions is not { Count: > 0 }) throw new InvalidDataException("历史版本清理列表为空。");
+                    foreach (var version in pending.HistoryVersions)
+                    {
+                        ManifestValidator.ValidateVersion(version);
+                        if (version == item.ActiveVersion || !versions.Add(version))
+                            throw new InvalidDataException("历史版本清理列表包含活动版本或重复版本。");
+                    }
+                    if (item.Recovery is { } saved && !versions.Contains(saved.Version))
+                        throw new InvalidDataException("历史版本清理列表与回退记录不一致。");
+                }
             }
             if (item.Recovery is { } recovery)
             {
