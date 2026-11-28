@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 2.0.0 发布检查修正 | [E163 · 原生归档异常断言与完整回归（2026-11-28）](#evidence-release-200-check-fix) |
 | 2.0.0 版本发布 | [E162 · 产品定版与标签发布（2026-11-28）](#evidence-release-200) |
 | 插件历史版本清理 | [E161 · 重启清理、手删旧版恢复与提示去重（2026-11-28）](#evidence-plugin-history-cleanup) |
 | 宿主状态与来源审查收尾 | [E160 · 重置提交、加载结果与依赖维护（2026-11-28）](#evidence-host-state-source-review) |
@@ -200,6 +201,22 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-release-200-check-fix"></a>
+
+## E163：2.0.0 发布检查修正（2026-11-28）
+
+用户反馈 `Verify-PluginHost.ps1:9` 汇总 `core-checks failed: 1`。核对 [标签运行](https://github.com/AfterDuang/TractorTool/actions/runs/46131198099)、[main](https://github.com/AfterDuang/TractorTool/actions/runs/46131198618) 和 [Dev](https://github.com/AfterDuang/TractorTool/actions/runs/46131145248) 原始日志，均为构建成功、Core **422 通过/1 失败**，打包和发布均跳过；不存在 `v2.0.0` Release。
+
+唯一失败为 `Native archives: tampering with a stored combination cannot authorize reuse or repair`。测试篡改组合收据映射后重新打开服务，既有归属保护将底层 `InvalidDataException` 包装成带恢复建议的 `InvalidOperationException`，在提示和下载前拒绝请求；测试却只接受底层类型。这是断言错误，不是运行库校验失效或网络/版本升级问题。
+
+仅修改该测试：要求外层 `InvalidOperationException` 且内部为 `InvalidDataException`；正常返回、空租约或其他异常仍失败。同时检查确认次数和网络请求未增加，篡改收据及原始资源保持不变。生产代码、路径保护、工作流与检查门禁未调整。GPT‑6.2‑SOL/high 子代理静态复核无阻断。
+
+用户明确允许本轮临时目录自动回归。首次沙箱运行原失败用例通过，但 18 项 Windows junction 夹具创建在原生 API 处遭拒，结果 406/18；这些用例在远端已通过，不修改代码适配沙箱。脱离沙箱运行相同 `pwsh -NoProfile -File scripts/Verify-PluginHost.ps1`，仅使用临时根与 `artifacts`，不启动真实主窗口、不接触应用数据。总日志及远端失败摘录保存在 `artifacts/release-200-ci-fix/`。
+
+脱离沙箱后的完整门禁通过：Core **424/424**、最终发布宿主离屏集成 **111/111**；独立插件构建、安装、检查前后的 **235 个宿主文件 SHA256 不变**。所需构建均 0 警告/0 错误。完整证据目录为 `artifacts/plugin-host-20261128-174233-62b42a`，总日志为 `artifacts/release-200-ci-fix/verification-unsandboxed.log`。上述数量来自本轮本机日志，远端复验单独记录，不把首次失败算作通过；自动检查不代替真实 Windows 窗口或硬件验收。
+
+修复交付仅含检查用例和当前文档，保留已有 `v2.0.0` 标签指向，等待用户确认是否将未公开 Release 的标签更新到修复提交；不以单纯重跑旧提交或跳过门禁代替修复。
 
 <a id="evidence-release-200"></a>
 

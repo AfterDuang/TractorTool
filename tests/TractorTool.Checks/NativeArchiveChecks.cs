@@ -344,14 +344,23 @@ internal static class NativeArchiveChecks
             var receiptPath = Path.Combine(directory, "receipt.json");
             var receipt = JsonNode.Parse(File.ReadAllText(receiptPath))!;
             receipt["Definition"]!["Archives"]![1]!["Files"]![ResourceEntry] = "data/changed.dat";
-            File.WriteAllText(receiptPath, receipt.ToJsonString());
+            var tamperedReceipt = receipt.ToJsonString();
+            File.WriteAllText(receiptPath, tamperedReceipt);
             fixture.Offline = true;
             await using var reloaded = Create(path, http, fixture.Recipe);
             using var restoredScope = Scope(reloaded);
             var calls = fixture.Requests.Count;
-            await Throws<InvalidDataException>(() => restoredScope.TryRequestAsync(Key));
-            Require(fixture.Requests.Count == calls && File.ReadAllText(Resource(directory)) == "original",
-                "A mismatched saved recipe must preserve the directory and fail before downloading.");
+            var prompts = 0;
+            reloaded.ConfirmInstallAsync = (_, _) => { prompts++; return Task.FromResult(true); };
+            try
+            {
+                using var lease = await restoredScope.TryRequestAsync(Key);
+                throw new Exception("Expected an ownership rejection caused by the invalid archive combination.");
+            }
+            catch (InvalidOperationException ex) when (ex.InnerException is InvalidDataException) { }
+            Require(prompts == 0 && fixture.Requests.Count == calls &&
+                File.ReadAllText(receiptPath) == tamperedReceipt && File.ReadAllText(Resource(directory)) == "original",
+                "An untrusted receipt must be preserved with its payload and rejected before consent or downloading.");
         });
 
         Test("duplicate JSON mapping keys are rejected during discovery and ZIP installation", path =>
