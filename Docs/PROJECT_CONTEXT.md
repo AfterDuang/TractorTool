@@ -4,17 +4,17 @@
 
 ## 1. 当前工作
 
-**当前集成范围：E161 及此前外部依赖扩展；用户已授权在 `Dev` 提交并合并至本地 `main`。** 本轮补充插件页“清理历史版本”和 Packages 引用错误去重；接受旧回退目录/清单已手动删除的情况，保留当前程序、业务数据、恢复快照和外部依赖，确认后重启执行。详细变更与证据归 [E161](PROJECT_HISTORY.md#evidence-plugin-history-cleanup)。此前 E159/E160 已在基线提交，专项运行缺口仍按台账保留。
+**当前产品版本为 2.0.0；用户已授权提交并推送 `main` 与 `v2.0.0` 标签。** E161 及此前外部依赖扩展已在 `d37e2ec` 合并到本地 `main`。本轮只调整宿主产品版本和文档，不修改插件版本、SDK API 或共享程序集绑定身份。发布范围与验证见 [E162](PROJECT_HISTORY.md#evidence-release-200)，附件是否公开以标签工作流实际结果为准。
 
-DLL、uv/Python、pnpm/Node 及上游归档安装已接入；[E158 / 487b5fc](PROJECT_HISTORY.md#evidence-native-upstream-archives) 获用户常规使用反馈，仍有专项待验。当前 Contracts API 1.11 / UI API 1.6，Avalonia 12.1.6；旧接口和收据兼容边界见[插件规范](PLUGIN_DEVELOPMENT.md)。正式版仍为 [1.1.0](PROJECT_HISTORY.md#evidence-release-110)，不包含上述扩展。
+2.0.0 纳入 DLL、uv/Python、pnpm/Node、上游归档安装和插件历史版本清理。当前 Contracts API 1.11 / UI API 1.6，Avalonia 12.1.6；旧接口和收据兼容边界见[插件规范](PLUGIN_DEVELOPMENT.md)。[1.1.0](PROJECT_HISTORY.md#evidence-release-110) 为不含上述扩展的历史分发。
 
 Packages 按工具、DLL、Python、Node 分类，来源默认 GitHub/PyPI/npm，可添加公开兼容来源和 HTTPS 目录。安装类型与来源分开；多来源不自动回退，已装依赖可校验后离线复用。框架不维护自有运行库发布包；[AB 审片](DEVELOPMENT.md#media-compare) 已使用官方归档，具体插件资料留在插件文档。
 
 **接续重点**：由用户在原有安装/调试目录按当前源码构建，验证历史版本预览、取消、重启清理和手动删除后的记录释放；再检查 Packages 无引用清理及相同诊断行去重。隔离构建目录只保存编译证据，不作为原安装现场的验收启动入口。跨插件版本复用语言环境不在本轮范围；已有 Python/Node 测试包接口不变。[A04/A30–A33](DEVELOPMENT.md#acceptance) 其余专项继续待验。
 
-本轮宿主、Core 与集成检查工程构建通过；集成工程仅保留一条漏洞源不可用的 NU1900 警告。GPT‑6.2‑SOL/high 子代理静态复核无剩余阻断，26 项新增检查未运行，真实验收由用户负责。未启动主窗口或操作真实应用数据；本轮授权仅包含本地提交与合并。历史证据不自动覆盖本轮代码；远端和 CI 结果未重新核对。
+2.0.0 宿主隔离构建通过，0 警告/0 错误，版本元数据已核对。此前 E161 宿主/Core 构建通过，集成工程有一条 NU1900 警告；GPT‑6.2‑SOL/high 静态复核无剩余阻断。26 项新增检查仍未在本地运行，标签工作流负责隔离回归和完整分发。真实验收由用户负责，未启动主窗口或操作真实应用数据。
 
-此前清理时调试器显示旧清单 `FileNotFoundException`。现场管理记录已完成清理；遗漏在状态通知触发的引用刷新。已将已知清单缺失改为正常的不完整状态，保留清理前保护，增强原用例覆盖调试器 first-chance、取消和待安装清单缺失；补充宿主/Core 编译 0 警告/0 错误，GPT‑6.2‑SOL/high 静态复核无阻断，证据在 E161 的 `reference-feedback`。增强用例未运行，专项验收继续按台账追踪。
+此前清理时读取旧清单的 `FileNotFoundException` 已在 E161 修正，引用不完整时仍保留清理保护；增强用例仅编译，证据见 E161 的 `reference-feedback`。
 
 用户最新确认 Ctrl+F5 启动后进程列表不再显示“已挂起”。现场对照指向调试启动相关状态，本轮不修改进程或窗口逻辑；该反馈不替代历史清理和依赖维护的专项验收。
 

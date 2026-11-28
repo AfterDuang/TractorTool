@@ -13,7 +13,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 
 > **Windows x64** · [下载最新正式版](https://github.com/AfterDuang/TractorTool/releases/latest)（自包含 ZIP、用户级安装器和独立插件包） · [构建与验收记录](Docs/DEVELOPMENT.md#current-status)
 
-当前源码已接入 DLL 运行库、uv/Python 和 pnpm/Node 环境；这些扩展尚未发布，正式版 1.1.0 不包含。下文框架能力描述当前源码，接口与验收状态见[外部依赖扩展](Docs/DEVELOPMENT.md#dependency-extension-plan)。
+2.0.0 纳入 DLL 运行库、uv/Python 和 pnpm/Node 环境、上游归档组合安装及插件历史版本清理。发布附件由版本标签工作流生成；接口与验收状态见[外部依赖扩展](Docs/DEVELOPMENT.md#dependency-extension-plan)。
 
 ## 框架能力
 
@@ -47,7 +47,7 @@ TractorTool 将工具业务放在独立插件中，由精干的宿主统一提�
 
 安装版升级保留已有插件和管理状态，卸载保留插件及应用数据。ZIP 应解压到新目录，不直接覆盖旧安装；安装器不接管自行解压的目录。
 
-从 1.0.0 升级到 1.1.0 时，先升级宿主，再从本版 Release 下载需要更新的插件 ZIP，在插件管理页安装并重启。如果开发版插件的版本号等于或高于目标版本，请先卸载该插件并重启，再安装目标版本。卸载时可保留插件数据。
+升级到 2.0.0 时，先升级宿主，再从本版 Release 下载需要更新或新增的插件 ZIP，在插件管理页安装并重启。插件独立定版，不要求与宿主版本相同；已安装同版本正式包可继续使用。若要替换同版或更高版本的开发包，请先卸载该插件并重启，再安装正式包。卸载时可保留插件数据。
 
 ### 依赖来源怎么用
 
@@ -109,7 +109,7 @@ dotnet build ./TractorTool.slnx -c Debug -m:1 -nr:false
 
 ### GitHub Release
 
-推送与产品版本匹配的标签（如 `v1.1.0`）即授权公开发布。工作流在干净检出中构建并校验安装器、ZIP、校验和及源码提交，附件上传完成后自动公开 Release。GitHub 为正式版选择 `Latest`，带后缀的标签（如 `v1.2.0-rc.1`）发布为预发行版。普通分支构建、PR 和手动运行仅上传 Actions 产物。
+推送与产品版本匹配的标签（如 `v2.0.0`）即授权公开发布。工作流在干净检出中构建并校验安装器、ZIP、校验和及源码提交，附件上传完成后自动公开 Release。GitHub 为正式版选择 `Latest`，带后缀的标签（如 `v2.1.0-rc.1`）发布为预发行版。普通分支构建、PR 和手动运行仅上传 Actions 产物。
 
 若上传中断，先在 Releases 核对同标签记录及附件。已公开且附件完整即为发布成功；若留下本次失败的草稿，删除该草稿并保留 Git 标签，然后重跑失败的 `publish-release` 作业。
 

@@ -73,8 +73,8 @@ TractorTool.Plugins.Example/
 | `version` | 三段数字版本，与版本目录一致；当前不接受预发布后缀 |
 | `entryAssembly` | 包内 DLL 相对路径，禁止绝对路径、越界及路径中的链接/重解析点 |
 | `entryType` | 非空入口类型全名；入口是可实例化的 IPlugin，提供无参构造函数 |
-| `apiVersion` | 当前源码为 1.11，仍接受 1.0–1.10；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10，原生归档组合要求 1.11。已发布 1.1.0 宿主不支持 API 1.8–1.11 |
-| `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 接受 1.0–1.6；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
+| `apiVersion` | 宿主 2.0.0 提供 1.11，仍接受 1.0–1.10；Processes 从 1.1 提供，Packages 查询/租约从 1.2 提供，RequestAsync 要求 1.3，TryRequestAsync 要求 1.4，stdout 回调要求 1.5，Tasks 要求 1.6，显式日志级别要求 1.7，独立原生运行库要求 1.8，Python 环境及子进程环境覆盖要求 1.9，Node 环境要求 1.10，原生归档组合要求 1.11。历史 1.1.0 宿主不支持 API 1.8–1.11 |
+| `uiApiVersion` | 声明插件所需的最低 UI API。宿主 1.1.0 起接受 1.0–1.6，2.0.0 保持不变；托盘菜单从 1.5 提供，携带宿主未提供的私有 `Avalonia.*` 扩展需声明 1.6 |
 | `avaloniaVersion` | 精确匹配 12.1.6 |
 | `supportedPlatforms` | 非空 OS/RID 列表，与宿主 OS 或 RID 匹配后才加载 |
 | `dependencies` | 可空，最多 32 个不重复的 id/三段 version；在 `downloads` 按 RID 提供 GitHub 安装资料，API 1.11 原生运行库也可使用[归档组合](#native-archive-packages)声明。旧 id/version 清单仍可复用已装包 |
@@ -261,7 +261,7 @@ var result = await context.Processes!.RunAsync(
 
 ### 独立原生 DLL 运行库（API 1.8）
 
-此能力已进入当前源码，尚未发布或完成运行验收。插件清单声明 `apiVersion: "1.8"`，依赖片段如下，内容来自 [SDL 真实夹具](../tests/NativeLibraryProbePlugin/plugin.json)：
+此能力纳入宿主 2.0.0，专项运行验收见开发台账。插件清单声明 `apiVersion: "1.8"`，依赖片段如下，内容来自 [SDL 真实夹具](../tests/NativeLibraryProbePlugin/plugin.json)：
 
 ```json
 {
@@ -328,7 +328,7 @@ if (version != 3_002_008) throw new InvalidDataException("SDL 运行库版本不
 
 ### Python 环境（API 1.9）
 
-此能力已进入当前源码，尚未发布。首轮仅支持 `win-x64`、CPython **3.13.18**，宿主固定 uv **0.13.10** 与 Python 上游构建 **20261124**；插件无需安装系统 Python，也不能自行换工具链。旧工具、原生包及 API 1.0–1.8 保持原调用；新插件声明 `apiVersion: "1.9"`，在根清单增加 `pythonEnvironments`。实际示例见[测试清单](../tests/PythonEnvironmentProbePlugin/plugin.json)。
+此能力纳入宿主 2.0.0。首轮仅支持 `win-x64`、CPython **3.13.18**，宿主固定 uv **0.13.10** 与 Python 上游构建 **20261124**；插件无需安装系统 Python，也不能自行换工具链。旧工具、原生包及 API 1.0–1.8 保持原调用；新插件声明 `apiVersion: "1.9"`，在根清单增加 `pythonEnvironments`。实际示例见[测试清单](../tests/PythonEnvironmentProbePlugin/plugin.json)。
 
 | 环境字段 | 规则 |
 | --- | --- |
@@ -360,7 +360,7 @@ var result = await environment.RunAsync(new ProcessRequest(environment.PythonPat
 
 ### Node 环境（API 1.10）
 
-此能力已进入当前源码，尚未发布。首轮仅支持 `win-x64`、Node.js **24.22.3**，宿主固定 pnpm **10.34.9**。插件声明 `apiVersion: "1.10"`，在根清单增加 `nodeEnvironments`，最多 8 项，ID 在插件内不重复。普通旧插件无需改清单或重新编译。
+此能力纳入宿主 2.0.0。首轮仅支持 `win-x64`、Node.js **24.22.3**，宿主固定 pnpm **10.34.9**。插件声明 `apiVersion: "1.10"`，在根清单增加 `nodeEnvironments`，最多 8 项，ID 在插件内不重复。普通旧插件无需改清单或重新编译。
 
 | 字段 | 要求 |
 | --- | --- |

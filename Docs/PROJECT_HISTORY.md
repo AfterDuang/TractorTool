@@ -14,6 +14,7 @@
 
 | 阶段 | 记录 |
 | --- | --- |
+| 2.0.0 版本发布 | [E162 · 产品定版与标签发布（2026-11-28）](#evidence-release-200) |
 | 插件历史版本清理 | [E161 · 重启清理、手删旧版恢复与提示去重（2026-11-28）](#evidence-plugin-history-cleanup) |
 | 宿主状态与来源审查收尾 | [E160 · 重置提交、加载结果与依赖维护（2026-11-28）](#evidence-host-state-source-review) |
 | 来源输入与日志反馈 | [E159 · 重复添加提示与保存异常日志（2026-11-28）](#evidence-source-validation-feedback) |
@@ -199,6 +200,27 @@ VideoPlugin 的导航和设置注册均增加现有 IconPath，工程复制 Asse
 证据目录为 `artifacts/e119-video-icon`。首次构建因 Tee-Object 的相对日志路径随脚本 Push-Location 改变而未完成打包；改用绝对日志路径、另一个新输出目录后，Build-Plugin.ps1 引用 E117 发布 SDK 独立构建成功，build.log 记录 0 警告/0 错误。交付 `package/TractorTool.VideoExport-0.5.7.zip`；static-checks.json 核对 ZIP 11 文件、根清单、资源/许可、SHA256 和无共享 DLL 副本，380 个 SDK 原文件哈希未变。ZIP SHA256 为 `0C2BD634BF8DCF8F8AE6CFDA3A29C1174707C4A3501BE187B424C02B81B53036`。
 
 已查看 icon-preview.png 的浅深背景 24/32 像素素材，轮廓可辨且无裁切；未运行应用、检查程序、媒体处理或 UI 自动化，未安装更新/改用户数据/重建整包。真实导航与设置图标仍由用户确认；保留剪贴板插件和 IDE 并行修改。
+
+<a id="evidence-release-200"></a>
+
+## E162：产品 2.0.0 与标签发布（2026-11-28）
+
+用户在 E161 提交并合并后明确要求软件版本改为 2.0.0、提交标签并推送远程。起始基线为 `main / d37e2ec`；远程 `main / e025a04` 是其祖先，推送前未存在 `v2.0.0`。
+
+- 仅将 `Directory.Build.props` 的产品 Version 从 1.1.0 改为 2.0.0；共享库 AssemblyVersion 保持 1.0.0.0，Contracts API 1.11 / UI API 1.6、Avalonia 12.1.6 不变。
+- 发布仍自动发现五个业务插件：剪贴板、文件夹历史、HUD、视频为 1.1.0，AB 审片为 0.1.9。独立插件包从自身清单定版，Python/Node/DLL 测试夹具不进入正式分发。
+- 2.0.0 纳入此前 DLL、Python、Node、上游归档安装、宿主恢复与历史版本清理改动；同步 README、接入规范、开发台账和交接，不把既有专项验收缺口标为通过。
+- 本次推送范围为 `main` 和附注标签 `v2.0.0`。标签沿现有 checks → package → publish-release 工作流，完成隔离检查、安装器/ZIP/插件包构建及源码/摘要验证后才公开 Release；不绕过门禁手动发布附件。
+
+本地版本构建命令：
+
+```powershell
+dotnet build TractorTool/TractorTool.csproj -c Debug --no-restore -m:1 -nr:false -p:UseSharedCompilation=false -o artifacts/release-200-20261128/host-debug
+```
+
+构建 0 警告/0 错误，日志 `artifacts/release-200-20261128/host-build.log`。读取生成 DLL 元数据核对：宿主 AssemblyVersion/FileVersion 为 2.0.0.0；Contracts、Core、UI 两者仍为 1.0.0.0，产品信息版本均为 2.0.0 加源码提交后缀。首次静态断言误把共享库 FileVersion 也预期为 2.0.0.0，随后按既有固定 AssemblyVersion 派生规则修正并复核，未因此修改实现。该构建来自提交前工作区，不是最终标签分发产物。
+
+本轮未运行应用或本地自动检查，不接触真实数据。最终标签分发和远端回归状态以 GitHub Actions 为准；本地编译不代替完整发布或真实 Windows 验收。
 
 <a id="evidence-plugin-history-cleanup"></a>
 

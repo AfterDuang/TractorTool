@@ -8,9 +8,9 @@
 
 ## 1. 当前状态
 
-**1.1.0 分发包含 Windows x64 宿主和四个 1.1.0 插件。** 产品和插件分别定版，沿用 Avalonia 12.1.6。插件私有扩展、外部工具和发布验证见 [E137](PROJECT_HISTORY.md#evidence-release-110)。正式标签经构建和校验后自动公开附件。
+**当前产品版本为 2.0.0，发布标签为 `v2.0.0`。** Windows x64 宿主与插件分别定版，沿用 Avalonia 12.1.6。本轮只调整产品版本及发布文档，保留插件版本、Contracts/UI API 与共享库绑定身份；发布范围见 [E162](PROJECT_HISTORY.md#evidence-release-200)。标签工作流通过检查、打包和校验后才公开附件，实际状态以 GitHub Actions 为准。
 
-**当前源码包含 E161 及此前的外部依赖扩展。** DLL、uv/Python、pnpm/Node 及上游归档安装均已接入；[AB 审片 0.1.9](#media-compare) 使用官方上游归档，不维护自有运行库发布包。这些扩展尚未发布，正式版 1.1.0 不变。
+**2.0.0 纳入 E161 及此前的外部依赖扩展。** DLL、uv/Python、pnpm/Node 及上游归档安装均已接入；[AB 审片 0.1.9](#media-compare) 使用官方上游归档，不维护自有运行库发布包。历史 1.1.0 分发不包含这些扩展。
 
 `84a66d4` 已合并 [E159 来源反馈](PROJECT_HISTORY.md#evidence-source-validation-feedback) 和 [E160 宿主可靠性修复](PROJECT_HISTORY.md#evidence-host-state-source-review)：来源重复输入就地提示、真实保存失败记日志；重置可恢复收尾，管理启动与目录发现完成后记录加载结果并保留原失败原因，依赖清理与来源授权在提交前复查。已完成编译与静态复核，新增 17 项检查未运行；代理未推送，运行验收由用户负责。
 
@@ -126,7 +126,11 @@ SDK 版本由根 global.json 与 CI 共用。ZIP 只解压到新目录，不覆�
 
 ### 本地产物与正式发布
 
-#### 正式版 1.1.0
+#### 2.0.0 发布
+
+`v2.0.0` 标签工作流生成 Windows x64 自包含 ZIP、用户级安装器、独立插件 ZIP、`release.json` 和 `SHA256SUMS`。完成状态与附件见 [GitHub Actions](https://github.com/AfterDuang/TractorTool/actions) 和 [Releases](https://github.com/AfterDuang/TractorTool/releases)；标签推送成功不等于构建或发布通过。具体版本和本轮验证边界见 [E162](PROJECT_HISTORY.md#evidence-release-200)。
+
+#### 历史正式版 1.1.0
 
 [1.1.0 发布页](https://github.com/AfterDuang/TractorTool/releases/tag/v1.1.0) 提供 Windows x64 整包、同源安装器及四个独立插件 ZIP。`release.json` 记录源码提交及各插件身份，配合 `SHA256SUMS` 和 [Verify-Distribution](../scripts/Verify-Distribution.ps1) 可核对附件。
 
